@@ -24,6 +24,8 @@ builder.Services.AddSingleton<IAiSettingsStore, AiSettingsStore>();
 builder.Services.AddSingleton<IKnowledgeDocumentStore, SqliteKnowledgeDocumentStore>();
 builder.Services.AddSingleton<IKnowledgeGroundingService, KnowledgeGroundingService>();
 builder.Services.AddSingleton<KnowledgeSourceReader>();
+builder.Services.AddSingleton<IPersonalMemoryStore, PersonalMemoryStore>();
+builder.Services.AddSingleton<IPersonalMemoryGroundingService, PersonalMemoryGroundingService>();
 builder.Services.AddHttpClient<GeminiChatService>(client =>
 {
     client.BaseAddress = new Uri("https://generativelanguage.googleapis.com/v1beta/");
@@ -53,7 +55,7 @@ app.MapGet("/api/status", (
         provider = aiProvider.Name,
         model = aiProvider.Model,
         teamProfile = teamProfiles.DefaultProfileId,
-        version = "0.5.4.3"
+        version = "0.6.0"
     });
 });
 
@@ -144,6 +146,39 @@ app.MapDelete("/api/knowledge/documents/{documentId:guid}", async (
     return deleted ? Results.NoContent() : Results.NotFound();
 });
 
+app.MapGet("/api/memory", async (
+    IPersonalMemoryStore memoryStore,
+    CancellationToken cancellationToken) =>
+{
+    var memories = await memoryStore.GetAllAsync(cancellationToken);
+    return Results.Ok(memories);
+});
+
+app.MapPost("/api/memory", async (
+    CreatePersonalMemoryRequest request,
+    IPersonalMemoryStore memoryStore,
+    CancellationToken cancellationToken) =>
+{
+    try
+    {
+        var memory = await memoryStore.AddAsync(request, cancellationToken);
+        return Results.Created($"/api/memory/{memory.Id}", memory);
+    }
+    catch (ArgumentException exception)
+    {
+        return Results.BadRequest(new ApiError(exception.Message));
+    }
+});
+
+app.MapDelete("/api/memory/{memoryId:guid}", async (
+    Guid memoryId,
+    IPersonalMemoryStore memoryStore,
+    CancellationToken cancellationToken) =>
+{
+    var deleted = await memoryStore.DeleteAsync(memoryId, cancellationToken);
+    return deleted ? Results.NoContent() : Results.NotFound();
+});
+
 app.MapGet("/api/settings/ai", (IAiSettingsStore settingsStore) =>
     Results.Ok(settingsStore.GetPublicSettings()));
 
@@ -195,6 +230,7 @@ app.MapPost("/api/chat", async (
     ChatRequest request,
     IAiProviderResolver providerResolver,
     IKnowledgeGroundingService groundingService,
+    IPersonalMemoryGroundingService memoryGroundingService,
     CancellationToken cancellationToken) =>
 {
     if (request.Messages is null || request.Messages.Count == 0)
@@ -255,7 +291,17 @@ app.MapPost("/api/chat", async (
                 []));
         }
 
-        var answer = await aiProvider.ReplyAsync(grounded.Messages, cancellationToken);
+        var chatMessages = grounded.Messages;
+        if (request.UseMemory && knowledgeMode == "normal")
+        {
+            var memoryGrounded = await memoryGroundingService.GroundAsync(
+                request.Messages,
+                chatMessages,
+                cancellationToken);
+            chatMessages = memoryGrounded.Messages;
+        }
+
+        var answer = await aiProvider.ReplyAsync(chatMessages, cancellationToken);
         return Results.Ok(new ChatResponse(
             answer,
             aiProvider.Model,

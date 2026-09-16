@@ -5,7 +5,8 @@ public sealed record ChatMessage(string Role, string Content);
 public sealed record ChatRequest(
     IReadOnlyList<ChatMessage> Messages,
     bool UseKnowledge = true,
-    string KnowledgeMode = "normal");
+    string KnowledgeMode = "normal",
+    bool UseMemory = true);
 
 public sealed record ChatSource(
     Guid DocumentId,

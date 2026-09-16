@@ -1,3 +1,4 @@
+using System.Net;
 using System.Text;
 using System.Text.Json;
 using Microsoft.Extensions.Options;
@@ -8,6 +9,8 @@ namespace PersonalAI.Web.Services;
 
 public sealed class GeminiChatService : IAiProvider
 {
+    private const int MaximumAttempts = 3;
+
     private readonly HttpClient _httpClient;
     private readonly GeminiOptions _options;
     private readonly IAiSettingsStore _settingsStore;
@@ -68,45 +71,101 @@ public sealed class GeminiChatService : IAiProvider
             }
         };
 
+        var requestBody = JsonSerializer.Serialize(payload);
         var model = Uri.EscapeDataString(Model);
-        using var request = new HttpRequestMessage(
-            HttpMethod.Post,
-            $"models/{model}:generateContent")
-        {
-            Content = new StringContent(
-                JsonSerializer.Serialize(payload),
-                Encoding.UTF8,
-                "application/json")
-        };
-        request.Headers.Add("x-goog-api-key", apiKey);
 
-        using var response = await _httpClient.SendAsync(request, cancellationToken);
-        var responseBody = await response.Content.ReadAsStringAsync(cancellationToken);
-
-        if (!response.IsSuccessStatusCode)
+        for (var attempt = 1; attempt <= MaximumAttempts; attempt++)
         {
-            var detail = ReadApiError(responseBody);
-            _logger.LogWarning(
-                "Gemini API returned {StatusCode}: {Detail}",
-                (int)response.StatusCode,
-                detail);
-            throw new HttpRequestException(
-                $"Gemini API trả về lỗi {(int)response.StatusCode}: {detail}",
-                null,
-                response.StatusCode);
+            try
+            {
+                using var request = new HttpRequestMessage(
+                    HttpMethod.Post,
+                    $"models/{model}:generateContent")
+                {
+                    Content = new StringContent(
+                        requestBody,
+                        Encoding.UTF8,
+                        "application/json")
+                };
+                request.Headers.Add("x-goog-api-key", apiKey);
+
+                using var response = await _httpClient.SendAsync(request, cancellationToken);
+                var responseBody = await response.Content.ReadAsStringAsync(cancellationToken);
+
+                if (!response.IsSuccessStatusCode)
+                {
+                    var detail = ReadApiError(responseBody);
+                    if (IsTransientStatusCode(response.StatusCode) && attempt < MaximumAttempts)
+                    {
+                        var delay = GetRetryDelay(attempt);
+                        _logger.LogWarning(
+                            "Gemini API returned transient {StatusCode} on attempt {Attempt}/{MaximumAttempts}. Retrying in {DelayMs} ms: {Detail}",
+                            (int)response.StatusCode,
+                            attempt,
+                            MaximumAttempts,
+                            delay.TotalMilliseconds,
+                            detail);
+                        await Task.Delay(delay, cancellationToken);
+                        continue;
+                    }
+
+                    _logger.LogWarning(
+                        "Gemini API returned {StatusCode}: {Detail}",
+                        (int)response.StatusCode,
+                        detail);
+                    throw new HttpRequestException(
+                        $"Gemini API trả về lỗi {(int)response.StatusCode}: {detail}",
+                        null,
+                        response.StatusCode);
+                }
+
+                var outputText = ReadOutputText(responseBody);
+                if (string.IsNullOrWhiteSpace(outputText))
+                {
+                    throw new InvalidOperationException(
+                        "Gemini không trả về nội dung văn bản. Yêu cầu có thể đã bị chặn.");
+                }
+
+                if (attempt > 1)
+                {
+                    _logger.LogInformation(
+                        "Gemini request succeeded on retry attempt {Attempt}/{MaximumAttempts}.",
+                        attempt,
+                        MaximumAttempts);
+                }
+
+                return outputText;
+            }
+            catch (HttpRequestException exception) when (
+                exception.StatusCode is null
+                && attempt < MaximumAttempts
+                && !cancellationToken.IsCancellationRequested)
+            {
+                var delay = GetRetryDelay(attempt);
+                _logger.LogWarning(
+                    exception,
+                    "Gemini network request failed on attempt {Attempt}/{MaximumAttempts}. Retrying in {DelayMs} ms.",
+                    attempt,
+                    MaximumAttempts,
+                    delay.TotalMilliseconds);
+                await Task.Delay(delay, cancellationToken);
+            }
         }
 
-        var outputText = ReadOutputText(responseBody);
-        if (string.IsNullOrWhiteSpace(outputText))
-        {
-            throw new InvalidOperationException(
-                "Gemini không trả về nội dung văn bản. Yêu cầu có thể đã bị chặn.");
-        }
-
-        return outputText;
+        throw new HttpRequestException("Gemini không thể xử lý yêu cầu sau nhiều lần thử.");
     }
 
     private string GetApiKey() => _settingsStore.GetApiKey(Name);
+
+    private static bool IsTransientStatusCode(HttpStatusCode statusCode) =>
+        statusCode is HttpStatusCode.TooManyRequests
+            or HttpStatusCode.InternalServerError
+            or HttpStatusCode.BadGateway
+            or HttpStatusCode.ServiceUnavailable
+            or HttpStatusCode.GatewayTimeout;
+
+    private static TimeSpan GetRetryDelay(int failedAttempt) =>
+        TimeSpan.FromSeconds(Math.Pow(2, failedAttempt - 1));
 
     private static string ReadOutputText(string responseBody)
     {

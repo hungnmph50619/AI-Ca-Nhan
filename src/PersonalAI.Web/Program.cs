@@ -23,6 +23,7 @@ builder.Services.AddDataProtection().SetApplicationName("PersonalAI");
 builder.Services.AddSingleton<IAiSettingsStore, AiSettingsStore>();
 builder.Services.AddSingleton<IKnowledgeDocumentStore, SqliteKnowledgeDocumentStore>();
 builder.Services.AddSingleton<IKnowledgeGroundingService, KnowledgeGroundingService>();
+builder.Services.AddSingleton<KnowledgeSourceReader>();
 builder.Services.AddHttpClient<GeminiChatService>(client =>
 {
     client.BaseAddress = new Uri("https://generativelanguage.googleapis.com/v1beta/");
@@ -52,7 +53,7 @@ app.MapGet("/api/status", (
         provider = aiProvider.Name,
         model = aiProvider.Model,
         teamProfile = teamProfiles.DefaultProfileId,
-        version = "0.5.3"
+        version = "0.5.4"
     });
 });
 
@@ -82,6 +83,16 @@ app.MapGet("/api/knowledge/search", async (
     {
         return Results.BadRequest(new ApiError(exception.Message));
     }
+});
+
+app.MapGet("/api/knowledge/documents/{documentId:guid}/chunks/{chunkIndex:int}", async (
+    Guid documentId,
+    int chunkIndex,
+    KnowledgeSourceReader sourceReader,
+    CancellationToken cancellationToken) =>
+{
+    var source = await sourceReader.GetChunkAsync(documentId, chunkIndex, cancellationToken);
+    return source is null ? Results.NotFound() : Results.Ok(source);
 });
 
 app.MapPost("/api/knowledge/documents", async (
@@ -211,10 +222,39 @@ app.MapPost("/api/chat", async (
         return Results.BadRequest(new ApiError("Nội dung hội thoại không hợp lệ."));
     }
 
+    var knowledgeMode = string.IsNullOrWhiteSpace(request.KnowledgeMode)
+        ? "normal"
+        : request.KnowledgeMode.Trim().ToLowerInvariant();
+    if (knowledgeMode is not ("normal" or "documents-only"))
+    {
+        return Results.BadRequest(new ApiError("Chế độ trả lời theo dữ liệu không hợp lệ."));
+    }
+
+    if (!request.UseKnowledge && knowledgeMode == "documents-only")
+    {
+        return Results.BadRequest(new ApiError(
+            "Hãy bật dữ liệu riêng để sử dụng chế độ chỉ trả lời theo tài liệu."));
+    }
+
     try
     {
         var aiProvider = providerResolver.GetActive();
-        var grounded = await groundingService.GroundAsync(request.Messages, cancellationToken);
+        var grounded = request.UseKnowledge
+            ? await groundingService.GroundAsync(
+                request.Messages,
+                knowledgeMode,
+                cancellationToken)
+            : new KnowledgeGroundingResult(request.Messages, []);
+
+        if (knowledgeMode == "documents-only" && grounded.Sources.Count == 0)
+        {
+            return Results.Ok(new ChatResponse(
+                "Tôi chưa tìm thấy thông tin này trong kho dữ liệu.",
+                aiProvider.Model,
+                aiProvider.Name,
+                []));
+        }
+
         var answer = await aiProvider.ReplyAsync(grounded.Messages, cancellationToken);
         return Results.Ok(new ChatResponse(
             answer,

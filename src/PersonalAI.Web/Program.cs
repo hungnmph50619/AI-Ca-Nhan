@@ -55,7 +55,7 @@ app.MapGet("/api/status", (
         provider = aiProvider.Name,
         model = aiProvider.Model,
         teamProfile = teamProfiles.DefaultProfileId,
-        version = "0.6.0"
+        version = "0.6.1"
     });
 });
 

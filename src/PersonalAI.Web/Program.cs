@@ -22,6 +22,7 @@ builder.Services.Configure<FormOptions>(options =>
 builder.Services.AddDataProtection().SetApplicationName("PersonalAI");
 builder.Services.AddSingleton<IAiSettingsStore, AiSettingsStore>();
 builder.Services.AddSingleton<IKnowledgeDocumentStore, SqliteKnowledgeDocumentStore>();
+builder.Services.AddSingleton<IKnowledgeGroundingService, KnowledgeGroundingService>();
 builder.Services.AddHttpClient<GeminiChatService>(client =>
 {
     client.BaseAddress = new Uri("https://generativelanguage.googleapis.com/v1beta/");
@@ -51,7 +52,7 @@ app.MapGet("/api/status", (
         provider = aiProvider.Name,
         model = aiProvider.Model,
         teamProfile = teamProfiles.DefaultProfileId,
-        version = "0.5.2"
+        version = "0.5.3"
     });
 });
 
@@ -182,6 +183,7 @@ app.MapGet("/api/team-profiles", (ITeamProfileCatalog teamProfiles) =>
 app.MapPost("/api/chat", async (
     ChatRequest request,
     IAiProviderResolver providerResolver,
+    IKnowledgeGroundingService groundingService,
     CancellationToken cancellationToken) =>
 {
     if (request.Messages is null || request.Messages.Count == 0)
@@ -212,8 +214,13 @@ app.MapPost("/api/chat", async (
     try
     {
         var aiProvider = providerResolver.GetActive();
-        var answer = await aiProvider.ReplyAsync(request.Messages, cancellationToken);
-        return Results.Ok(new ChatResponse(answer, aiProvider.Model, aiProvider.Name));
+        var grounded = await groundingService.GroundAsync(request.Messages, cancellationToken);
+        var answer = await aiProvider.ReplyAsync(grounded.Messages, cancellationToken);
+        return Results.Ok(new ChatResponse(
+            answer,
+            aiProvider.Model,
+            aiProvider.Name,
+            grounded.Sources));
     }
     catch (InvalidOperationException exception)
     {

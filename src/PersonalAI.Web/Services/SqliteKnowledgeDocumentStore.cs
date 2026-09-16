@@ -21,6 +21,14 @@ public sealed class SqliteKnowledgeDocumentStore(
     private static readonly HashSet<string> AllowedExtensions =
         new(StringComparer.OrdinalIgnoreCase) { ".txt", ".md" };
 
+    private static readonly HashSet<string> SearchStopWords =
+        new(StringComparer.OrdinalIgnoreCase)
+        {
+            "bạn", "biết", "các", "có", "của", "cho", "đó", "được", "gì",
+            "giúp", "hãy", "không", "là", "mình", "một", "này", "những",
+            "nói", "tôi", "trả", "trong", "và", "về"
+        };
+
     private readonly SemaphoreSlim _initializationLock = new(1, 1);
     private readonly string _knowledgeDirectory = Path.Combine(
         Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
@@ -519,7 +527,7 @@ public sealed class SqliteKnowledgeDocumentStore(
 
     private static string BuildFtsQuery(string query)
     {
-        var tokens = Regex.Matches(
+        var allTokens = Regex.Matches(
                 query.Normalize(NormalizationForm.FormKC),
                 @"[\p{L}\p{N}]+")
             .Cast<Match>()
@@ -528,11 +536,16 @@ public sealed class SqliteKnowledgeDocumentStore(
             .Take(10)
             .ToArray();
 
-        if (tokens.Length == 0)
+        if (allTokens.Length == 0)
         {
             throw new KnowledgeDocumentValidationException(
                 "Nội dung tìm kiếm phải có chữ hoặc số.");
         }
+
+        var meaningfulTokens = allTokens
+            .Where(token => !SearchStopWords.Contains(token))
+            .ToArray();
+        var tokens = meaningfulTokens.Length > 0 ? meaningfulTokens : allTokens;
 
         return string.Join(" AND ", tokens.Select(token => $"\"{token}\"*"));
     }
@@ -558,7 +571,7 @@ public sealed class SqliteKnowledgeDocumentStore(
         if (!AllowedExtensions.Contains(Path.GetExtension(safeFileName)))
         {
             throw new KnowledgeDocumentValidationException(
-                "Phiên bản 0.5.2 chỉ nhận tệp TXT và Markdown (.md).");
+                "Phiên bản 0.5.3 chỉ nhận tệp TXT và Markdown (.md).");
         }
     }
 

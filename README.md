@@ -1,4 +1,4 @@
-# AI Cá Nhân — MVP v0.5.2
+# AI Cá Nhân — MVP v0.5.3
 
 Website chat bằng ASP.NET Core 8, mặc định dùng Gemini API, nhớ nhiều cuộc trò chuyện và có kho dữ liệu riêng chạy bằng SQLite. Kiến trúc nhà cung cấp AI đã được tách riêng để sau này có thể đổi Gemini, OpenAI hoặc mô hình chạy cục bộ.
 
@@ -13,6 +13,9 @@ Website chat bằng ASP.NET Core 8, mặc định dùng Gemini API, nhớ nhiề
 - Nội dung được tự chia thành các đoạn nhỏ có chồng lấn và lập chỉ mục tìm kiếm toàn văn bằng SQLite FTS5.
 - Có ô **Tìm trong dữ liệu** để xem trước tối đa 5 đoạn liên quan nhất ngay trong giao diện.
 - Tài liệu đã thêm từ v0.5.1 được tự lập chỉ mục khi ứng dụng khởi động, không cần tải lại.
+- Khi trò chuyện, hệ thống tự tìm tối đa 5 đoạn liên quan và bổ sung chúng vào ngữ cảnh Gemini/OpenAI.
+- Câu trả lời hiển thị tên tệp và số đoạn đã được dùng; thông tin nguồn vẫn được giữ khi tải lại trình duyệt.
+- Dữ liệu tài liệu được coi là nội dung tham khảo không đáng tin cậy, không phải chỉ dẫn hệ thống.
 - Backend giữ kín API key; trình duyệt không nhìn thấy khóa.
 - Chọn Gemini/OpenAI, model và nhập API key ngay trong giao diện.
 - API key được mã hóa và lưu ngoài thư mục dự án trên chính máy đang chạy ứng dụng.
@@ -21,7 +24,7 @@ Website chat bằng ASP.NET Core 8, mặc định dùng Gemini API, nhớ nhiề
 - Không cần cài máy chủ database; SQLite chạy nhúng và được Visual Studio tự khôi phục qua NuGet.
 - Có hồ sơ nền móng cho `Trợ lý cá nhân` và `Đội lập trình`; phiên bản này chưa tự chạy nhiều agent.
 
-v0.5.2 tìm kiếm hoàn toàn trên máy. Nội dung tài liệu **chưa được tự động gửi** đến Gemini/OpenAI và AI **chưa dùng tài liệu để trả lời**; đưa các đoạn liên quan vào ngữ cảnh AI và hiển thị nguồn là phạm vi v0.5.3.
+v0.5.3 giữ toàn bộ tệp và chỉ mục trên máy, nhưng khi trò chuyện sẽ **gửi tối đa 5 đoạn liên quan** đến nhà cung cấp AI đang chọn để tạo câu trả lời. Ứng dụng không gửi toàn bộ kho dữ liệu. Không tải tài liệu nhạy cảm nếu bạn không muốn nội dung liên quan được gửi đến Gemini/OpenAI.
 
 ## Yêu cầu
 
@@ -52,7 +55,7 @@ Trên Windows, cấu hình nằm tại:
 
 API key trong file đã được bảo vệ bằng ASP.NET Core Data Protection và không nằm trong thư mục Git. Giao diện chỉ nhận lại trạng thái cùng bốn ký tự cuối, không nhận key đầy đủ. Nếu chưa lưu bằng giao diện, ứng dụng vẫn hỗ trợ `GEMINI_API_KEY` và `OPENAI_API_KEY` làm phương án dự phòng.
 
-Ứng dụng v0.5.2 được thiết kế để chạy cá nhân trên máy của bạn. Trước khi đưa lên Internet hoặc cho nhiều người dùng, cần bổ sung đăng nhập và phân quyền vì màn hình cài đặt và kho dữ liệu hiện chưa có xác thực.
+Ứng dụng v0.5.3 được thiết kế để chạy cá nhân trên máy của bạn. Trước khi đưa lên Internet hoặc cho nhiều người dùng, cần bổ sung đăng nhập và phân quyền vì màn hình cài đặt và kho dữ liệu hiện chưa có xác thực.
 
 ## Kho dữ liệu được lưu ở đâu?
 
@@ -130,11 +133,11 @@ PersonalAI/
 ## Luồng xử lý
 
 ```text
-Chat:      Trình duyệt → POST /api/chat → IAiProvider → Gemini/OpenAI
+Chat:      Trình duyệt → POST /api/chat → tìm đoạn liên quan → IAiProvider → Gemini/OpenAI
 Kho dữ liệu: Trình duyệt → /api/knowledge/documents → SQLite + tệp cục bộ
 Tìm kiếm: Trình duyệt → /api/knowledge/search → SQLite FTS5 → các đoạn liên quan
 ```
 
-Lịch sử hội thoại hiện nằm trong `localStorage` của trình duyệt. v0.5.2 đã tách và tìm các đoạn liên quan cục bộ; v0.5.3 sẽ đưa những đoạn đó vào ngữ cảnh AI và hiển thị nguồn đã dùng. Lớp lưu trữ được tách riêng để sau này có thể chuyển từ SQLite sang PostgreSQL mà không phải viết lại giao diện.
+Lịch sử hội thoại và metadata nguồn hiện nằm trong `localStorage` của trình duyệt. v0.5.3 đã đưa các đoạn liên quan vào ngữ cảnh AI và hiển thị nguồn đã dùng; bước tiếp theo có thể bổ sung chế độ bật/tắt dữ liệu riêng, xem trích đoạn nguồn trực tiếp từ câu trả lời và đánh giá chất lượng truy xuất. Lớp lưu trữ được tách riêng để sau này có thể chuyển từ SQLite sang PostgreSQL mà không phải viết lại giao diện.
 
 Endpoint `GET /api/team-profiles` cho thấy các hồ sơ đội đã được khai báo. Đây mới là hợp đồng dữ liệu cho tương lai, chưa phải hệ thống tự động thực hiện hành động.

@@ -584,7 +584,12 @@ async function sendCurrentMessage(event) {
     const response = await fetch("/api/chat", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ messages: conversation.messages })
+      body: JSON.stringify({
+        messages: conversation.messages.map(message => ({
+          role: message.role,
+          content: message.content
+        }))
+      })
     });
     const payload = await response.json().catch(() => ({}));
 
@@ -592,7 +597,11 @@ async function sendCurrentMessage(event) {
       throw new Error(payload.error || "Không thể nhận câu trả lời từ AI.");
     }
 
-    conversation.messages.push({ role: "assistant", content: payload.message });
+    conversation.messages.push({
+      role: "assistant",
+      content: payload.message,
+      sources: normalizeSources(payload.sources)
+    });
     touchConversation(conversation);
     trimMessages(conversation);
     persistWorkspace();
@@ -613,13 +622,14 @@ function renderConversation() {
   elements.welcome.hidden = conversation.messages.length > 0;
 
   conversation.messages.forEach(message => {
-    elements.messages.appendChild(createMessageNode(message.role, message.content));
+    elements.messages.appendChild(
+      createMessageNode(message.role, message.content, message.sources));
   });
 
   scrollToBottom();
 }
 
-function createMessageNode(role, content) {
+function createMessageNode(role, content, sources = []) {
   const row = document.createElement("article");
   row.className = `message-row ${role}`;
 
@@ -631,8 +641,34 @@ function createMessageNode(role, content) {
   bubble.className = "bubble";
   bubble.innerHTML = role === "assistant" ? renderMarkdown(content) : escapeHtml(content).replaceAll("\n", "<br>");
 
+  const normalizedSources = normalizeSources(sources);
+  if (role === "assistant" && normalizedSources.length > 0) {
+    bubble.appendChild(createMessageSourcesNode(normalizedSources));
+  }
+
   row.append(avatar, bubble);
   return row;
+}
+
+function createMessageSourcesNode(sources) {
+  const section = documentElement("section", "message-sources");
+  const heading = documentElement(
+    "strong",
+    "message-sources-title",
+    `Nguồn dữ liệu đã dùng · ${sources.length}`);
+  const list = documentElement("div", "message-source-list");
+
+  sources.forEach(source => {
+    const item = documentElement(
+      "span",
+      "message-source",
+      `${source.fileName} · Đoạn ${source.chunkIndex}`);
+    item.title = `${source.fileName} — đoạn ${source.chunkIndex}`;
+    list.appendChild(item);
+  });
+
+  section.append(heading, list);
+  return section;
 }
 
 function appendTyping() {
@@ -927,7 +963,27 @@ function normalizeMessages(value) {
         ["user", "assistant"].includes(item?.role)
         && typeof item?.content === "string")
       .slice(-MAX_STORED_MESSAGES)
-      .map(item => ({ role: item.role, content: item.content }))
+      .map(item => ({
+        role: item.role,
+        content: item.content,
+        sources: item.role === "assistant" ? normalizeSources(item.sources) : []
+      }))
+    : [];
+}
+
+function normalizeSources(value) {
+  return Array.isArray(value)
+    ? value.filter(source =>
+        source
+        && typeof source.fileName === "string"
+        && Number.isInteger(Number(source.chunkIndex))
+        && Number(source.chunkIndex) > 0)
+      .slice(0, 5)
+      .map(source => ({
+        documentId: typeof source.documentId === "string" ? source.documentId : "",
+        fileName: source.fileName,
+        chunkIndex: Number(source.chunkIndex)
+      }))
     : [];
 }
 

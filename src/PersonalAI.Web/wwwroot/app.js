@@ -18,6 +18,8 @@ const state = {
   activeConversationId: initialWorkspace.activeConversationId,
   busy: false,
   settingsBusy: false,
+  knowledgeBusy: false,
+  knowledgeDocuments: [],
   configured: false,
   provider: "",
   model: ""
@@ -37,6 +39,18 @@ const elements = {
   sidebar: document.querySelector("#sidebar"),
   conversationList: document.querySelector("#conversationList"),
   conversationCount: document.querySelector("#conversationCount"),
+  knowledgeButton: document.querySelector("#knowledgeButton"),
+  knowledgeSidebarCount: document.querySelector("#knowledgeSidebarCount"),
+  knowledgeDialog: document.querySelector("#knowledgeDialog"),
+  knowledgeClose: document.querySelector("#knowledgeCloseButton"),
+  knowledgeUploadForm: document.querySelector("#knowledgeUploadForm"),
+  knowledgeFile: document.querySelector("#knowledgeFileInput"),
+  knowledgeDropzone: document.querySelector("#knowledgeDropzone"),
+  knowledgeFeedback: document.querySelector("#knowledgeFeedback"),
+  knowledgeSummary: document.querySelector("#knowledgeSummary"),
+  knowledgeList: document.querySelector("#knowledgeList"),
+  knowledgeEmpty: document.querySelector("#knowledgeEmpty"),
+  knowledgeRefresh: document.querySelector("#knowledgeRefreshButton"),
   settingsButton: document.querySelector("#settingsButton"),
   settingsDialog: document.querySelector("#settingsDialog"),
   settingsClose: document.querySelector("#settingsCloseButton"),
@@ -60,7 +74,7 @@ async function initialize() {
   localStorage.removeItem(LEGACY_MESSAGES_STORAGE_KEY);
   renderConversationList();
   renderConversation();
-  await refreshStatus();
+  await Promise.all([refreshStatus(), refreshKnowledgeDocuments(false)]);
   elements.input.focus();
 }
 
@@ -77,6 +91,30 @@ function bindEvents() {
   elements.clear.addEventListener("click", clearActiveConversation);
   elements.newChat.addEventListener("click", createNewConversation);
   elements.menu.addEventListener("click", () => elements.sidebar.classList.toggle("open"));
+  elements.knowledgeButton.addEventListener("click", openKnowledge);
+  elements.knowledgeClose.addEventListener("click", () => elements.knowledgeDialog.close());
+  elements.knowledgeUploadForm.addEventListener("submit", event => event.preventDefault());
+  elements.knowledgeFile.addEventListener("change", () => {
+    const file = elements.knowledgeFile.files?.[0];
+    if (file) uploadKnowledgeDocument(file);
+  });
+  elements.knowledgeRefresh.addEventListener("click", () => refreshKnowledgeDocuments(true));
+  ["dragenter", "dragover"].forEach(eventName => {
+    elements.knowledgeDropzone.addEventListener(eventName, event => {
+      event.preventDefault();
+      if (!state.knowledgeBusy) elements.knowledgeDropzone.classList.add("dragging");
+    });
+  });
+  ["dragleave", "drop"].forEach(eventName => {
+    elements.knowledgeDropzone.addEventListener(eventName, event => {
+      event.preventDefault();
+      elements.knowledgeDropzone.classList.remove("dragging");
+    });
+  });
+  elements.knowledgeDropzone.addEventListener("drop", event => {
+    const file = event.dataTransfer?.files?.[0];
+    if (file && !state.knowledgeBusy) uploadKnowledgeDocument(file);
+  });
   elements.settingsButton.addEventListener("click", openSettings);
   elements.settingsClose.addEventListener("click", () => elements.settingsDialog.close());
   elements.settingsForm.addEventListener("submit", event => {
@@ -241,6 +279,170 @@ function resetApiKeyVisibility() {
   elements.toggleApiKey.textContent = "Hiện";
   elements.toggleApiKey.setAttribute("aria-label", "Hiện API key");
   elements.toggleApiKey.setAttribute("aria-pressed", "false");
+}
+
+async function openKnowledge() {
+  elements.knowledgeDialog.showModal();
+  elements.sidebar.classList.remove("open");
+  await refreshKnowledgeDocuments(true);
+}
+
+async function refreshKnowledgeDocuments(showFeedback) {
+  if (state.knowledgeBusy) return;
+  setKnowledgeBusy(true);
+  if (showFeedback) setKnowledgeFeedback("Đang tải danh sách tài liệu…");
+
+  try {
+    const response = await fetch("/api/knowledge/documents", { cache: "no-store" });
+    const documents = await response.json().catch(() => []);
+    if (!response.ok) throw new Error(documents.error || "Không đọc được kho dữ liệu.");
+
+    state.knowledgeDocuments = Array.isArray(documents) ? documents : [];
+    renderKnowledgeDocuments();
+    if (showFeedback) setKnowledgeFeedback("");
+  } catch (error) {
+    if (showFeedback) setKnowledgeFeedback(error.message, "error");
+  } finally {
+    setKnowledgeBusy(false);
+  }
+}
+
+async function uploadKnowledgeDocument(file) {
+  if (state.knowledgeBusy) return;
+  if (file.size > 10 * 1024 * 1024) {
+    setKnowledgeFeedback("Tệp không được lớn hơn 10 MB.", "error");
+    elements.knowledgeFile.value = "";
+    return;
+  }
+
+  setKnowledgeBusy(true);
+  setKnowledgeFeedback(`Đang lưu “${file.name}”…`);
+
+  try {
+    const formData = new FormData();
+    formData.append("file", file);
+    const response = await fetch("/api/knowledge/documents", {
+      method: "POST",
+      body: formData
+    });
+    const document = await response.json().catch(() => ({}));
+    if (!response.ok) throw new Error(document.error || "Không tải được tài liệu.");
+
+    state.knowledgeDocuments = [
+      document,
+      ...state.knowledgeDocuments.filter(item => item.id !== document.id)
+    ];
+    renderKnowledgeDocuments();
+    setKnowledgeFeedback(`Đã lưu “${document.fileName}” trên máy này.`, "success");
+  } catch (error) {
+    setKnowledgeFeedback(error.message, "error");
+  } finally {
+    elements.knowledgeFile.value = "";
+    setKnowledgeBusy(false);
+  }
+}
+
+async function deleteKnowledgeDocument(document) {
+  if (state.knowledgeBusy) return;
+  if (!window.confirm(`Xóa tài liệu “${document.fileName}” khỏi kho dữ liệu?`)) return;
+
+  setKnowledgeBusy(true);
+  setKnowledgeFeedback(`Đang xóa “${document.fileName}”…`);
+
+  try {
+    const response = await fetch(`/api/knowledge/documents/${encodeURIComponent(document.id)}`, {
+      method: "DELETE"
+    });
+    if (!response.ok && response.status !== 404) {
+      const payload = await response.json().catch(() => ({}));
+      throw new Error(payload.error || "Không xóa được tài liệu.");
+    }
+
+    state.knowledgeDocuments = state.knowledgeDocuments.filter(item => item.id !== document.id);
+    renderKnowledgeDocuments();
+    setKnowledgeFeedback(`Đã xóa “${document.fileName}”.`, "success");
+  } catch (error) {
+    setKnowledgeFeedback(error.message, "error");
+  } finally {
+    setKnowledgeBusy(false);
+  }
+}
+
+function renderKnowledgeDocuments() {
+  const count = state.knowledgeDocuments.length;
+  elements.knowledgeSidebarCount.textContent = String(count);
+  elements.knowledgeSummary.textContent = `${count} tài liệu · lưu trên máy này`;
+  elements.knowledgeList.replaceChildren();
+  elements.knowledgeEmpty.hidden = count > 0;
+  elements.knowledgeList.hidden = count === 0;
+
+  state.knowledgeDocuments.forEach(document => {
+    elements.knowledgeList.appendChild(createKnowledgeDocumentNode(document));
+  });
+}
+
+function createKnowledgeDocumentNode(document) {
+  const item = documentElement("article", "knowledge-item");
+  item.setAttribute("role", "listitem");
+
+  const type = documentElement("div", "knowledge-type", document.fileType || "TXT");
+  const details = documentElement("div", "knowledge-details");
+  const name = documentElement("strong", "knowledge-name", document.fileName);
+  name.title = document.fileName;
+  const metadata = documentElement(
+    "span",
+    "knowledge-metadata",
+    `${formatFileSize(document.fileSize)} · ${Number(document.characterCount || 0).toLocaleString("vi-VN")} ký tự · ${formatDocumentDate(document.createdAt)}`);
+  details.append(name, metadata);
+
+  const status = documentElement("span", "knowledge-status", document.status === "ready" ? "Sẵn sàng" : "Đang xử lý");
+  const deleteButton = documentElement("button", "knowledge-delete", "Xóa");
+  deleteButton.type = "button";
+  deleteButton.setAttribute("aria-label", `Xóa ${document.fileName}`);
+  deleteButton.addEventListener("click", () => deleteKnowledgeDocument(document));
+
+  item.append(type, details, status, deleteButton);
+  return item;
+}
+
+function documentElement(tagName, className, text = "") {
+  const node = document.createElement(tagName);
+  node.className = className;
+  node.textContent = text;
+  return node;
+}
+
+function formatFileSize(bytes) {
+  const value = Number(bytes) || 0;
+  if (value < 1024) return `${value} B`;
+  if (value < 1024 * 1024) return `${(value / 1024).toFixed(1)} KB`;
+  return `${(value / (1024 * 1024)).toFixed(1)} MB`;
+}
+
+function formatDocumentDate(timestamp) {
+  const date = new Date(timestamp);
+  return Number.isNaN(date.getTime())
+    ? "Không rõ thời gian"
+    : date.toLocaleString("vi-VN", {
+        day: "2-digit",
+        month: "2-digit",
+        year: "numeric",
+        hour: "2-digit",
+        minute: "2-digit"
+      });
+}
+
+function setKnowledgeBusy(value) {
+  state.knowledgeBusy = value;
+  elements.knowledgeFile.disabled = value;
+  elements.knowledgeRefresh.disabled = value;
+  elements.knowledgeDropzone.classList.toggle("busy", value);
+  elements.knowledgeDropzone.setAttribute("aria-busy", String(value));
+}
+
+function setKnowledgeFeedback(message, type = "") {
+  elements.knowledgeFeedback.textContent = message;
+  elements.knowledgeFeedback.className = `settings-feedback knowledge-feedback ${type}`.trim();
 }
 
 async function refreshStatus() {

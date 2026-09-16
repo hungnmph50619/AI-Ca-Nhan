@@ -1,5 +1,6 @@
 using System.Net;
 using Microsoft.AspNetCore.DataProtection;
+using Microsoft.AspNetCore.Http.Features;
 using Microsoft.AspNetCore.Http.Json;
 using PersonalAI.Web.Models;
 using PersonalAI.Web.Options;
@@ -16,8 +17,11 @@ builder.Services.Configure<OpenAiOptions>(
     builder.Configuration.GetSection(OpenAiOptions.SectionName));
 builder.Services.Configure<JsonOptions>(options =>
     options.SerializerOptions.PropertyNamingPolicy = System.Text.Json.JsonNamingPolicy.CamelCase);
+builder.Services.Configure<FormOptions>(options =>
+    options.MultipartBodyLengthLimit = SqliteKnowledgeDocumentStore.MaximumFileSize + (64 * 1024));
 builder.Services.AddDataProtection().SetApplicationName("PersonalAI");
 builder.Services.AddSingleton<IAiSettingsStore, AiSettingsStore>();
+builder.Services.AddSingleton<IKnowledgeDocumentStore, SqliteKnowledgeDocumentStore>();
 builder.Services.AddHttpClient<GeminiChatService>(client =>
 {
     client.BaseAddress = new Uri("https://generativelanguage.googleapis.com/v1beta/");
@@ -47,8 +51,65 @@ app.MapGet("/api/status", (
         provider = aiProvider.Name,
         model = aiProvider.Model,
         teamProfile = teamProfiles.DefaultProfileId,
-        version = "0.4.0"
+        version = "0.5.1"
     });
+});
+
+app.MapGet("/api/knowledge/documents", async (
+    IKnowledgeDocumentStore knowledgeStore,
+    CancellationToken cancellationToken) =>
+{
+    var documents = await knowledgeStore.GetAllAsync(cancellationToken);
+    return Results.Ok(documents);
+});
+
+app.MapPost("/api/knowledge/documents", async (
+    HttpRequest request,
+    IKnowledgeDocumentStore knowledgeStore,
+    CancellationToken cancellationToken) =>
+{
+    if (!request.HasFormContentType)
+    {
+        return Results.BadRequest(new ApiError("Yêu cầu tải tệp không hợp lệ."));
+    }
+
+    try
+    {
+        var form = await request.ReadFormAsync(cancellationToken);
+        var file = form.Files.GetFile("file");
+        if (file is null || form.Files.Count != 1)
+        {
+            return Results.BadRequest(new ApiError("Hãy chọn đúng một tệp để tải lên."));
+        }
+
+        var document = await knowledgeStore.AddAsync(file, cancellationToken);
+        return Results.Created($"/api/knowledge/documents/{document.Id}", document);
+    }
+    catch (InvalidDataException)
+    {
+        return Results.Json(
+            new ApiError("Tệp tải lên vượt quá giới hạn 10 MB hoặc không hợp lệ."),
+            statusCode: StatusCodes.Status413PayloadTooLarge);
+    }
+    catch (KnowledgeDocumentValidationException exception)
+    {
+        return Results.BadRequest(new ApiError(exception.Message));
+    }
+    catch (DuplicateKnowledgeDocumentException exception)
+    {
+        return Results.Json(
+            new ApiError(exception.Message),
+            statusCode: StatusCodes.Status409Conflict);
+    }
+});
+
+app.MapDelete("/api/knowledge/documents/{documentId:guid}", async (
+    Guid documentId,
+    IKnowledgeDocumentStore knowledgeStore,
+    CancellationToken cancellationToken) =>
+{
+    var deleted = await knowledgeStore.DeleteAsync(documentId, cancellationToken);
+    return deleted ? Results.NoContent() : Results.NotFound();
 });
 
 app.MapGet("/api/settings/ai", (IAiSettingsStore settingsStore) =>

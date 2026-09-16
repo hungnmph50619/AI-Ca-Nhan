@@ -3,7 +3,7 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <meta name="description" content="Trợ lý AI cá nhân phiên bản 0.4">
+  <meta name="description" content="Trợ lý AI cá nhân phiên bản 0.5.1">
   <title>AI Cá Nhân</title>
   <link rel="stylesheet" href="styles.css">
 </head>
@@ -14,7 +14,7 @@
         <div class="brand-mark" aria-hidden="true">A</div>
         <div>
           <strong>AI Cá Nhân</strong>
-          <span>Phiên bản 0.4</span>
+          <span>Phiên bản 0.5.1</span>
         </div>
       </div>
 
@@ -30,9 +30,16 @@
         <div class="conversation-list" id="conversationList" role="list"></div>
       </section>
 
-      <button class="settings-button" id="settingsButton" type="button">
-        <span aria-hidden="true">⚙</span> Cài đặt AI
-      </button>
+      <div class="sidebar-tools">
+        <button class="settings-button" id="knowledgeButton" type="button">
+          <span aria-hidden="true">▣</span>
+          <span>Kho dữ liệu</span>
+          <span class="tool-count" id="knowledgeSidebarCount" aria-label="Số tài liệu">0</span>
+        </button>
+        <button class="settings-button" id="settingsButton" type="button">
+          <span aria-hidden="true">⚙</span> Cài đặt AI
+        </button>
+      </div>
 
       <div class="privacy-note">
         <span class="privacy-icon" aria-hidden="true">◇</span>
@@ -152,6 +159,63 @@
 
       <p class="security-copy">
         API key được mã hóa và lưu ngoài thư mục dự án. Giao diện không đọc lại key đầy đủ và Git không tải key lên GitHub.
+      </p>
+    </div>
+  </dialog>
+
+  <dialog class="settings-dialog knowledge-dialog" id="knowledgeDialog" aria-labelledby="knowledgeTitle">
+    <div class="settings-card knowledge-card">
+      <header class="settings-header">
+        <div>
+          <p class="eyebrow">DỮ LIỆU NẰM TRÊN MÁY NÀY</p>
+          <h2 id="knowledgeTitle">Kho dữ liệu</h2>
+        </div>
+        <button class="dialog-close" id="knowledgeCloseButton" type="button" aria-label="Đóng">×</button>
+      </header>
+
+      <div class="knowledge-intro">
+        <div class="knowledge-intro-icon" aria-hidden="true">▤</div>
+        <div>
+          <strong>Nền móng dữ liệu riêng v0.5.1</strong>
+          <p>Tải TXT hoặc Markdown để lưu an toàn trên máy. Bản tiếp theo sẽ chia nhỏ và tìm đoạn liên quan khi trò chuyện.</p>
+        </div>
+      </div>
+
+      <form id="knowledgeUploadForm">
+        <label class="knowledge-dropzone" id="knowledgeDropzone" for="knowledgeFileInput">
+          <span class="dropzone-icon" aria-hidden="true">↑</span>
+          <strong>Chọn hoặc thả tài liệu vào đây</strong>
+          <small>TXT, Markdown · tối đa 10 MB mỗi tệp</small>
+          <span class="secondary-button upload-label">Chọn tệp</span>
+        </label>
+        <input
+          class="visually-hidden"
+          id="knowledgeFileInput"
+          name="file"
+          type="file"
+          accept=".txt,.md,text/plain,text/markdown">
+      </form>
+
+      <div class="settings-feedback knowledge-feedback" id="knowledgeFeedback" role="status" aria-live="polite"></div>
+
+      <div class="knowledge-list-header">
+        <div>
+          <strong>Tài liệu đã lưu</strong>
+          <span id="knowledgeSummary">0 tài liệu</span>
+        </div>
+        <button class="icon-refresh" id="knowledgeRefreshButton" type="button" aria-label="Tải lại danh sách" title="Tải lại">↻</button>
+      </div>
+
+      <div class="knowledge-list" id="knowledgeList" role="list"></div>
+      <div class="knowledge-empty" id="knowledgeEmpty">
+        <span aria-hidden="true">◇</span>
+        <strong>Kho dữ liệu đang trống</strong>
+        <p>Tải tài liệu đầu tiên để chuẩn bị cho chức năng hỏi đáp theo dữ liệu riêng.</p>
+      </div>
+
+      <p class="security-copy">
+        Tệp và cơ sở dữ liệu được lưu ngoài thư mục Git tại <code>%LOCALAPPDATA%\PersonalAI\Knowledge</code>.
+        v0.5.1 chưa gửi nội dung tài liệu đến Gemini hoặc OpenAI.
       </p>
     </div>
   </dialog>

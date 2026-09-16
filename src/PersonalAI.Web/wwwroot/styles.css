@@ -154,6 +154,8 @@ button:focus-visible { outline: 3px solid rgba(217, 255, 67, .55); outline-offse
 .conversation-action:hover { color: var(--accent); background: rgba(255, 255, 255, .07); }
 .conversation-action.delete:hover { color: #ff9d90; }
 
+.sidebar-tools { display: grid; gap: 2px; }
+
 .settings-button {
   display: flex;
   align-items: center;
@@ -169,6 +171,18 @@ button:focus-visible { outline: 3px solid rgba(217, 255, 67, .55); outline-offse
 }
 
 .settings-button:hover { color: var(--accent); background: rgba(255, 255, 255, .04); }
+
+.tool-count {
+  min-width: 23px;
+  margin-left: auto;
+  padding: 2px 7px;
+  border-radius: 999px;
+  color: #c9d5cd;
+  background: rgba(255, 255, 255, .08);
+  font-size: 10px;
+  font-weight: 800;
+  text-align: center;
+}
 
 .privacy-note {
   display: flex;
@@ -371,6 +385,8 @@ button:focus-visible { outline: 3px solid rgba(217, 255, 67, .55); outline-offse
 
 .settings-dialog {
   width: min(560px, calc(100vw - 32px));
+  max-height: calc(100vh - 24px);
+  overflow-y: auto;
   padding: 0;
   border: 0;
   border-radius: 22px;
@@ -445,6 +461,181 @@ button:focus-visible { outline: 3px solid rgba(217, 255, 67, .55); outline-offse
 .secondary-button { border: 1px solid #cbd4ce; background: #fff; }
 .primary-button:disabled, .secondary-button:disabled { opacity: .5; cursor: wait; }
 .security-copy { margin: 22px 0 0; padding-top: 17px; border-top: 1px solid var(--line); color: var(--muted); font-size: 12px; line-height: 1.55; }
+.security-copy code { color: #506057; font-family: "Cascadia Code", Consolas, monospace; font-size: .95em; overflow-wrap: anywhere; }
+
+.knowledge-dialog { width: min(720px, calc(100vw - 32px)); }
+
+.knowledge-intro {
+  display: flex;
+  align-items: flex-start;
+  gap: 13px;
+  margin: -4px 0 20px;
+  padding: 14px;
+  border: 1px solid #dce5d3;
+  border-radius: 13px;
+  background: #f7faef;
+}
+
+.knowledge-intro-icon {
+  flex: 0 0 auto;
+  width: 36px;
+  height: 36px;
+  display: grid;
+  place-items: center;
+  border-radius: 10px;
+  color: var(--dark);
+  background: var(--accent);
+  font-weight: 900;
+}
+
+.knowledge-intro strong { font-size: 13px; }
+.knowledge-intro p { margin: 4px 0 0; color: var(--muted); font-size: 12px; line-height: 1.55; }
+
+.knowledge-dropzone {
+  min-height: 152px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-direction: column;
+  gap: 7px;
+  padding: 22px;
+  border: 1.5px dashed #b8c5bd;
+  border-radius: 15px;
+  background: #fbfcfa;
+  text-align: center;
+  cursor: pointer;
+  transition: .18s ease;
+}
+
+.knowledge-dropzone:hover,
+.knowledge-dropzone.dragging {
+  border-color: #8bab21;
+  background: #f8fce9;
+  box-shadow: 0 0 0 4px rgba(159, 202, 0, .08);
+}
+
+.knowledge-dropzone.busy { opacity: .58; cursor: wait; }
+.dropzone-icon { color: #7f9f13; font-size: 27px; font-weight: 800; line-height: 1; }
+.knowledge-dropzone strong { font-size: 14px; }
+.knowledge-dropzone small { color: var(--muted); font-size: 12px; }
+.upload-label { margin-top: 7px; padding: 8px 13px; font-size: 12px; }
+
+.visually-hidden {
+  position: absolute !important;
+  width: 1px !important;
+  height: 1px !important;
+  padding: 0 !important;
+  margin: -1px !important;
+  overflow: hidden !important;
+  clip: rect(0, 0, 0, 0) !important;
+  white-space: nowrap !important;
+  border: 0 !important;
+}
+
+.knowledge-feedback { margin-top: 12px; }
+
+.knowledge-list-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 14px;
+  margin: 18px 0 9px;
+}
+
+.knowledge-list-header strong,
+.knowledge-list-header span { display: block; }
+.knowledge-list-header strong { font-size: 14px; }
+.knowledge-list-header span { margin-top: 2px; color: var(--muted); font-size: 11px; }
+
+.icon-refresh {
+  width: 34px;
+  height: 34px;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  color: #5f6d65;
+  background: #fff;
+  font-size: 18px;
+  cursor: pointer;
+}
+
+.icon-refresh:hover { border-color: #aebbb3; color: var(--ink); }
+.icon-refresh:disabled { opacity: .45; cursor: wait; }
+
+.knowledge-list {
+  max-height: 245px;
+  overflow-y: auto;
+  display: grid;
+  gap: 7px;
+  padding-right: 3px;
+  scrollbar-width: thin;
+  scrollbar-color: #c4cec8 transparent;
+}
+
+.knowledge-item {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) auto auto;
+  align-items: center;
+  gap: 11px;
+  min-height: 64px;
+  padding: 9px 10px;
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  background: #fff;
+}
+
+.knowledge-type {
+  width: 42px;
+  height: 42px;
+  display: grid;
+  place-items: center;
+  border-radius: 10px;
+  color: #435047;
+  background: #edf1ee;
+  font-size: 10px;
+  font-weight: 900;
+}
+
+.knowledge-details { min-width: 0; }
+.knowledge-name,
+.knowledge-metadata { display: block; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.knowledge-name { font-size: 13px; }
+.knowledge-metadata { margin-top: 4px; color: var(--muted); font-size: 10px; }
+
+.knowledge-status {
+  padding: 4px 8px;
+  border-radius: 999px;
+  color: #4f710b;
+  background: #eff7dd;
+  font-size: 10px;
+  font-weight: 750;
+  white-space: nowrap;
+}
+
+.knowledge-delete {
+  padding: 7px 8px;
+  border: 0;
+  border-radius: 8px;
+  color: #8a5a54;
+  background: transparent;
+  font-size: 11px;
+  cursor: pointer;
+}
+
+.knowledge-delete:hover { color: #a53f34; background: #fff0ed; }
+
+.knowledge-empty {
+  padding: 20px;
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  color: var(--muted);
+  text-align: center;
+  background: #fbfcfa;
+}
+
+.knowledge-empty[hidden] { display: none; }
+.knowledge-empty > span { display: block; margin-bottom: 5px; color: #91a096; font-size: 20px; }
+.knowledge-empty strong { color: var(--ink); font-size: 13px; }
+.knowledge-empty p { max-width: 420px; margin: 5px auto 0; font-size: 11px; line-height: 1.5; }
 
 @media (max-width: 780px) {
   .app-shell { grid-template-columns: 1fr; }
@@ -462,4 +653,6 @@ button:focus-visible { outline: 3px solid rgba(217, 255, 67, .55); outline-offse
   .settings-card { padding: 22px 18px; }
   .settings-actions { flex-direction: column-reverse; }
   .primary-button, .secondary-button { width: 100%; }
+  .knowledge-item { grid-template-columns: auto minmax(0, 1fr) auto; }
+  .knowledge-status { display: none; }
 }

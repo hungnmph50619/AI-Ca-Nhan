@@ -1,0 +1,90 @@
+<!doctype html>
+<html lang="vi">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="description" content="Trợ lý AI cá nhân phiên bản 0.1">
+  <title>AI Cá Nhân</title>
+  <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+  <div class="app-shell">
+    <aside class="sidebar" id="sidebar">
+      <div class="brand">
+        <div class="brand-mark" aria-hidden="true">A</div>
+        <div>
+          <strong>AI Cá Nhân</strong>
+          <span>Phiên bản 0.1</span>
+        </div>
+      </div>
+
+      <button class="new-chat" id="newChatButton" type="button">
+        <span aria-hidden="true">＋</span> Cuộc trò chuyện mới
+      </button>
+
+      <div class="sidebar-spacer"></div>
+
+      <div class="privacy-note">
+        <span class="privacy-icon" aria-hidden="true">◇</span>
+        <div>
+          <strong>Thiết kế riêng tư</strong>
+          <p>Khóa API chỉ nằm ở máy chủ, không gửi xuống trình duyệt.</p>
+        </div>
+      </div>
+    </aside>
+
+    <main class="chat-panel">
+      <header class="topbar">
+        <button class="menu-button" id="menuButton" type="button" aria-label="Mở menu">☰</button>
+        <div class="model-status">
+          <span class="status-dot" id="statusDot"></span>
+          <span id="statusText">Đang kiểm tra kết nối…</span>
+        </div>
+        <button class="clear-button" id="clearButton" type="button">Xóa hội thoại</button>
+      </header>
+
+      <section class="messages" id="messages" aria-live="polite">
+        <div class="welcome" id="welcome">
+          <div class="welcome-orb" aria-hidden="true">✦</div>
+          <p class="eyebrow">TRỢ LÝ CỦA RIÊNG BẠN</p>
+          <h1>Hôm nay tôi có thể<br>giúp gì cho bạn?</h1>
+          <p class="welcome-copy">Hỏi bất kỳ điều gì. Trợ lý sẽ trả lời theo bộ nguyên tắc bạn kiểm soát.</p>
+
+          <div class="suggestions">
+            <button type="button" data-prompt="Giải thích AI hoạt động như thế nào bằng ngôn ngữ dễ hiểu.">
+              <span>01</span>
+              <strong>Giải thích một chủ đề</strong>
+              <small>Ngắn gọn, dễ hiểu</small>
+            </button>
+            <button type="button" data-prompt="Hãy giúp tôi lập kế hoạch học AI trong 7 ngày.">
+              <span>02</span>
+              <strong>Lập một kế hoạch</strong>
+              <small>Cụ thể, có từng bước</small>
+            </button>
+            <button type="button" data-prompt="Hãy tóm tắt đoạn văn tôi sắp gửi.">
+              <span>03</span>
+              <strong>Tóm tắt nội dung</strong>
+              <small>Giữ lại ý quan trọng</small>
+            </button>
+          </div>
+        </div>
+      </section>
+
+      <footer class="composer-wrap">
+        <form class="composer" id="chatForm">
+          <textarea
+            id="messageInput"
+            rows="1"
+            maxlength="12000"
+            placeholder="Nhắn tin cho AI của bạn…"
+            aria-label="Tin nhắn"></textarea>
+          <button class="send-button" id="sendButton" type="submit" aria-label="Gửi tin nhắn">↑</button>
+        </form>
+        <p class="disclaimer">AI có thể mắc lỗi. Hãy kiểm tra thông tin quan trọng.</p>
+      </footer>
+    </main>
+  </div>
+
+  <script src="app.js" defer></script>
+</body>
+</html>

@@ -1,6 +1,6 @@
 using System.Net;
+using Microsoft.AspNetCore.DataProtection;
 using Microsoft.AspNetCore.Http.Json;
-using Microsoft.Extensions.Options;
 using PersonalAI.Web.Models;
 using PersonalAI.Web.Options;
 using PersonalAI.Web.Services;
@@ -16,6 +16,8 @@ builder.Services.Configure<OpenAiOptions>(
     builder.Configuration.GetSection(OpenAiOptions.SectionName));
 builder.Services.Configure<JsonOptions>(options =>
     options.SerializerOptions.PropertyNamingPolicy = System.Text.Json.JsonNamingPolicy.CamelCase);
+builder.Services.AddDataProtection().SetApplicationName("PersonalAI");
+builder.Services.AddSingleton<IAiSettingsStore, AiSettingsStore>();
 builder.Services.AddHttpClient<GeminiChatService>(client =>
 {
     client.BaseAddress = new Uri("https://generativelanguage.googleapis.com/v1beta/");
@@ -26,13 +28,7 @@ builder.Services.AddHttpClient<OpenAiChatService>(client =>
     client.BaseAddress = new Uri("https://api.openai.com/v1/");
     client.Timeout = TimeSpan.FromSeconds(90);
 });
-builder.Services.AddScoped<IAiProvider>(services =>
-{
-    var options = services.GetRequiredService<IOptions<AiOptions>>().Value;
-    return options.Provider.Equals("OpenAI", StringComparison.OrdinalIgnoreCase)
-        ? services.GetRequiredService<OpenAiChatService>()
-        : services.GetRequiredService<GeminiChatService>();
-});
+builder.Services.AddScoped<IAiProviderResolver, AiProviderResolver>();
 builder.Services.AddSingleton<ITeamProfileCatalog, TeamProfileCatalog>();
 
 var app = builder.Build();
@@ -41,15 +37,59 @@ app.UseDefaultFiles();
 app.UseStaticFiles();
 
 app.MapGet("/api/status", (
-    IAiProvider aiProvider,
-    ITeamProfileCatalog teamProfiles) => Results.Ok(new
+    IAiProviderResolver providerResolver,
+    ITeamProfileCatalog teamProfiles) =>
 {
-    configured = aiProvider.IsConfigured,
-    provider = aiProvider.Name,
-    model = aiProvider.Model,
-    teamProfile = teamProfiles.DefaultProfileId,
-    version = "0.2.0"
-}));
+    var aiProvider = providerResolver.GetActive();
+    return Results.Ok(new
+    {
+        configured = aiProvider.IsConfigured,
+        provider = aiProvider.Name,
+        model = aiProvider.Model,
+        teamProfile = teamProfiles.DefaultProfileId,
+        version = "0.4.0"
+    });
+});
+
+app.MapGet("/api/settings/ai", (IAiSettingsStore settingsStore) =>
+    Results.Ok(settingsStore.GetPublicSettings()));
+
+app.MapPost("/api/settings/ai", async (
+    UpdateAiSettingsRequest request,
+    IAiSettingsStore settingsStore,
+    CancellationToken cancellationToken) =>
+{
+    try
+    {
+        await settingsStore.SaveAsync(request, cancellationToken);
+        return Results.Ok(settingsStore.GetPublicSettings());
+    }
+    catch (ArgumentException exception)
+    {
+        return Results.BadRequest(new ApiError(exception.Message));
+    }
+});
+
+app.MapPost("/api/settings/ai/test", async (
+    IAiProviderResolver providerResolver,
+    CancellationToken cancellationToken) =>
+{
+    try
+    {
+        var provider = providerResolver.GetActive();
+        await provider.ReplyAsync(
+            [new ChatMessage("user", "Chỉ trả lời đúng một từ: OK")],
+            cancellationToken);
+        return Results.Ok(new AiConnectionTestResponse(true, "Kết nối AI thành công."));
+    }
+    catch (Exception exception) when (
+        exception is InvalidOperationException or HttpRequestException or TaskCanceledException)
+    {
+        return Results.Json(
+            new AiConnectionTestResponse(false, exception.Message),
+            statusCode: StatusCodes.Status502BadGateway);
+    }
+});
 
 app.MapGet("/api/team-profiles", (ITeamProfileCatalog teamProfiles) =>
     Results.Ok(new
@@ -60,7 +100,7 @@ app.MapGet("/api/team-profiles", (ITeamProfileCatalog teamProfiles) =>
 
 app.MapPost("/api/chat", async (
     ChatRequest request,
-    IAiProvider aiProvider,
+    IAiProviderResolver providerResolver,
     CancellationToken cancellationToken) =>
 {
     if (request.Messages is null || request.Messages.Count == 0)
@@ -90,6 +130,7 @@ app.MapPost("/api/chat", async (
 
     try
     {
+        var aiProvider = providerResolver.GetActive();
         var answer = await aiProvider.ReplyAsync(request.Messages, cancellationToken);
         return Results.Ok(new ChatResponse(answer, aiProvider.Model, aiProvider.Name));
     }

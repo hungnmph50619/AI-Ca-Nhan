@@ -11,17 +11,20 @@ public sealed class OpenAiChatService : IAiProvider
 {
     private readonly HttpClient _httpClient;
     private readonly OpenAiOptions _options;
+    private readonly IAiSettingsStore _settingsStore;
     private readonly ILogger<OpenAiChatService> _logger;
     private readonly string _instructions;
 
     public OpenAiChatService(
         HttpClient httpClient,
         IOptions<OpenAiOptions> options,
+        IAiSettingsStore settingsStore,
         IWebHostEnvironment environment,
         ILogger<OpenAiChatService> logger)
     {
         _httpClient = httpClient;
         _options = options.Value;
+        _settingsStore = settingsStore;
         _logger = logger;
 
         var constitutionPath = Path.Combine(environment.ContentRootPath, "AI-CONSTITUTION.md");
@@ -32,7 +35,7 @@ public sealed class OpenAiChatService : IAiProvider
 
     public string Name => "OpenAI";
 
-    public string Model => _options.Model;
+    public string Model => _settingsStore.GetModel(Name);
 
     public bool IsConfigured => !string.IsNullOrWhiteSpace(GetApiKey());
 
@@ -44,12 +47,12 @@ public sealed class OpenAiChatService : IAiProvider
         if (string.IsNullOrWhiteSpace(apiKey))
         {
             throw new InvalidOperationException(
-                "Chưa cấu hình OPENAI_API_KEY. Hãy xem hướng dẫn trong README.md.");
+                "Chưa có OpenAI API key. Hãy mở Cài đặt AI để nhập key.");
         }
 
         var payload = new
         {
-            model = _options.Model,
+            model = Model,
             instructions = _instructions,
             input = messages.Select(message => new
             {
@@ -94,9 +97,7 @@ public sealed class OpenAiChatService : IAiProvider
         return outputText;
     }
 
-    private string GetApiKey() =>
-        Environment.GetEnvironmentVariable("OPENAI_API_KEY")
-        ?? _options.ApiKey;
+    private string GetApiKey() => _settingsStore.GetApiKey(Name);
 
     private static string ReadOutputText(string responseBody)
     {

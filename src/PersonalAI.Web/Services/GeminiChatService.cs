@@ -10,17 +10,20 @@ public sealed class GeminiChatService : IAiProvider
 {
     private readonly HttpClient _httpClient;
     private readonly GeminiOptions _options;
+    private readonly IAiSettingsStore _settingsStore;
     private readonly ILogger<GeminiChatService> _logger;
     private readonly string _instructions;
 
     public GeminiChatService(
         HttpClient httpClient,
         IOptions<GeminiOptions> options,
+        IAiSettingsStore settingsStore,
         IWebHostEnvironment environment,
         ILogger<GeminiChatService> logger)
     {
         _httpClient = httpClient;
         _options = options.Value;
+        _settingsStore = settingsStore;
         _logger = logger;
 
         var constitutionPath = Path.Combine(environment.ContentRootPath, "AI-CONSTITUTION.md");
@@ -31,7 +34,7 @@ public sealed class GeminiChatService : IAiProvider
 
     public string Name => "Gemini";
 
-    public string Model => _options.Model;
+    public string Model => _settingsStore.GetModel(Name);
 
     public bool IsConfigured => !string.IsNullOrWhiteSpace(GetApiKey());
 
@@ -43,7 +46,7 @@ public sealed class GeminiChatService : IAiProvider
         if (string.IsNullOrWhiteSpace(apiKey))
         {
             throw new InvalidOperationException(
-                "Chưa cấu hình GEMINI_API_KEY. Hãy xem hướng dẫn trong README.md.");
+                "Chưa có Gemini API key. Hãy mở Cài đặt AI để nhập key.");
         }
 
         var payload = new
@@ -65,7 +68,7 @@ public sealed class GeminiChatService : IAiProvider
             }
         };
 
-        var model = Uri.EscapeDataString(_options.Model);
+        var model = Uri.EscapeDataString(Model);
         using var request = new HttpRequestMessage(
             HttpMethod.Post,
             $"models/{model}:generateContent")
@@ -103,9 +106,7 @@ public sealed class GeminiChatService : IAiProvider
         return outputText;
     }
 
-    private string GetApiKey() =>
-        Environment.GetEnvironmentVariable("GEMINI_API_KEY")
-        ?? _options.ApiKey;
+    private string GetApiKey() => _settingsStore.GetApiKey(Name);
 
     private static string ReadOutputText(string responseBody)
     {

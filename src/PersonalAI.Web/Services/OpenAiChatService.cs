@@ -1,3 +1,4 @@
+using System.Net;
 using System.Net.Http.Headers;
 using System.Text;
 using System.Text.Json;
@@ -9,6 +10,8 @@ namespace PersonalAI.Web.Services;
 
 public sealed class OpenAiChatService : IAiProvider
 {
+    private const int MaximumAttempts = 3;
+
     private readonly HttpClient _httpClient;
     private readonly OpenAiOptions _options;
     private readonly IAiSettingsStore _settingsStore;
@@ -63,41 +66,97 @@ public sealed class OpenAiChatService : IAiProvider
             store = false
         };
 
-        using var request = new HttpRequestMessage(HttpMethod.Post, "responses")
-        {
-            Content = new StringContent(
-                JsonSerializer.Serialize(payload),
-                Encoding.UTF8,
-                "application/json")
-        };
-        request.Headers.Authorization = new AuthenticationHeaderValue("Bearer", apiKey);
+        var requestBody = JsonSerializer.Serialize(payload);
 
-        using var response = await _httpClient.SendAsync(request, cancellationToken);
-        var responseBody = await response.Content.ReadAsStringAsync(cancellationToken);
-
-        if (!response.IsSuccessStatusCode)
+        for (var attempt = 1; attempt <= MaximumAttempts; attempt++)
         {
-            var detail = ReadApiError(responseBody);
-            _logger.LogWarning(
-                "OpenAI API returned {StatusCode}: {Detail}",
-                (int)response.StatusCode,
-                detail);
-            throw new HttpRequestException(
-                $"OpenAI API trả về lỗi {(int)response.StatusCode}: {detail}",
-                null,
-                response.StatusCode);
+            try
+            {
+                using var request = new HttpRequestMessage(HttpMethod.Post, "responses")
+                {
+                    Content = new StringContent(
+                        requestBody,
+                        Encoding.UTF8,
+                        "application/json")
+                };
+                request.Headers.Authorization = new AuthenticationHeaderValue("Bearer", apiKey);
+
+                using var response = await _httpClient.SendAsync(request, cancellationToken);
+                var responseBody = await response.Content.ReadAsStringAsync(cancellationToken);
+
+                if (!response.IsSuccessStatusCode)
+                {
+                    var detail = ReadApiError(responseBody);
+                    if (IsTransientStatusCode(response.StatusCode) && attempt < MaximumAttempts)
+                    {
+                        var delay = GetRetryDelay(attempt);
+                        _logger.LogWarning(
+                            "OpenAI API returned transient {StatusCode} on attempt {Attempt}/{MaximumAttempts}. Retrying in {DelayMs} ms: {Detail}",
+                            (int)response.StatusCode,
+                            attempt,
+                            MaximumAttempts,
+                            delay.TotalMilliseconds,
+                            detail);
+                        await Task.Delay(delay, cancellationToken);
+                        continue;
+                    }
+
+                    _logger.LogWarning(
+                        "OpenAI API returned {StatusCode}: {Detail}",
+                        (int)response.StatusCode,
+                        detail);
+                    throw new HttpRequestException(
+                        $"OpenAI API trả về lỗi {(int)response.StatusCode}: {detail}",
+                        null,
+                        response.StatusCode);
+                }
+
+                var outputText = ReadOutputText(responseBody);
+                if (string.IsNullOrWhiteSpace(outputText))
+                {
+                    throw new InvalidOperationException("API không trả về nội dung văn bản.");
+                }
+
+                if (attempt > 1)
+                {
+                    _logger.LogInformation(
+                        "OpenAI request succeeded on retry attempt {Attempt}/{MaximumAttempts}.",
+                        attempt,
+                        MaximumAttempts);
+                }
+
+                return outputText;
+            }
+            catch (HttpRequestException exception) when (
+                exception.StatusCode is null
+                && attempt < MaximumAttempts
+                && !cancellationToken.IsCancellationRequested)
+            {
+                var delay = GetRetryDelay(attempt);
+                _logger.LogWarning(
+                    exception,
+                    "OpenAI network request failed on attempt {Attempt}/{MaximumAttempts}. Retrying in {DelayMs} ms.",
+                    attempt,
+                    MaximumAttempts,
+                    delay.TotalMilliseconds);
+                await Task.Delay(delay, cancellationToken);
+            }
         }
 
-        var outputText = ReadOutputText(responseBody);
-        if (string.IsNullOrWhiteSpace(outputText))
-        {
-            throw new InvalidOperationException("API không trả về nội dung văn bản.");
-        }
-
-        return outputText;
+        throw new HttpRequestException("OpenAI không thể xử lý yêu cầu sau nhiều lần thử.");
     }
 
     private string GetApiKey() => _settingsStore.GetApiKey(Name);
+
+    private static bool IsTransientStatusCode(HttpStatusCode statusCode) =>
+        statusCode is HttpStatusCode.TooManyRequests
+            or HttpStatusCode.InternalServerError
+            or HttpStatusCode.BadGateway
+            or HttpStatusCode.ServiceUnavailable
+            or HttpStatusCode.GatewayTimeout;
+
+    private static TimeSpan GetRetryDelay(int failedAttempt) =>
+        TimeSpan.FromSeconds(Math.Pow(2, failedAttempt - 1));
 
     private static string ReadOutputText(string responseBody)
     {

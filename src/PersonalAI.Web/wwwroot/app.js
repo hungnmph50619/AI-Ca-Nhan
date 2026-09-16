@@ -19,6 +19,7 @@ const state = {
   busy: false,
   settingsBusy: false,
   knowledgeBusy: false,
+  knowledgeSearchBusy: false,
   knowledgeDocuments: [],
   configured: false,
   provider: "",
@@ -51,6 +52,12 @@ const elements = {
   knowledgeList: document.querySelector("#knowledgeList"),
   knowledgeEmpty: document.querySelector("#knowledgeEmpty"),
   knowledgeRefresh: document.querySelector("#knowledgeRefreshButton"),
+  knowledgeSearchForm: document.querySelector("#knowledgeSearchForm"),
+  knowledgeSearchInput: document.querySelector("#knowledgeSearchInput"),
+  knowledgeSearchButton: document.querySelector("#knowledgeSearchButton"),
+  knowledgeSearchResults: document.querySelector("#knowledgeSearchResults"),
+  knowledgeSearchSummary: document.querySelector("#knowledgeSearchSummary"),
+  knowledgeSearchList: document.querySelector("#knowledgeSearchList"),
   settingsButton: document.querySelector("#settingsButton"),
   settingsDialog: document.querySelector("#settingsDialog"),
   settingsClose: document.querySelector("#settingsCloseButton"),
@@ -99,6 +106,10 @@ function bindEvents() {
     if (file) uploadKnowledgeDocument(file);
   });
   elements.knowledgeRefresh.addEventListener("click", () => refreshKnowledgeDocuments(true));
+  elements.knowledgeSearchForm.addEventListener("submit", searchKnowledge);
+  elements.knowledgeSearchInput.addEventListener("input", () => {
+    if (!elements.knowledgeSearchInput.value.trim()) clearKnowledgeSearch();
+  });
   ["dragenter", "dragover"].forEach(eventName => {
     elements.knowledgeDropzone.addEventListener(eventName, event => {
       event.preventDefault();
@@ -299,6 +310,7 @@ async function refreshKnowledgeDocuments(showFeedback) {
 
     state.knowledgeDocuments = Array.isArray(documents) ? documents : [];
     renderKnowledgeDocuments();
+    if (state.knowledgeDocuments.length === 0) clearKnowledgeSearch();
     if (showFeedback) setKnowledgeFeedback("");
   } catch (error) {
     if (showFeedback) setKnowledgeFeedback(error.message, "error");
@@ -333,6 +345,7 @@ async function uploadKnowledgeDocument(file) {
       ...state.knowledgeDocuments.filter(item => item.id !== document.id)
     ];
     renderKnowledgeDocuments();
+    clearKnowledgeSearch();
     setKnowledgeFeedback(`Đã lưu “${document.fileName}” trên máy này.`, "success");
   } catch (error) {
     setKnowledgeFeedback(error.message, "error");
@@ -360,6 +373,7 @@ async function deleteKnowledgeDocument(document) {
 
     state.knowledgeDocuments = state.knowledgeDocuments.filter(item => item.id !== document.id);
     renderKnowledgeDocuments();
+    clearKnowledgeSearch();
     setKnowledgeFeedback(`Đã xóa “${document.fileName}”.`, "success");
   } catch (error) {
     setKnowledgeFeedback(error.message, "error");
@@ -379,6 +393,8 @@ function renderKnowledgeDocuments() {
   state.knowledgeDocuments.forEach(document => {
     elements.knowledgeList.appendChild(createKnowledgeDocumentNode(document));
   });
+
+  updateKnowledgeSearchControls();
 }
 
 function createKnowledgeDocumentNode(document) {
@@ -392,7 +408,7 @@ function createKnowledgeDocumentNode(document) {
   const metadata = documentElement(
     "span",
     "knowledge-metadata",
-    `${formatFileSize(document.fileSize)} · ${Number(document.characterCount || 0).toLocaleString("vi-VN")} ký tự · ${formatDocumentDate(document.createdAt)}`);
+    `${formatFileSize(document.fileSize)} · ${Number(document.characterCount || 0).toLocaleString("vi-VN")} ký tự · ${Number(document.chunkCount || 0).toLocaleString("vi-VN")} đoạn · ${formatDocumentDate(document.createdAt)}`);
   details.append(name, metadata);
 
   const status = documentElement("span", "knowledge-status", document.status === "ready" ? "Sẵn sàng" : "Đang xử lý");
@@ -438,11 +454,91 @@ function setKnowledgeBusy(value) {
   elements.knowledgeRefresh.disabled = value;
   elements.knowledgeDropzone.classList.toggle("busy", value);
   elements.knowledgeDropzone.setAttribute("aria-busy", String(value));
+  updateKnowledgeSearchControls();
 }
 
 function setKnowledgeFeedback(message, type = "") {
   elements.knowledgeFeedback.textContent = message;
   elements.knowledgeFeedback.className = `settings-feedback knowledge-feedback ${type}`.trim();
+}
+
+async function searchKnowledge(event) {
+  event.preventDefault();
+  if (state.knowledgeBusy || state.knowledgeSearchBusy) return;
+  if (!elements.knowledgeSearchForm.reportValidity()) return;
+
+  const query = elements.knowledgeSearchInput.value.trim();
+  if (query.length < 2) return;
+
+  setKnowledgeSearchBusy(true);
+  elements.knowledgeSearchResults.hidden = false;
+  elements.knowledgeSearchSummary.textContent = "Đang tìm…";
+  elements.knowledgeSearchList.replaceChildren();
+
+  try {
+    const response = await fetch(
+      `/api/knowledge/search?query=${encodeURIComponent(query)}&limit=5`,
+      { cache: "no-store" });
+    const payload = await response.json().catch(() => ({}));
+    if (!response.ok) throw new Error(payload.error || "Không tìm được trong kho dữ liệu.");
+
+    renderKnowledgeSearchResults(payload);
+  } catch (error) {
+    elements.knowledgeSearchSummary.textContent = "Không thể tìm kiếm";
+    elements.knowledgeSearchList.appendChild(
+      documentElement("p", "knowledge-search-empty error", error.message));
+  } finally {
+    setKnowledgeSearchBusy(false);
+  }
+}
+
+function renderKnowledgeSearchResults(payload) {
+  const results = Array.isArray(payload.results) ? payload.results : [];
+  elements.knowledgeSearchResults.hidden = false;
+  elements.knowledgeSearchSummary.textContent = results.length > 0
+    ? `${results.length} đoạn liên quan nhất`
+    : "Không có đoạn phù hợp";
+  elements.knowledgeSearchList.replaceChildren();
+
+  if (results.length === 0) {
+    elements.knowledgeSearchList.appendChild(
+      documentElement(
+        "p",
+        "knowledge-search-empty",
+        "Thử dùng từ khóa ngắn hơn hoặc từ xuất hiện trong tài liệu."));
+    return;
+  }
+
+  results.forEach(result => {
+    const item = documentElement("article", "knowledge-search-item");
+    const heading = documentElement("div", "knowledge-search-item-heading");
+    heading.append(
+      documentElement("strong", "", result.fileName),
+      documentElement("span", "", `Đoạn ${result.chunkIndex}`));
+    const content = documentElement("p", "", result.content);
+    item.append(heading, content);
+    elements.knowledgeSearchList.appendChild(item);
+  });
+}
+
+function clearKnowledgeSearch() {
+  elements.knowledgeSearchResults.hidden = true;
+  elements.knowledgeSearchSummary.textContent = "";
+  elements.knowledgeSearchList.replaceChildren();
+}
+
+function setKnowledgeSearchBusy(value) {
+  state.knowledgeSearchBusy = value;
+  elements.knowledgeSearchResults.setAttribute("aria-busy", String(value));
+  updateKnowledgeSearchControls();
+}
+
+function updateKnowledgeSearchControls() {
+  const disabled = state.knowledgeBusy
+    || state.knowledgeSearchBusy
+    || state.knowledgeDocuments.length === 0;
+  elements.knowledgeSearchInput.disabled = disabled;
+  elements.knowledgeSearchButton.disabled = disabled;
 }
 
 async function refreshStatus() {

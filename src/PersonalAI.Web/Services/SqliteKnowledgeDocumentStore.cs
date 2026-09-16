@@ -1,6 +1,7 @@
 using System.Globalization;
 using System.Security.Cryptography;
 using System.Text;
+using System.Text.RegularExpressions;
 using Microsoft.Data.Sqlite;
 using PersonalAI.Web.Models;
 
@@ -10,6 +11,12 @@ public sealed class SqliteKnowledgeDocumentStore(
     ILogger<SqliteKnowledgeDocumentStore> logger) : IKnowledgeDocumentStore
 {
     public const long MaximumFileSize = 10 * 1024 * 1024;
+
+    private const int TargetChunkSize = 1_200;
+    private const int MaximumChunkSize = 1_500;
+    private const int MinimumChunkSize = 600;
+    private const int ChunkOverlap = 180;
+    private const int MaximumSearchLength = 200;
 
     private static readonly HashSet<string> AllowedExtensions =
         new(StringComparer.OrdinalIgnoreCase) { ".txt", ".md" };
@@ -61,8 +68,49 @@ public sealed class SqliteKnowledgeDocumentStore(
 
                 CREATE INDEX IF NOT EXISTS IX_Documents_CreatedAt
                 ON Documents (CreatedAt DESC);
+
+                CREATE TABLE IF NOT EXISTS DocumentChunks (
+                    Id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    DocumentId TEXT NOT NULL,
+                    ChunkIndex INTEGER NOT NULL,
+                    Content TEXT NOT NULL,
+                    CharacterCount INTEGER NOT NULL,
+                    FOREIGN KEY (DocumentId) REFERENCES Documents(Id) ON DELETE CASCADE,
+                    UNIQUE (DocumentId, ChunkIndex)
+                );
+
+                CREATE INDEX IF NOT EXISTS IX_DocumentChunks_DocumentId
+                ON DocumentChunks (DocumentId, ChunkIndex);
+
+                CREATE VIRTUAL TABLE IF NOT EXISTS DocumentChunksFts USING fts5(
+                    Content,
+                    content='DocumentChunks',
+                    content_rowid='Id',
+                    tokenize='unicode61 remove_diacritics 2'
+                );
+
+                CREATE TRIGGER IF NOT EXISTS DocumentChunks_AfterInsert
+                AFTER INSERT ON DocumentChunks BEGIN
+                    INSERT INTO DocumentChunksFts(rowid, Content)
+                    VALUES (new.Id, new.Content);
+                END;
+
+                CREATE TRIGGER IF NOT EXISTS DocumentChunks_AfterDelete
+                AFTER DELETE ON DocumentChunks BEGIN
+                    INSERT INTO DocumentChunksFts(DocumentChunksFts, rowid, Content)
+                    VALUES ('delete', old.Id, old.Content);
+                END;
+
+                CREATE TRIGGER IF NOT EXISTS DocumentChunks_AfterUpdate
+                AFTER UPDATE ON DocumentChunks BEGIN
+                    INSERT INTO DocumentChunksFts(DocumentChunksFts, rowid, Content)
+                    VALUES ('delete', old.Id, old.Content);
+                    INSERT INTO DocumentChunksFts(rowid, Content)
+                    VALUES (new.Id, new.Content);
+                END;
                 """;
             await command.ExecuteNonQueryAsync(cancellationToken);
+            await BackfillMissingChunksAsync(connection, cancellationToken);
 
             _initialized = true;
         }
@@ -83,9 +131,13 @@ public sealed class SqliteKnowledgeDocumentStore(
 
         await using var command = connection.CreateCommand();
         command.CommandText = """
-            SELECT Id, FileName, FileType, FileSize, CharacterCount, Status, CreatedAt
-            FROM Documents
-            ORDER BY CreatedAt DESC;
+            SELECT d.Id, d.FileName, d.FileType, d.FileSize, d.CharacterCount,
+                   COUNT(c.Id), d.Status, d.CreatedAt
+            FROM Documents d
+            LEFT JOIN DocumentChunks c ON c.DocumentId = d.Id
+            GROUP BY d.Id, d.FileName, d.FileType, d.FileSize,
+                     d.CharacterCount, d.Status, d.CreatedAt
+            ORDER BY d.CreatedAt DESC;
             """;
 
         await using var reader = await command.ExecuteReaderAsync(cancellationToken);
@@ -129,6 +181,7 @@ public sealed class SqliteKnowledgeDocumentStore(
             throw new DuplicateKnowledgeDocumentException("Tài liệu này đã có trong kho dữ liệu.");
         }
 
+        var chunks = CreateChunks(text);
         await File.WriteAllTextAsync(
             storedPath,
             text,
@@ -139,27 +192,39 @@ public sealed class SqliteKnowledgeDocumentStore(
         {
             await using var connection = CreateConnection();
             await connection.OpenAsync(cancellationToken);
+            using var transaction = connection.BeginTransaction();
 
-            await using var command = connection.CreateCommand();
-            command.CommandText = """
-                INSERT INTO Documents (
-                    Id, FileName, StoredFileName, FileType, FileSize, Sha256,
-                    CharacterCount, ExtractedText, Status, CreatedAt)
-                VALUES (
-                    $id, $fileName, $storedFileName, $fileType, $fileSize, $sha256,
-                    $characterCount, $extractedText, $status, $createdAt);
-                """;
-            command.Parameters.AddWithValue("$id", documentId.ToString("D"));
-            command.Parameters.AddWithValue("$fileName", safeFileName);
-            command.Parameters.AddWithValue("$storedFileName", storedFileName);
-            command.Parameters.AddWithValue("$fileType", extension.TrimStart('.').ToUpperInvariant());
-            command.Parameters.AddWithValue("$fileSize", file.Length);
-            command.Parameters.AddWithValue("$sha256", hash);
-            command.Parameters.AddWithValue("$characterCount", text.Length);
-            command.Parameters.AddWithValue("$extractedText", text);
-            command.Parameters.AddWithValue("$status", "ready");
-            command.Parameters.AddWithValue("$createdAt", createdAt.ToString("O", CultureInfo.InvariantCulture));
-            await command.ExecuteNonQueryAsync(cancellationToken);
+            await using (var command = connection.CreateCommand())
+            {
+                command.Transaction = transaction;
+                command.CommandText = """
+                    INSERT INTO Documents (
+                        Id, FileName, StoredFileName, FileType, FileSize, Sha256,
+                        CharacterCount, ExtractedText, Status, CreatedAt)
+                    VALUES (
+                        $id, $fileName, $storedFileName, $fileType, $fileSize, $sha256,
+                        $characterCount, $extractedText, $status, $createdAt);
+                    """;
+                command.Parameters.AddWithValue("$id", documentId.ToString("D"));
+                command.Parameters.AddWithValue("$fileName", safeFileName);
+                command.Parameters.AddWithValue("$storedFileName", storedFileName);
+                command.Parameters.AddWithValue("$fileType", extension.TrimStart('.').ToUpperInvariant());
+                command.Parameters.AddWithValue("$fileSize", file.Length);
+                command.Parameters.AddWithValue("$sha256", hash);
+                command.Parameters.AddWithValue("$characterCount", text.Length);
+                command.Parameters.AddWithValue("$extractedText", text);
+                command.Parameters.AddWithValue("$status", "ready");
+                command.Parameters.AddWithValue("$createdAt", createdAt.ToString("O", CultureInfo.InvariantCulture));
+                await command.ExecuteNonQueryAsync(cancellationToken);
+            }
+
+            await InsertChunksAsync(
+                connection,
+                transaction,
+                documentId.ToString("D"),
+                chunks,
+                cancellationToken);
+            transaction.Commit();
         }
         catch (SqliteException exception) when (exception.SqliteErrorCode == 19)
         {
@@ -178,8 +243,49 @@ public sealed class SqliteKnowledgeDocumentStore(
             extension.TrimStart('.').ToUpperInvariant(),
             file.Length,
             text.Length,
+            chunks.Count,
             "ready",
             createdAt);
+    }
+
+    public async Task<KnowledgeSearchResponse> SearchAsync(
+        string query,
+        int limit = 5,
+        CancellationToken cancellationToken = default)
+    {
+        var normalizedQuery = ValidateAndNormalizeSearchQuery(query);
+        var ftsQuery = BuildFtsQuery(normalizedQuery);
+        var safeLimit = Math.Clamp(limit, 1, 10);
+        await InitializeAsync(cancellationToken);
+
+        var results = new List<KnowledgeSearchResult>();
+        await using var connection = CreateConnection();
+        await connection.OpenAsync(cancellationToken);
+
+        await using var command = connection.CreateCommand();
+        command.CommandText = """
+            SELECT c.DocumentId, d.FileName, c.ChunkIndex, c.Content
+            FROM DocumentChunksFts
+            JOIN DocumentChunks c ON c.Id = DocumentChunksFts.rowid
+            JOIN Documents d ON d.Id = c.DocumentId
+            WHERE DocumentChunksFts MATCH $query
+            ORDER BY bm25(DocumentChunksFts), d.CreatedAt DESC, c.ChunkIndex
+            LIMIT $limit;
+            """;
+        command.Parameters.AddWithValue("$query", ftsQuery);
+        command.Parameters.AddWithValue("$limit", safeLimit);
+
+        await using var reader = await command.ExecuteReaderAsync(cancellationToken);
+        while (await reader.ReadAsync(cancellationToken))
+        {
+            results.Add(new KnowledgeSearchResult(
+                Guid.Parse(reader.GetString(0)),
+                reader.GetString(1),
+                reader.GetInt32(2),
+                reader.GetString(3)));
+        }
+
+        return new KnowledgeSearchResponse(normalizedQuery, results.Count, results);
     }
 
     public async Task<bool> DeleteAsync(
@@ -204,14 +310,23 @@ public sealed class SqliteKnowledgeDocumentStore(
             return false;
         }
 
-        await using (var deleteCommand = connection.CreateCommand())
+        using (var transaction = connection.BeginTransaction())
         {
-            deleteCommand.CommandText = "DELETE FROM Documents WHERE Id = $id;";
-            deleteCommand.Parameters.AddWithValue("$id", documentId.ToString("D"));
-            await deleteCommand.ExecuteNonQueryAsync(cancellationToken);
+            await using var deleteChunksCommand = connection.CreateCommand();
+            deleteChunksCommand.Transaction = transaction;
+            deleteChunksCommand.CommandText = "DELETE FROM DocumentChunks WHERE DocumentId = $id;";
+            deleteChunksCommand.Parameters.AddWithValue("$id", documentId.ToString("D"));
+            await deleteChunksCommand.ExecuteNonQueryAsync(cancellationToken);
+
+            await using var deleteDocumentCommand = connection.CreateCommand();
+            deleteDocumentCommand.Transaction = transaction;
+            deleteDocumentCommand.CommandText = "DELETE FROM Documents WHERE Id = $id;";
+            deleteDocumentCommand.Parameters.AddWithValue("$id", documentId.ToString("D"));
+            await deleteDocumentCommand.ExecuteNonQueryAsync(cancellationToken);
+            transaction.Commit();
         }
 
-        if (Path.GetFileName(storedFileName).Equals(storedFileName, StringComparison.Ordinal))
+        if (string.Equals(Path.GetFileName(storedFileName), storedFileName, StringComparison.Ordinal))
         {
             TryDeleteFile(Path.Combine(FilesDirectory, storedFileName));
         }
@@ -225,10 +340,79 @@ public sealed class SqliteKnowledgeDocumentStore(
         {
             DataSource = DatabasePath,
             Mode = SqliteOpenMode.ReadWriteCreate,
-            Cache = SqliteCacheMode.Shared
+            Cache = SqliteCacheMode.Shared,
+            ForeignKeys = true
         }.ToString();
 
         return new SqliteConnection(connectionString);
+    }
+
+    private async Task BackfillMissingChunksAsync(
+        SqliteConnection connection,
+        CancellationToken cancellationToken)
+    {
+        var documents = new List<(string Id, string Text)>();
+        await using (var command = connection.CreateCommand())
+        {
+            command.CommandText = """
+                SELECT d.Id, d.ExtractedText
+                FROM Documents d
+                WHERE NOT EXISTS (
+                    SELECT 1 FROM DocumentChunks c WHERE c.DocumentId = d.Id
+                );
+                """;
+
+            await using var reader = await command.ExecuteReaderAsync(cancellationToken);
+            while (await reader.ReadAsync(cancellationToken))
+            {
+                documents.Add((reader.GetString(0), reader.GetString(1)));
+            }
+        }
+
+        if (documents.Count == 0)
+        {
+            return;
+        }
+
+        using var transaction = connection.BeginTransaction();
+        foreach (var document in documents)
+        {
+            await InsertChunksAsync(
+                connection,
+                transaction,
+                document.Id,
+                CreateChunks(document.Text),
+                cancellationToken);
+        }
+        transaction.Commit();
+    }
+
+    private static async Task InsertChunksAsync(
+        SqliteConnection connection,
+        SqliteTransaction transaction,
+        string documentId,
+        IReadOnlyList<string> chunks,
+        CancellationToken cancellationToken)
+    {
+        await using var command = connection.CreateCommand();
+        command.Transaction = transaction;
+        command.CommandText = """
+            INSERT INTO DocumentChunks (DocumentId, ChunkIndex, Content, CharacterCount)
+            VALUES ($documentId, $chunkIndex, $content, $characterCount);
+            """;
+        var documentParameter = command.Parameters.Add("$documentId", SqliteType.Text);
+        var indexParameter = command.Parameters.Add("$chunkIndex", SqliteType.Integer);
+        var contentParameter = command.Parameters.Add("$content", SqliteType.Text);
+        var countParameter = command.Parameters.Add("$characterCount", SqliteType.Integer);
+
+        for (var index = 0; index < chunks.Count; index++)
+        {
+            documentParameter.Value = documentId;
+            indexParameter.Value = index + 1;
+            contentParameter.Value = chunks[index];
+            countParameter.Value = chunks[index].Length;
+            await command.ExecuteNonQueryAsync(cancellationToken);
+        }
     }
 
     private async Task<bool> HashExistsAsync(string hash, CancellationToken cancellationToken)
@@ -240,6 +424,117 @@ public sealed class SqliteKnowledgeDocumentStore(
         command.CommandText = "SELECT 1 FROM Documents WHERE Sha256 = $sha256 LIMIT 1;";
         command.Parameters.AddWithValue("$sha256", hash);
         return await command.ExecuteScalarAsync(cancellationToken) is not null;
+    }
+
+    private static IReadOnlyList<string> CreateChunks(string source)
+    {
+        var text = source
+            .Replace("\r\n", "\n", StringComparison.Ordinal)
+            .Replace('\r', '\n')
+            .Trim();
+        var chunks = new List<string>();
+        var start = 0;
+
+        while (start < text.Length)
+        {
+            var end = Math.Min(start + TargetChunkSize, text.Length);
+            if (end < text.Length)
+            {
+                end = FindChunkBoundary(text, start, end);
+            }
+
+            var chunk = text[start..end].Trim();
+            if (chunk.Length > 0)
+            {
+                chunks.Add(chunk);
+            }
+
+            if (end >= text.Length)
+            {
+                break;
+            }
+
+            start = Math.Max(start + 1, end - ChunkOverlap);
+        }
+
+        return chunks;
+    }
+
+    private static int FindChunkBoundary(string text, int start, int desiredEnd)
+    {
+        var maximumEnd = Math.Min(start + MaximumChunkSize, text.Length);
+        for (var index = desiredEnd; index < maximumEnd; index++)
+        {
+            if (IsStrongBoundary(text, index))
+            {
+                return index + 1;
+            }
+        }
+
+        var minimumEnd = Math.Min(start + MinimumChunkSize, desiredEnd);
+        for (var index = desiredEnd; index > minimumEnd; index--)
+        {
+            if (IsStrongBoundary(text, index - 1))
+            {
+                return index;
+            }
+        }
+
+        for (var index = desiredEnd; index > minimumEnd; index--)
+        {
+            if (char.IsWhiteSpace(text[index - 1]))
+            {
+                return index;
+            }
+        }
+
+        return desiredEnd;
+    }
+
+    private static bool IsStrongBoundary(string text, int index)
+    {
+        var character = text[index];
+        return character == '\n'
+            || ((character is '.' or '?' or '!')
+                && (index + 1 >= text.Length || char.IsWhiteSpace(text[index + 1])));
+    }
+
+    private static string ValidateAndNormalizeSearchQuery(string query)
+    {
+        var normalized = (query ?? string.Empty).Trim();
+        if (normalized.Length < 2)
+        {
+            throw new KnowledgeDocumentValidationException(
+                "Hãy nhập ít nhất 2 ký tự để tìm trong dữ liệu.");
+        }
+
+        if (normalized.Length > MaximumSearchLength)
+        {
+            throw new KnowledgeDocumentValidationException(
+                "Nội dung tìm kiếm không được dài hơn 200 ký tự.");
+        }
+
+        return normalized;
+    }
+
+    private static string BuildFtsQuery(string query)
+    {
+        var tokens = Regex.Matches(
+                query.Normalize(NormalizationForm.FormKC),
+                @"[\p{L}\p{N}]+")
+            .Cast<Match>()
+            .Select(match => match.Value)
+            .Where(token => token.Length > 0)
+            .Take(10)
+            .ToArray();
+
+        if (tokens.Length == 0)
+        {
+            throw new KnowledgeDocumentValidationException(
+                "Nội dung tìm kiếm phải có chữ hoặc số.");
+        }
+
+        return string.Join(" AND ", tokens.Select(token => $"\"{token}\"*"));
     }
 
     private static void ValidateFile(IFormFile file)
@@ -263,7 +558,7 @@ public sealed class SqliteKnowledgeDocumentStore(
         if (!AllowedExtensions.Contains(Path.GetExtension(safeFileName)))
         {
             throw new KnowledgeDocumentValidationException(
-                "Phiên bản 0.5.1 chỉ nhận tệp TXT và Markdown (.md).");
+                "Phiên bản 0.5.2 chỉ nhận tệp TXT và Markdown (.md).");
         }
     }
 
@@ -304,8 +599,9 @@ public sealed class SqliteKnowledgeDocumentStore(
             reader.GetString(2),
             reader.GetInt64(3),
             reader.GetInt32(4),
-            reader.GetString(5),
-            DateTimeOffset.Parse(reader.GetString(6), CultureInfo.InvariantCulture));
+            checked((int)reader.GetInt64(5)),
+            reader.GetString(6),
+            DateTimeOffset.Parse(reader.GetString(7), CultureInfo.InvariantCulture));
     }
 
     private void TryDeleteFile(string path)
@@ -319,7 +615,10 @@ public sealed class SqliteKnowledgeDocumentStore(
         }
         catch (Exception exception)
         {
-            logger.LogWarning(exception, "Không thể xóa tệp dữ liệu cục bộ {FileName}.", Path.GetFileName(path));
+            logger.LogWarning(
+                exception,
+                "Không thể xóa tệp dữ liệu cục bộ {FileName}.",
+                Path.GetFileName(path));
         }
     }
 }

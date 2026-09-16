@@ -3,7 +3,7 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <meta name="description" content="Trợ lý AI cá nhân phiên bản 0.5.1">
+  <meta name="description" content="Trợ lý AI cá nhân phiên bản 0.5.2">
   <title>AI Cá Nhân</title>
   <link rel="stylesheet" href="styles.css">
 </head>
@@ -14,7 +14,7 @@
         <div class="brand-mark" aria-hidden="true">A</div>
         <div>
           <strong>AI Cá Nhân</strong>
-          <span>Phiên bản 0.5.1</span>
+          <span>Phiên bản 0.5.2</span>
         </div>
       </div>
 
@@ -176,8 +176,8 @@
       <div class="knowledge-intro">
         <div class="knowledge-intro-icon" aria-hidden="true">▤</div>
         <div>
-          <strong>Nền móng dữ liệu riêng v0.5.1</strong>
-          <p>Tải TXT hoặc Markdown để lưu an toàn trên máy. Bản tiếp theo sẽ chia nhỏ và tìm đoạn liên quan khi trò chuyện.</p>
+          <strong>Tìm kiếm dữ liệu riêng v0.5.2</strong>
+          <p>Tài liệu được tự chia thành các đoạn nhỏ và lập chỉ mục ngay trên máy để bạn kiểm tra phần liên quan.</p>
         </div>
       </div>
 
@@ -198,6 +198,29 @@
 
       <div class="settings-feedback knowledge-feedback" id="knowledgeFeedback" role="status" aria-live="polite"></div>
 
+      <form class="knowledge-search" id="knowledgeSearchForm" role="search">
+        <label class="field-label" for="knowledgeSearchInput">Tìm trong dữ liệu</label>
+        <div class="knowledge-search-row">
+          <input
+            id="knowledgeSearchInput"
+            type="search"
+            minlength="2"
+            maxlength="200"
+            autocomplete="off"
+            placeholder="Ví dụ: kế hoạch học AI">
+          <button class="primary-button" id="knowledgeSearchButton" type="submit">Tìm đoạn</button>
+        </div>
+        <p class="field-hint">Xem trước những đoạn có thể được dùng làm ngữ cảnh cho AI ở phiên bản tiếp theo.</p>
+      </form>
+
+      <section class="knowledge-search-results" id="knowledgeSearchResults" aria-live="polite" hidden>
+        <div class="knowledge-search-heading">
+          <strong>Kết quả tìm kiếm</strong>
+          <span id="knowledgeSearchSummary"></span>
+        </div>
+        <div class="knowledge-search-list" id="knowledgeSearchList"></div>
+      </section>
+
       <div class="knowledge-list-header">
         <div>
           <strong>Tài liệu đã lưu</strong>
@@ -215,7 +238,7 @@
 
       <p class="security-copy">
         Tệp và cơ sở dữ liệu được lưu ngoài thư mục Git tại <code>%LOCALAPPDATA%\PersonalAI\Knowledge</code>.
-        v0.5.1 chưa gửi nội dung tài liệu đến Gemini hoặc OpenAI.
+        v0.5.2 chỉ tìm kiếm cục bộ, chưa gửi nội dung tài liệu đến Gemini hoặc OpenAI.
       </p>
     </div>
   </dialog>

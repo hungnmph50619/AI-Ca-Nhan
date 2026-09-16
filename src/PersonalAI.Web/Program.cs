@@ -51,7 +51,7 @@ app.MapGet("/api/status", (
         provider = aiProvider.Name,
         model = aiProvider.Model,
         teamProfile = teamProfiles.DefaultProfileId,
-        version = "0.5.1"
+        version = "0.5.2"
     });
 });
 
@@ -61,6 +61,26 @@ app.MapGet("/api/knowledge/documents", async (
 {
     var documents = await knowledgeStore.GetAllAsync(cancellationToken);
     return Results.Ok(documents);
+});
+
+app.MapGet("/api/knowledge/search", async (
+    string? query,
+    int? limit,
+    IKnowledgeDocumentStore knowledgeStore,
+    CancellationToken cancellationToken) =>
+{
+    try
+    {
+        var results = await knowledgeStore.SearchAsync(
+            query ?? string.Empty,
+            limit ?? 5,
+            cancellationToken);
+        return Results.Ok(results);
+    }
+    catch (KnowledgeDocumentValidationException exception)
+    {
+        return Results.BadRequest(new ApiError(exception.Message));
+    }
 });
 
 app.MapPost("/api/knowledge/documents", async (

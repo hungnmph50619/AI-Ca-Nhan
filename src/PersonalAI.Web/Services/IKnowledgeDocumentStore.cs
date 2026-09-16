@@ -13,6 +13,11 @@ public interface IKnowledgeDocumentStore
         IFormFile file,
         CancellationToken cancellationToken = default);
 
+    Task<KnowledgeSearchResponse> SearchAsync(
+        string query,
+        int limit = 5,
+        CancellationToken cancellationToken = default);
+
     Task<bool> DeleteAsync(
         Guid documentId,
         CancellationToken cancellationToken = default);

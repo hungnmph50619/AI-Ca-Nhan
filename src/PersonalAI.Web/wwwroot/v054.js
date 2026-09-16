@@ -134,15 +134,13 @@
 
   function updateVersionLabels() {
     const brandVersion = document.querySelector(".brand > div:last-child > span");
-    if (brandVersion) brandVersion.textContent = "Phiên bản 0.5.4.1";
+    if (brandVersion) brandVersion.textContent = "Phiên bản 0.5.4.2";
 
     const introTitle = document.querySelector(".knowledge-intro strong");
-    if (introTitle) introTitle.textContent = "Hỏi đáp có nguồn v0.5.4.1";
+    if (introTitle) introTitle.textContent = "Hỏi đáp có nguồn v0.5.4.2";
 
     document.querySelectorAll(".security-copy").forEach(node => {
-      node.innerHTML = node.innerHTML
-        .replaceAll("v0.5.3", "v0.5.4.1")
-        .replaceAll("v0.5.4", "v0.5.4.1");
+      node.innerHTML = node.innerHTML.replace(/v0\.5\.(?:3|4(?:\.1)?)/g, "v0.5.4.2");
     });
   }
 

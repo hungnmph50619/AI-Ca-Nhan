@@ -24,7 +24,8 @@ public sealed class KnowledgeGroundingService(
     private const int CandidateLimitPerQuery = 10;
     private const int MaximumQueryVariants = 8;
     private const double MinimumRelevanceScore = 12;
-    private const double MinimumCoverageForLongQuery = 0.34;
+    private const double MinimumCoverageForLongQuery = 0.45;
+    private const double MinimumRelativeScoreToBest = 0.60;
 
     private static readonly HashSet<string> RankingStopWords =
         new(StringComparer.OrdinalIgnoreCase)
@@ -197,7 +198,7 @@ public sealed class KnowledgeGroundingService(
             .Take(4)
             .ToArray();
 
-        return candidates
+        var ranked = candidates
             .Select(result => ScoreCandidate(
                 result,
                 questionTokens,
@@ -207,6 +208,16 @@ public sealed class KnowledgeGroundingService(
             .OrderByDescending(candidate => candidate.Score)
             .ThenBy(candidate => candidate.Result.FileName, StringComparer.OrdinalIgnoreCase)
             .ThenBy(candidate => candidate.Result.ChunkIndex)
+            .ToArray();
+
+        if (ranked.Length == 0)
+        {
+            return [];
+        }
+
+        var relativeCutoff = ranked[0].Score * MinimumRelativeScoreToBest;
+        return ranked
+            .Where(candidate => candidate.Score >= relativeCutoff)
             .Select(candidate => candidate.Result)
             .ToArray();
     }
@@ -256,14 +267,24 @@ public sealed class KnowledgeGroundingService(
             return false;
         }
 
-        if (candidate.HasExactQuestion || questionTokenCount <= 2)
+        if (candidate.HasExactQuestion)
         {
             return true;
         }
 
-        return candidate.MatchedTokens >= 2
-            && (candidate.Coverage >= MinimumCoverageForLongQuery
-                || candidate.PhraseMatches > 0);
+        if (questionTokenCount <= 2)
+        {
+            return candidate.MatchedTokens >= 1;
+        }
+
+        if (questionTokenCount == 3)
+        {
+            return candidate.MatchedTokens >= 2
+                && candidate.Coverage >= 0.50;
+        }
+
+        return candidate.MatchedTokens >= 3
+            && candidate.Coverage >= MinimumCoverageForLongQuery;
     }
 
     private static string[] Tokenize(string value) =>

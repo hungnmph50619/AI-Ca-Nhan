@@ -134,13 +134,15 @@
 
   function updateVersionLabels() {
     const brandVersion = document.querySelector(".brand > div:last-child > span");
-    if (brandVersion) brandVersion.textContent = "Phiên bản 0.5.4";
+    if (brandVersion) brandVersion.textContent = "Phiên bản 0.5.4.1";
 
     const introTitle = document.querySelector(".knowledge-intro strong");
-    if (introTitle) introTitle.textContent = "Hỏi đáp có nguồn v0.5.4";
+    if (introTitle) introTitle.textContent = "Hỏi đáp có nguồn v0.5.4.1";
 
     document.querySelectorAll(".security-copy").forEach(node => {
-      node.innerHTML = node.innerHTML.replaceAll("v0.5.3", "v0.5.4");
+      node.innerHTML = node.innerHTML
+        .replaceAll("v0.5.3", "v0.5.4.1")
+        .replaceAll("v0.5.4", "v0.5.4.1");
     });
   }
 
@@ -260,10 +262,10 @@
       .knowledge-mode-group button:disabled{cursor:not-allowed;opacity:.45}
       .message-source{cursor:pointer;transition:.15s ease;outline:none}
       .message-source:hover,.message-source:focus-visible{transform:translateY(-1px);box-shadow:0 0 0 2px rgba(49,87,213,.16)}
-      .source-original-preview{margin-top:10px;border:1px solid #dbe2f1;border-radius:10px;background:#f8faff;overflow:hidden;color:#344054}
-      .source-original-preview.error{padding:10px 12px;color:#b42318;background:#fff6f5;border-color:#f4c7c3}
-      .source-original-heading{padding:8px 11px;border-bottom:1px solid #e5eaf4;font-size:11px;font-weight:700;color:#344054;background:#f1f4fb}
-      .source-original-preview pre{margin:0;padding:11px 12px;white-space:pre-wrap;word-break:break-word;font:12px/1.55 ui-monospace,SFMono-Regular,Consolas,monospace;max-height:300px;overflow:auto;background:transparent}
+      .source-original-preview{margin-top:10px;border:1px solid #dbe2f1;border-radius:10px;background:#f8faff;overflow:hidden;color:#1f2937!important;opacity:1!important}
+      .source-original-preview.error{padding:10px 12px;color:#b42318!important;background:#fff6f5;border-color:#f4c7c3}
+      .source-original-heading{padding:8px 11px;border-bottom:1px solid #e5eaf4;font-size:11px;font-weight:700;color:#1f2937!important;background:#f1f4fb;opacity:1!important}
+      .source-original-preview pre{margin:0;padding:11px 12px;white-space:pre-wrap;word-break:break-word;font:12px/1.55 ui-monospace,SFMono-Regular,Consolas,monospace;max-height:300px;overflow:auto;background:#fff;color:#1f2937!important;-webkit-text-fill-color:#1f2937!important;opacity:1!important}
       @media (max-width:700px){.knowledge-chat-controls{align-items:flex-start;flex-direction:column;gap:7px}.knowledge-mode-group{width:100%}.knowledge-mode-group button{flex:1}.knowledge-toggle-copy small{display:none}}
     `;
     document.head.appendChild(style);

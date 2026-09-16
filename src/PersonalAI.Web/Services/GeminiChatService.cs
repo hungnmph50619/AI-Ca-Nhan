@@ -1,4 +1,3 @@
-using System.Net.Http.Headers;
 using System.Text;
 using System.Text.Json;
 using Microsoft.Extensions.Options;
@@ -7,18 +6,18 @@ using PersonalAI.Web.Options;
 
 namespace PersonalAI.Web.Services;
 
-public sealed class OpenAiChatService : IAiProvider
+public sealed class GeminiChatService : IAiProvider
 {
     private readonly HttpClient _httpClient;
-    private readonly OpenAiOptions _options;
-    private readonly ILogger<OpenAiChatService> _logger;
+    private readonly GeminiOptions _options;
+    private readonly ILogger<GeminiChatService> _logger;
     private readonly string _instructions;
 
-    public OpenAiChatService(
+    public GeminiChatService(
         HttpClient httpClient,
-        IOptions<OpenAiOptions> options,
+        IOptions<GeminiOptions> options,
         IWebHostEnvironment environment,
-        ILogger<OpenAiChatService> logger)
+        ILogger<GeminiChatService> logger)
     {
         _httpClient = httpClient;
         _options = options.Value;
@@ -30,7 +29,7 @@ public sealed class OpenAiChatService : IAiProvider
             : "Bạn là trợ lý AI hữu ích, trung thực và không bịa thông tin.";
     }
 
-    public string Name => "OpenAI";
+    public string Name => "Gemini";
 
     public string Model => _options.Model;
 
@@ -44,30 +43,39 @@ public sealed class OpenAiChatService : IAiProvider
         if (string.IsNullOrWhiteSpace(apiKey))
         {
             throw new InvalidOperationException(
-                "Chưa cấu hình OPENAI_API_KEY. Hãy xem hướng dẫn trong README.md.");
+                "Chưa cấu hình GEMINI_API_KEY. Hãy xem hướng dẫn trong README.md.");
         }
 
         var payload = new
         {
-            model = _options.Model,
-            instructions = _instructions,
-            input = messages.Select(message => new
+            systemInstruction = new
             {
-                role = message.Role,
-                content = message.Content
+                parts = new[] { new { text = _instructions } }
+            },
+            contents = messages.Select(message => new
+            {
+                role = message.Role.Equals("assistant", StringComparison.OrdinalIgnoreCase)
+                    ? "model"
+                    : "user",
+                parts = new[] { new { text = message.Content } }
             }),
-            max_output_tokens = Math.Clamp(_options.MaxOutputTokens, 128, 16_384),
-            store = false
+            generationConfig = new
+            {
+                maxOutputTokens = Math.Clamp(_options.MaxOutputTokens, 128, 16_384)
+            }
         };
 
-        using var request = new HttpRequestMessage(HttpMethod.Post, "responses")
+        var model = Uri.EscapeDataString(_options.Model);
+        using var request = new HttpRequestMessage(
+            HttpMethod.Post,
+            $"models/{model}:generateContent")
         {
             Content = new StringContent(
                 JsonSerializer.Serialize(payload),
                 Encoding.UTF8,
                 "application/json")
         };
-        request.Headers.Authorization = new AuthenticationHeaderValue("Bearer", apiKey);
+        request.Headers.Add("x-goog-api-key", apiKey);
 
         using var response = await _httpClient.SendAsync(request, cancellationToken);
         var responseBody = await response.Content.ReadAsStringAsync(cancellationToken);
@@ -76,11 +84,11 @@ public sealed class OpenAiChatService : IAiProvider
         {
             var detail = ReadApiError(responseBody);
             _logger.LogWarning(
-                "OpenAI API returned {StatusCode}: {Detail}",
+                "Gemini API returned {StatusCode}: {Detail}",
                 (int)response.StatusCode,
                 detail);
             throw new HttpRequestException(
-                $"OpenAI API trả về lỗi {(int)response.StatusCode}: {detail}",
+                $"Gemini API trả về lỗi {(int)response.StatusCode}: {detail}",
                 null,
                 response.StatusCode);
         }
@@ -88,53 +96,42 @@ public sealed class OpenAiChatService : IAiProvider
         var outputText = ReadOutputText(responseBody);
         if (string.IsNullOrWhiteSpace(outputText))
         {
-            throw new InvalidOperationException("API không trả về nội dung văn bản.");
+            throw new InvalidOperationException(
+                "Gemini không trả về nội dung văn bản. Yêu cầu có thể đã bị chặn.");
         }
 
         return outputText;
     }
 
     private string GetApiKey() =>
-        Environment.GetEnvironmentVariable("OPENAI_API_KEY")
+        Environment.GetEnvironmentVariable("GEMINI_API_KEY")
         ?? _options.ApiKey;
 
     private static string ReadOutputText(string responseBody)
     {
         using var document = JsonDocument.Parse(responseBody);
-        var root = document.RootElement;
-
-        if (root.TryGetProperty("output_text", out var directText)
-            && directText.ValueKind == JsonValueKind.String)
-        {
-            return directText.GetString() ?? string.Empty;
-        }
-
-        if (!root.TryGetProperty("output", out var output)
-            || output.ValueKind != JsonValueKind.Array)
+        if (!document.RootElement.TryGetProperty("candidates", out var candidates)
+            || candidates.ValueKind != JsonValueKind.Array)
         {
             return string.Empty;
         }
 
         var parts = new List<string>();
-        foreach (var item in output.EnumerateArray())
+        foreach (var candidate in candidates.EnumerateArray())
         {
-            if (!item.TryGetProperty("content", out var content)
-                || content.ValueKind != JsonValueKind.Array)
+            if (!candidate.TryGetProperty("content", out var content)
+                || !content.TryGetProperty("parts", out var contentParts)
+                || contentParts.ValueKind != JsonValueKind.Array)
             {
                 continue;
             }
 
-            foreach (var part in content.EnumerateArray())
+            foreach (var part in contentParts.EnumerateArray())
             {
                 if (part.TryGetProperty("text", out var text)
                     && text.ValueKind == JsonValueKind.String)
                 {
                     parts.Add(text.GetString() ?? string.Empty);
-                }
-                else if (part.TryGetProperty("refusal", out var refusal)
-                         && refusal.ValueKind == JsonValueKind.String)
-                {
-                    parts.Add(refusal.GetString() ?? string.Empty);
                 }
             }
         }
@@ -155,7 +152,7 @@ public sealed class OpenAiChatService : IAiProvider
         }
         catch (JsonException)
         {
-            // The upstream response was not JSON; use a generic safe message below.
+            // Upstream did not return JSON. Use the safe generic message below.
         }
 
         return "Không thể xử lý yêu cầu từ dịch vụ AI.";

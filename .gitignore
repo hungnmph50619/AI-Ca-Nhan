@@ -1,8 +1,9 @@
-bin/
-obj/
+**/bin/
+**/obj/
 .vs/
 .vscode/
 *.user
 *.suo
-.env
+appsettings.Development.json
 appsettings.Local.json
+.env

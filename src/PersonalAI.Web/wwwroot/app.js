@@ -5,6 +5,7 @@ const state = {
   messages: loadMessages(),
   busy: false,
   configured: false,
+  provider: "",
   model: ""
 };
 
@@ -60,10 +61,11 @@ async function refreshStatus() {
     if (!response.ok) throw new Error("Không đọc được trạng thái");
     const status = await response.json();
     state.configured = status.configured;
+    state.provider = status.provider;
     state.model = status.model;
     elements.statusDot.className = `status-dot ${status.configured ? "online" : "offline"}`;
     elements.statusText.textContent = status.configured
-      ? `Sẵn sàng · ${status.model}`
+      ? `Sẵn sàng · ${status.provider} · ${status.model}`
       : "Chưa cấu hình API key";
   } catch {
     elements.statusDot.className = "status-dot offline";

@@ -27,7 +27,7 @@ public sealed class KnowledgeGroundingService(
     private static readonly HashSet<string> RankingStopWords =
         new(StringComparer.OrdinalIgnoreCase)
         {
-            "ai", "bạn", "biết", "các", "có", "của", "cho", "đó", "được", "gì",
+            "bạn", "biết", "các", "có", "của", "cho", "đó", "được", "gì",
             "giúp", "hãy", "không", "là", "mình", "một", "này", "những", "nói",
             "tôi", "trả", "trong", "và", "về", "theo", "thế", "nào"
         };
@@ -106,7 +106,7 @@ public sealed class KnowledgeGroundingService(
 
         if (tokens.Length > 1)
         {
-            AddQuery(queries, string.Join(' ', tokens.Take(4)));
+            AddQuery(queries, string.Join(" ", tokens.Take(4)));
         }
 
         for (var index = 0; index + 1 < tokens.Length && queries.Count < MaximumQueryVariants; index++)
@@ -191,8 +191,8 @@ public sealed class KnowledgeGroundingService(
             .ToHashSet(StringComparer.OrdinalIgnoreCase);
         var fileTokens = Tokenize(result.FileName)
             .ToHashSet(StringComparer.OrdinalIgnoreCase);
-        var matchedTokens = questionTokens.Count(contentTokens.Contains);
-        var fileMatches = questionTokens.Count(fileTokens.Contains);
+        var matchedTokens = questionTokens.Count(token => contentTokens.Contains(token));
+        var fileMatches = questionTokens.Count(token => fileTokens.Contains(token));
         var coverage = questionTokens.Count == 0
             ? 0
             : (double)matchedTokens / questionTokens.Count;

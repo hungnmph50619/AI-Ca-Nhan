@@ -2,7 +2,10 @@ namespace PersonalAI.Web.Models;
 
 public sealed record ChatMessage(string Role, string Content);
 
-public sealed record ChatRequest(IReadOnlyList<ChatMessage> Messages);
+public sealed record ChatRequest(
+    IReadOnlyList<ChatMessage> Messages,
+    bool UseKnowledge = true,
+    string KnowledgeMode = "normal");
 
 public sealed record ChatSource(
     Guid DocumentId,

@@ -2,6 +2,7 @@
   const VERSION = "0.7.6";
   let retryTimer = 0;
   let busy = false;
+  let lastQuality = null;
 
   if (document.readyState === "loading") {
     document.addEventListener("DOMContentLoaded", initialize, { once: true });
@@ -74,6 +75,7 @@
     const summary = document.querySelector("#v076QualitySummary");
     if (!panel || !summary) return;
 
+    lastQuality = payload;
     const status = payload.status || "error";
     panel.dataset.status = status;
     const label = status === "healthy" ? "Khỏe"
@@ -92,6 +94,7 @@
   }
 
   function renderError(message) {
+    lastQuality = null;
     const panel = document.querySelector("#v076QualityPanel");
     const summary = document.querySelector("#v076QualitySummary");
     if (panel) panel.dataset.status = "error";
@@ -118,6 +121,7 @@
     } finally {
       busy = false;
       setButtonsDisabled(false);
+      if (lastQuality) renderQuality(lastQuality);
     }
   }
 

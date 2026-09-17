@@ -76,7 +76,6 @@ public sealed class PersonalMemoryStore : IPersonalMemoryStore
             if (duplicate is not null && request.ConfirmOverwrite) _memories.RemoveAll(memory => memory.Id == duplicate.Id);
             stored.Kind = kind;
             stored.EncryptedContent = _protector.Protect(content);
-            if (request.IsEnabled.HasValue) stored.IsEnabled = request.IsEnabled.Value;
             stored.UpdatedAt = DateTimeOffset.UtcNow;
             await PersistAsync(cancellationToken);
             return ToPublicMemory(stored);

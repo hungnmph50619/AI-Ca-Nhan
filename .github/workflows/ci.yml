@@ -26,7 +26,7 @@ jobs:
       - name: Build
         run: dotnet build PersonalAI.sln --configuration Release --no-restore
 
-      - name: Smoke test memory, structured knowledge, vectors and hybrid retrieval
+      - name: Smoke test memory, retrieval and citation source metadata
         shell: bash
         run: |
           set -euo pipefail
@@ -47,23 +47,23 @@ jobs:
             exit 1
           fi
 
-          curl -fsS http://127.0.0.1:5077/api/status | jq -e '.version == "0.7.3"' >/dev/null
+          curl -fsS http://127.0.0.1:5077/api/status | jq -e '.version == "0.7.4"' >/dev/null
 
           curl -fsS -X DELETE http://127.0.0.1:5077/api/memory >/dev/null
           created=$(curl -fsS -X POST http://127.0.0.1:5077/api/memory \
             -H 'Content-Type: application/json' \
-            -d '{"kind":"fact","content":"v073 memory regression","retention":"temporary","expiresAt":"2099-01-01T00:00:00Z"}')
+            -d '{"kind":"fact","content":"v074 memory regression","retention":"temporary","expiresAt":"2099-01-01T00:00:00Z"}')
           echo "$created" | jq -e '.retention == "temporary" and .isExpired == false' >/dev/null
           curl -fsS -X DELETE http://127.0.0.1:5077/api/memory >/dev/null
 
-          printf '# Kế hoạch nghiên cứu\n\nNội dung markdown alpha cho structured chunk, vector semantic và hybrid reranking.\n\n## Giai đoạn hai\n\nNội dung beta riêng biệt.\n' >/tmp/v073.md
-          printf 'Plain text unrelated weather forecast content.\n' >/tmp/v073.txt
+          printf '# Kế hoạch nghiên cứu\n\nNội dung markdown alpha cho structured chunk, vector semantic, hybrid reranking và citation viewer.\n\n## Giai đoạn hai\n\nNội dung beta riêng biệt.\n' >/tmp/v074.md
+          printf 'Plain text unrelated weather forecast content.\n' >/tmp/v074.txt
 
           python3 - <<'PY'
           from pathlib import Path
           from zipfile import ZipFile, ZIP_DEFLATED
 
-          with ZipFile('/tmp/v073.docx', 'w', ZIP_DEFLATED) as z:
+          with ZipFile('/tmp/v074.docx', 'w', ZIP_DEFLATED) as z:
               z.writestr('[Content_Types].xml', '''<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
           <Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types">
             <Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/>
@@ -83,7 +83,7 @@ jobs:
             </w:body>
           </w:document>''')
 
-          content = b'BT /F1 12 Tf 72 720 Td (PDF structured delta content) Tj ET'
+          content = b'BT /F1 12 Tf 72 720 Td (PDF structured delta citation content) Tj ET'
           objects = [
               b'<< /Type /Catalog /Pages 2 0 R >>',
               b'<< /Type /Pages /Kids [3 0 R] /Count 1 >>',
@@ -98,13 +98,13 @@ jobs:
           xref = len(pdf); pdf.extend(f'xref\n0 {len(objects)+1}\n'.encode()); pdf.extend(b'0000000000 65535 f \n')
           for offset in offsets[1:]: pdf.extend(f'{offset:010d} 00000 n \n'.encode())
           pdf.extend(f'trailer\n<< /Size {len(objects)+1} /Root 1 0 R >>\nstartxref\n{xref}\n%%EOF\n'.encode())
-          Path('/tmp/v073.pdf').write_bytes(pdf)
+          Path('/tmp/v074.pdf').write_bytes(pdf)
           PY
 
-          txt_doc=$(curl -fsS -F 'file=@/tmp/v073.txt;type=text/plain' http://127.0.0.1:5077/api/knowledge/documents)
-          md_doc=$(curl -fsS -F 'file=@/tmp/v073.md;type=text/markdown' http://127.0.0.1:5077/api/knowledge/documents)
-          docx_doc=$(curl -fsS -F 'file=@/tmp/v073.docx;type=application/vnd.openxmlformats-officedocument.wordprocessingml.document' http://127.0.0.1:5077/api/knowledge/documents)
-          pdf_doc=$(curl -fsS -F 'file=@/tmp/v073.pdf;type=application/pdf' http://127.0.0.1:5077/api/knowledge/documents)
+          txt_doc=$(curl -fsS -F 'file=@/tmp/v074.txt;type=text/plain' http://127.0.0.1:5077/api/knowledge/documents)
+          md_doc=$(curl -fsS -F 'file=@/tmp/v074.md;type=text/markdown' http://127.0.0.1:5077/api/knowledge/documents)
+          docx_doc=$(curl -fsS -F 'file=@/tmp/v074.docx;type=application/vnd.openxmlformats-officedocument.wordprocessingml.document' http://127.0.0.1:5077/api/knowledge/documents)
+          pdf_doc=$(curl -fsS -F 'file=@/tmp/v074.pdf;type=application/pdf' http://127.0.0.1:5077/api/knowledge/documents)
 
           txt_id=$(echo "$txt_doc" | jq -r '.id')
           md_id=$(echo "$md_doc" | jq -r '.id')
@@ -112,28 +112,32 @@ jobs:
           pdf_id=$(echo "$pdf_doc" | jq -r '.id')
 
           md_search=$(curl -fsS --get --data-urlencode 'query=alpha structured' --data-urlencode 'limit=10' http://127.0.0.1:5077/api/knowledge/search)
-          echo "$md_search" | jq -e 'any(.results[]; .fileName == "v073.md" and .heading == "Kế hoạch nghiên cứu" and (.tokenEstimate > 0))' >/dev/null
+          echo "$md_search" | jq -e 'any(.results[]; .fileName == "v074.md" and .heading == "Kế hoạch nghiên cứu" and (.tokenEstimate > 0))' >/dev/null
 
           docx_search=$(curl -fsS --get --data-urlencode 'query=gamma content' --data-urlencode 'limit=10' http://127.0.0.1:5077/api/knowledge/search)
-          echo "$docx_search" | jq -e 'any(.results[]; .fileName == "v073.docx" and .heading == "Chương thử nghiệm")' >/dev/null
+          echo "$docx_search" | jq -e 'any(.results[]; .fileName == "v074.docx" and .heading == "Chương thử nghiệm")' >/dev/null
 
-          pdf_search=$(curl -fsS --get --data-urlencode 'query=delta content' --data-urlencode 'limit=10' http://127.0.0.1:5077/api/knowledge/search)
-          echo "$pdf_search" | jq -e 'any(.results[]; .fileName == "v073.pdf" and .pageNumber == 1 and .section == "Trang 1")' >/dev/null
-          pdf_chunk_index=$(echo "$pdf_search" | jq -r '.results[] | select(.fileName == "v073.pdf") | .chunkIndex' | head -n1)
+          pdf_search=$(curl -fsS --get --data-urlencode 'query=delta citation content' --data-urlencode 'limit=10' http://127.0.0.1:5077/api/knowledge/search)
+          echo "$pdf_search" | jq -e 'any(.results[]; .fileName == "v074.pdf" and .pageNumber == 1 and .section == "Trang 1")' >/dev/null
+          pdf_chunk_index=$(echo "$pdf_search" | jq -r '.results[] | select(.fileName == "v074.pdf") | .chunkIndex' | head -n1)
           source=$(curl -fsS "http://127.0.0.1:5077/api/knowledge/documents/${pdf_id}/chunks/${pdf_chunk_index}")
-          echo "$source" | jq -e '.pageNumber == 1 and .tokenEstimate > 0' >/dev/null
+          echo "$source" | jq --arg id "$pdf_id" -e '.documentId == $id and .fileName == "v074.pdf" and .pageNumber == 1 and .section == "Trang 1" and .chunkIndex > 0 and (.content | contains("citation content"))' >/dev/null
 
           vector_status=$(curl -fsS http://127.0.0.1:5077/api/knowledge/embeddings/status)
           echo "$vector_status" | jq -e '.embeddingModel == "local-feature-hash-v1" and .dimensions == 384 and .local == true and .totalChunks >= 4 and .indexedChunks == .totalChunks and .missingChunks == 0' >/dev/null
 
           semantic=$(curl -fsS --get --data-urlencode 'query=ke hoach nghien cuu alpha semantic' --data-urlencode 'limit=5' http://127.0.0.1:5077/api/knowledge/semantic-search)
           echo "$semantic" | jq -e '.embeddingModel == "local-feature-hash-v1" and .dimensions == 384 and .resultCount >= 1' >/dev/null
-          echo "$semantic" | jq -e '.results[0].fileName == "v073.md" and (.results[0].similarityScore > 0.10)' >/dev/null
+          echo "$semantic" | jq -e '.results[0].fileName == "v074.md" and (.results[0].similarityScore > 0.10)' >/dev/null
 
           hybrid=$(curl -fsS --get --data-urlencode 'query=ke hoach nghien cuu alpha semantic hybrid' --data-urlencode 'limit=5' http://127.0.0.1:5077/api/knowledge/hybrid-search)
           echo "$hybrid" | jq -e '.strategy == "keyword+local-vector+deterministic-rerank-v1" and .resultCount >= 1' >/dev/null
-          echo "$hybrid" | jq -e '.results[0].fileName == "v073.md" and .results[0].hybridScore == 100 and .results[0].keywordRank != null and .results[0].semanticRank != null and .results[0].matchSource == "keyword+semantic"' >/dev/null
+          echo "$hybrid" | jq -e '.results[0].fileName == "v074.md" and .results[0].hybridScore == 100 and .results[0].keywordRank != null and .results[0].semanticRank != null and .results[0].matchSource == "keyword+semantic"' >/dev/null
           echo "$hybrid" | jq -e '.results[0].heading == "Kế hoạch nghiên cứu" and (.results[0].similarityScore > 0.10)' >/dev/null
+
+          grep -Fq 'chèn ký hiệu [1], [2]' src/PersonalAI.Web/Services/KnowledgeGroundingService.cs
+          grep -Fq 'v074.js' src/PersonalAI.Web/wwwroot/index.html
+          grep -Fq 'v074.css' src/PersonalAI.Web/wwwroot/index.html
 
           for id in "$txt_id" "$md_id" "$docx_id" "$pdf_id"; do
             curl -fsS -X DELETE "http://127.0.0.1:5077/api/knowledge/documents/${id}" >/dev/null
@@ -156,3 +160,4 @@ jobs:
           node --check src/PersonalAI.Web/wwwroot/v070.js
           node --check src/PersonalAI.Web/wwwroot/v072.js
           node --check src/PersonalAI.Web/wwwroot/v073.js
+          node --check src/PersonalAI.Web/wwwroot/v074.js

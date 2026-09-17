@@ -1,9 +1,12 @@
 (() => {
-  // v0.6.1 could enter a MutationObserver feedback loop because it watched
-  // the same subtree where it inserted suggestion cards. Keep this file as
-  // a compatibility loader so cached index.html pages receive the fixed code.
-  const script = document.createElement("script");
-  script.src = "v0611.js?v=0611";
-  script.defer = true;
-  document.head.appendChild(script);
+  // Compatibility loader: always apply the v0.6.1.1 MutationObserver hotfix
+  // before layering the v0.6.2 memory-management UI on top of v0.6.0.
+  const hotfix = document.createElement("script");
+  hotfix.src = "v0611.js?v=0611";
+  hotfix.onload = () => {
+    const v062 = document.createElement("script");
+    v062.src = "v062.js?v=062";
+    document.head.appendChild(v062);
+  };
+  document.head.appendChild(hotfix);
 })();

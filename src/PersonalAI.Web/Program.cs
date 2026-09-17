@@ -60,7 +60,7 @@ app.MapGet("/api/status", (IAiProviderResolver providerResolver, ITeamProfileCat
         provider = aiProvider.Name,
         model = aiProvider.Model,
         teamProfile = teamProfiles.DefaultProfileId,
-        version = "0.6.3"
+        version = "0.6.4"
     });
 });
 
@@ -123,6 +123,27 @@ app.MapDelete("/api/knowledge/documents/{documentId:guid}", async (Guid document
 app.MapGet("/api/memory", async (IPersonalMemoryStore memoryStore, CancellationToken cancellationToken) =>
     Results.Ok(await memoryStore.GetAllAsync(cancellationToken)));
 
+app.MapGet("/api/memory/stats", async (IPersonalMemoryStore memoryStore, CancellationToken cancellationToken) =>
+    Results.Ok(await memoryStore.GetStatsAsync(cancellationToken)));
+
+app.MapGet("/api/memory/export", async (IPersonalMemoryStore memoryStore, CancellationToken cancellationToken) =>
+    Results.Ok(new PersonalMemoryExport(
+        1,
+        DateTimeOffset.UtcNow,
+        await memoryStore.GetAllAsync(cancellationToken))));
+
+app.MapPost("/api/memory/import", async (ImportPersonalMemoriesRequest request, IPersonalMemoryStore memoryStore, CancellationToken cancellationToken) =>
+{
+    try
+    {
+        return Results.Ok(await memoryStore.ImportAsync(request, cancellationToken));
+    }
+    catch (ArgumentException exception)
+    {
+        return Results.BadRequest(new ApiError(exception.Message));
+    }
+});
+
 app.MapPost("/api/memory", async (CreatePersonalMemoryRequest request, IPersonalMemoryStore memoryStore, CancellationToken cancellationToken) =>
 {
     try
@@ -153,11 +174,20 @@ app.MapPut("/api/memory/{memoryId:guid}", async (Guid memoryId, UpdatePersonalMe
     }
 });
 
+app.MapPatch("/api/memory/{memoryId:guid}/enabled", async (Guid memoryId, SetPersonalMemoryEnabledRequest request, IPersonalMemoryStore memoryStore, CancellationToken cancellationToken) =>
+{
+    var memory = await memoryStore.SetEnabledAsync(memoryId, request.IsEnabled, cancellationToken);
+    return memory is null ? Results.NotFound() : Results.Ok(memory);
+});
+
 app.MapDelete("/api/memory/{memoryId:guid}", async (Guid memoryId, IPersonalMemoryStore memoryStore, CancellationToken cancellationToken) =>
 {
     var deleted = await memoryStore.DeleteAsync(memoryId, cancellationToken);
     return deleted ? Results.NoContent() : Results.NotFound();
 });
+
+app.MapDelete("/api/memory", async (IPersonalMemoryStore memoryStore, CancellationToken cancellationToken) =>
+    Results.Ok(new { deleted = await memoryStore.DeleteAllAsync(cancellationToken) }));
 
 app.MapGet("/api/settings/ai", (IAiSettingsStore settingsStore) =>
     Results.Ok(settingsStore.GetPublicSettings()));

@@ -1,0 +1,34 @@
+name: v0.8.1 debug
+
+on:
+  push:
+    branches:
+      - 'feature/v0.8.1-internal-tools'
+
+jobs:
+  debug:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: '8.0.x'
+      - run: dotnet restore PersonalAI.sln
+      - run: dotnet build PersonalAI.sln --configuration Release --no-restore
+      - name: Trace internal tools smoke
+        shell: bash
+        run: |
+          set -euxo pipefail
+          dotnet run --project src/PersonalAI.Web/PersonalAI.Web.csproj --configuration Release --no-build --urls http://127.0.0.1:5077 >/tmp/personalai.log 2>&1 &
+          APP_PID=$!
+          trap 'code=$?; if [ "$code" -ne 0 ]; then cat /tmp/personalai.log || true; fi; kill "$APP_PID" 2>/dev/null || true; exit "$code"' EXIT
+          for i in {1..30}; do
+            if curl -fsS http://127.0.0.1:5077/api/memory >/dev/null; then break; fi
+            sleep 1
+          done
+          curl -fsS http://127.0.0.1:5077/api/status | tee /tmp/status.json | jq -e '.version == "0.8.1"'
+          curl -fsS http://127.0.0.1:5077/api/tools | tee /tmp/tools.json | jq -e '.frameworkVersion == "0.8.1" and (.tools | length) == 7'
+          curl -fsS -X POST http://127.0.0.1:5077/api/tools/execute -H 'Content-Type: application/json' -d '{"toolName":"local.calculate","arguments":{"expression":"2 + 3 * (4 - 1)"},"approvedPermissions":["READ"],"confirmed":false}' | tee /tmp/calc.json | jq -e '.status == "succeeded" and .output.result == 11'
+          curl -fsS -X DELETE http://127.0.0.1:5077/api/memory >/dev/null
+          curl -fsS -X POST http://127.0.0.1:5077/api/memory -H 'Content-Type: application/json' -d '{"kind":"fact","content":"v081 memory regression internal tools","retention":"temporary","expiresAt":"2099-01-01T00:00:00Z"}' | tee /tmp/memory-created.json | jq -e '.isExpired == false'
+          curl -fsS -X POST http://127.0.0.1:5077/api/tools/execute -H 'Content-Type: application/json' -d '{"toolName":"memory.search","arguments":{"query":"v081 memory regression","limit":3},"approvedPermissions":["READ"],"confirmed":false}' | tee /tmp/memory-tool.json | jq -e '.status == "succeeded" and .output.resultCount >= 1'

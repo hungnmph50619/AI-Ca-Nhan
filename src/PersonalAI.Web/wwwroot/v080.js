@@ -1,5 +1,5 @@
 (() => {
-  const VERSION = "0.8.0";
+  const VERSION = "0.8.1";
   let loading = false;
 
   if (document.readyState === "loading") {
@@ -64,7 +64,7 @@
     const heading = document.createElement("div");
     const eyebrow = document.createElement("p");
     eyebrow.className = "eyebrow";
-    eyebrow.textContent = "TOOL FRAMEWORK TRÊN MÁY NÀY";
+    eyebrow.textContent = "INTERNAL TOOLS TRÊN MÁY NÀY";
     const title = document.createElement("h2");
     title.id = "toolsTitle";
     title.textContent = "Công cụ";
@@ -80,7 +80,7 @@
 
     const intro = document.createElement("div");
     intro.className = "v080-framework-intro";
-    intro.innerHTML = "<strong>Tool Framework v0.8.0</strong><p>Registry, JSON input schema, permission gate, xác nhận và timeout được kiểm soát bởi ứng dụng. Bản này chưa cho model tự ý thực thi công cụ.</p>";
+    intro.innerHTML = "<strong>Internal Tools v0.8.1</strong><p>Framework hiện có tìm trí nhớ, tìm tài liệu hybrid, calculator, date math, trạng thái app và các utility local. Mọi lần chạy vẫn đi qua schema, permission policy và timeout.</p>";
 
     const permissionLegend = document.createElement("div");
     permissionLegend.className = "v080-permission-legend";
@@ -98,7 +98,7 @@
 
     const note = document.createElement("p");
     note.className = "security-copy";
-    note.textContent = "Mỗi lần thực thi phải đi qua registry, schema validation, permission policy và timeout cố định. WRITE / DELETE / EXTERNAL / SENSITIVE luôn cần xác nhận rõ ràng. AI chưa được cấp quyền tự thay đổi policy trong v0.8.0.";
+    note.textContent = "Các internal tool v0.8.1 chỉ đọc hoặc tính toán local và dùng READ. WRITE / DELETE / EXTERNAL / SENSITIVE vẫn cần xác nhận rõ ràng. Chat/model chưa tự chọn hay tự gọi công cụ ở bản này.";
 
     card.append(header, intro, permissionLegend, status, list, note);
     dialog.appendChild(card);

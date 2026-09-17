@@ -5,7 +5,7 @@
   hotfix.src = "v0611.js?v=0611";
   hotfix.onload = () => {
     const v062 = document.createElement("script");
-    v062.src = "v062.js?v=062";
+    v062.src = "v062.js?v=0621";
     document.head.appendChild(v062);
   };
   document.head.appendChild(hotfix);

@@ -6,41 +6,291 @@
   let kindFilter = "all";
   const nativeFetch = window.fetch.bind(window);
 
-  if (document.readyState === "loading") document.addEventListener("DOMContentLoaded", initialize, { once: true }); else initialize();
+  if (document.readyState === "loading") document.addEventListener("DOMContentLoaded", initialize, { once: true });
+  else initialize();
 
   function initialize() {
-    updateVersionLabels(); injectStyles(); upgradeMemoryDialog();
+    updateVersionLabels();
+    injectStyles();
+    upgradeMemoryDialog();
     document.querySelector("#memoryButton")?.addEventListener("click", () => setTimeout(loadMemories, 0));
   }
+
   function updateVersionLabels() {
-    const brand=document.querySelector(".brand > div:last-child > span"); if(brand) brand.textContent=`Phiên bản ${VERSION}`;
-    const memoryIntro=document.querySelector(".memory-intro strong"); if(memoryIntro) memoryIntro.textContent=`Trí nhớ v${VERSION}`;
-    const knowledgeIntro=document.querySelector(".knowledge-intro strong"); if(knowledgeIntro) knowledgeIntro.textContent=`Hỏi đáp có nguồn v${VERSION}`;
+    const brand = document.querySelector(".brand > div:last-child > span");
+    if (brand) brand.textContent = `Phiên bản ${VERSION}`;
+    const memoryIntro = document.querySelector(".memory-intro strong");
+    if (memoryIntro) memoryIntro.textContent = `Trí nhớ v${VERSION}`;
+    const knowledgeIntro = document.querySelector(".knowledge-intro strong");
+    if (knowledgeIntro) knowledgeIntro.textContent = `Hỏi đáp có nguồn v${VERSION}`;
   }
+
   function upgradeMemoryDialog() {
-    const oldForm=document.querySelector("#memoryForm"), oldList=document.querySelector("#memoryList");
-    if(!oldForm||!oldList||document.querySelector("#memorySearchInput")) return;
-    const form=oldForm.cloneNode(true); oldForm.replaceWith(form); const list=oldList.cloneNode(false); oldList.replaceWith(list);
-    const actions=form.querySelector(".memory-form-actions");
-    if(actions){ const hint=actions.querySelector(".field-hint"); if(hint) hint.textContent="Thêm mới hoặc chọn Sửa ở một trí nhớ đã lưu."; const cancel=document.createElement("button"); cancel.type="button"; cancel.id="memoryCancelEditButton"; cancel.className="secondary-button"; cancel.textContent="Hủy sửa"; cancel.hidden=true; actions.insertBefore(cancel,actions.querySelector("#memorySaveButton")); }
-    const header=document.querySelector(".memory-list-header"), controls=document.createElement("div"); controls.className="memory-v062-controls"; controls.innerHTML=`<input id="memorySearchInput" type="search" maxlength="200" autocomplete="off" placeholder="Tìm trong trí nhớ…" aria-label="Tìm trong trí nhớ"><select id="memoryKindFilter" aria-label="Lọc loại trí nhớ"><option value="all">Tất cả loại</option><option value="fact">Thông tin</option><option value="preference">Sở thích</option><option value="rule">Quy tắc</option></select>`; header?.insertAdjacentElement("afterend",controls);
-    form.addEventListener("submit",saveOrUpdate); document.querySelector("#memoryCancelEditButton")?.addEventListener("click",resetEditor); document.querySelector("#memorySearchInput")?.addEventListener("input",e=>{query=normalize(e.target.value);render();}); document.querySelector("#memoryKindFilter")?.addEventListener("change",e=>{kindFilter=e.target.value;render();}); list.addEventListener("click",handleListAction); document.querySelector("#memoryRefreshButton")?.addEventListener("click",loadMemories); loadMemories();
+    const oldForm = document.querySelector("#memoryForm");
+    const oldList = document.querySelector("#memoryList");
+    if (!oldForm || !oldList || document.querySelector("#memorySearchInput")) return;
+
+    const form = oldForm.cloneNode(true);
+    oldForm.replaceWith(form);
+    const list = oldList.cloneNode(false);
+    oldList.replaceWith(list);
+
+    const actions = form.querySelector(".memory-form-actions");
+    if (actions) {
+      const hint = actions.querySelector(".field-hint");
+      if (hint) hint.textContent = "Thêm mới hoặc chọn Sửa ở một trí nhớ đã lưu.";
+      const cancel = document.createElement("button");
+      cancel.type = "button";
+      cancel.id = "memoryCancelEditButton";
+      cancel.className = "secondary-button";
+      cancel.textContent = "Hủy sửa";
+      cancel.hidden = true;
+      actions.insertBefore(cancel, actions.querySelector("#memorySaveButton"));
+    }
+
+    const header = document.querySelector(".memory-list-header");
+    const controls = document.createElement("div");
+    controls.className = "memory-v062-controls";
+    controls.innerHTML = `
+      <input id="memorySearchInput" type="search" maxlength="200" autocomplete="off" placeholder="Tìm trong trí nhớ…" aria-label="Tìm trong trí nhớ">
+      <select id="memoryKindFilter" aria-label="Lọc loại trí nhớ">
+        <option value="all">Tất cả loại</option>
+        <option value="fact">Thông tin</option>
+        <option value="preference">Sở thích</option>
+        <option value="rule">Quy tắc</option>
+      </select>`;
+    header?.insertAdjacentElement("afterend", controls);
+
+    form.addEventListener("submit", saveOrUpdate);
+    document.querySelector("#memoryCancelEditButton")?.addEventListener("click", resetEditor);
+    document.querySelector("#memorySearchInput")?.addEventListener("input", event => { query = normalize(event.target.value); render(); });
+    document.querySelector("#memoryKindFilter")?.addEventListener("change", event => { kindFilter = event.target.value; render(); });
+    list.addEventListener("click", handleListAction);
+    document.querySelector("#memoryRefreshButton")?.addEventListener("click", loadMemories);
+    loadMemories();
   }
-  async function loadMemories(){try{const r=await nativeFetch("/api/memory",{cache:"no-store"}),p=await r.json().catch(()=>[]);if(!r.ok)throw new Error(p.error||"Không tải được trí nhớ.");allMemories=Array.isArray(p)?p:[];render();feedback("");}catch(e){feedback(e.message||"Không tải được trí nhớ.",true);}}
-  async function saveOrUpdate(event){
-    event.preventDefault(); const content=document.querySelector("#memoryContent")?.value.trim()||"", kind=document.querySelector("#memoryKind")?.value||"fact"; if(content.length<3)return feedback("Hãy nhập nội dung trí nhớ.",true);
-    const duplicate=allMemories.find(m=>m.id!==editingId&&normalize(m.content)===normalize(content));
-    if(!editingId){ if(duplicate){const ok=window.confirm(`Đã có một trí nhớ cùng nội dung (${kindLabel(duplicate.kind)}). Bạn có muốn ghi đè trí nhớ đó?`);if(!ok)return feedback("Đã hủy để tránh ghi đè trí nhớ hiện có.");await deleteById(duplicate.id,false);} return createMemory(kind,content,duplicate?"Đã ghi đè trí nhớ trùng.":"Đã lưu trí nhớ."); }
-    const original=allMemories.find(m=>m.id===editingId); if(!original){resetEditor();return feedback("Trí nhớ cần sửa không còn tồn tại.",true);} if(!window.confirm("Lưu thay đổi cho trí nhớ này?"))return;
-    const confirmOverwrite=!!duplicate && window.confirm(`Đã có một trí nhớ cùng nội dung (${kindLabel(duplicate.kind)}). Ghi đè trí nhớ đó?`); if(duplicate&&!confirmOverwrite)return feedback("Đã hủy để tránh ghi đè trí nhớ hiện có.");
-    try{const r=await nativeFetch(`/api/memory/${encodeURIComponent(editingId)}`,{method:"PUT",headers:{"Content-Type":"application/json"},body:JSON.stringify({kind,content,confirmOverwrite,isEnabled:original.isEnabled!==false})});const p=await r.json().catch(()=>({}));if(!r.ok)throw new Error(p.error||"Không cập nhật được trí nhớ.");resetEditor();feedback("Đã cập nhật trí nhớ.");await loadMemories();}catch(e){feedback(e.message||"Không cập nhật được trí nhớ.",true);}
+
+  async function loadMemories() {
+    try {
+      const response = await nativeFetch("/api/memory", { cache: "no-store" });
+      const payload = await response.json().catch(() => []);
+      if (!response.ok) throw new Error(payload.error || "Không tải được trí nhớ.");
+      allMemories = Array.isArray(payload) ? payload : [];
+      render();
+      feedback("");
+    } catch (error) {
+      feedback(error.message || "Không tải được trí nhớ.", true);
+    }
   }
-  async function createMemory(kind,content,successMessage,reload=true){try{const r=await nativeFetch("/api/memory",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({kind,content})}),p=await r.json().catch(()=>({}));if(!r.ok)throw new Error(p.error||"Không lưu được trí nhớ.");if(successMessage)feedback(successMessage);if(reload){resetEditor();await loadMemories();}return true;}catch(e){feedback(e.message||"Không lưu được trí nhớ.",true);return false;}}
-  async function handleListAction(event){const edit=event.target.closest?.("[data-memory-edit]");if(edit)return beginEdit(edit.dataset.memoryEdit);const remove=event.target.closest?.("[data-memory-delete-v062]");if(!remove||!window.confirm("Xóa trí nhớ này?"))return;await deleteById(remove.dataset.memoryDeleteV062,true);}
-  function beginEdit(id){const m=allMemories.find(x=>x.id===id);if(!m)return;editingId=id;document.querySelector("#memoryKind").value=m.kind||"fact";document.querySelector("#memoryContent").value=m.content||"";document.querySelector("#memorySaveButton").textContent="Lưu thay đổi";document.querySelector("#memoryCancelEditButton").hidden=false;document.querySelector("#memoryContent")?.focus();feedback("Đang sửa trí nhớ. Thay đổi chỉ được lưu sau khi bạn xác nhận.");}
-  function resetEditor(){editingId=null;const c=document.querySelector("#memoryContent");if(c)c.value="";const s=document.querySelector("#memorySaveButton");if(s)s.textContent="Lưu trí nhớ";const x=document.querySelector("#memoryCancelEditButton");if(x)x.hidden=true;}
-  async function deleteById(id,reload){try{const r=await nativeFetch(`/api/memory/${encodeURIComponent(id)}`,{method:"DELETE"});if(!r.ok&&r.status!==404)throw new Error("Không xóa được trí nhớ.");allMemories=allMemories.filter(m=>m.id!==id);if(reload){feedback("Đã xóa trí nhớ.");await loadMemories();}return true;}catch(e){feedback(e.message||"Không xóa được trí nhớ.",true);return false;}}
-  function render(){const list=document.querySelector("#memoryList"),empty=document.querySelector("#memoryEmpty"),summary=document.querySelector("#memorySummary"),count=document.querySelector("#memorySidebarCount");if(!list||!empty)return;const filtered=allMemories.filter(m=>(kindFilter==="all"||m.kind===kindFilter)&&(!query||normalize(m.content).includes(query)));if(summary)summary.textContent=filtered.length===allMemories.length?`${allMemories.length} trí nhớ`:`${filtered.length}/${allMemories.length} trí nhớ`;if(count)count.textContent=String(allMemories.length);list.replaceChildren();empty.hidden=filtered.length>0;const et=empty.querySelector("strong"),ep=empty.querySelector("p");if(filtered.length===0&&allMemories.length>0){if(et)et.textContent="Không có kết quả phù hợp";if(ep)ep.textContent="Thử từ khóa khác hoặc chọn Tất cả loại.";}else{if(et)et.textContent="Chưa có trí nhớ nào";if(ep)ep.textContent="Hãy lưu một thông tin, sở thích hoặc quy tắc.";}filtered.forEach(m=>{const row=document.createElement("article");row.className="memory-row";row.setAttribute("role","listitem");const body=document.createElement("div");body.className="memory-row-body";const badge=document.createElement("span");badge.className=`memory-kind memory-kind-${m.kind||"fact"}`;badge.textContent=kindLabel(m.kind);const content=document.createElement("p");content.textContent=m.content||"";body.append(badge,content);const actions=document.createElement("div");actions.className="memory-v062-row-actions";const edit=document.createElement("button");edit.type="button";edit.className="secondary-button";edit.dataset.memoryEdit=m.id;edit.textContent="Sửa";const remove=document.createElement("button");remove.type="button";remove.className="memory-delete";remove.dataset.memoryDeleteV062=m.id;remove.textContent="Xóa";actions.append(edit,remove);row.append(body,actions);list.appendChild(row);});setTimeout(()=>window.dispatchEvent(new CustomEvent("personalai:memory-rendered")),0);}
-  function feedback(message,error=false){const n=document.querySelector("#memoryFeedback");if(!n)return;n.textContent=message;n.classList.toggle("error",error);} function normalize(v){return String(v||"").trim().replace(/\s+/g," ").toLocaleLowerCase("vi-VN");} function kindLabel(k){return k==="rule"?"Quy tắc":k==="preference"?"Sở thích":"Thông tin";}
-  function injectStyles(){if(document.querySelector("#v062Styles"))return;const s=document.createElement("style");s.id="v062Styles";s.textContent=`.memory-v062-controls{display:grid;grid-template-columns:minmax(0,1fr) 170px;gap:8px;margin:10px 0 12px}.memory-v062-controls input,.memory-v062-controls select{width:100%;box-sizing:border-box}.memory-v062-row-actions{display:flex;gap:7px;align-items:center;flex:none}.memory-v062-row-actions .secondary-button{padding:7px 10px}@media(max-width:560px){.memory-v062-controls{grid-template-columns:1fr}.memory-row{align-items:flex-start}.memory-v062-row-actions{flex-direction:column}}`;document.head.appendChild(s);}
+
+  async function saveOrUpdate(event) {
+    event.preventDefault();
+    const content = document.querySelector("#memoryContent")?.value.trim() || "";
+    const kind = document.querySelector("#memoryKind")?.value || "fact";
+    if (content.length < 3) return feedback("Hãy nhập nội dung trí nhớ.", true);
+
+    const duplicate = allMemories.find(memory =>
+      memory.id !== editingId && normalize(memory.content) === normalize(content));
+
+    if (!editingId) {
+      if (duplicate) {
+        const overwrite = window.confirm(`Đã có một trí nhớ cùng nội dung (${kindLabel(duplicate.kind)}). Bạn có muốn ghi đè trí nhớ đó?`);
+        if (!overwrite) return feedback("Đã hủy để tránh ghi đè trí nhớ hiện có.");
+        return updateMemory(duplicate.id, kind, content, true, duplicate.isEnabled !== false, "Đã ghi đè trí nhớ trùng.");
+      }
+
+      return createMemory(kind, content, "Đã lưu trí nhớ.");
+    }
+
+    const original = allMemories.find(memory => memory.id === editingId);
+    if (!original) {
+      resetEditor();
+      return feedback("Trí nhớ cần sửa không còn tồn tại.", true);
+    }
+
+    let confirmOverwrite = false;
+    if (duplicate) {
+      confirmOverwrite = window.confirm(`Đã có một trí nhớ cùng nội dung (${kindLabel(duplicate.kind)}). Ghi đè trí nhớ đó bằng thay đổi này?`);
+      if (!confirmOverwrite) return feedback("Đã hủy để tránh ghi đè trí nhớ hiện có.");
+    } else if (!window.confirm("Lưu thay đổi cho trí nhớ này?")) {
+      return;
+    }
+
+    return updateMemory(
+      editingId,
+      kind,
+      content,
+      confirmOverwrite,
+      original.isEnabled !== false,
+      "Đã cập nhật trí nhớ.");
+  }
+
+  async function createMemory(kind, content, successMessage, reload = true) {
+    try {
+      const response = await nativeFetch("/api/memory", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ kind, content })
+      });
+      const payload = await response.json().catch(() => ({}));
+      if (!response.ok) throw new Error(payload.error || "Không lưu được trí nhớ.");
+      if (successMessage) feedback(successMessage);
+      if (reload) {
+        resetEditor();
+        await loadMemories();
+      }
+      return true;
+    } catch (error) {
+      feedback(error.message || "Không lưu được trí nhớ.", true);
+      return false;
+    }
+  }
+
+  async function updateMemory(id, kind, content, confirmOverwrite, isEnabled, successMessage) {
+    try {
+      const response = await nativeFetch(`/api/memory/${encodeURIComponent(id)}`, {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ kind, content, confirmOverwrite, isEnabled })
+      });
+      const payload = await response.json().catch(() => ({}));
+      if (!response.ok) throw new Error(payload.error || "Không cập nhật được trí nhớ.");
+      resetEditor();
+      feedback(successMessage || "Đã cập nhật trí nhớ.");
+      await loadMemories();
+      return true;
+    } catch (error) {
+      feedback(error.message || "Không cập nhật được trí nhớ.", true);
+      return false;
+    }
+  }
+
+  async function handleListAction(event) {
+    const edit = event.target.closest?.("[data-memory-edit]");
+    if (edit) return beginEdit(edit.dataset.memoryEdit);
+    const remove = event.target.closest?.("[data-memory-delete-v062]");
+    if (!remove || !window.confirm("Xóa trí nhớ này?")) return;
+    await deleteById(remove.dataset.memoryDeleteV062, true);
+  }
+
+  function beginEdit(id) {
+    const memory = allMemories.find(item => item.id === id);
+    if (!memory) return;
+    editingId = id;
+    document.querySelector("#memoryKind").value = memory.kind || "fact";
+    document.querySelector("#memoryContent").value = memory.content || "";
+    document.querySelector("#memorySaveButton").textContent = "Lưu thay đổi";
+    document.querySelector("#memoryCancelEditButton").hidden = false;
+    document.querySelector("#memoryContent")?.focus();
+    feedback("Đang sửa trí nhớ. Thay đổi chỉ được lưu sau khi bạn xác nhận.");
+  }
+
+  function resetEditor() {
+    editingId = null;
+    const content = document.querySelector("#memoryContent");
+    if (content) content.value = "";
+    const save = document.querySelector("#memorySaveButton");
+    if (save) save.textContent = "Lưu trí nhớ";
+    const cancel = document.querySelector("#memoryCancelEditButton");
+    if (cancel) cancel.hidden = true;
+  }
+
+  async function deleteById(id, reload) {
+    try {
+      const response = await nativeFetch(`/api/memory/${encodeURIComponent(id)}`, { method: "DELETE" });
+      if (!response.ok && response.status !== 404) throw new Error("Không xóa được trí nhớ.");
+      allMemories = allMemories.filter(memory => memory.id !== id);
+      if (reload) {
+        feedback("Đã xóa trí nhớ.");
+        await loadMemories();
+      }
+      return true;
+    } catch (error) {
+      feedback(error.message || "Không xóa được trí nhớ.", true);
+      return false;
+    }
+  }
+
+  function render() {
+    const list = document.querySelector("#memoryList");
+    const empty = document.querySelector("#memoryEmpty");
+    const summary = document.querySelector("#memorySummary");
+    const count = document.querySelector("#memorySidebarCount");
+    if (!list || !empty) return;
+
+    const filtered = allMemories.filter(memory =>
+      (kindFilter === "all" || memory.kind === kindFilter) &&
+      (!query || normalize(memory.content).includes(query)));
+
+    if (summary) summary.textContent = filtered.length === allMemories.length ? `${allMemories.length} trí nhớ` : `${filtered.length}/${allMemories.length} trí nhớ`;
+    if (count) count.textContent = String(allMemories.length);
+    list.replaceChildren();
+    empty.hidden = filtered.length > 0;
+
+    const emptyTitle = empty.querySelector("strong");
+    const emptyText = empty.querySelector("p");
+    if (filtered.length === 0 && allMemories.length > 0) {
+      if (emptyTitle) emptyTitle.textContent = "Không có kết quả phù hợp";
+      if (emptyText) emptyText.textContent = "Thử từ khóa khác hoặc chọn Tất cả loại.";
+    } else {
+      if (emptyTitle) emptyTitle.textContent = "Chưa có trí nhớ nào";
+      if (emptyText) emptyText.textContent = "Hãy lưu một thông tin, sở thích hoặc quy tắc.";
+    }
+
+    filtered.forEach(memory => {
+      const row = document.createElement("article");
+      row.className = "memory-row";
+      row.setAttribute("role", "listitem");
+      const body = document.createElement("div");
+      body.className = "memory-row-body";
+      const badge = document.createElement("span");
+      badge.className = `memory-kind memory-kind-${memory.kind || "fact"}`;
+      badge.textContent = kindLabel(memory.kind);
+      const content = document.createElement("p");
+      content.textContent = memory.content || "";
+      body.append(badge, content);
+      const actions = document.createElement("div");
+      actions.className = "memory-v062-row-actions";
+      const edit = document.createElement("button");
+      edit.type = "button";
+      edit.className = "secondary-button";
+      edit.dataset.memoryEdit = memory.id;
+      edit.textContent = "Sửa";
+      const remove = document.createElement("button");
+      remove.type = "button";
+      remove.className = "memory-delete";
+      remove.dataset.memoryDeleteV062 = memory.id;
+      remove.textContent = "Xóa";
+      actions.append(edit, remove);
+      row.append(body, actions);
+      list.appendChild(row);
+    });
+
+    window.dispatchEvent(new CustomEvent("personalai:memory-rendered", {
+      detail: { memories: allMemories }
+    }));
+  }
+
+  function feedback(message, error = false) {
+    const node = document.querySelector("#memoryFeedback");
+    if (!node) return;
+    node.textContent = message;
+    node.classList.toggle("error", error);
+  }
+
+  function normalize(value) {
+    return String(value || "").trim().replace(/\s+/g, " ").toLocaleLowerCase("vi-VN");
+  }
+
+  function kindLabel(kind) {
+    return kind === "rule" ? "Quy tắc" : kind === "preference" ? "Sở thích" : "Thông tin";
+  }
+
+  function injectStyles() {
+    if (document.querySelector("#v062Styles")) return;
+    const style = document.createElement("style");
+    style.id = "v062Styles";
+    style.textContent = `.memory-v062-controls{display:grid;grid-template-columns:minmax(0,1fr) 170px;gap:8px;margin:10px 0 12px}.memory-v062-controls input,.memory-v062-controls select{width:100%;box-sizing:border-box}.memory-v062-row-actions{display:flex;gap:7px;align-items:center;flex:none}.memory-v062-row-actions .secondary-button{padding:7px 10px}@media(max-width:560px){.memory-v062-controls{grid-template-columns:1fr}.memory-row{align-items:flex-start}.memory-v062-row-actions{flex-direction:column}}`;
+    document.head.appendChild(style);
+  }
 })();

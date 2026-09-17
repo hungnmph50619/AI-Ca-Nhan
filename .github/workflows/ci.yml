@@ -26,7 +26,7 @@ jobs:
       - name: Build
         run: dotnet build PersonalAI.sln --configuration Release --no-restore
 
-      - name: Smoke test memory, retrieval, citations and document management
+      - name: Smoke test memory, retrieval, citations, management and RAG quality
         shell: bash
         run: |
           set -euo pipefail
@@ -47,23 +47,23 @@ jobs:
             exit 1
           fi
 
-          curl -fsS http://127.0.0.1:5077/api/status | jq -e '.version == "0.7.5"' >/dev/null
+          curl -fsS http://127.0.0.1:5077/api/status | jq -e '.version == "0.7.6"' >/dev/null
 
           curl -fsS -X DELETE http://127.0.0.1:5077/api/memory >/dev/null
           created=$(curl -fsS -X POST http://127.0.0.1:5077/api/memory \
             -H 'Content-Type: application/json' \
-            -d '{"kind":"fact","content":"v075 memory regression","retention":"temporary","expiresAt":"2099-01-01T00:00:00Z"}')
+            -d '{"kind":"fact","content":"v076 memory regression","retention":"temporary","expiresAt":"2099-01-01T00:00:00Z"}')
           echo "$created" | jq -e '.retention == "temporary" and .isExpired == false' >/dev/null
           curl -fsS -X DELETE http://127.0.0.1:5077/api/memory >/dev/null
 
-          printf '# Kế hoạch nghiên cứu\n\nNội dung markdown alpha cho structured chunk, vector semantic, hybrid reranking, citation và document management.\n\n## Giai đoạn hai\n\nNội dung beta riêng biệt.\n' >/tmp/v075.md
-          printf 'Plain text unrelated weather forecast content.\n' >/tmp/v075.txt
+          printf '# Kế hoạch nghiên cứu\n\nNội dung markdown alpha cho structured chunk, vector semantic, hybrid reranking, citation, management và RAG quality.\n\n## Giai đoạn hai\n\nNội dung beta riêng biệt.\n' >/tmp/v076.md
+          printf 'Plain text unrelated weather forecast content.\n' >/tmp/v076.txt
 
           python3 - <<'PY'
           from pathlib import Path
           from zipfile import ZipFile, ZIP_DEFLATED
 
-          with ZipFile('/tmp/v075.docx', 'w', ZIP_DEFLATED) as z:
+          with ZipFile('/tmp/v076.docx', 'w', ZIP_DEFLATED) as z:
               z.writestr('[Content_Types].xml', '''<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
           <Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types">
             <Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/>
@@ -98,13 +98,13 @@ jobs:
           xref = len(pdf); pdf.extend(f'xref\n0 {len(objects)+1}\n'.encode()); pdf.extend(b'0000000000 65535 f \n')
           for offset in offsets[1:]: pdf.extend(f'{offset:010d} 00000 n \n'.encode())
           pdf.extend(f'trailer\n<< /Size {len(objects)+1} /Root 1 0 R >>\nstartxref\n{xref}\n%%EOF\n'.encode())
-          Path('/tmp/v075.pdf').write_bytes(pdf)
+          Path('/tmp/v076.pdf').write_bytes(pdf)
           PY
 
-          txt_doc=$(curl -fsS -F 'file=@/tmp/v075.txt;type=text/plain' http://127.0.0.1:5077/api/knowledge/documents)
-          md_doc=$(curl -fsS -F 'file=@/tmp/v075.md;type=text/markdown' http://127.0.0.1:5077/api/knowledge/documents)
-          docx_doc=$(curl -fsS -F 'file=@/tmp/v075.docx;type=application/vnd.openxmlformats-officedocument.wordprocessingml.document' http://127.0.0.1:5077/api/knowledge/documents)
-          pdf_doc=$(curl -fsS -F 'file=@/tmp/v075.pdf;type=application/pdf' http://127.0.0.1:5077/api/knowledge/documents)
+          txt_doc=$(curl -fsS -F 'file=@/tmp/v076.txt;type=text/plain' http://127.0.0.1:5077/api/knowledge/documents)
+          md_doc=$(curl -fsS -F 'file=@/tmp/v076.md;type=text/markdown' http://127.0.0.1:5077/api/knowledge/documents)
+          docx_doc=$(curl -fsS -F 'file=@/tmp/v076.docx;type=application/vnd.openxmlformats-officedocument.wordprocessingml.document' http://127.0.0.1:5077/api/knowledge/documents)
+          pdf_doc=$(curl -fsS -F 'file=@/tmp/v076.pdf;type=application/pdf' http://127.0.0.1:5077/api/knowledge/documents)
 
           txt_id=$(echo "$txt_doc" | jq -r '.id')
           md_id=$(echo "$md_doc" | jq -r '.id')
@@ -115,6 +115,9 @@ jobs:
           echo "$management" | jq -e '.total == 4 and .ready == 4 and .needsIndexing == 0 and .embeddingModel == "local-feature-hash-v1" and .dimensions == 384' >/dev/null
           echo "$management" | jq -e 'all(.documents[]; .chunkCount > 0 and .indexedChunkCount == .chunkCount and .missingEmbeddingCount == 0 and .indexStatus == "ready" and (.sha256 | length) == 64)' >/dev/null
 
+          quality=$(curl -fsS http://127.0.0.1:5077/api/knowledge/quality/status)
+          echo "$quality" | jq -e '.status == "healthy" and .databaseHealthy == true and .totalDocuments == 4 and .healthyDocuments == 4 and (.issues | length) == 0 and .missingEmbeddings == 0 and .duplicateContentDocuments == 0' >/dev/null
+
           renamed=$(curl -fsS -X PATCH "http://127.0.0.1:5077/api/knowledge/documents/${md_id}" \
             -H 'Content-Type: application/json' \
             -d '{"fileName":"ke-hoach-nghien-cuu.md"}')
@@ -124,13 +127,13 @@ jobs:
           echo "$md_search" | jq -e 'any(.results[]; .fileName == "ke-hoach-nghien-cuu.md" and .heading == "Kế hoạch nghiên cứu" and (.tokenEstimate > 0))' >/dev/null
 
           docx_search=$(curl -fsS --get --data-urlencode 'query=gamma content' --data-urlencode 'limit=10' http://127.0.0.1:5077/api/knowledge/search)
-          echo "$docx_search" | jq -e 'any(.results[]; .fileName == "v075.docx" and .heading == "Chương thử nghiệm")' >/dev/null
+          echo "$docx_search" | jq -e 'any(.results[]; .fileName == "v076.docx" and .heading == "Chương thử nghiệm")' >/dev/null
 
           pdf_search=$(curl -fsS --get --data-urlencode 'query=delta citation content' --data-urlencode 'limit=10' http://127.0.0.1:5077/api/knowledge/search)
-          echo "$pdf_search" | jq -e 'any(.results[]; .fileName == "v075.pdf" and .pageNumber == 1 and .section == "Trang 1")' >/dev/null
-          pdf_chunk_index=$(echo "$pdf_search" | jq -r '.results[] | select(.fileName == "v075.pdf") | .chunkIndex' | head -n1)
+          echo "$pdf_search" | jq -e 'any(.results[]; .fileName == "v076.pdf" and .pageNumber == 1 and .section == "Trang 1")' >/dev/null
+          pdf_chunk_index=$(echo "$pdf_search" | jq -r '.results[] | select(.fileName == "v076.pdf") | .chunkIndex' | head -n1)
           source=$(curl -fsS "http://127.0.0.1:5077/api/knowledge/documents/${pdf_id}/chunks/${pdf_chunk_index}")
-          echo "$source" | jq --arg id "$pdf_id" -e '.documentId == $id and .fileName == "v075.pdf" and .pageNumber == 1 and .section == "Trang 1" and .chunkIndex > 0 and (.content | contains("citation content"))' >/dev/null
+          echo "$source" | jq --arg id "$pdf_id" -e '.documentId == $id and .fileName == "v076.pdf" and .pageNumber == 1 and .section == "Trang 1" and .chunkIndex > 0 and (.content | contains("citation content"))' >/dev/null
 
           reindexed=$(curl -fsS -X POST "http://127.0.0.1:5077/api/knowledge/documents/${md_id}/reindex")
           echo "$reindexed" | jq -e '.fileName == "ke-hoach-nghien-cuu.md" and .chunkCount > 0 and .indexedChunkCount == .chunkCount and .indexStatus == "ready"' >/dev/null
@@ -142,6 +145,60 @@ jobs:
           hybrid=$(curl -fsS --get --data-urlencode 'query=ke hoach nghien cuu alpha semantic hybrid' --data-urlencode 'limit=5' http://127.0.0.1:5077/api/knowledge/hybrid-search)
           echo "$hybrid" | jq -e '.strategy == "keyword+local-vector+deterministic-rerank-v1" and .resultCount >= 1' >/dev/null
           echo "$hybrid" | jq -e '.results[0].fileName == "ke-hoach-nghien-cuu.md" and .results[0].hybridScore == 100 and .results[0].keywordRank != null and .results[0].semanticRank != null and .results[0].matchSource == "keyword+semantic"' >/dev/null
+
+          evaluation_payload=$(jq -nc '{limit:5,cases:[
+            {query:"nghien cuu alpha semantic hybrid",expectedFileName:"ke-hoach-nghien-cuu.md",expectedContains:"alpha"},
+            {query:"gamma content",expectedFileName:"v076.docx",expectedContains:"gamma"},
+            {query:"delta citation content",expectedFileName:"v076.pdf",expectedContains:"delta"}
+          ]}')
+          evaluation=$(curl -fsS -X POST http://127.0.0.1:5077/api/knowledge/quality/evaluate \
+            -H 'Content-Type: application/json' -d "$evaluation_payload")
+          echo "$evaluation" | jq -e '.caseCount == 3 and .passed == 3 and .hitRate == 1 and .contentMatchRate == 1 and .meanReciprocalRank >= 0.8' >/dev/null
+
+          printf '  plain   TEXT unrelated weather forecast content.  \n' >/tmp/v076-duplicate.txt
+          duplicate_doc=$(curl -fsS -F 'file=@/tmp/v076-duplicate.txt;type=text/plain' http://127.0.0.1:5077/api/knowledge/documents)
+          duplicate_id=$(echo "$duplicate_doc" | jq -r '.id')
+          duplicate_quality=$(curl -fsS http://127.0.0.1:5077/api/knowledge/quality/status)
+          echo "$duplicate_quality" | jq -e '.status == "degraded" and .duplicateContentDocuments >= 1 and any(.issues[]; .code == "duplicate-content")' >/dev/null
+          curl -fsS -X DELETE "http://127.0.0.1:5077/api/knowledge/documents/${duplicate_id}" >/dev/null
+
+          db_path=$(find "$HOME" -path '*/PersonalAI/Knowledge/personal-ai.db' -print -quit)
+          test -n "$db_path"
+          python3 - "$db_path" "$md_id" <<'PY'
+          import sqlite3, sys
+          from pathlib import Path
+          db = Path(sys.argv[1])
+          document_id = sys.argv[2]
+          con = sqlite3.connect(db)
+          stored = con.execute('SELECT StoredFileName FROM Documents WHERE Id=?', (document_id,)).fetchone()[0]
+          path = db.parent / 'files' / stored
+          data = path.read_bytes()
+          Path('/tmp/v076-original.bin').write_bytes(data)
+          path.write_bytes(data + b'\nTAMPER')
+          PY
+
+          tampered=$(curl -fsS http://127.0.0.1:5077/api/knowledge/quality/status)
+          echo "$tampered" | jq -e '.status == "error" and .hashMismatches == 1 and any(.issues[]; .code == "hash-mismatch")' >/dev/null
+
+          safe_repair=$(curl -fsS -X POST http://127.0.0.1:5077/api/knowledge/quality/repair)
+          echo "$safe_repair" | jq -e '.skippedDocuments >= 1 and .statusAfterRepair.hashMismatches == 1' >/dev/null
+
+          python3 - "$db_path" "$md_id" <<'PY'
+          import sqlite3, sys
+          from pathlib import Path
+          db = Path(sys.argv[1])
+          document_id = sys.argv[2]
+          con = sqlite3.connect(db)
+          stored = con.execute('SELECT StoredFileName FROM Documents WHERE Id=?', (document_id,)).fetchone()[0]
+          path = db.parent / 'files' / stored
+          path.write_bytes(Path('/tmp/v076-original.bin').read_bytes())
+          PY
+
+          restored=$(curl -fsS http://127.0.0.1:5077/api/knowledge/quality/status)
+          echo "$restored" | jq -e '.status == "healthy" and .hashMismatches == 0 and (.issues | length) == 0' >/dev/null
+
+          repair_healthy=$(curl -fsS -X POST http://127.0.0.1:5077/api/knowledge/quality/repair)
+          echo "$repair_healthy" | jq -e '.attempted == 0 and .failedDocuments == 0 and .statusAfterRepair.status == "healthy"' >/dev/null
 
           exported=$(curl -fsS http://127.0.0.1:5077/api/knowledge/documents/export)
           echo "$exported" | jq -e '.version == 1 and .embeddingModel == "local-feature-hash-v1" and (.documents | length) == 4 and any(.documents[]; .fileName == "ke-hoach-nghien-cuu.md")' >/dev/null
@@ -156,10 +213,13 @@ jobs:
           echo "$management_after" | jq -e '.total == 0 and (.documents | length) == 0' >/dev/null
           vector_status_after=$(curl -fsS http://127.0.0.1:5077/api/knowledge/embeddings/status)
           echo "$vector_status_after" | jq -e '.totalChunks == 0 and .indexedChunks == 0 and .missingChunks == 0' >/dev/null
+          quality_after=$(curl -fsS http://127.0.0.1:5077/api/knowledge/quality/status)
+          echo "$quality_after" | jq -e '.status == "healthy" and .totalDocuments == 0 and (.issues | length) == 0' >/dev/null
 
           grep -Fq 'chèn ký hiệu [1], [2]' src/PersonalAI.Web/Services/KnowledgeGroundingService.cs
-          grep -Fq 'v075.js' src/PersonalAI.Web/wwwroot/index.html
-          grep -Fq 'v075.css' src/PersonalAI.Web/wwwroot/index.html
+          grep -Fq 'v076.js' src/PersonalAI.Web/wwwroot/index.html
+          grep -Fq 'v076.css' src/PersonalAI.Web/wwwroot/index.html
+          grep -Fq '/api/knowledge/quality/evaluate' src/PersonalAI.Web/Services/KnowledgeQualityEndpoints.cs
 
       - name: Setup Node.js
         uses: actions/setup-node@v4
@@ -177,3 +237,4 @@ jobs:
           node --check src/PersonalAI.Web/wwwroot/v073.js
           node --check src/PersonalAI.Web/wwwroot/v074.js
           node --check src/PersonalAI.Web/wwwroot/v075.js
+          node --check src/PersonalAI.Web/wwwroot/v076.js

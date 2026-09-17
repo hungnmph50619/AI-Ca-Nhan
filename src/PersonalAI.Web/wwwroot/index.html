@@ -3,7 +3,7 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <meta name="description" content="Trợ lý AI cá nhân phiên bản 0.7.5">
+  <meta name="description" content="Trợ lý AI cá nhân phiên bản 0.7.6">
   <title>AI Cá Nhân</title>
   <link rel="stylesheet" href="styles.css">
   <link rel="stylesheet" href="v0631.css">
@@ -13,6 +13,7 @@
   <link rel="stylesheet" href="v073.css">
   <link rel="stylesheet" href="v074.css">
   <link rel="stylesheet" href="v075.css">
+  <link rel="stylesheet" href="v076.css">
 </head>
 <body>
   <div class="app-shell">
@@ -21,7 +22,7 @@
         <div class="brand-mark" aria-hidden="true">A</div>
         <div>
           <strong>AI Cá Nhân</strong>
-          <span>Phiên bản 0.7.5</span>
+          <span>Phiên bản 0.7.6</span>
         </div>
       </div>
 
@@ -74,14 +75,14 @@
   <dialog class="settings-dialog knowledge-dialog" id="knowledgeDialog" aria-labelledby="knowledgeTitle">
     <div class="settings-card knowledge-card">
       <header class="settings-header"><div><p class="eyebrow">DỮ LIỆU NẰM TRÊN MÁY NÀY</p><h2 id="knowledgeTitle">Kho dữ liệu</h2></div><button class="dialog-close" id="knowledgeCloseButton" type="button" aria-label="Đóng">×</button></header>
-      <div class="knowledge-intro"><div class="knowledge-intro-icon" aria-hidden="true">▤</div><div><strong>Kho dữ liệu quản lý v0.7.5</strong><p>PDF, DOCX, TXT và Markdown có thể được lọc, đổi tên, re-index, xuất metadata và xóa hàng loạt. Trạng thái chunk/vector được hiển thị ngay trong thư viện.</p></div></div>
+      <div class="knowledge-intro"><div class="knowledge-intro-icon" aria-hidden="true">▤</div><div><strong>Kho dữ liệu chất lượng RAG v0.7.6</strong><p>PDF, DOCX, TXT và Markdown có thể được quản lý, kiểm tra integrity, benchmark retrieval và sửa các lỗi chunk/vector có thể phục hồi an toàn.</p></div></div>
       <form id="knowledgeUploadForm"><label class="knowledge-dropzone" id="knowledgeDropzone" for="knowledgeFileInput"><span class="dropzone-icon" aria-hidden="true">↑</span><strong>Chọn hoặc thả tài liệu vào đây</strong><small>PDF, DOCX, TXT, Markdown · tối đa 10 MB mỗi tệp</small><span class="secondary-button upload-label">Chọn tệp</span></label><input class="visually-hidden" id="knowledgeFileInput" name="file" type="file" accept=".pdf,.docx,.txt,.md,application/pdf,application/vnd.openxmlformats-officedocument.wordprocessingml.document,text/plain,text/markdown"></form>
       <div class="settings-feedback knowledge-feedback" id="knowledgeFeedback" role="status" aria-live="polite"></div>
       <form class="knowledge-search" id="knowledgeSearchForm" role="search"><label class="field-label" for="knowledgeSearchInput">Tìm trong dữ liệu</label><div class="knowledge-search-row"><input id="knowledgeSearchInput" type="search" minlength="2" maxlength="200" autocomplete="off" placeholder="Ví dụ: kế hoạch học AI"><button class="primary-button" id="knowledgeSearchButton" type="submit">Từ khóa</button></div><p class="field-hint">Từ khóa dùng FTS; ngữ nghĩa dùng vector local; tìm kết hợp hợp nhất cả hai và rerank. Chat dùng tìm kết hợp tự động và trả nguồn có thể mở lại.</p></form>
       <section class="knowledge-search-results" id="knowledgeSearchResults" aria-live="polite" hidden><div class="knowledge-search-heading"><strong>Kết quả tìm kiếm</strong><span id="knowledgeSearchSummary"></span></div><div class="knowledge-search-list" id="knowledgeSearchList"></div></section>
       <div class="knowledge-list-header"><div><strong>Tài liệu đã lưu</strong><span id="knowledgeSummary">0 tài liệu</span></div><button class="icon-refresh" id="knowledgeRefreshButton" type="button" aria-label="Tải lại danh sách" title="Tải lại">↻</button></div>
       <div class="knowledge-list" id="knowledgeList" role="list"></div><div class="knowledge-empty" id="knowledgeEmpty"><span aria-hidden="true">◇</span><strong>Kho dữ liệu đang trống</strong><p>Tải tài liệu đầu tiên để chuẩn bị cho chức năng hỏi đáp theo dữ liệu riêng.</p></div>
-      <p class="security-copy">Tệp gốc, cơ sở dữ liệu và vector tìm kiếm được lưu ngoài thư mục Git tại <code>%LOCALAPPDATA%\PersonalAI\Knowledge</code>. Lọc, re-index, xuất metadata, vector và rerank v0.7.5 chạy trên máy; khi trò chuyện, chỉ các đoạn đã được chọn mới được gửi đến nhà cung cấp AI bạn đã chọn.</p>
+      <p class="security-copy">Tệp gốc, cơ sở dữ liệu và vector tìm kiếm được lưu ngoài thư mục Git tại <code>%LOCALAPPDATA%\PersonalAI\Knowledge</code>. Integrity check, benchmark, repair chỉ mục, vector và rerank v0.7.6 chạy trên máy; khi trò chuyện, chỉ các đoạn đã được chọn mới được gửi đến nhà cung cấp AI bạn đã chọn.</p>
     </div>
   </dialog>
 
@@ -98,5 +99,6 @@
   <script src="v073.js" defer></script>
   <script src="v074.js" defer></script>
   <script src="v075.js" defer></script>
+  <script src="v076.js" defer></script>
 </body>
 </html>

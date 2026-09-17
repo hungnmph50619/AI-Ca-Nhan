@@ -18,6 +18,8 @@ builder.Services.AddDataProtection().SetApplicationName("PersonalAI");
 builder.Services.AddSingleton<IAiSettingsStore, AiSettingsStore>();
 builder.Services.AddSingleton<KnowledgeDocumentExtractor>();
 builder.Services.AddSingleton<IKnowledgeDocumentStore, SqliteKnowledgeDocumentStore>();
+builder.Services.AddSingleton<IKnowledgeEmbeddingService, LocalFeatureHashEmbeddingService>();
+builder.Services.AddSingleton<IKnowledgeEmbeddingIndex, KnowledgeEmbeddingIndex>();
 builder.Services.AddSingleton<IKnowledgeGroundingService, KnowledgeGroundingService>();
 builder.Services.AddSingleton<KnowledgeSourceReader>();
 builder.Services.AddSingleton<IPersonalMemoryStore, PersonalMemoryStore>();
@@ -61,7 +63,7 @@ app.MapGet("/api/status", (IAiProviderResolver providerResolver, ITeamProfileCat
         provider = aiProvider.Name,
         model = aiProvider.Model,
         teamProfile = teamProfiles.DefaultProfileId,
-        version = "0.7.1"
+        version = "0.7.2"
     });
 });
 
@@ -79,6 +81,21 @@ app.MapGet("/api/knowledge/search", async (string? query, int? limit, IKnowledge
         return Results.BadRequest(new ApiError(exception.Message));
     }
 });
+
+app.MapGet("/api/knowledge/semantic-search", async (string? query, int? limit, IKnowledgeEmbeddingIndex embeddingIndex, CancellationToken cancellationToken) =>
+{
+    try
+    {
+        return Results.Ok(await embeddingIndex.SearchAsync(query ?? string.Empty, limit ?? 5, cancellationToken));
+    }
+    catch (KnowledgeDocumentValidationException exception)
+    {
+        return Results.BadRequest(new ApiError(exception.Message));
+    }
+});
+
+app.MapGet("/api/knowledge/embeddings/status", async (IKnowledgeEmbeddingIndex embeddingIndex, CancellationToken cancellationToken) =>
+    Results.Ok(await embeddingIndex.GetStatusAsync(cancellationToken)));
 
 app.MapGet("/api/knowledge/documents/{documentId:guid}/chunks/{chunkIndex:int}", async (Guid documentId, int chunkIndex, KnowledgeSourceReader sourceReader, CancellationToken cancellationToken) =>
 {

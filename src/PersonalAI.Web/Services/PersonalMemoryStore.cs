@@ -149,27 +149,55 @@ public sealed class PersonalMemoryStore : IPersonalMemoryStore
     {
         var items = request.Memories ?? [];
         if (items.Count > 5_000) throw new ArgumentException("Mỗi lần chỉ được nhập tối đa 5.000 trí nhớ.");
+
         await _gate.WaitAsync(cancellationToken);
         try
         {
             var imported = 0;
             var skipped = 0;
+            var staged = new List<StoredPersonalMemory>();
+            var seenContent = PublicMemories()
+                .Select(memory => NormalizeContent(memory.Content))
+                .ToHashSet(StringComparer.Ordinal);
+
             foreach (var item in items)
             {
                 var content = ValidateContent(item.Content);
                 var kind = NormalizeKind(item.Kind);
-                if (FindDuplicate(content) is not null)
+                var normalizedContent = NormalizeContent(content);
+
+                if (!seenContent.Add(normalizedContent))
                 {
-                    if (request.SkipDuplicates) { skipped++; continue; }
+                    if (request.SkipDuplicates)
+                    {
+                        skipped++;
+                        continue;
+                    }
+
                     throw new ArgumentException($"Trí nhớ trùng nội dung: {content}");
                 }
+
                 var now = DateTimeOffset.UtcNow;
                 var createdAt = item.CreatedAt ?? now;
                 var updatedAt = item.UpdatedAt ?? createdAt;
-                _memories.Add(new StoredPersonalMemory { Id = Guid.NewGuid(), Kind = kind, EncryptedContent = _protector.Protect(content), CreatedAt = createdAt, UpdatedAt = updatedAt, IsEnabled = item.IsEnabled });
+                staged.Add(new StoredPersonalMemory
+                {
+                    Id = Guid.NewGuid(),
+                    Kind = kind,
+                    EncryptedContent = _protector.Protect(content),
+                    CreatedAt = createdAt,
+                    UpdatedAt = updatedAt,
+                    IsEnabled = item.IsEnabled
+                });
                 imported++;
             }
-            if (imported > 0) await PersistAsync(cancellationToken);
+
+            if (staged.Count > 0)
+            {
+                _memories.AddRange(staged);
+                await PersistAsync(cancellationToken);
+            }
+
             return new PersonalMemoryImportResult(imported, skipped, items.Count);
         }
         finally { _gate.Release(); }

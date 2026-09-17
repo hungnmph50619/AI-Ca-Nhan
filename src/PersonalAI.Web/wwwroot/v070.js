@@ -1,5 +1,5 @@
 (() => {
-  const VERSION = "0.7.0";
+  const VERSION = "0.7.1";
 
   if (document.readyState === "loading") {
     document.addEventListener("DOMContentLoaded", initialize, { once: true });
@@ -12,7 +12,7 @@
     if (brandVersion) brandVersion.textContent = `Phiên bản ${VERSION}`;
 
     const knowledgeIntro = document.querySelector(".knowledge-intro strong");
-    if (knowledgeIntro) knowledgeIntro.textContent = `Kho dữ liệu đa định dạng v${VERSION}`;
+    if (knowledgeIntro) knowledgeIntro.textContent = `Kho dữ liệu có cấu trúc v${VERSION}`;
 
     const fileInput = document.querySelector("#knowledgeFileInput");
     if (fileInput) {

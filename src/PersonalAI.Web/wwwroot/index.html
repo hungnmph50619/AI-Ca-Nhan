@@ -3,11 +3,12 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <meta name="description" content="Trợ lý AI cá nhân phiên bản 0.6.4">
+  <meta name="description" content="Trợ lý AI cá nhân phiên bản 0.6.5">
   <title>AI Cá Nhân</title>
   <link rel="stylesheet" href="styles.css">
   <link rel="stylesheet" href="v0631.css">
   <link rel="stylesheet" href="v064.css">
+  <link rel="stylesheet" href="v065.css">
 </head>
 <body>
   <div class="app-shell">
@@ -16,7 +17,7 @@
         <div class="brand-mark" aria-hidden="true">A</div>
         <div>
           <strong>AI Cá Nhân</strong>
-          <span>Phiên bản 0.6.4</span>
+          <span>Phiên bản 0.6.5</span>
         </div>
       </div>
 
@@ -69,7 +70,7 @@
   <dialog class="settings-dialog knowledge-dialog" id="knowledgeDialog" aria-labelledby="knowledgeTitle">
     <div class="settings-card knowledge-card">
       <header class="settings-header"><div><p class="eyebrow">DỮ LIỆU NẰM TRÊN MÁY NÀY</p><h2 id="knowledgeTitle">Kho dữ liệu</h2></div><button class="dialog-close" id="knowledgeCloseButton" type="button" aria-label="Đóng">×</button></header>
-      <div class="knowledge-intro"><div class="knowledge-intro-icon" aria-hidden="true">▤</div><div><strong>Hỏi đáp có nguồn v0.6.4</strong><p>Trợ lý tự tìm các đoạn liên quan, dùng làm ngữ cảnh trả lời và hiển thị nguồn ngay dưới tin nhắn.</p></div></div>
+      <div class="knowledge-intro"><div class="knowledge-intro-icon" aria-hidden="true">▤</div><div><strong>Hỏi đáp có nguồn v0.6.5</strong><p>Trợ lý tự tìm các đoạn liên quan, dùng làm ngữ cảnh trả lời và hiển thị nguồn ngay dưới tin nhắn.</p></div></div>
       <form id="knowledgeUploadForm"><label class="knowledge-dropzone" id="knowledgeDropzone" for="knowledgeFileInput"><span class="dropzone-icon" aria-hidden="true">↑</span><strong>Chọn hoặc thả tài liệu vào đây</strong><small>TXT, Markdown · tối đa 10 MB mỗi tệp</small><span class="secondary-button upload-label">Chọn tệp</span></label><input class="visually-hidden" id="knowledgeFileInput" name="file" type="file" accept=".txt,.md,text/plain,text/markdown"></form>
       <div class="settings-feedback knowledge-feedback" id="knowledgeFeedback" role="status" aria-live="polite"></div>
       <form class="knowledge-search" id="knowledgeSearchForm" role="search"><label class="field-label" for="knowledgeSearchInput">Tìm trong dữ liệu</label><div class="knowledge-search-row"><input id="knowledgeSearchInput" type="search" minlength="2" maxlength="200" autocomplete="off" placeholder="Ví dụ: kế hoạch học AI"><button class="primary-button" id="knowledgeSearchButton" type="submit">Tìm đoạn</button></div><p class="field-hint">Xem trước những đoạn có thể được dùng làm ngữ cảnh khi bạn trò chuyện với AI.</p></form>
@@ -87,5 +88,6 @@
   <script src="v062.js" defer></script>
   <script src="v0631.js" defer></script>
   <script src="v064.js" defer></script>
+  <script src="v065.js" defer></script>
 </body>
 </html>

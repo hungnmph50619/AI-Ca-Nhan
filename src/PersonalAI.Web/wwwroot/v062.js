@@ -1,5 +1,5 @@
 (() => {
-  const VERSION = "0.6.4";
+  const VERSION = "0.6.5";
   let allMemories = [];
   let editingId = null;
   let query = "";
@@ -87,19 +87,21 @@
     event.preventDefault();
     const content = document.querySelector("#memoryContent")?.value.trim() || "";
     const kind = document.querySelector("#memoryKind")?.value || "fact";
+    const lifecycle = readLifecycle();
     if (content.length < 3) return feedback("Hãy nhập nội dung trí nhớ.", true);
+    if (lifecycle.retention === "temporary" && !lifecycle.expiresAt) return feedback("Hãy chọn ngày hết hạn cho trí nhớ tạm thời.", true);
 
     const duplicate = allMemories.find(memory =>
       memory.id !== editingId && normalize(memory.content) === normalize(content));
 
     if (!editingId) {
       if (duplicate) {
-        const overwrite = window.confirm(`Đã có một trí nhớ cùng nội dung (${kindLabel(duplicate.kind)}). Bạn có muốn ghi đè trí nhớ đó?`);
-        if (!overwrite) return feedback("Đã hủy để tránh ghi đè trí nhớ hiện có.");
-        return updateMemory(duplicate.id, kind, content, true, duplicate.isEnabled !== false, "Đã ghi đè trí nhớ trùng.");
+        const overwrite = window.confirm(`Đã có một trí nhớ cùng nội dung (${kindLabel(duplicate.kind)}). Bạn có muốn cập nhật trí nhớ đó?`);
+        if (!overwrite) return feedback("Đã hủy để tránh tạo trí nhớ trùng.");
+        return updateMemory(duplicate.id, kind, content, true, lifecycle, "Đã cập nhật trí nhớ trùng.");
       }
 
-      return createMemory(kind, content, "Đã lưu trí nhớ.");
+      return createMemory(kind, content, lifecycle, "Đã lưu trí nhớ.");
     }
 
     const original = allMemories.find(memory => memory.id === editingId);
@@ -116,23 +118,38 @@
       return;
     }
 
-    return updateMemory(
-      editingId,
-      kind,
-      content,
-      confirmOverwrite,
-      original.isEnabled !== false,
-      "Đã cập nhật trí nhớ.");
+    return updateMemory(editingId, kind, content, confirmOverwrite, lifecycle, "Đã cập nhật trí nhớ.");
   }
 
-  async function createMemory(kind, content, successMessage, reload = true) {
+  async function createMemory(kind, content, lifecycle, successMessage, reload = true, confirmCreateSimilar = false) {
     try {
       const response = await nativeFetch("/api/memory", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ kind, content })
+        body: JSON.stringify({
+          kind,
+          content,
+          retention: lifecycle.retention,
+          expiresAt: lifecycle.expiresAt,
+          confirmCreateSimilar
+        })
       });
       const payload = await response.json().catch(() => ({}));
+
+      if (response.status === 409 && payload.suggestion && payload.candidateMemoryId && !confirmCreateSimilar) {
+        const updateExisting = window.confirm(`${payload.error || "Nội dung có vẻ là bản cập nhật."}\n\nTrí nhớ cũ: ${payload.candidateContent || ""}\n\nBấm OK để cập nhật trí nhớ cũ, hoặc Hủy để chọn lưu thành trí nhớ mới.`);
+        if (updateExisting) {
+          return updateMemory(payload.candidateMemoryId, kind, content, false, lifecycle, "Đã cập nhật trí nhớ cũ thay vì tạo bản trùng.");
+        }
+
+        if (!window.confirm("Bạn vẫn muốn lưu nội dung này thành một trí nhớ mới?")) {
+          feedback("Đã hủy lưu trí nhớ mới.");
+          return false;
+        }
+
+        return createMemory(kind, content, lifecycle, successMessage, reload, true);
+      }
+
       if (!response.ok) throw new Error(payload.error || "Không lưu được trí nhớ.");
       if (successMessage) feedback(successMessage);
       if (reload) {
@@ -146,12 +163,18 @@
     }
   }
 
-  async function updateMemory(id, kind, content, confirmOverwrite, isEnabled, successMessage) {
+  async function updateMemory(id, kind, content, confirmOverwrite, lifecycle, successMessage) {
     try {
       const response = await nativeFetch(`/api/memory/${encodeURIComponent(id)}`, {
         method: "PUT",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ kind, content, confirmOverwrite, isEnabled })
+        body: JSON.stringify({
+          kind,
+          content,
+          confirmOverwrite,
+          retention: lifecycle.retention,
+          expiresAt: lifecycle.expiresAt
+        })
       });
       const payload = await response.json().catch(() => ({}));
       if (!response.ok) throw new Error(payload.error || "Không cập nhật được trí nhớ.");
@@ -179,10 +202,12 @@
     editingId = id;
     document.querySelector("#memoryKind").value = memory.kind || "fact";
     document.querySelector("#memoryContent").value = memory.content || "";
+    applyLifecycleToEditor(memory);
     document.querySelector("#memorySaveButton").textContent = "Lưu thay đổi";
     document.querySelector("#memoryCancelEditButton").hidden = false;
     document.querySelector("#memoryContent")?.focus();
     feedback("Đang sửa trí nhớ. Thay đổi chỉ được lưu sau khi bạn xác nhận.");
+    window.dispatchEvent(new CustomEvent("personalai:memory-edit", { detail: { memory } }));
   }
 
   function resetEditor() {
@@ -193,6 +218,8 @@
     if (save) save.textContent = "Lưu trí nhớ";
     const cancel = document.querySelector("#memoryCancelEditButton");
     if (cancel) cancel.hidden = true;
+    applyLifecycleToEditor({ retention: "long-term", expiresAt: null });
+    window.dispatchEvent(new CustomEvent("personalai:memory-edit-reset"));
   }
 
   async function deleteById(id, reload) {
@@ -269,6 +296,33 @@
     window.dispatchEvent(new CustomEvent("personalai:memory-rendered", {
       detail: { memories: allMemories }
     }));
+  }
+
+  function readLifecycle() {
+    const retention = document.querySelector("#memoryRetention")?.value || "long-term";
+    const rawExpiry = document.querySelector("#memoryExpiresAt")?.value || "";
+    let expiresAt = null;
+    if (retention === "temporary" && rawExpiry) {
+      const parsed = new Date(rawExpiry);
+      if (!Number.isNaN(parsed.getTime())) expiresAt = parsed.toISOString();
+    }
+    return { retention, expiresAt };
+  }
+
+  function applyLifecycleToEditor(memory) {
+    const retention = document.querySelector("#memoryRetention");
+    const expiresAt = document.querySelector("#memoryExpiresAt");
+    if (retention) retention.value = memory?.retention || "long-term";
+    if (expiresAt) expiresAt.value = toLocalDateTime(memory?.expiresAt);
+    window.dispatchEvent(new CustomEvent("personalai:memory-lifecycle-changed"));
+  }
+
+  function toLocalDateTime(value) {
+    if (!value) return "";
+    const date = new Date(value);
+    if (Number.isNaN(date.getTime())) return "";
+    const local = new Date(date.getTime() - date.getTimezoneOffset() * 60000);
+    return local.toISOString().slice(0, 16);
   }
 
   function feedback(message, error = false) {

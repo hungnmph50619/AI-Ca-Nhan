@@ -22,13 +22,23 @@ jobs:
           dotnet run --project src/PersonalAI.Web/PersonalAI.Web.csproj --configuration Release --no-build --urls http://127.0.0.1:5077 >/tmp/personalai.log 2>&1 &
           APP_PID=$!
           trap 'code=$?; if [ "$code" -ne 0 ]; then cat /tmp/personalai.log || true; fi; kill "$APP_PID" 2>/dev/null || true; exit "$code"' EXIT
+          ready=0
           for i in {1..30}; do
-            if curl -fsS http://127.0.0.1:5077/api/memory >/dev/null; then break; fi
+            if curl -fsS http://127.0.0.1:5077/api/memory >/dev/null; then ready=1; break; fi
             sleep 1
           done
+          test "$ready" = "1"
           curl -fsS http://127.0.0.1:5077/api/status | tee /tmp/status.json | jq -e '.version == "0.8.1"'
           curl -fsS http://127.0.0.1:5077/api/tools | tee /tmp/tools.json | jq -e '.frameworkVersion == "0.8.1" and (.tools | length) == 7'
           curl -fsS -X POST http://127.0.0.1:5077/api/tools/execute -H 'Content-Type: application/json' -d '{"toolName":"local.calculate","arguments":{"expression":"2 + 3 * (4 - 1)"},"approvedPermissions":["READ"],"confirmed":false}' | tee /tmp/calc.json | jq -e '.status == "succeeded" and .output.result == 11'
+          curl -fsS -X POST http://127.0.0.1:5077/api/tools/execute -H 'Content-Type: application/json' -d '{"toolName":"local.date_math","arguments":{"operation":"add","start":"2026-09-18T00:00:00Z","days":1,"hours":2},"approvedPermissions":["READ"],"confirmed":false}' | tee /tmp/date.json | jq -e '.status == "succeeded" and (.output.result | startswith("2026-09-19T02:00:00"))'
           curl -fsS -X DELETE http://127.0.0.1:5077/api/memory >/dev/null
           curl -fsS -X POST http://127.0.0.1:5077/api/memory -H 'Content-Type: application/json' -d '{"kind":"fact","content":"v081 memory regression internal tools","retention":"temporary","expiresAt":"2099-01-01T00:00:00Z"}' | tee /tmp/memory-created.json | jq -e '.isExpired == false'
           curl -fsS -X POST http://127.0.0.1:5077/api/tools/execute -H 'Content-Type: application/json' -d '{"toolName":"memory.search","arguments":{"query":"v081 memory regression","limit":3},"approvedPermissions":["READ"],"confirmed":false}' | tee /tmp/memory-tool.json | jq -e '.status == "succeeded" and .output.resultCount >= 1'
+          curl -fsS -X DELETE http://127.0.0.1:5077/api/memory >/dev/null
+          printf 'Internal tools document alpha semantic hybrid retrieval content.\n' >/tmp/v081.txt
+          doc=$(curl -fsS -F 'file=@/tmp/v081.txt;type=text/plain' http://127.0.0.1:5077/api/knowledge/documents)
+          doc_id=$(echo "$doc" | jq -r '.id')
+          curl -fsS -X POST http://127.0.0.1:5077/api/tools/execute -H 'Content-Type: application/json' -d '{"toolName":"app.summary","arguments":{},"approvedPermissions":["READ"],"confirmed":false}' | tee /tmp/summary.json | jq -e '.status == "succeeded" and .output.knowledge.total == 1 and .output.knowledge.ready == 1 and .output.embeddings.missingChunks == 0'
+          curl -fsS -X POST http://127.0.0.1:5077/api/tools/execute -H 'Content-Type: application/json' -d '{"toolName":"documents.search","arguments":{"query":"alpha semantic hybrid retrieval","limit":5},"approvedPermissions":["READ"],"confirmed":false}' | tee /tmp/docs-tool.json | jq -e '.status == "succeeded" and .output.resultCount >= 1 and .output.results[0].fileName == "v081.txt"'
+          curl -fsS -X DELETE "http://127.0.0.1:5077/api/knowledge/documents/${doc_id}" >/dev/null

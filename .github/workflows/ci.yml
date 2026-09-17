@@ -67,9 +67,9 @@ jobs:
               z.writestr('[Content_Types].xml', '''<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
           <Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types">
             <Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/>
-            <Default Extension Extension="xml" ContentType="application/xml"/>
+            <Default Extension="xml" ContentType="application/xml"/>
             <Override PartName="/word/document.xml" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.document.main+xml"/>
-          </Types>'''.replace('<Default Extension Extension="xml"', '<Default Extension="xml"'))
+          </Types>''')
               z.writestr('_rels/.rels', '''<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
           <Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">
             <Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument" Target="word/document.xml"/>
@@ -121,7 +121,7 @@ jobs:
           echo "$pdf_search" | jq -e 'any(.results[]; .fileName == "v074.pdf" and .pageNumber == 1 and .section == "Trang 1")' >/dev/null
           pdf_chunk_index=$(echo "$pdf_search" | jq -r '.results[] | select(.fileName == "v074.pdf") | .chunkIndex' | head -n1)
           source=$(curl -fsS "http://127.0.0.1:5077/api/knowledge/documents/${pdf_id}/chunks/${pdf_chunk_index}")
-          echo "$source" | jq -e '.documentId == '"'"$pdf_id"'"' and .fileName == "v074.pdf" and .pageNumber == 1 and .section == "Trang 1" and .chunkIndex > 0 and (.content | contains("citation content"))' >/dev/null
+          echo "$source" | jq --arg id "$pdf_id" -e '.documentId == $id and .fileName == "v074.pdf" and .pageNumber == 1 and .section == "Trang 1" and .chunkIndex > 0 and (.content | contains("citation content"))' >/dev/null
 
           vector_status=$(curl -fsS http://127.0.0.1:5077/api/knowledge/embeddings/status)
           echo "$vector_status" | jq -e '.embeddingModel == "local-feature-hash-v1" and .dimensions == 384 and .local == true and .totalChunks >= 4 and .indexedChunks == .totalChunks and .missingChunks == 0' >/dev/null

@@ -35,3 +35,4 @@ jobs:
         run: |
           node --check src/PersonalAI.Web/wwwroot/v062.js
           node --check src/PersonalAI.Web/wwwroot/v064.js
+          node --check src/PersonalAI.Web/wwwroot/v065.js

@@ -4,7 +4,7 @@ namespace PersonalAI.Web.Services;
 
 public static class ToolFrameworkEndpoints
 {
-    public const string FrameworkVersion = "0.8.1";
+    public const string FrameworkVersion = "0.8.2";
 
     private static readonly string[] PermissionTypes =
     [
@@ -24,6 +24,9 @@ public static class ToolFrameworkEndpoints
         services.AddSingleton<IPersonalAiTool, CalculatorTool>();
         services.AddSingleton<IPersonalAiTool, DateMathTool>();
         services.AddSingleton<IPersonalAiTool, AppSummaryTool>();
+        services.AddSingleton<IWorkspaceFileService, WorkspaceFileService>();
+        services.AddSingleton<IPersonalAiTool, WorkspaceListTool>();
+        services.AddSingleton<IPersonalAiTool, WorkspaceReadTextTool>();
         services.AddSingleton<IToolRegistry, ToolRegistry>();
         services.AddSingleton<IToolInputValidator, ToolInputValidator>();
         services.AddSingleton<IToolPolicy, ToolPolicy>();

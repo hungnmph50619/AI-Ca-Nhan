@@ -23,6 +23,7 @@ builder.Services.AddSingleton<IKnowledgeEmbeddingIndex, KnowledgeEmbeddingIndex>
 builder.Services.AddSingleton<IKnowledgeDocumentManagementService, KnowledgeDocumentManagementService>();
 builder.Services.AddSingleton<IKnowledgeHybridSearchService, KnowledgeHybridSearchService>();
 builder.Services.AddKnowledgeQuality();
+builder.Services.AddToolFramework();
 builder.Services.AddSingleton<IKnowledgeGroundingService, KnowledgeGroundingService>();
 builder.Services.AddSingleton<KnowledgeSourceReader>();
 builder.Services.AddSingleton<IPersonalMemoryStore, PersonalMemoryStore>();
@@ -66,7 +67,7 @@ app.MapGet("/api/status", (IAiProviderResolver providerResolver, ITeamProfileCat
         provider = aiProvider.Name,
         model = aiProvider.Model,
         teamProfile = teamProfiles.DefaultProfileId,
-        version = "0.7.6"
+        version = "0.8.0"
     });
 });
 
@@ -208,6 +209,7 @@ app.MapDelete("/api/knowledge/documents/{documentId:guid}", async (Guid document
 });
 
 app.MapKnowledgeQuality();
+app.MapToolFramework();
 
 app.MapGet("/api/memory", async (IPersonalMemoryStore memoryStore, CancellationToken cancellationToken) =>
     Results.Ok(await memoryStore.GetAllAsync(cancellationToken)));

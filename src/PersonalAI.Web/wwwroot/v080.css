@@ -1,0 +1,121 @@
+.v080-tool-dialog {
+  width: min(760px, calc(100vw - 32px));
+}
+
+.v080-tool-card {
+  max-height: min(82vh, 780px);
+  overflow: auto;
+}
+
+.v080-framework-intro {
+  margin: 4px 0 12px;
+  padding: 14px 16px;
+  border: 1px solid color-mix(in srgb, var(--accent) 25%, var(--line));
+  border-radius: 14px;
+  background: color-mix(in srgb, var(--accent) 7%, #fff);
+}
+
+.v080-framework-intro strong {
+  display: block;
+  margin-bottom: 5px;
+}
+
+.v080-framework-intro p {
+  margin: 0;
+  color: var(--muted);
+  font-size: 13px;
+  line-height: 1.55;
+}
+
+.v080-permission-legend {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 7px;
+  margin-bottom: 8px;
+}
+
+.v080-permission-legend span,
+.v080-permission-badge,
+.v080-tool-meta > span {
+  display: inline-flex;
+  align-items: center;
+  min-height: 24px;
+  padding: 3px 8px;
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  background: #fff;
+  color: #526057;
+  font-size: 11px;
+  line-height: 1.2;
+}
+
+.v080-permission-badge {
+  border-color: color-mix(in srgb, var(--accent) 36%, var(--line));
+  background: color-mix(in srgb, var(--accent) 10%, #fff);
+  color: #26382e;
+  font-weight: 700;
+}
+
+.v080-tool-status {
+  margin: 8px 0 10px;
+}
+
+.v080-tool-list {
+  display: grid;
+  gap: 10px;
+}
+
+.v080-tool-item {
+  padding: 14px 15px;
+  border: 1px solid var(--line);
+  border-radius: 14px;
+  background: #fff;
+}
+
+.v080-tool-item-header {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 10px;
+}
+
+.v080-tool-item-header strong {
+  font-family: "Cascadia Code", Consolas, monospace;
+  font-size: 13px;
+  overflow-wrap: anywhere;
+}
+
+.v080-tool-item-header span {
+  color: var(--muted);
+  font-size: 11px;
+  white-space: nowrap;
+}
+
+.v080-tool-item p {
+  margin: 7px 0 10px;
+  color: var(--muted);
+  font-size: 13px;
+  line-height: 1.5;
+}
+
+.v080-tool-meta {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+@media (max-width: 640px) {
+  .v080-tool-dialog {
+    width: min(100vw - 18px, 760px);
+  }
+
+  .v080-tool-card {
+    padding: 20px 16px;
+  }
+
+  .v080-tool-item-header {
+    align-items: flex-start;
+    flex-direction: column;
+    gap: 4px;
+  }
+}

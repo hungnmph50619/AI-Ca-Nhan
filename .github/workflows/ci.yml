@@ -26,6 +26,69 @@ jobs:
       - name: Build
         run: dotnet build PersonalAI.sln --configuration Release --no-restore
 
+      - name: Smoke test memory lifecycle API
+        shell: bash
+        run: |
+          set -euo pipefail
+          dotnet run --project src/PersonalAI.Web/PersonalAI.Web.csproj --configuration Release --no-build --urls http://127.0.0.1:5077 >/tmp/personalai.log 2>&1 &
+          APP_PID=$!
+          trap 'kill "$APP_PID" 2>/dev/null || true' EXIT
+
+          ready=0
+          for i in {1..30}; do
+            if curl -fsS http://127.0.0.1:5077/api/memory >/dev/null; then
+              ready=1
+              break
+            fi
+            sleep 1
+          done
+          if [ "$ready" -ne 1 ]; then
+            cat /tmp/personalai.log
+            exit 1
+          fi
+
+          curl -fsS -X DELETE http://127.0.0.1:5077/api/memory >/dev/null
+
+          created=$(curl -fsS -X POST http://127.0.0.1:5077/api/memory \
+            -H 'Content-Type: application/json' \
+            -d '{"kind":"fact","content":"v065 smoke temporary memory","retention":"temporary","expiresAt":"2099-01-01T00:00:00Z"}')
+          echo "$created" | jq -e '.retention == "temporary" and .isExpired == false and .isStale == false' >/dev/null
+          memory_id=$(echo "$created" | jq -r '.id')
+
+          toggled=$(curl -fsS -X PATCH "http://127.0.0.1:5077/api/memory/${memory_id}/enabled" \
+            -H 'Content-Type: application/json' \
+            -d '{"isEnabled":false}')
+          echo "$toggled" | jq -e '.isEnabled == false' >/dev/null
+
+          stale_import=$(curl -fsS -X POST http://127.0.0.1:5077/api/memory/import \
+            -H 'Content-Type: application/json' \
+            -d '{"memories":[{"kind":"fact","content":"v065 smoke stale record","createdAt":"2020-01-01T00:00:00Z","updatedAt":"2020-01-01T00:00:00Z","retention":"long-term"}],"skipDuplicates":true}')
+          echo "$stale_import" | jq -e '.imported == 1' >/dev/null
+
+          expired_import=$(curl -fsS -X POST http://127.0.0.1:5077/api/memory/import \
+            -H 'Content-Type: application/json' \
+            -d '{"memories":[{"kind":"fact","content":"v065 smoke expired record","createdAt":"2020-01-01T00:00:00Z","updatedAt":"2020-01-01T00:00:00Z","retention":"temporary","expiresAt":"2020-02-01T00:00:00Z"}],"skipDuplicates":true}')
+          echo "$expired_import" | jq -e '.imported == 1' >/dev/null
+
+          memories=$(curl -fsS http://127.0.0.1:5077/api/memory)
+          echo "$memories" | jq -e 'any(.[]; .content == "v065 smoke stale record" and .isStale == true)' >/dev/null
+          echo "$memories" | jq -e 'any(.[]; .content == "v065 smoke expired record" and .isExpired == true)' >/dev/null
+
+          stats=$(curl -fsS http://127.0.0.1:5077/api/memory/stats)
+          echo "$stats" | jq -e '.temporary >= 2 and .expired >= 1 and .stale >= 1' >/dev/null
+
+          curl -fsS -X POST http://127.0.0.1:5077/api/memory \
+            -H 'Content-Type: application/json' \
+            -d '{"kind":"fact","content":"Màu kiểm thử trí nhớ v065 là xanh ngọc."}' >/dev/null
+          status=$(curl -sS -o /tmp/suggestion.json -w '%{http_code}' -X POST http://127.0.0.1:5077/api/memory \
+            -H 'Content-Type: application/json' \
+            -d '{"kind":"fact","content":"Màu kiểm thử trí nhớ v065 là xanh dương."}')
+          test "$status" = "409"
+          jq -e '.suggestion == true and (.candidateMemoryId | length > 0)' /tmp/suggestion.json >/dev/null
+
+          deleted=$(curl -fsS -X DELETE http://127.0.0.1:5077/api/memory)
+          echo "$deleted" | jq -e '.deleted >= 4' >/dev/null
+
       - name: Setup Node.js
         uses: actions/setup-node@v4
         with:

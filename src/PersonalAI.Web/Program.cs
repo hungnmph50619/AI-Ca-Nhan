@@ -41,6 +41,24 @@ builder.Services.AddSingleton<ITeamProfileCatalog, TeamProfileCatalog>();
 
 var app = builder.Build();
 
+// The app shell and JavaScript loaders change between PersonalAI releases.
+// Do not let the browser reuse an old index/JS file after the user pulls a new version.
+app.Use(async (context, next) =>
+{
+    await next();
+
+    var path = context.Request.Path.Value ?? string.Empty;
+    var isAppShell = path is "/" or "/index.html";
+    var isVersionedScript = path.EndsWith(".js", StringComparison.OrdinalIgnoreCase);
+
+    if (isAppShell || isVersionedScript)
+    {
+        context.Response.Headers.CacheControl = "no-store, no-cache, must-revalidate, max-age=0";
+        context.Response.Headers.Pragma = "no-cache";
+        context.Response.Headers.Expires = "0";
+    }
+});
+
 app.UseDefaultFiles();
 app.UseStaticFiles();
 
@@ -55,7 +73,7 @@ app.MapGet("/api/status", (
         provider = aiProvider.Name,
         model = aiProvider.Model,
         teamProfile = teamProfiles.DefaultProfileId,
-        version = "0.6.1.1"
+        version = "0.6.2"
     });
 });
 

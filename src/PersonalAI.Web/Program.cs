@@ -8,7 +8,6 @@ using PersonalAI.Web.Services;
 using PersonalAI.Web.Teams;
 
 var builder = WebApplication.CreateBuilder(args);
-
 builder.Services.Configure<AiOptions>(builder.Configuration.GetSection(AiOptions.SectionName));
 builder.Services.Configure<GeminiOptions>(builder.Configuration.GetSection(GeminiOptions.SectionName));
 builder.Services.Configure<OpenAiOptions>(builder.Configuration.GetSection(OpenAiOptions.SectionName));
@@ -21,231 +20,61 @@ builder.Services.AddSingleton<IKnowledgeGroundingService, KnowledgeGroundingServ
 builder.Services.AddSingleton<KnowledgeSourceReader>();
 builder.Services.AddSingleton<IPersonalMemoryStore, PersonalMemoryStore>();
 builder.Services.AddSingleton<IPersonalMemoryGroundingService, PersonalMemoryGroundingService>();
-builder.Services.AddHttpClient<GeminiChatService>(client =>
-{
-    client.BaseAddress = new Uri("https://generativelanguage.googleapis.com/v1beta/");
-    client.Timeout = TimeSpan.FromSeconds(90);
-});
-builder.Services.AddHttpClient<OpenAiChatService>(client =>
-{
-    client.BaseAddress = new Uri("https://api.openai.com/v1/");
-    client.Timeout = TimeSpan.FromSeconds(90);
-});
+builder.Services.AddHttpClient<GeminiChatService>(client => { client.BaseAddress = new Uri("https://generativelanguage.googleapis.com/v1beta/"); client.Timeout = TimeSpan.FromSeconds(90); });
+builder.Services.AddHttpClient<OpenAiChatService>(client => { client.BaseAddress = new Uri("https://api.openai.com/v1/"); client.Timeout = TimeSpan.FromSeconds(90); });
 builder.Services.AddScoped<IAiProviderResolver, AiProviderResolver>();
 builder.Services.AddSingleton<ITeamProfileCatalog, TeamProfileCatalog>();
-
 var app = builder.Build();
 
-app.Use(async (context, next) =>
-{
-    var path = context.Request.Path.Value ?? string.Empty;
-    if (path is "/" or "/index.html" || path.EndsWith(".js", StringComparison.OrdinalIgnoreCase))
-    {
-        context.Response.Headers.CacheControl = "no-store, no-cache, must-revalidate, max-age=0";
-        context.Response.Headers.Pragma = "no-cache";
-        context.Response.Headers.Expires = "0";
-    }
-    await next();
-});
-
+app.Use(async (context, next) => { var path = context.Request.Path.Value ?? string.Empty; if (path is "/" or "/index.html" || path.EndsWith(".js", StringComparison.OrdinalIgnoreCase)) { context.Response.Headers.CacheControl = "no-store, no-cache, must-revalidate, max-age=0"; context.Response.Headers.Pragma = "no-cache"; context.Response.Headers.Expires = "0"; } await next(); });
 app.UseDefaultFiles();
 app.UseStaticFiles();
 
-app.MapGet("/api/status", (IAiProviderResolver providerResolver, ITeamProfileCatalog teamProfiles) =>
+app.MapGet("/api/status", (IAiProviderResolver providerResolver, ITeamProfileCatalog teamProfiles) => { var aiProvider = providerResolver.GetActive(); return Results.Ok(new { configured = aiProvider.IsConfigured, provider = aiProvider.Name, model = aiProvider.Model, teamProfile = teamProfiles.DefaultProfileId, version = "0.6.4" }); });
+
+app.MapGet("/api/knowledge/documents", async (IKnowledgeDocumentStore store, CancellationToken ct) => Results.Ok(await store.GetAllAsync(ct)));
+app.MapGet("/api/knowledge/search", async (string? query, int? limit, IKnowledgeDocumentStore store, CancellationToken ct) => { try { return Results.Ok(await store.SearchAsync(query ?? string.Empty, limit ?? 5, ct)); } catch (KnowledgeDocumentValidationException ex) { return Results.BadRequest(new ApiError(ex.Message)); } });
+app.MapGet("/api/knowledge/documents/{documentId:guid}/chunks/{chunkIndex:int}", async (Guid documentId, int chunkIndex, KnowledgeSourceReader reader, CancellationToken ct) => { var source = await reader.GetChunkAsync(documentId, chunkIndex, ct); return source is null ? Results.NotFound() : Results.Ok(source); });
+app.MapPost("/api/knowledge/documents", async (HttpRequest request, IKnowledgeDocumentStore store, CancellationToken ct) => { if (!request.HasFormContentType) return Results.BadRequest(new ApiError("Yêu cầu tải tệp không hợp lệ.")); try { var form = await request.ReadFormAsync(ct); var file = form.Files.GetFile("file"); if (file is null || form.Files.Count != 1) return Results.BadRequest(new ApiError("Hãy chọn đúng một tệp để tải lên.")); var document = await store.AddAsync(file, ct); return Results.Created($"/api/knowledge/documents/{document.Id}", document); } catch (InvalidDataException) { return Results.Json(new ApiError("Tệp tải lên vượt quá giới hạn 10 MB hoặc không hợp lệ."), statusCode: 413); } catch (KnowledgeDocumentValidationException ex) { return Results.BadRequest(new ApiError(ex.Message)); } catch (DuplicateKnowledgeDocumentException ex) { return Results.Json(new ApiError(ex.Message), statusCode: 409); } });
+app.MapDelete("/api/knowledge/documents/{documentId:guid}", async (Guid documentId, IKnowledgeDocumentStore store, CancellationToken ct) => await store.DeleteAsync(documentId, ct) ? Results.NoContent() : Results.NotFound());
+
+app.MapGet("/api/memory", async (IPersonalMemoryStore store, CancellationToken ct) => Results.Ok(await store.GetAllAsync(ct)));
+app.MapGet("/api/memory/stats", async (IPersonalMemoryStore store, CancellationToken ct) => Results.Ok(await store.GetStatsAsync(ct)));
+app.MapGet("/api/memory/export", async (IPersonalMemoryStore store, CancellationToken ct) => Results.Ok(new PersonalMemoryExport(1, DateTimeOffset.UtcNow, await store.GetAllAsync(ct))));
+app.MapPost("/api/memory/import", async (ImportPersonalMemoriesRequest request, IPersonalMemoryStore store, CancellationToken ct) => { try { return Results.Ok(await store.ImportAsync(request, ct)); } catch (ArgumentException ex) { return Results.BadRequest(new ApiError(ex.Message)); } });
+app.MapPost("/api/memory", async (CreatePersonalMemoryRequest request, IPersonalMemoryStore store, CancellationToken ct) => { try { var memory = await store.AddAsync(request, ct); return Results.Created($"/api/memory/{memory.Id}", memory); } catch (ArgumentException ex) { return Results.BadRequest(new ApiError(ex.Message)); } });
+app.MapPut("/api/memory/{memoryId:guid}", async (Guid memoryId, UpdatePersonalMemoryRequest request, IPersonalMemoryStore store, CancellationToken ct) => { try { var memory = await store.UpdateAsync(memoryId, request, ct); return memory is null ? Results.NotFound() : Results.Ok(memory); } catch (MemoryOverwriteConfirmationException ex) { return Results.Json(new { error = ex.Message, duplicateMemoryId = ex.DuplicateMemoryId }, statusCode: 409); } catch (ArgumentException ex) { return Results.BadRequest(new ApiError(ex.Message)); } });
+app.MapPatch("/api/memory/{memoryId:guid}/enabled", async (Guid memoryId, SetPersonalMemoryEnabledRequest request, IPersonalMemoryStore store, CancellationToken ct) => { var memory = await store.SetEnabledAsync(memoryId, request.IsEnabled, ct); return memory is null ? Results.NotFound() : Results.Ok(memory); });
+app.MapDelete("/api/memory/{memoryId:guid}", async (Guid memoryId, IPersonalMemoryStore store, CancellationToken ct) => await store.DeleteAsync(memoryId, ct) ? Results.NoContent() : Results.NotFound());
+app.MapDelete("/api/memory", async (IPersonalMemoryStore store, CancellationToken ct) => Results.Ok(new { deleted = await store.DeleteAllAsync(ct) }));
+
+app.MapGet("/api/settings/ai", (IAiSettingsStore store) => Results.Ok(store.GetPublicSettings()));
+app.MapPost("/api/settings/ai", async (UpdateAiSettingsRequest request, IAiSettingsStore store, CancellationToken ct) => { try { await store.SaveAsync(request, ct); return Results.Ok(store.GetPublicSettings()); } catch (ArgumentException ex) { return Results.BadRequest(new ApiError(ex.Message)); } });
+app.MapPost("/api/settings/ai/test", async (IAiProviderResolver resolver, CancellationToken ct) => { try { var provider = resolver.GetActive(); await provider.ReplyAsync([new ChatMessage("user", "Chỉ trả lời đúng một từ: OK")], ct); return Results.Ok(new AiConnectionTestResponse(true, "Kết nối AI thành công.")); } catch (Exception ex) when (ex is InvalidOperationException or HttpRequestException or TaskCanceledException) { return Results.Json(new AiConnectionTestResponse(false, ex.Message), statusCode: 502); } });
+app.MapGet("/api/team-profiles", (ITeamProfileCatalog profiles) => Results.Ok(new { active = profiles.DefaultProfileId, profiles = profiles.GetAll() }));
+
+app.MapPost("/api/chat", async (ChatRequest request, IAiProviderResolver resolver, IKnowledgeGroundingService grounding, IPersonalMemoryGroundingService memoryGrounding, CancellationToken ct) =>
 {
-    var aiProvider = providerResolver.GetActive();
-    return Results.Ok(new
-    {
-        configured = aiProvider.IsConfigured,
-        provider = aiProvider.Name,
-        model = aiProvider.Model,
-        teamProfile = teamProfiles.DefaultProfileId,
-        version = "0.6.3"
-    });
-});
-
-app.MapGet("/api/knowledge/documents", async (IKnowledgeDocumentStore knowledgeStore, CancellationToken cancellationToken) =>
-    Results.Ok(await knowledgeStore.GetAllAsync(cancellationToken)));
-
-app.MapGet("/api/knowledge/search", async (string? query, int? limit, IKnowledgeDocumentStore knowledgeStore, CancellationToken cancellationToken) =>
-{
-    try
-    {
-        return Results.Ok(await knowledgeStore.SearchAsync(query ?? string.Empty, limit ?? 5, cancellationToken));
-    }
-    catch (KnowledgeDocumentValidationException exception)
-    {
-        return Results.BadRequest(new ApiError(exception.Message));
-    }
-});
-
-app.MapGet("/api/knowledge/documents/{documentId:guid}/chunks/{chunkIndex:int}", async (Guid documentId, int chunkIndex, KnowledgeSourceReader sourceReader, CancellationToken cancellationToken) =>
-{
-    var source = await sourceReader.GetChunkAsync(documentId, chunkIndex, cancellationToken);
-    return source is null ? Results.NotFound() : Results.Ok(source);
-});
-
-app.MapPost("/api/knowledge/documents", async (HttpRequest request, IKnowledgeDocumentStore knowledgeStore, CancellationToken cancellationToken) =>
-{
-    if (!request.HasFormContentType)
-        return Results.BadRequest(new ApiError("Yêu cầu tải tệp không hợp lệ."));
-
-    try
-    {
-        var form = await request.ReadFormAsync(cancellationToken);
-        var file = form.Files.GetFile("file");
-        if (file is null || form.Files.Count != 1)
-            return Results.BadRequest(new ApiError("Hãy chọn đúng một tệp để tải lên."));
-
-        var document = await knowledgeStore.AddAsync(file, cancellationToken);
-        return Results.Created($"/api/knowledge/documents/{document.Id}", document);
-    }
-    catch (InvalidDataException)
-    {
-        return Results.Json(new ApiError("Tệp tải lên vượt quá giới hạn 10 MB hoặc không hợp lệ."), statusCode: StatusCodes.Status413PayloadTooLarge);
-    }
-    catch (KnowledgeDocumentValidationException exception)
-    {
-        return Results.BadRequest(new ApiError(exception.Message));
-    }
-    catch (DuplicateKnowledgeDocumentException exception)
-    {
-        return Results.Json(new ApiError(exception.Message), statusCode: StatusCodes.Status409Conflict);
-    }
-});
-
-app.MapDelete("/api/knowledge/documents/{documentId:guid}", async (Guid documentId, IKnowledgeDocumentStore knowledgeStore, CancellationToken cancellationToken) =>
-{
-    var deleted = await knowledgeStore.DeleteAsync(documentId, cancellationToken);
-    return deleted ? Results.NoContent() : Results.NotFound();
-});
-
-app.MapGet("/api/memory", async (IPersonalMemoryStore memoryStore, CancellationToken cancellationToken) =>
-    Results.Ok(await memoryStore.GetAllAsync(cancellationToken)));
-
-app.MapPost("/api/memory", async (CreatePersonalMemoryRequest request, IPersonalMemoryStore memoryStore, CancellationToken cancellationToken) =>
-{
-    try
-    {
-        var memory = await memoryStore.AddAsync(request, cancellationToken);
-        return Results.Created($"/api/memory/{memory.Id}", memory);
-    }
-    catch (ArgumentException exception)
-    {
-        return Results.BadRequest(new ApiError(exception.Message));
-    }
-});
-
-app.MapPut("/api/memory/{memoryId:guid}", async (Guid memoryId, UpdatePersonalMemoryRequest request, IPersonalMemoryStore memoryStore, CancellationToken cancellationToken) =>
-{
-    try
-    {
-        var memory = await memoryStore.UpdateAsync(memoryId, request, cancellationToken);
-        return memory is null ? Results.NotFound() : Results.Ok(memory);
-    }
-    catch (MemoryOverwriteConfirmationException exception)
-    {
-        return Results.Json(new { error = exception.Message, duplicateMemoryId = exception.DuplicateMemoryId }, statusCode: StatusCodes.Status409Conflict);
-    }
-    catch (ArgumentException exception)
-    {
-        return Results.BadRequest(new ApiError(exception.Message));
-    }
-});
-
-app.MapDelete("/api/memory/{memoryId:guid}", async (Guid memoryId, IPersonalMemoryStore memoryStore, CancellationToken cancellationToken) =>
-{
-    var deleted = await memoryStore.DeleteAsync(memoryId, cancellationToken);
-    return deleted ? Results.NoContent() : Results.NotFound();
-});
-
-app.MapGet("/api/settings/ai", (IAiSettingsStore settingsStore) =>
-    Results.Ok(settingsStore.GetPublicSettings()));
-
-app.MapPost("/api/settings/ai", async (UpdateAiSettingsRequest request, IAiSettingsStore settingsStore, CancellationToken cancellationToken) =>
-{
-    try
-    {
-        await settingsStore.SaveAsync(request, cancellationToken);
-        return Results.Ok(settingsStore.GetPublicSettings());
-    }
-    catch (ArgumentException exception)
-    {
-        return Results.BadRequest(new ApiError(exception.Message));
-    }
-});
-
-app.MapPost("/api/settings/ai/test", async (IAiProviderResolver providerResolver, CancellationToken cancellationToken) =>
-{
-    try
-    {
-        var provider = providerResolver.GetActive();
-        await provider.ReplyAsync([new ChatMessage("user", "Chỉ trả lời đúng một từ: OK")], cancellationToken);
-        return Results.Ok(new AiConnectionTestResponse(true, "Kết nối AI thành công."));
-    }
-    catch (Exception exception) when (exception is InvalidOperationException or HttpRequestException or TaskCanceledException)
-    {
-        return Results.Json(new AiConnectionTestResponse(false, exception.Message), statusCode: StatusCodes.Status502BadGateway);
-    }
-});
-
-app.MapGet("/api/team-profiles", (ITeamProfileCatalog teamProfiles) =>
-    Results.Ok(new { active = teamProfiles.DefaultProfileId, profiles = teamProfiles.GetAll() }));
-
-app.MapPost("/api/chat", async (ChatRequest request, IAiProviderResolver providerResolver, IKnowledgeGroundingService groundingService, IPersonalMemoryGroundingService memoryGroundingService, CancellationToken cancellationToken) =>
-{
-    if (request.Messages is null || request.Messages.Count == 0)
-        return Results.BadRequest(new ApiError("Hãy nhập một câu hỏi."));
-
-    if (request.Messages.Count > 40)
-        return Results.BadRequest(new ApiError("Cuộc trò chuyện quá dài. Hãy tạo cuộc trò chuyện mới."));
-
+    if (request.Messages is null || request.Messages.Count == 0) return Results.BadRequest(new ApiError("Hãy nhập một câu hỏi."));
+    if (request.Messages.Count > 40) return Results.BadRequest(new ApiError("Cuộc trò chuyện quá dài. Hãy tạo cuộc trò chuyện mới."));
     var allowedRoles = new HashSet<string>(StringComparer.OrdinalIgnoreCase) { "user", "assistant" };
-    if (request.Messages.Any(message => !allowedRoles.Contains(message.Role) || string.IsNullOrWhiteSpace(message.Content) || message.Content.Length > 12_000))
-        return Results.BadRequest(new ApiError("Nội dung hội thoại không hợp lệ."));
-
+    if (request.Messages.Any(message => !allowedRoles.Contains(message.Role) || string.IsNullOrWhiteSpace(message.Content) || message.Content.Length > 12_000)) return Results.BadRequest(new ApiError("Nội dung hội thoại không hợp lệ."));
     var knowledgeMode = string.IsNullOrWhiteSpace(request.KnowledgeMode) ? "normal" : request.KnowledgeMode.Trim().ToLowerInvariant();
-    if (knowledgeMode is not ("normal" or "documents-only"))
-        return Results.BadRequest(new ApiError("Chế độ trả lời theo dữ liệu không hợp lệ."));
-
-    if (!request.UseKnowledge && knowledgeMode == "documents-only")
-        return Results.BadRequest(new ApiError("Hãy bật dữ liệu riêng để sử dụng chế độ chỉ trả lời theo tài liệu."));
-
+    if (knowledgeMode is not ("normal" or "documents-only")) return Results.BadRequest(new ApiError("Chế độ trả lời theo dữ liệu không hợp lệ."));
+    if (!request.UseKnowledge && knowledgeMode == "documents-only") return Results.BadRequest(new ApiError("Hãy bật dữ liệu riêng để sử dụng chế độ chỉ trả lời theo tài liệu."));
     try
     {
-        var aiProvider = providerResolver.GetActive();
-        var grounded = request.UseKnowledge
-            ? await groundingService.GroundAsync(request.Messages, knowledgeMode, cancellationToken)
-            : new KnowledgeGroundingResult(request.Messages, []);
-
-        if (knowledgeMode == "documents-only" && grounded.Sources.Count == 0)
-        {
-            return Results.Ok(new ChatResponse("Tôi chưa tìm thấy thông tin này trong kho dữ liệu.", aiProvider.Model, aiProvider.Name, []));
-        }
-
+        var provider = resolver.GetActive();
+        var grounded = request.UseKnowledge ? await grounding.GroundAsync(request.Messages, knowledgeMode, ct) : new KnowledgeGroundingResult(request.Messages, []);
+        if (knowledgeMode == "documents-only" && grounded.Sources.Count == 0) return Results.Ok(new ChatResponse("Tôi chưa tìm thấy thông tin này trong kho dữ liệu.", provider.Model, provider.Name, []));
         var chatMessages = grounded.Messages;
-        if (request.UseMemory && knowledgeMode == "normal")
-        {
-            var memoryGrounded = await memoryGroundingService.GroundAsync(request.Messages, chatMessages, cancellationToken);
-            chatMessages = memoryGrounded.Messages;
-        }
-
-        var answer = await aiProvider.ReplyAsync(chatMessages, cancellationToken);
-        return Results.Ok(new ChatResponse(answer, aiProvider.Model, aiProvider.Name, grounded.Sources));
+        if (request.UseMemory && knowledgeMode == "normal") chatMessages = (await memoryGrounding.GroundAsync(request.Messages, chatMessages, ct)).Messages;
+        var answer = await provider.ReplyAsync(chatMessages, ct);
+        return Results.Ok(new ChatResponse(answer, provider.Model, provider.Name, grounded.Sources));
     }
-    catch (InvalidOperationException exception)
-    {
-        return Results.Json(new ApiError(exception.Message), statusCode: StatusCodes.Status503ServiceUnavailable);
-    }
-    catch (HttpRequestException exception)
-    {
-        var statusCode = exception.StatusCode == HttpStatusCode.TooManyRequests ? StatusCodes.Status429TooManyRequests : StatusCodes.Status502BadGateway;
-        return Results.Json(new ApiError(exception.Message), statusCode: statusCode);
-    }
-    catch (TaskCanceledException) when (!cancellationToken.IsCancellationRequested)
-    {
-        return Results.Json(new ApiError("Yêu cầu AI mất quá nhiều thời gian. Hãy thử lại."), statusCode: StatusCodes.Status504GatewayTimeout);
-    }
+    catch (InvalidOperationException ex) { return Results.Json(new ApiError(ex.Message), statusCode: 503); }
+    catch (HttpRequestException ex) { return Results.Json(new ApiError(ex.Message), statusCode: ex.StatusCode == HttpStatusCode.TooManyRequests ? 429 : 502); }
+    catch (TaskCanceledException) when (!ct.IsCancellationRequested) { return Results.Json(new ApiError("Yêu cầu AI mất quá nhiều thời gian. Hãy thử lại."), statusCode: 504); }
 });
 
 app.MapFallbackToFile("index.html");

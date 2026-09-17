@@ -44,14 +44,17 @@
   }
 
   function enhanceVisibleCitations() {
-    const sourceGroups = Array.from(document.querySelectorAll("#messages .message-row.assistant .message-sources"));
-    if (sourceGroups.length === 0) return;
+    const rows = Array.from(document.querySelectorAll("#messages .message-row.assistant"));
+    if (rows.length === 0) return;
 
     const assistantMessages = getActiveAssistantMessages();
     if (assistantMessages.length === 0) return;
 
-    sourceGroups.forEach((group, groupIndex) => {
-      const message = assistantMessages[groupIndex];
+    rows.forEach((row, messageIndex) => {
+      const group = row.querySelector(".message-sources");
+      if (!group) return;
+
+      const message = assistantMessages[messageIndex];
       const sources = Array.isArray(message?.sources) ? message.sources : [];
       const chips = Array.from(group.querySelectorAll(".message-source"));
 

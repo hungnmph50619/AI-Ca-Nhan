@@ -26,7 +26,7 @@ jobs:
       - name: Build
         run: dotnet build PersonalAI.sln --configuration Release --no-restore
 
-      - name: Smoke test memory, retrieval, citations, management and RAG quality
+      - name: Smoke test memory, RAG quality and tool framework
         shell: bash
         run: |
           set -euo pipefail
@@ -47,12 +47,47 @@ jobs:
             exit 1
           fi
 
-          curl -fsS http://127.0.0.1:5077/api/status | jq -e '.version == "0.7.6"' >/dev/null
+          curl -fsS http://127.0.0.1:5077/api/status | jq -e '.version == "0.8.0"' >/dev/null
+
+          tools=$(curl -fsS http://127.0.0.1:5077/api/tools)
+          echo "$tools" | jq -e '.frameworkVersion == "0.8.0" and (.permissionTypes | sort) == (["DELETE","EXTERNAL","READ","SENSITIVE","WRITE"] | sort)' >/dev/null
+          echo "$tools" | jq -e '(.tools | length) == 2 and any(.tools[]; .name == "local.clock" and .localOnly == true and .requiredPermissions == ["READ"]) and any(.tools[]; .name == "local.text_stats" and .timeoutMs == 2000)' >/dev/null
+
+          text_tool=$(curl -fsS http://127.0.0.1:5077/api/tools/local.text_stats)
+          echo "$text_tool" | jq -e '.name == "local.text_stats" and .inputSchema.type == "object" and .inputSchema.additionalProperties == false and .inputSchema.required == ["text"]' >/dev/null
+
+          denied_code=$(curl -sS -o /tmp/tool-denied.json -w '%{http_code}' -X POST http://127.0.0.1:5077/api/tools/execute \
+            -H 'Content-Type: application/json' \
+            -d '{"toolName":"local.text_stats","arguments":{"text":"xin chao"},"approvedPermissions":[],"confirmed":false}')
+          test "$denied_code" = "403"
+          jq -e '.status == "denied" and .success == false and (.error | contains("READ"))' /tmp/tool-denied.json >/dev/null
+
+          invalid_code=$(curl -sS -o /tmp/tool-invalid.json -w '%{http_code}' -X POST http://127.0.0.1:5077/api/tools/execute \
+            -H 'Content-Type: application/json' \
+            -d '{"toolName":"local.text_stats","arguments":{},"approvedPermissions":["READ"],"confirmed":false}')
+          test "$invalid_code" = "400"
+          jq -e '.status == "invalid-input" and .success == false and (.error | contains("text"))' /tmp/tool-invalid.json >/dev/null
+
+          tool_result=$(curl -fsS -X POST http://127.0.0.1:5077/api/tools/execute \
+            -H 'Content-Type: application/json' \
+            -d '{"toolName":"local.text_stats","arguments":{"text":"Xin chào\nAI cá nhân"},"approvedPermissions":["read"],"confirmed":false}')
+          echo "$tool_result" | jq -e '.status == "succeeded" and .success == true and .toolName == "local.text_stats" and .output.wordCount == 5 and .output.lineCount == 2 and .approvedPermissions == ["READ"] and .requiredPermissions == ["READ"]' >/dev/null
+
+          clock_result=$(curl -fsS -X POST http://127.0.0.1:5077/api/tools/execute \
+            -H 'Content-Type: application/json' \
+            -d '{"toolName":"local.clock","arguments":{},"approvedPermissions":["READ"],"confirmed":false}')
+          echo "$clock_result" | jq -e '.status == "succeeded" and .success == true and (.output.utcNow | length) > 10 and (.output.timeZoneId | length) > 0' >/dev/null
+
+          unknown_code=$(curl -sS -o /tmp/tool-unknown.json -w '%{http_code}' -X POST http://127.0.0.1:5077/api/tools/execute \
+            -H 'Content-Type: application/json' \
+            -d '{"toolName":"local.not_registered","arguments":{},"approvedPermissions":["READ"],"confirmed":false}')
+          test "$unknown_code" = "404"
+          jq -e '.status == "not-found" and .success == false' /tmp/tool-unknown.json >/dev/null
 
           curl -fsS -X DELETE http://127.0.0.1:5077/api/memory >/dev/null
           created=$(curl -fsS -X POST http://127.0.0.1:5077/api/memory \
             -H 'Content-Type: application/json' \
-            -d '{"kind":"fact","content":"v076 memory regression","retention":"temporary","expiresAt":"2099-01-01T00:00:00Z"}')
+            -d '{"kind":"fact","content":"v080 memory regression","retention":"temporary","expiresAt":"2099-01-01T00:00:00Z"}')
           echo "$created" | jq -e '.retention == "temporary" and .isExpired == false' >/dev/null
           curl -fsS -X DELETE http://127.0.0.1:5077/api/memory >/dev/null
 
@@ -220,6 +255,9 @@ jobs:
           grep -Fq 'v076.js' src/PersonalAI.Web/wwwroot/index.html
           grep -Fq 'v076.css' src/PersonalAI.Web/wwwroot/index.html
           grep -Fq '/api/knowledge/quality/evaluate' src/PersonalAI.Web/Services/KnowledgeQualityEndpoints.cs
+          grep -Fq 'v080.js' src/PersonalAI.Web/wwwroot/index.html
+          grep -Fq 'v080.css' src/PersonalAI.Web/wwwroot/index.html
+          grep -Fq 'app.MapToolFramework();' src/PersonalAI.Web/Program.cs
 
       - name: Setup Node.js
         uses: actions/setup-node@v4
@@ -238,3 +276,4 @@ jobs:
           node --check src/PersonalAI.Web/wwwroot/v074.js
           node --check src/PersonalAI.Web/wwwroot/v075.js
           node --check src/PersonalAI.Web/wwwroot/v076.js
+          node --check src/PersonalAI.Web/wwwroot/v080.js

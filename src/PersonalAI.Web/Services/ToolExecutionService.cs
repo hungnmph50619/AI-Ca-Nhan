@@ -152,8 +152,22 @@ public sealed class ToolExecutionService(
                 definition.Name,
                 ToolExecutionStatuses.Succeeded,
                 true,
-                output.Clone(),
+                NormalizeOutput(output),
                 null,
+                stopwatch,
+                startedAt,
+                definition.RequiredPermissions,
+                policyDecision.ApprovedPermissions);
+        }
+        catch (ToolExecutionInputException exception)
+        {
+            return Complete(
+                invocationId,
+                definition.Name,
+                ToolExecutionStatuses.InvalidInput,
+                false,
+                null,
+                exception.Message,
                 stopwatch,
                 startedAt,
                 definition.RequiredPermissions,
@@ -233,6 +247,45 @@ public sealed class ToolExecutionService(
             approvedPermissions);
     }
 
+    private static JsonElement NormalizeOutput(JsonElement output)
+    {
+        using var stream = new MemoryStream();
+        using (var writer = new Utf8JsonWriter(stream))
+        {
+            WriteCamelCase(output, writer);
+        }
+
+        using var document = JsonDocument.Parse(stream.ToArray());
+        return document.RootElement.Clone();
+    }
+
+    private static void WriteCamelCase(JsonElement element, Utf8JsonWriter writer)
+    {
+        switch (element.ValueKind)
+        {
+            case JsonValueKind.Object:
+                writer.WriteStartObject();
+                foreach (var property in element.EnumerateObject())
+                {
+                    writer.WritePropertyName(JsonNamingPolicy.CamelCase.ConvertName(property.Name));
+                    WriteCamelCase(property.Value, writer);
+                }
+                writer.WriteEndObject();
+                break;
+            case JsonValueKind.Array:
+                writer.WriteStartArray();
+                foreach (var item in element.EnumerateArray())
+                {
+                    WriteCamelCase(item, writer);
+                }
+                writer.WriteEndArray();
+                break;
+            default:
+                element.WriteTo(writer);
+                break;
+        }
+    }
+
     private static IReadOnlyList<string> NormalizeApproved(IReadOnlyList<string>? values) =>
         (values ?? [])
             .Where(value => !string.IsNullOrWhiteSpace(value))
@@ -241,3 +294,5 @@ public sealed class ToolExecutionService(
             .Order(StringComparer.Ordinal)
             .ToArray();
 }
+
+public sealed class ToolExecutionInputException(string message) : Exception(message);

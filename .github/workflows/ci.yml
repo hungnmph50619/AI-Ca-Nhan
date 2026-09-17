@@ -26,7 +26,7 @@ jobs:
       - name: Build
         run: dotnet build PersonalAI.sln --configuration Release --no-restore
 
-      - name: Smoke test memory, RAG quality and tool framework
+      - name: Smoke test memory, RAG quality and internal tools
         shell: bash
         run: |
           set -euo pipefail
@@ -47,11 +47,11 @@ jobs:
             exit 1
           fi
 
-          curl -fsS http://127.0.0.1:5077/api/status | jq -e '.version == "0.8.0"' >/dev/null
+          curl -fsS http://127.0.0.1:5077/api/status | jq -e '.version == "0.8.1"' >/dev/null
 
           tools=$(curl -fsS http://127.0.0.1:5077/api/tools)
-          echo "$tools" | jq -e '.frameworkVersion == "0.8.0" and (.permissionTypes | sort) == (["DELETE","EXTERNAL","READ","SENSITIVE","WRITE"] | sort)' >/dev/null
-          echo "$tools" | jq -e '(.tools | length) == 2 and any(.tools[]; .name == "local.clock" and .localOnly == true and .requiredPermissions == ["READ"]) and any(.tools[]; .name == "local.text_stats" and .timeoutMs == 2000)' >/dev/null
+          echo "$tools" | jq -e '.frameworkVersion == "0.8.1" and (.permissionTypes | sort) == (["DELETE","EXTERNAL","READ","SENSITIVE","WRITE"] | sort)' >/dev/null
+          echo "$tools" | jq -e '(.tools | length) == 7 and any(.tools[]; .name == "local.clock" and .localOnly == true and .requiredPermissions == ["READ"]) and any(.tools[]; .name == "local.text_stats" and .timeoutMs == 2000) and any(.tools[]; .name == "memory.search") and any(.tools[]; .name == "documents.search") and any(.tools[]; .name == "local.calculate") and any(.tools[]; .name == "local.date_math") and any(.tools[]; .name == "app.summary")' >/dev/null
 
           text_tool=$(curl -fsS http://127.0.0.1:5077/api/tools/local.text_stats)
           echo "$text_tool" | jq -e '.name == "local.text_stats" and .inputSchema.type == "object" and .inputSchema.additionalProperties == false and .inputSchema.required == ["text"]' >/dev/null
@@ -78,6 +78,22 @@ jobs:
             -d '{"toolName":"local.clock","arguments":{},"approvedPermissions":["READ"],"confirmed":false}')
           echo "$clock_result" | jq -e '.status == "succeeded" and .success == true and (.output.utcNow | length) > 10 and (.output.timeZoneId | length) > 0' >/dev/null
 
+          calculator_result=$(curl -fsS -X POST http://127.0.0.1:5077/api/tools/execute \
+            -H 'Content-Type: application/json' \
+            -d '{"toolName":"local.calculate","arguments":{"expression":"2 + 3 * (4 - 1)"},"approvedPermissions":["READ"],"confirmed":false}')
+          echo "$calculator_result" | jq -e '.status == "succeeded" and .output.result == 11 and .output.resultText == "11"' >/dev/null
+
+          calculator_invalid_code=$(curl -sS -o /tmp/calculator-invalid.json -w '%{http_code}' -X POST http://127.0.0.1:5077/api/tools/execute \
+            -H 'Content-Type: application/json' \
+            -d '{"toolName":"local.calculate","arguments":{"expression":"10 / 0"},"approvedPermissions":["READ"],"confirmed":false}')
+          test "$calculator_invalid_code" = "400"
+          jq -e '.status == "invalid-input" and (.error | contains("0"))' /tmp/calculator-invalid.json >/dev/null
+
+          date_result=$(curl -fsS -X POST http://127.0.0.1:5077/api/tools/execute \
+            -H 'Content-Type: application/json' \
+            -d '{"toolName":"local.date_math","arguments":{"operation":"add","start":"2026-09-18T00:00:00Z","days":1,"hours":2},"approvedPermissions":["READ"],"confirmed":false}')
+          echo "$date_result" | jq -e '.status == "succeeded" and (.output.result | startswith("2026-09-19T02:00:00"))' >/dev/null
+
           unknown_code=$(curl -sS -o /tmp/tool-unknown.json -w '%{http_code}' -X POST http://127.0.0.1:5077/api/tools/execute \
             -H 'Content-Type: application/json' \
             -d '{"toolName":"local.not_registered","arguments":{},"approvedPermissions":["READ"],"confirmed":false}')
@@ -87,8 +103,13 @@ jobs:
           curl -fsS -X DELETE http://127.0.0.1:5077/api/memory >/dev/null
           created=$(curl -fsS -X POST http://127.0.0.1:5077/api/memory \
             -H 'Content-Type: application/json' \
-            -d '{"kind":"fact","content":"v080 memory regression","retention":"temporary","expiresAt":"2099-01-01T00:00:00Z"}')
+            -d '{"kind":"fact","content":"v081 memory regression internal tools","retention":"temporary","expiresAt":"2099-01-01T00:00:00Z"}')
           echo "$created" | jq -e '.retention == "temporary" and .isExpired == false' >/dev/null
+
+          memory_tool=$(curl -fsS -X POST http://127.0.0.1:5077/api/tools/execute \
+            -H 'Content-Type: application/json' \
+            -d '{"toolName":"memory.search","arguments":{"query":"v081 memory regression","limit":3},"approvedPermissions":["READ"],"confirmed":false}')
+          echo "$memory_tool" | jq -e '.status == "succeeded" and .output.resultCount >= 1 and .output.results[0].kind == "fact" and (.output.results[0].content | contains("v081 memory regression"))' >/dev/null
           curl -fsS -X DELETE http://127.0.0.1:5077/api/memory >/dev/null
 
           printf '# Kế hoạch nghiên cứu\n\nNội dung markdown alpha cho structured chunk, vector semantic, hybrid reranking, citation, management và RAG quality.\n\n## Giai đoạn hai\n\nNội dung beta riêng biệt.\n' >/tmp/v076.md
@@ -150,6 +171,11 @@ jobs:
           echo "$management" | jq -e '.total == 4 and .ready == 4 and .needsIndexing == 0 and .embeddingModel == "local-feature-hash-v1" and .dimensions == 384' >/dev/null
           echo "$management" | jq -e 'all(.documents[]; .chunkCount > 0 and .indexedChunkCount == .chunkCount and .missingEmbeddingCount == 0 and .indexStatus == "ready" and (.sha256 | length) == 64)' >/dev/null
 
+          app_summary=$(curl -fsS -X POST http://127.0.0.1:5077/api/tools/execute \
+            -H 'Content-Type: application/json' \
+            -d '{"toolName":"app.summary","arguments":{},"approvedPermissions":["READ"],"confirmed":false}')
+          echo "$app_summary" | jq -e '.status == "succeeded" and .output.memory.total == 0 and .output.knowledge.total == 4 and .output.knowledge.ready == 4 and .output.embeddings.missingChunks == 0' >/dev/null
+
           quality=$(curl -fsS http://127.0.0.1:5077/api/knowledge/quality/status)
           echo "$quality" | jq -e '.status == "healthy" and .databaseHealthy == true and .totalDocuments == 4 and .healthyDocuments == 4 and (.issues | length) == 0 and .missingEmbeddings == 0 and .duplicateContentDocuments == 0' >/dev/null
 
@@ -180,6 +206,11 @@ jobs:
           hybrid=$(curl -fsS --get --data-urlencode 'query=ke hoach nghien cuu alpha semantic hybrid' --data-urlencode 'limit=5' http://127.0.0.1:5077/api/knowledge/hybrid-search)
           echo "$hybrid" | jq -e '.strategy == "keyword+local-vector+deterministic-rerank-v1" and .resultCount >= 1' >/dev/null
           echo "$hybrid" | jq -e '.results[0].fileName == "ke-hoach-nghien-cuu.md" and .results[0].hybridScore == 100 and .results[0].keywordRank != null and .results[0].semanticRank != null and .results[0].matchSource == "keyword+semantic"' >/dev/null
+
+          documents_tool=$(curl -fsS -X POST http://127.0.0.1:5077/api/tools/execute \
+            -H 'Content-Type: application/json' \
+            -d '{"toolName":"documents.search","arguments":{"query":"nghien cuu alpha semantic hybrid","limit":5},"approvedPermissions":["READ"],"confirmed":false}')
+          echo "$documents_tool" | jq -e '.status == "succeeded" and .output.strategy == "keyword+local-vector+deterministic-rerank-v1" and .output.resultCount >= 1 and .output.results[0].fileName == "ke-hoach-nghien-cuu.md"' >/dev/null
 
           evaluation_payload=$(jq -nc '{limit:5,cases:[
             {query:"nghien cuu alpha semantic hybrid",expectedFileName:"ke-hoach-nghien-cuu.md",expectedContains:"alpha"},
@@ -258,6 +289,8 @@ jobs:
           grep -Fq 'v080.js' src/PersonalAI.Web/wwwroot/index.html
           grep -Fq 'v080.css' src/PersonalAI.Web/wwwroot/index.html
           grep -Fq 'app.MapToolFramework();' src/PersonalAI.Web/Program.cs
+          grep -Fq 'memory.search' src/PersonalAI.Web/Services/InternalTools.cs
+          grep -Fq 'documents.search' src/PersonalAI.Web/Services/InternalTools.cs
 
       - name: Setup Node.js
         uses: actions/setup-node@v4

@@ -97,6 +97,18 @@
   flex-wrap: wrap;
 }
 
+.citation-actions .secondary-button {
+  color: #17221d;
+}
+
+.citation-actions .primary-button {
+  color: #17221d;
+}
+
+.citation-actions .secondary-button:disabled {
+  color: #6f7b74;
+}
+
 .message-source-list {
   align-items: stretch;
 }

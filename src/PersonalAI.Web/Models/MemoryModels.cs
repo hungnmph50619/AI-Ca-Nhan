@@ -6,17 +6,26 @@ public sealed record PersonalMemory(
     string Content,
     DateTimeOffset CreatedAt,
     DateTimeOffset UpdatedAt,
-    bool IsEnabled = true);
+    bool IsEnabled = true,
+    string Retention = "long-term",
+    DateTimeOffset? ExpiresAt = null,
+    bool IsExpired = false,
+    bool IsStale = false);
 
 public sealed record CreatePersonalMemoryRequest(
     string? Kind,
     string? Content,
-    bool IsEnabled = true);
+    bool IsEnabled = true,
+    string? Retention = null,
+    DateTimeOffset? ExpiresAt = null,
+    bool ConfirmCreateSimilar = false);
 
 public sealed record UpdatePersonalMemoryRequest(
     string? Kind,
     string? Content,
-    bool ConfirmOverwrite = false);
+    bool ConfirmOverwrite = false,
+    string? Retention = null,
+    DateTimeOffset? ExpiresAt = null);
 
 public sealed record SetPersonalMemoryEnabledRequest(bool IsEnabled);
 
@@ -25,7 +34,9 @@ public sealed record ImportPersonalMemoryItem(
     string? Content,
     bool IsEnabled = true,
     DateTimeOffset? CreatedAt = null,
-    DateTimeOffset? UpdatedAt = null);
+    DateTimeOffset? UpdatedAt = null,
+    string? Retention = null,
+    DateTimeOffset? ExpiresAt = null);
 
 public sealed record ImportPersonalMemoriesRequest(
     IReadOnlyList<ImportPersonalMemoryItem>? Memories,
@@ -43,6 +54,10 @@ public sealed record PersonalMemoryStats(
     int Facts,
     int Preferences,
     int Rules,
+    int LongTerm,
+    int Temporary,
+    int Expired,
+    int Stale,
     DateTimeOffset? OldestCreatedAt,
     DateTimeOffset? LatestUpdatedAt);
 

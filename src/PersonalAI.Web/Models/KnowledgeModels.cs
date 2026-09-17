@@ -8,7 +8,8 @@ public sealed record KnowledgeDocumentResponse(
     int CharacterCount,
     int ChunkCount,
     string Status,
-    DateTimeOffset CreatedAt);
+    DateTimeOffset CreatedAt,
+    int? PageCount = null);
 
 public sealed record KnowledgeSearchResult(
     Guid DocumentId,

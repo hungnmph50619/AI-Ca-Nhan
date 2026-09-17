@@ -26,7 +26,7 @@ jobs:
       - name: Build
         run: dotnet build PersonalAI.sln --configuration Release --no-restore
 
-      - name: Smoke test memory lifecycle API
+      - name: Smoke test memory and multi-format knowledge APIs
         shell: bash
         run: |
           set -euo pipefail
@@ -46,6 +46,9 @@ jobs:
             cat /tmp/personalai.log
             exit 1
           fi
+
+          status_payload=$(curl -fsS http://127.0.0.1:5077/api/status)
+          echo "$status_payload" | jq -e '.version == "0.7.0"' >/dev/null
 
           curl -fsS -X DELETE http://127.0.0.1:5077/api/memory >/dev/null
 
@@ -89,13 +92,97 @@ jobs:
           deleted=$(curl -fsS -X DELETE http://127.0.0.1:5077/api/memory)
           echo "$deleted" | jq -e '.deleted >= 4' >/dev/null
 
+          printf 'v070 txt smoke alpha content\n' >/tmp/v070.txt
+          printf '# v070 Markdown\n\nv070 markdown smoke beta content\n' >/tmp/v070.md
+
+          python3 - <<'PY'
+          from pathlib import Path
+          from zipfile import ZipFile, ZIP_DEFLATED
+
+          with ZipFile('/tmp/v070.docx', 'w', ZIP_DEFLATED) as z:
+              z.writestr('[Content_Types].xml', '''<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+          <Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types">
+            <Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/>
+            <Default Extension="xml" ContentType="application/xml"/>
+            <Override PartName="/word/document.xml" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.document.main+xml"/>
+          </Types>''')
+              z.writestr('_rels/.rels', '''<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+          <Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">
+            <Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument" Target="word/document.xml"/>
+          </Relationships>''')
+              z.writestr('word/document.xml', '''<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+          <w:document xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main">
+            <w:body><w:p><w:r><w:t>v070 DOCX smoke delta content</w:t></w:r></w:p><w:sectPr/></w:body>
+          </w:document>''')
+
+          content = b'BT /F1 12 Tf 72 720 Td (v070 PDF smoke gamma content) Tj ET'
+          objects = [
+              b'<< /Type /Catalog /Pages 2 0 R >>',
+              b'<< /Type /Pages /Kids [3 0 R] /Count 1 >>',
+              b'<< /Type /Page /Parent 2 0 R /MediaBox [0 0 612 792] /Resources << /Font << /F1 4 0 R >> >> /Contents 5 0 R >>',
+              b'<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica >>',
+              b'<< /Length %d >>\nstream\n' % len(content) + content + b'\nendstream'
+          ]
+          pdf = bytearray(b'%PDF-1.4\n')
+          offsets = [0]
+          for index, obj in enumerate(objects, start=1):
+              offsets.append(len(pdf))
+              pdf.extend(f'{index} 0 obj\n'.encode())
+              pdf.extend(obj)
+              pdf.extend(b'\nendobj\n')
+          xref = len(pdf)
+          pdf.extend(f'xref\n0 {len(objects)+1}\n'.encode())
+          pdf.extend(b'0000000000 65535 f \n')
+          for offset in offsets[1:]:
+              pdf.extend(f'{offset:010d} 00000 n \n'.encode())
+          pdf.extend(f'trailer\n<< /Size {len(objects)+1} /Root 1 0 R >>\nstartxref\n{xref}\n%%EOF\n'.encode())
+          Path('/tmp/v070.pdf').write_bytes(pdf)
+          PY
+
+          txt_doc=$(curl -fsS -F 'file=@/tmp/v070.txt;type=text/plain' http://127.0.0.1:5077/api/knowledge/documents)
+          echo "$txt_doc" | jq -e '.fileType == "TXT" and .chunkCount >= 1 and .pageCount == null' >/dev/null
+          txt_id=$(echo "$txt_doc" | jq -r '.id')
+
+          md_doc=$(curl -fsS -F 'file=@/tmp/v070.md;type=text/markdown' http://127.0.0.1:5077/api/knowledge/documents)
+          echo "$md_doc" | jq -e '.fileType == "MD" and .chunkCount >= 1' >/dev/null
+          md_id=$(echo "$md_doc" | jq -r '.id')
+
+          docx_doc=$(curl -fsS -F 'file=@/tmp/v070.docx;type=application/vnd.openxmlformats-officedocument.wordprocessingml.document' http://127.0.0.1:5077/api/knowledge/documents)
+          echo "$docx_doc" | jq -e '.fileType == "DOCX" and .chunkCount >= 1' >/dev/null
+          docx_id=$(echo "$docx_doc" | jq -r '.id')
+
+          pdf_doc=$(curl -fsS -F 'file=@/tmp/v070.pdf;type=application/pdf' http://127.0.0.1:5077/api/knowledge/documents)
+          echo "$pdf_doc" | jq -e '.fileType == "PDF" and .chunkCount >= 1 and .pageCount == 1' >/dev/null
+          pdf_id=$(echo "$pdf_doc" | jq -r '.id')
+
+          search=$(curl -fsS --get --data-urlencode 'query=gamma content' --data-urlencode 'limit=10' http://127.0.0.1:5077/api/knowledge/search)
+          echo "$search" | jq -e 'any(.results[]; .fileName == "v070.pdf")' >/dev/null
+
+          duplicate_status=$(curl -sS -o /tmp/knowledge-duplicate.json -w '%{http_code}' \
+            -F 'file=@/tmp/v070.pdf;type=application/pdf' http://127.0.0.1:5077/api/knowledge/documents)
+          test "$duplicate_status" = "409"
+
+          printf 'not a real pdf' >/tmp/invalid.pdf
+          invalid_status=$(curl -sS -o /tmp/knowledge-invalid.json -w '%{http_code}' \
+            -F 'file=@/tmp/invalid.pdf;type=application/pdf' http://127.0.0.1:5077/api/knowledge/documents)
+          test "$invalid_status" = "400"
+
+          docs=$(curl -fsS http://127.0.0.1:5077/api/knowledge/documents)
+          echo "$docs" | jq -e '([.[].fileType] | sort) == (["DOCX","MD","PDF","TXT"] | sort)' >/dev/null
+
+          for id in "$txt_id" "$md_id" "$docx_id" "$pdf_id"; do
+            curl -fsS -X DELETE "http://127.0.0.1:5077/api/knowledge/documents/${id}" >/dev/null
+          done
+
       - name: Setup Node.js
         uses: actions/setup-node@v4
         with:
           node-version: '22'
 
-      - name: Check memory UI JavaScript syntax
+      - name: Check UI JavaScript syntax
         run: |
+          node --check src/PersonalAI.Web/wwwroot/app.js
           node --check src/PersonalAI.Web/wwwroot/v062.js
           node --check src/PersonalAI.Web/wwwroot/v064.js
           node --check src/PersonalAI.Web/wwwroot/v065.js
+          node --check src/PersonalAI.Web/wwwroot/v070.js

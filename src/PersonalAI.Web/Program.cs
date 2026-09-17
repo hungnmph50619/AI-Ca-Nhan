@@ -16,6 +16,7 @@ builder.Services.Configure<JsonOptions>(options => options.SerializerOptions.Pro
 builder.Services.Configure<FormOptions>(options => options.MultipartBodyLengthLimit = SqliteKnowledgeDocumentStore.MaximumFileSize + (64 * 1024));
 builder.Services.AddDataProtection().SetApplicationName("PersonalAI");
 builder.Services.AddSingleton<IAiSettingsStore, AiSettingsStore>();
+builder.Services.AddSingleton<KnowledgeDocumentExtractor>();
 builder.Services.AddSingleton<IKnowledgeDocumentStore, SqliteKnowledgeDocumentStore>();
 builder.Services.AddSingleton<IKnowledgeGroundingService, KnowledgeGroundingService>();
 builder.Services.AddSingleton<KnowledgeSourceReader>();
@@ -60,7 +61,7 @@ app.MapGet("/api/status", (IAiProviderResolver providerResolver, ITeamProfileCat
         provider = aiProvider.Name,
         model = aiProvider.Model,
         teamProfile = teamProfiles.DefaultProfileId,
-        version = "0.6.5"
+        version = "0.7.0"
     });
 });
 

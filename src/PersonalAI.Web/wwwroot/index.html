@@ -3,7 +3,7 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <meta name="description" content="Trợ lý AI cá nhân phiên bản 0.6.5">
+  <meta name="description" content="Trợ lý AI cá nhân phiên bản 0.7.0">
   <title>AI Cá Nhân</title>
   <link rel="stylesheet" href="styles.css">
   <link rel="stylesheet" href="v0631.css">
@@ -17,7 +17,7 @@
         <div class="brand-mark" aria-hidden="true">A</div>
         <div>
           <strong>AI Cá Nhân</strong>
-          <span>Phiên bản 0.6.5</span>
+          <span>Phiên bản 0.7.0</span>
         </div>
       </div>
 
@@ -70,14 +70,14 @@
   <dialog class="settings-dialog knowledge-dialog" id="knowledgeDialog" aria-labelledby="knowledgeTitle">
     <div class="settings-card knowledge-card">
       <header class="settings-header"><div><p class="eyebrow">DỮ LIỆU NẰM TRÊN MÁY NÀY</p><h2 id="knowledgeTitle">Kho dữ liệu</h2></div><button class="dialog-close" id="knowledgeCloseButton" type="button" aria-label="Đóng">×</button></header>
-      <div class="knowledge-intro"><div class="knowledge-intro-icon" aria-hidden="true">▤</div><div><strong>Hỏi đáp có nguồn v0.6.5</strong><p>Trợ lý tự tìm các đoạn liên quan, dùng làm ngữ cảnh trả lời và hiển thị nguồn ngay dưới tin nhắn.</p></div></div>
-      <form id="knowledgeUploadForm"><label class="knowledge-dropzone" id="knowledgeDropzone" for="knowledgeFileInput"><span class="dropzone-icon" aria-hidden="true">↑</span><strong>Chọn hoặc thả tài liệu vào đây</strong><small>TXT, Markdown · tối đa 10 MB mỗi tệp</small><span class="secondary-button upload-label">Chọn tệp</span></label><input class="visually-hidden" id="knowledgeFileInput" name="file" type="file" accept=".txt,.md,text/plain,text/markdown"></form>
+      <div class="knowledge-intro"><div class="knowledge-intro-icon" aria-hidden="true">▤</div><div><strong>Kho dữ liệu đa định dạng v0.7.0</strong><p>Trợ lý có thể nhập PDF, DOCX, TXT và Markdown, tự trích văn bản để tìm các đoạn liên quan và dùng làm ngữ cảnh trả lời.</p></div></div>
+      <form id="knowledgeUploadForm"><label class="knowledge-dropzone" id="knowledgeDropzone" for="knowledgeFileInput"><span class="dropzone-icon" aria-hidden="true">↑</span><strong>Chọn hoặc thả tài liệu vào đây</strong><small>PDF, DOCX, TXT, Markdown · tối đa 10 MB mỗi tệp</small><span class="secondary-button upload-label">Chọn tệp</span></label><input class="visually-hidden" id="knowledgeFileInput" name="file" type="file" accept=".pdf,.docx,.txt,.md,application/pdf,application/vnd.openxmlformats-officedocument.wordprocessingml.document,text/plain,text/markdown"></form>
       <div class="settings-feedback knowledge-feedback" id="knowledgeFeedback" role="status" aria-live="polite"></div>
       <form class="knowledge-search" id="knowledgeSearchForm" role="search"><label class="field-label" for="knowledgeSearchInput">Tìm trong dữ liệu</label><div class="knowledge-search-row"><input id="knowledgeSearchInput" type="search" minlength="2" maxlength="200" autocomplete="off" placeholder="Ví dụ: kế hoạch học AI"><button class="primary-button" id="knowledgeSearchButton" type="submit">Tìm đoạn</button></div><p class="field-hint">Xem trước những đoạn có thể được dùng làm ngữ cảnh khi bạn trò chuyện với AI.</p></form>
       <section class="knowledge-search-results" id="knowledgeSearchResults" aria-live="polite" hidden><div class="knowledge-search-heading"><strong>Kết quả tìm kiếm</strong><span id="knowledgeSearchSummary"></span></div><div class="knowledge-search-list" id="knowledgeSearchList"></div></section>
       <div class="knowledge-list-header"><div><strong>Tài liệu đã lưu</strong><span id="knowledgeSummary">0 tài liệu</span></div><button class="icon-refresh" id="knowledgeRefreshButton" type="button" aria-label="Tải lại danh sách" title="Tải lại">↻</button></div>
       <div class="knowledge-list" id="knowledgeList" role="list"></div><div class="knowledge-empty" id="knowledgeEmpty"><span aria-hidden="true">◇</span><strong>Kho dữ liệu đang trống</strong><p>Tải tài liệu đầu tiên để chuẩn bị cho chức năng hỏi đáp theo dữ liệu riêng.</p></div>
-      <p class="security-copy">Tệp và cơ sở dữ liệu được lưu ngoài thư mục Git tại <code>%LOCALAPPDATA%\PersonalAI\Knowledge</code>. Khi trò chuyện, chỉ các đoạn liên quan mới được gửi đến nhà cung cấp AI bạn đã chọn; không gửi toàn bộ kho dữ liệu.</p>
+      <p class="security-copy">Tệp gốc và cơ sở dữ liệu được lưu ngoài thư mục Git tại <code>%LOCALAPPDATA%\PersonalAI\Knowledge</code>. Khi trò chuyện, chỉ các đoạn liên quan mới được gửi đến nhà cung cấp AI bạn đã chọn; không gửi toàn bộ kho dữ liệu.</p>
     </div>
   </dialog>
 
@@ -89,5 +89,6 @@
   <script src="v0631.js" defer></script>
   <script src="v064.js" defer></script>
   <script src="v065.js" defer></script>
+  <script src="v070.js" defer></script>
 </body>
 </html>

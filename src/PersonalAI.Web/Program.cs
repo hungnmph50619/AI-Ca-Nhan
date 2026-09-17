@@ -20,6 +20,7 @@ builder.Services.AddSingleton<KnowledgeDocumentExtractor>();
 builder.Services.AddSingleton<IKnowledgeDocumentStore, SqliteKnowledgeDocumentStore>();
 builder.Services.AddSingleton<IKnowledgeEmbeddingService, LocalFeatureHashEmbeddingService>();
 builder.Services.AddSingleton<IKnowledgeEmbeddingIndex, KnowledgeEmbeddingIndex>();
+builder.Services.AddSingleton<IKnowledgeHybridSearchService, KnowledgeHybridSearchService>();
 builder.Services.AddSingleton<IKnowledgeGroundingService, KnowledgeGroundingService>();
 builder.Services.AddSingleton<KnowledgeSourceReader>();
 builder.Services.AddSingleton<IPersonalMemoryStore, PersonalMemoryStore>();
@@ -63,7 +64,7 @@ app.MapGet("/api/status", (IAiProviderResolver providerResolver, ITeamProfileCat
         provider = aiProvider.Name,
         model = aiProvider.Model,
         teamProfile = teamProfiles.DefaultProfileId,
-        version = "0.7.2"
+        version = "0.7.3"
     });
 });
 
@@ -87,6 +88,18 @@ app.MapGet("/api/knowledge/semantic-search", async (string? query, int? limit, I
     try
     {
         return Results.Ok(await embeddingIndex.SearchAsync(query ?? string.Empty, limit ?? 5, cancellationToken));
+    }
+    catch (KnowledgeDocumentValidationException exception)
+    {
+        return Results.BadRequest(new ApiError(exception.Message));
+    }
+});
+
+app.MapGet("/api/knowledge/hybrid-search", async (string? query, int? limit, IKnowledgeHybridSearchService hybridSearch, CancellationToken cancellationToken) =>
+{
+    try
+    {
+        return Results.Ok(await hybridSearch.SearchAsync(query ?? string.Empty, limit ?? 5, cancellationToken));
     }
     catch (KnowledgeDocumentValidationException exception)
     {
@@ -290,6 +303,10 @@ app.MapPost("/api/chat", async (ChatRequest request, IAiProviderResolver provide
 
         var answer = await aiProvider.ReplyAsync(chatMessages, cancellationToken);
         return Results.Ok(new ChatResponse(answer, aiProvider.Model, aiProvider.Name, grounded.Sources));
+    }
+    catch (KnowledgeDocumentValidationException exception)
+    {
+        return Results.BadRequest(new ApiError(exception.Message));
     }
     catch (InvalidOperationException exception)
     {

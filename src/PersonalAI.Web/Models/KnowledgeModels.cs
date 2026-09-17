@@ -20,7 +20,11 @@ public sealed record KnowledgeSearchResult(
     string? Heading = null,
     string? Section = null,
     int? TokenEstimate = null,
-    double? SimilarityScore = null);
+    double? SimilarityScore = null,
+    int? KeywordRank = null,
+    int? SemanticRank = null,
+    double? HybridScore = null,
+    string? MatchSource = null);
 
 public sealed record KnowledgeSearchResponse(
     string Query,
@@ -32,6 +36,12 @@ public sealed record KnowledgeSemanticSearchResponse(
     int ResultCount,
     string EmbeddingModel,
     int Dimensions,
+    IReadOnlyList<KnowledgeSearchResult> Results);
+
+public sealed record KnowledgeHybridSearchResponse(
+    string Query,
+    int ResultCount,
+    string Strategy,
     IReadOnlyList<KnowledgeSearchResult> Results);
 
 public sealed record KnowledgeEmbeddingStatus(

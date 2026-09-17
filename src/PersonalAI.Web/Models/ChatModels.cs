@@ -11,7 +11,10 @@ public sealed record ChatRequest(
 public sealed record ChatSource(
     Guid DocumentId,
     string FileName,
-    int ChunkIndex);
+    int ChunkIndex,
+    int? PageNumber = null,
+    string? Heading = null,
+    string? Section = null);
 
 public sealed record ChatResponse(
     string Message,

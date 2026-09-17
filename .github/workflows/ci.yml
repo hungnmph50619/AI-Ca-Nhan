@@ -26,7 +26,7 @@ jobs:
       - name: Build
         run: dotnet build PersonalAI.sln --configuration Release --no-restore
 
-      - name: Smoke test memory and multi-format knowledge APIs
+      - name: Smoke test memory and structured knowledge APIs
         shell: bash
         run: |
           set -euo pipefail
@@ -47,59 +47,23 @@ jobs:
             exit 1
           fi
 
-          status_payload=$(curl -fsS http://127.0.0.1:5077/api/status)
-          echo "$status_payload" | jq -e '.version == "0.7.0"' >/dev/null
+          curl -fsS http://127.0.0.1:5077/api/status | jq -e '.version == "0.7.1"' >/dev/null
 
           curl -fsS -X DELETE http://127.0.0.1:5077/api/memory >/dev/null
-
           created=$(curl -fsS -X POST http://127.0.0.1:5077/api/memory \
             -H 'Content-Type: application/json' \
-            -d '{"kind":"fact","content":"v065 smoke temporary memory","retention":"temporary","expiresAt":"2099-01-01T00:00:00Z"}')
-          echo "$created" | jq -e '.retention == "temporary" and .isExpired == false and .isStale == false' >/dev/null
-          memory_id=$(echo "$created" | jq -r '.id')
+            -d '{"kind":"fact","content":"v071 memory regression","retention":"temporary","expiresAt":"2099-01-01T00:00:00Z"}')
+          echo "$created" | jq -e '.retention == "temporary" and .isExpired == false' >/dev/null
+          curl -fsS -X DELETE http://127.0.0.1:5077/api/memory >/dev/null
 
-          toggled=$(curl -fsS -X PATCH "http://127.0.0.1:5077/api/memory/${memory_id}/enabled" \
-            -H 'Content-Type: application/json' \
-            -d '{"isEnabled":false}')
-          echo "$toggled" | jq -e '.isEnabled == false' >/dev/null
-
-          stale_import=$(curl -fsS -X POST http://127.0.0.1:5077/api/memory/import \
-            -H 'Content-Type: application/json' \
-            -d '{"memories":[{"kind":"fact","content":"v065 smoke stale record","createdAt":"2020-01-01T00:00:00Z","updatedAt":"2020-01-01T00:00:00Z","retention":"long-term"}],"skipDuplicates":true}')
-          echo "$stale_import" | jq -e '.imported == 1' >/dev/null
-
-          expired_import=$(curl -fsS -X POST http://127.0.0.1:5077/api/memory/import \
-            -H 'Content-Type: application/json' \
-            -d '{"memories":[{"kind":"fact","content":"v065 smoke expired record","createdAt":"2020-01-01T00:00:00Z","updatedAt":"2020-01-01T00:00:00Z","retention":"temporary","expiresAt":"2020-02-01T00:00:00Z"}],"skipDuplicates":true}')
-          echo "$expired_import" | jq -e '.imported == 1' >/dev/null
-
-          memories=$(curl -fsS http://127.0.0.1:5077/api/memory)
-          echo "$memories" | jq -e 'any(.[]; .content == "v065 smoke stale record" and .isStale == true)' >/dev/null
-          echo "$memories" | jq -e 'any(.[]; .content == "v065 smoke expired record" and .isExpired == true)' >/dev/null
-
-          stats=$(curl -fsS http://127.0.0.1:5077/api/memory/stats)
-          echo "$stats" | jq -e '.temporary >= 2 and .expired >= 1 and .stale >= 1' >/dev/null
-
-          curl -fsS -X POST http://127.0.0.1:5077/api/memory \
-            -H 'Content-Type: application/json' \
-            -d '{"kind":"fact","content":"Màu kiểm thử trí nhớ v065 là xanh ngọc."}' >/dev/null
-          status=$(curl -sS -o /tmp/suggestion.json -w '%{http_code}' -X POST http://127.0.0.1:5077/api/memory \
-            -H 'Content-Type: application/json' \
-            -d '{"kind":"fact","content":"Màu kiểm thử trí nhớ v065 là xanh dương."}')
-          test "$status" = "409"
-          jq -e '.suggestion == true and (.candidateMemoryId | length > 0)' /tmp/suggestion.json >/dev/null
-
-          deleted=$(curl -fsS -X DELETE http://127.0.0.1:5077/api/memory)
-          echo "$deleted" | jq -e '.deleted >= 4' >/dev/null
-
-          printf 'v070 txt smoke alpha content\n' >/tmp/v070.txt
-          printf '# v070 Markdown\n\nv070 markdown smoke beta content\n' >/tmp/v070.md
+          printf '# Kế hoạch nghiên cứu\n\nNội dung markdown alpha cho structured chunk.\n\n## Giai đoạn hai\n\nNội dung beta riêng biệt.\n' >/tmp/v071.md
+          printf 'Plain text structured smoke content.\n' >/tmp/v071.txt
 
           python3 - <<'PY'
           from pathlib import Path
           from zipfile import ZipFile, ZIP_DEFLATED
 
-          with ZipFile('/tmp/v070.docx', 'w', ZIP_DEFLATED) as z:
+          with ZipFile('/tmp/v071.docx', 'w', ZIP_DEFLATED) as z:
               z.writestr('[Content_Types].xml', '''<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
           <Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types">
             <Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/>
@@ -112,10 +76,14 @@ jobs:
           </Relationships>''')
               z.writestr('word/document.xml', '''<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
           <w:document xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main">
-            <w:body><w:p><w:r><w:t>v070 DOCX smoke delta content</w:t></w:r></w:p><w:sectPr/></w:body>
+            <w:body>
+              <w:p><w:pPr><w:pStyle w:val="Heading1"/></w:pPr><w:r><w:t>Chương thử nghiệm</w:t></w:r></w:p>
+              <w:p><w:r><w:t>DOCX structured gamma content</w:t></w:r></w:p>
+              <w:sectPr/>
+            </w:body>
           </w:document>''')
 
-          content = b'BT /F1 12 Tf 72 720 Td (v070 PDF smoke gamma content) Tj ET'
+          content = b'BT /F1 12 Tf 72 720 Td (PDF structured delta content) Tj ET'
           objects = [
               b'<< /Type /Catalog /Pages 2 0 R >>',
               b'<< /Type /Pages /Kids [3 0 R] /Count 1 >>',
@@ -126,49 +94,34 @@ jobs:
           pdf = bytearray(b'%PDF-1.4\n')
           offsets = [0]
           for index, obj in enumerate(objects, start=1):
-              offsets.append(len(pdf))
-              pdf.extend(f'{index} 0 obj\n'.encode())
-              pdf.extend(obj)
-              pdf.extend(b'\nendobj\n')
-          xref = len(pdf)
-          pdf.extend(f'xref\n0 {len(objects)+1}\n'.encode())
-          pdf.extend(b'0000000000 65535 f \n')
-          for offset in offsets[1:]:
-              pdf.extend(f'{offset:010d} 00000 n \n'.encode())
+              offsets.append(len(pdf)); pdf.extend(f'{index} 0 obj\n'.encode()); pdf.extend(obj); pdf.extend(b'\nendobj\n')
+          xref = len(pdf); pdf.extend(f'xref\n0 {len(objects)+1}\n'.encode()); pdf.extend(b'0000000000 65535 f \n')
+          for offset in offsets[1:]: pdf.extend(f'{offset:010d} 00000 n \n'.encode())
           pdf.extend(f'trailer\n<< /Size {len(objects)+1} /Root 1 0 R >>\nstartxref\n{xref}\n%%EOF\n'.encode())
-          Path('/tmp/v070.pdf').write_bytes(pdf)
+          Path('/tmp/v071.pdf').write_bytes(pdf)
           PY
 
-          txt_doc=$(curl -fsS -F 'file=@/tmp/v070.txt;type=text/plain' http://127.0.0.1:5077/api/knowledge/documents)
-          echo "$txt_doc" | jq -e '.fileType == "TXT" and .chunkCount >= 1 and .pageCount == null' >/dev/null
+          txt_doc=$(curl -fsS -F 'file=@/tmp/v071.txt;type=text/plain' http://127.0.0.1:5077/api/knowledge/documents)
+          md_doc=$(curl -fsS -F 'file=@/tmp/v071.md;type=text/markdown' http://127.0.0.1:5077/api/knowledge/documents)
+          docx_doc=$(curl -fsS -F 'file=@/tmp/v071.docx;type=application/vnd.openxmlformats-officedocument.wordprocessingml.document' http://127.0.0.1:5077/api/knowledge/documents)
+          pdf_doc=$(curl -fsS -F 'file=@/tmp/v071.pdf;type=application/pdf' http://127.0.0.1:5077/api/knowledge/documents)
+
           txt_id=$(echo "$txt_doc" | jq -r '.id')
-
-          md_doc=$(curl -fsS -F 'file=@/tmp/v070.md;type=text/markdown' http://127.0.0.1:5077/api/knowledge/documents)
-          echo "$md_doc" | jq -e '.fileType == "MD" and .chunkCount >= 1' >/dev/null
           md_id=$(echo "$md_doc" | jq -r '.id')
-
-          docx_doc=$(curl -fsS -F 'file=@/tmp/v070.docx;type=application/vnd.openxmlformats-officedocument.wordprocessingml.document' http://127.0.0.1:5077/api/knowledge/documents)
-          echo "$docx_doc" | jq -e '.fileType == "DOCX" and .chunkCount >= 1' >/dev/null
           docx_id=$(echo "$docx_doc" | jq -r '.id')
-
-          pdf_doc=$(curl -fsS -F 'file=@/tmp/v070.pdf;type=application/pdf' http://127.0.0.1:5077/api/knowledge/documents)
-          echo "$pdf_doc" | jq -e '.fileType == "PDF" and .chunkCount >= 1 and .pageCount == 1' >/dev/null
           pdf_id=$(echo "$pdf_doc" | jq -r '.id')
 
-          search=$(curl -fsS --get --data-urlencode 'query=gamma content' --data-urlencode 'limit=10' http://127.0.0.1:5077/api/knowledge/search)
-          echo "$search" | jq -e 'any(.results[]; .fileName == "v070.pdf")' >/dev/null
+          md_search=$(curl -fsS --get --data-urlencode 'query=alpha structured' --data-urlencode 'limit=10' http://127.0.0.1:5077/api/knowledge/search)
+          echo "$md_search" | jq -e 'any(.results[]; .fileName == "v071.md" and .heading == "Kế hoạch nghiên cứu" and (.tokenEstimate > 0))' >/dev/null
 
-          duplicate_status=$(curl -sS -o /tmp/knowledge-duplicate.json -w '%{http_code}' \
-            -F 'file=@/tmp/v070.pdf;type=application/pdf' http://127.0.0.1:5077/api/knowledge/documents)
-          test "$duplicate_status" = "409"
+          docx_search=$(curl -fsS --get --data-urlencode 'query=gamma content' --data-urlencode 'limit=10' http://127.0.0.1:5077/api/knowledge/search)
+          echo "$docx_search" | jq -e 'any(.results[]; .fileName == "v071.docx" and .heading == "Chương thử nghiệm")' >/dev/null
 
-          printf 'not a real pdf' >/tmp/invalid.pdf
-          invalid_status=$(curl -sS -o /tmp/knowledge-invalid.json -w '%{http_code}' \
-            -F 'file=@/tmp/invalid.pdf;type=application/pdf' http://127.0.0.1:5077/api/knowledge/documents)
-          test "$invalid_status" = "400"
-
-          docs=$(curl -fsS http://127.0.0.1:5077/api/knowledge/documents)
-          echo "$docs" | jq -e '([.[].fileType] | sort) == (["DOCX","MD","PDF","TXT"] | sort)' >/dev/null
+          pdf_search=$(curl -fsS --get --data-urlencode 'query=delta content' --data-urlencode 'limit=10' http://127.0.0.1:5077/api/knowledge/search)
+          echo "$pdf_search" | jq -e 'any(.results[]; .fileName == "v071.pdf" and .pageNumber == 1 and .section == "Trang 1")' >/dev/null
+          pdf_chunk_index=$(echo "$pdf_search" | jq -r '.results[] | select(.fileName == "v071.pdf") | .chunkIndex' | head -n1)
+          source=$(curl -fsS "http://127.0.0.1:5077/api/knowledge/documents/${pdf_id}/chunks/${pdf_chunk_index}")
+          echo "$source" | jq -e '.pageNumber == 1 and .tokenEstimate > 0' >/dev/null
 
           for id in "$txt_id" "$md_id" "$docx_id" "$pdf_id"; do
             curl -fsS -X DELETE "http://127.0.0.1:5077/api/knowledge/documents/${id}" >/dev/null

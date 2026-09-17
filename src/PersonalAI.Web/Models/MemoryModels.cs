@@ -16,8 +16,7 @@ public sealed record CreatePersonalMemoryRequest(
 public sealed record UpdatePersonalMemoryRequest(
     string? Kind,
     string? Content,
-    bool ConfirmOverwrite = false,
-    bool? IsEnabled = null);
+    bool ConfirmOverwrite = false);
 
 public sealed record SetPersonalMemoryEnabledRequest(bool IsEnabled);
 

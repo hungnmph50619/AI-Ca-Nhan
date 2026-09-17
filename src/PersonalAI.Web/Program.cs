@@ -60,7 +60,7 @@ app.MapGet("/api/status", (IAiProviderResolver providerResolver, ITeamProfileCat
         provider = aiProvider.Name,
         model = aiProvider.Model,
         teamProfile = teamProfiles.DefaultProfileId,
-        version = "0.6.4"
+        version = "0.6.5"
     });
 });
 
@@ -128,7 +128,7 @@ app.MapGet("/api/memory/stats", async (IPersonalMemoryStore memoryStore, Cancell
 
 app.MapGet("/api/memory/export", async (IPersonalMemoryStore memoryStore, CancellationToken cancellationToken) =>
     Results.Ok(new PersonalMemoryExport(
-        1,
+        2,
         DateTimeOffset.UtcNow,
         await memoryStore.GetAllAsync(cancellationToken))));
 
@@ -150,6 +150,16 @@ app.MapPost("/api/memory", async (CreatePersonalMemoryRequest request, IPersonal
     {
         var memory = await memoryStore.AddAsync(request, cancellationToken);
         return Results.Created($"/api/memory/{memory.Id}", memory);
+    }
+    catch (MemoryUpdateSuggestionException exception)
+    {
+        return Results.Json(new
+        {
+            error = exception.Message,
+            suggestion = true,
+            candidateMemoryId = exception.CandidateMemoryId,
+            candidateContent = exception.CandidateContent
+        }, statusCode: StatusCodes.Status409Conflict);
     }
     catch (ArgumentException exception)
     {

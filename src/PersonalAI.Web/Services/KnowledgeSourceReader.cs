@@ -16,10 +16,7 @@ public sealed class KnowledgeSourceReader
         int chunkIndex,
         CancellationToken cancellationToken = default)
     {
-        if (chunkIndex <= 0 || !File.Exists(_databasePath))
-        {
-            return null;
-        }
+        if (chunkIndex <= 0 || !File.Exists(_databasePath)) return null;
 
         var connectionString = new SqliteConnectionStringBuilder
         {
@@ -30,10 +27,10 @@ public sealed class KnowledgeSourceReader
 
         await using var connection = new SqliteConnection(connectionString);
         await connection.OpenAsync(cancellationToken);
-
         await using var command = connection.CreateCommand();
         command.CommandText = """
-            SELECT c.DocumentId, d.FileName, c.ChunkIndex, c.Content
+            SELECT c.DocumentId, d.FileName, c.ChunkIndex, c.Content,
+                   c.PageNumber, c.Heading, c.Section, c.TokenEstimate
             FROM DocumentChunks c
             JOIN Documents d ON d.Id = c.DocumentId
             WHERE c.DocumentId = $documentId
@@ -44,15 +41,16 @@ public sealed class KnowledgeSourceReader
         command.Parameters.AddWithValue("$chunkIndex", chunkIndex);
 
         await using var reader = await command.ExecuteReaderAsync(cancellationToken);
-        if (!await reader.ReadAsync(cancellationToken))
-        {
-            return null;
-        }
+        if (!await reader.ReadAsync(cancellationToken)) return null;
 
         return new KnowledgeSearchResult(
             Guid.Parse(reader.GetString(0)),
             reader.GetString(1),
             reader.GetInt32(2),
-            reader.GetString(3));
+            reader.GetString(3),
+            reader.IsDBNull(4) ? null : reader.GetInt32(4),
+            reader.IsDBNull(5) ? null : reader.GetString(5),
+            reader.IsDBNull(6) ? null : reader.GetString(6),
+            reader.IsDBNull(7) ? null : reader.GetInt32(7));
     }
 }

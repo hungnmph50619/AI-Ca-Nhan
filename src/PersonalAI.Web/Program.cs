@@ -20,6 +20,7 @@ builder.Services.AddSingleton<KnowledgeDocumentExtractor>();
 builder.Services.AddSingleton<IKnowledgeDocumentStore, SqliteKnowledgeDocumentStore>();
 builder.Services.AddSingleton<IKnowledgeEmbeddingService, LocalFeatureHashEmbeddingService>();
 builder.Services.AddSingleton<IKnowledgeEmbeddingIndex, KnowledgeEmbeddingIndex>();
+builder.Services.AddSingleton<IKnowledgeDocumentManagementService, KnowledgeDocumentManagementService>();
 builder.Services.AddSingleton<IKnowledgeHybridSearchService, KnowledgeHybridSearchService>();
 builder.Services.AddSingleton<IKnowledgeGroundingService, KnowledgeGroundingService>();
 builder.Services.AddSingleton<KnowledgeSourceReader>();
@@ -64,12 +65,18 @@ app.MapGet("/api/status", (IAiProviderResolver providerResolver, ITeamProfileCat
         provider = aiProvider.Name,
         model = aiProvider.Model,
         teamProfile = teamProfiles.DefaultProfileId,
-        version = "0.7.4"
+        version = "0.7.5"
     });
 });
 
 app.MapGet("/api/knowledge/documents", async (IKnowledgeDocumentStore knowledgeStore, CancellationToken cancellationToken) =>
     Results.Ok(await knowledgeStore.GetAllAsync(cancellationToken)));
+
+app.MapGet("/api/knowledge/documents/management", async (IKnowledgeDocumentManagementService managementService, CancellationToken cancellationToken) =>
+    Results.Ok(await managementService.GetAllAsync(cancellationToken)));
+
+app.MapGet("/api/knowledge/documents/export", async (IKnowledgeDocumentManagementService managementService, CancellationToken cancellationToken) =>
+    Results.Ok(await managementService.ExportAsync(cancellationToken)));
 
 app.MapGet("/api/knowledge/search", async (string? query, int? limit, IKnowledgeDocumentStore knowledgeStore, CancellationToken cancellationToken) =>
 {
@@ -116,7 +123,7 @@ app.MapGet("/api/knowledge/documents/{documentId:guid}/chunks/{chunkIndex:int}",
     return source is null ? Results.NotFound() : Results.Ok(source);
 });
 
-app.MapPost("/api/knowledge/documents", async (HttpRequest request, IKnowledgeDocumentStore knowledgeStore, CancellationToken cancellationToken) =>
+app.MapPost("/api/knowledge/documents", async (HttpRequest request, IKnowledgeDocumentStore knowledgeStore, IKnowledgeEmbeddingIndex embeddingIndex, CancellationToken cancellationToken) =>
 {
     if (!request.HasFormContentType)
         return Results.BadRequest(new ApiError("Yêu cầu tải tệp không hợp lệ."));
@@ -129,6 +136,16 @@ app.MapPost("/api/knowledge/documents", async (HttpRequest request, IKnowledgeDo
             return Results.BadRequest(new ApiError("Hãy chọn đúng một tệp để tải lên."));
 
         var document = await knowledgeStore.AddAsync(file, cancellationToken);
+        try
+        {
+            await embeddingIndex.IndexDocumentAsync(document.Id, cancellationToken);
+        }
+        catch
+        {
+            await knowledgeStore.DeleteAsync(document.Id, CancellationToken.None);
+            throw;
+        }
+
         return Results.Created($"/api/knowledge/documents/{document.Id}", document);
     }
     catch (InvalidDataException)
@@ -142,6 +159,44 @@ app.MapPost("/api/knowledge/documents", async (HttpRequest request, IKnowledgeDo
     catch (DuplicateKnowledgeDocumentException exception)
     {
         return Results.Json(new ApiError(exception.Message), statusCode: StatusCodes.Status409Conflict);
+    }
+});
+
+app.MapPatch("/api/knowledge/documents/{documentId:guid}", async (Guid documentId, RenameKnowledgeDocumentRequest request, IKnowledgeDocumentManagementService managementService, CancellationToken cancellationToken) =>
+{
+    try
+    {
+        var document = await managementService.RenameAsync(documentId, request.FileName, cancellationToken);
+        return document is null ? Results.NotFound() : Results.Ok(document);
+    }
+    catch (KnowledgeDocumentValidationException exception)
+    {
+        return Results.BadRequest(new ApiError(exception.Message));
+    }
+});
+
+app.MapPost("/api/knowledge/documents/{documentId:guid}/reindex", async (Guid documentId, IKnowledgeDocumentManagementService managementService, CancellationToken cancellationToken) =>
+{
+    try
+    {
+        var document = await managementService.ReindexAsync(documentId, cancellationToken);
+        return document is null ? Results.NotFound() : Results.Ok(document);
+    }
+    catch (KnowledgeDocumentValidationException exception)
+    {
+        return Results.BadRequest(new ApiError(exception.Message));
+    }
+});
+
+app.MapPost("/api/knowledge/documents/bulk-delete", async (BulkDeleteKnowledgeDocumentsRequest request, IKnowledgeDocumentManagementService managementService, CancellationToken cancellationToken) =>
+{
+    try
+    {
+        return Results.Ok(await managementService.DeleteManyAsync(request.DocumentIds, cancellationToken));
+    }
+    catch (KnowledgeDocumentValidationException exception)
+    {
+        return Results.BadRequest(new ApiError(exception.Message));
     }
 });
 

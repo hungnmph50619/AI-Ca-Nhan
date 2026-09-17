@@ -159,6 +159,20 @@ public sealed class ToolExecutionService(
                 definition.RequiredPermissions,
                 policyDecision.ApprovedPermissions);
         }
+        catch (ToolExecutionInputException exception)
+        {
+            return Complete(
+                invocationId,
+                definition.Name,
+                ToolExecutionStatuses.InvalidInput,
+                false,
+                null,
+                exception.Message,
+                stopwatch,
+                startedAt,
+                definition.RequiredPermissions,
+                policyDecision.ApprovedPermissions);
+        }
         catch (OperationCanceledException) when (
             timeoutCts.IsCancellationRequested
             && !cancellationToken.IsCancellationRequested)
@@ -241,3 +255,5 @@ public sealed class ToolExecutionService(
             .Order(StringComparer.Ordinal)
             .ToArray();
 }
+
+public sealed class ToolExecutionInputException(string message) : Exception(message);

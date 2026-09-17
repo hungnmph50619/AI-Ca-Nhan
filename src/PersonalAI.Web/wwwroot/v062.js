@@ -1,5 +1,5 @@
 (() => {
-  const VERSION = "0.6.2";
+  const VERSION = "0.6.3";
   let allMemories = [];
   let editingId = null;
   let query = "";
@@ -102,15 +102,12 @@
     if (!original) { resetEditor(); return feedback("Trí nhớ cần sửa không còn tồn tại.", true); }
     if (!window.confirm("Lưu thay đổi cho trí nhớ này?")) return;
 
-    // v0.6.2 keeps compatibility with the existing API: create replacement first,
-    // then remove the old record so a failed create never destroys the original.
     if (normalize(original.content) !== normalize(content)) {
       if (duplicate) await deleteById(duplicate.id, false);
       const created = await createMemory(kind, content, "", false);
       if (!created) return;
       await deleteById(original.id, false);
     } else {
-      // Kind-only edits require replacing the same-content record.
       await deleteById(original.id, false);
       const created = await createMemory(kind, content, "", false);
       if (!created) return feedback("Không tạo lại được trí nhớ sau khi đổi loại.", true);

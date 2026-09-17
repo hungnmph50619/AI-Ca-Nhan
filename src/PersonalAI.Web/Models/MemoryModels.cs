@@ -10,3 +10,8 @@ public sealed record PersonalMemory(
 public sealed record CreatePersonalMemoryRequest(
     string? Kind,
     string? Content);
+
+public sealed record UpdatePersonalMemoryRequest(
+    string? Kind,
+    string? Content,
+    bool ConfirmOverwrite = false);

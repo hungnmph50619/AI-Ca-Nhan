@@ -1,5 +1,5 @@
 (() => {
-  const VERSION = "0.8.1";
+  const VERSION = "0.8.2";
   let loading = false;
 
   if (document.readyState === "loading") {
@@ -80,7 +80,7 @@
 
     const intro = document.createElement("div");
     intro.className = "v080-framework-intro";
-    intro.innerHTML = "<strong>Internal Tools v0.8.1</strong><p>Framework hiện có tìm trí nhớ, tìm tài liệu hybrid, calculator, date math, trạng thái app và các utility local. Mọi lần chạy vẫn đi qua schema, permission policy và timeout.</p>";
+    intro.innerHTML = "<strong>File Read Tools v0.8.2</strong><p>Framework hiện có 9 công cụ local, bổ sung workspace.list và workspace.read_text để đọc workspace được cấp quyền. Đường dẫn luôn tương đối, bị chặn path traversal/symlink và có giới hạn kích thước.</p>";
 
     const permissionLegend = document.createElement("div");
     permissionLegend.className = "v080-permission-legend";
@@ -98,7 +98,7 @@
 
     const note = document.createElement("p");
     note.className = "security-copy";
-    note.textContent = "Các internal tool v0.8.1 chỉ đọc hoặc tính toán local và dùng READ. WRITE / DELETE / EXTERNAL / SENSITIVE vẫn cần xác nhận rõ ràng. Chat/model chưa tự chọn hay tự gọi công cụ ở bản này.";
+    note.textContent = "Các workspace tool v0.8.2 chỉ đọc local và dùng READ; không thể ghi, xóa hay đi ra ngoài workspace. WRITE / DELETE / EXTERNAL / SENSITIVE vẫn cần xác nhận rõ ràng. Chat/model chưa tự chọn hay tự gọi công cụ ở bản này.";
 
     card.append(header, intro, permissionLegend, status, list, note);
     dialog.appendChild(card);

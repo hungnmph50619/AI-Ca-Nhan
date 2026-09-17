@@ -15,7 +15,11 @@ public sealed record KnowledgeSearchResult(
     Guid DocumentId,
     string FileName,
     int ChunkIndex,
-    string Content);
+    string Content,
+    int? PageNumber = null,
+    string? Heading = null,
+    string? Section = null,
+    int? TokenEstimate = null);
 
 public sealed record KnowledgeSearchResponse(
     string Query,

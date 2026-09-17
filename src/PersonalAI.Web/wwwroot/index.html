@@ -3,7 +3,7 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <meta name="description" content="Trợ lý AI cá nhân phiên bản 0.7.3">
+  <meta name="description" content="Trợ lý AI cá nhân phiên bản 0.7.4">
   <title>AI Cá Nhân</title>
   <link rel="stylesheet" href="styles.css">
   <link rel="stylesheet" href="v0631.css">
@@ -11,6 +11,7 @@
   <link rel="stylesheet" href="v065.css">
   <link rel="stylesheet" href="v072.css">
   <link rel="stylesheet" href="v073.css">
+  <link rel="stylesheet" href="v074.css">
 </head>
 <body>
   <div class="app-shell">
@@ -19,7 +20,7 @@
         <div class="brand-mark" aria-hidden="true">A</div>
         <div>
           <strong>AI Cá Nhân</strong>
-          <span>Phiên bản 0.7.3</span>
+          <span>Phiên bản 0.7.4</span>
         </div>
       </div>
 
@@ -43,7 +44,7 @@
       </header>
       <section class="messages" id="messages" aria-live="polite">
         <div class="welcome" id="welcome">
-          <div class="welcome-orb" aria-hidden="true">✦</div><p class="eyebrow">TRỢ LÝ CỦA RIÊNG BẠN</p><h1>Hôm nay tôi có thể<br>giúp gì cho bạn?</h1><p class="welcome-copy">Hỏi bất kỳ điều gì. Trợ lý có thể dùng dữ liệu riêng và ghi rõ nguồn đã tham khảo.</p>
+          <div class="welcome-orb" aria-hidden="true">✦</div><p class="eyebrow">TRỢ LÝ CỦA RIÊNG BẠN</p><h1>Hôm nay tôi có thể<br>giúp gì cho bạn?</h1><p class="welcome-copy">Hỏi bất kỳ điều gì. Trợ lý có thể dùng dữ liệu riêng, đánh số nguồn và cho bạn mở đúng đoạn tài liệu đã tham khảo.</p>
           <div class="suggestions">
             <button type="button" data-prompt="Giải thích AI hoạt động như thế nào bằng ngôn ngữ dễ hiểu."><span>01</span><strong>Giải thích một chủ đề</strong><small>Ngắn gọn, dễ hiểu</small></button>
             <button type="button" data-prompt="Hãy giúp tôi lập kế hoạch học AI trong 7 ngày."><span>02</span><strong>Lập một kế hoạch</strong><small>Cụ thể, có từng bước</small></button>
@@ -72,14 +73,14 @@
   <dialog class="settings-dialog knowledge-dialog" id="knowledgeDialog" aria-labelledby="knowledgeTitle">
     <div class="settings-card knowledge-card">
       <header class="settings-header"><div><p class="eyebrow">DỮ LIỆU NẰM TRÊN MÁY NÀY</p><h2 id="knowledgeTitle">Kho dữ liệu</h2></div><button class="dialog-close" id="knowledgeCloseButton" type="button" aria-label="Đóng">×</button></header>
-      <div class="knowledge-intro"><div class="knowledge-intro-icon" aria-hidden="true">▤</div><div><strong>Kho dữ liệu hybrid v0.7.3</strong><p>PDF, DOCX, TXT và Markdown được chia thành các đoạn có cấu trúc. Trợ lý kết hợp FTS theo từ khóa với vector local rồi rerank để chọn nguồn phù hợp hơn.</p></div></div>
+      <div class="knowledge-intro"><div class="knowledge-intro-icon" aria-hidden="true">▤</div><div><strong>Kho dữ liệu có trích nguồn v0.7.4</strong><p>PDF, DOCX, TXT và Markdown được chia thành các đoạn có cấu trúc. Chat dùng hybrid retrieval và mỗi nguồn có thể mở lại đúng trang, mục và đoạn đã dùng.</p></div></div>
       <form id="knowledgeUploadForm"><label class="knowledge-dropzone" id="knowledgeDropzone" for="knowledgeFileInput"><span class="dropzone-icon" aria-hidden="true">↑</span><strong>Chọn hoặc thả tài liệu vào đây</strong><small>PDF, DOCX, TXT, Markdown · tối đa 10 MB mỗi tệp</small><span class="secondary-button upload-label">Chọn tệp</span></label><input class="visually-hidden" id="knowledgeFileInput" name="file" type="file" accept=".pdf,.docx,.txt,.md,application/pdf,application/vnd.openxmlformats-officedocument.wordprocessingml.document,text/plain,text/markdown"></form>
       <div class="settings-feedback knowledge-feedback" id="knowledgeFeedback" role="status" aria-live="polite"></div>
-      <form class="knowledge-search" id="knowledgeSearchForm" role="search"><label class="field-label" for="knowledgeSearchInput">Tìm trong dữ liệu</label><div class="knowledge-search-row"><input id="knowledgeSearchInput" type="search" minlength="2" maxlength="200" autocomplete="off" placeholder="Ví dụ: kế hoạch học AI"><button class="primary-button" id="knowledgeSearchButton" type="submit">Từ khóa</button></div><p class="field-hint">Từ khóa dùng FTS; ngữ nghĩa dùng vector local; tìm kết hợp hợp nhất cả hai và rerank. Chat dùng tìm kết hợp tự động.</p></form>
+      <form class="knowledge-search" id="knowledgeSearchForm" role="search"><label class="field-label" for="knowledgeSearchInput">Tìm trong dữ liệu</label><div class="knowledge-search-row"><input id="knowledgeSearchInput" type="search" minlength="2" maxlength="200" autocomplete="off" placeholder="Ví dụ: kế hoạch học AI"><button class="primary-button" id="knowledgeSearchButton" type="submit">Từ khóa</button></div><p class="field-hint">Từ khóa dùng FTS; ngữ nghĩa dùng vector local; tìm kết hợp hợp nhất cả hai và rerank. Chat dùng tìm kết hợp tự động và trả nguồn có thể mở lại.</p></form>
       <section class="knowledge-search-results" id="knowledgeSearchResults" aria-live="polite" hidden><div class="knowledge-search-heading"><strong>Kết quả tìm kiếm</strong><span id="knowledgeSearchSummary"></span></div><div class="knowledge-search-list" id="knowledgeSearchList"></div></section>
       <div class="knowledge-list-header"><div><strong>Tài liệu đã lưu</strong><span id="knowledgeSummary">0 tài liệu</span></div><button class="icon-refresh" id="knowledgeRefreshButton" type="button" aria-label="Tải lại danh sách" title="Tải lại">↻</button></div>
       <div class="knowledge-list" id="knowledgeList" role="list"></div><div class="knowledge-empty" id="knowledgeEmpty"><span aria-hidden="true">◇</span><strong>Kho dữ liệu đang trống</strong><p>Tải tài liệu đầu tiên để chuẩn bị cho chức năng hỏi đáp theo dữ liệu riêng.</p></div>
-      <p class="security-copy">Tệp gốc, cơ sở dữ liệu và vector tìm kiếm được lưu ngoài thư mục Git tại <code>%LOCALAPPDATA%\PersonalAI\Knowledge</code>. Vector và bước rerank v0.7.3 chạy hoàn toàn trên máy; khi trò chuyện, chỉ các đoạn đã được chọn mới được gửi đến nhà cung cấp AI bạn đã chọn.</p>
+      <p class="security-copy">Tệp gốc, cơ sở dữ liệu và vector tìm kiếm được lưu ngoài thư mục Git tại <code>%LOCALAPPDATA%\PersonalAI\Knowledge</code>. Vector, rerank và việc mở đoạn nguồn v0.7.4 chạy trên máy; khi trò chuyện, chỉ các đoạn đã được chọn mới được gửi đến nhà cung cấp AI bạn đã chọn.</p>
     </div>
   </dialog>
 
@@ -94,5 +95,6 @@
   <script src="v070.js" defer></script>
   <script src="v072.js" defer></script>
   <script src="v073.js" defer></script>
+  <script src="v074.js" defer></script>
 </body>
 </html>

@@ -55,10 +55,10 @@ jobs:
             exit 1
           fi
 
-          curl -fsS http://127.0.0.1:5077/api/status | jq -e '.version == "0.8.8"' >/dev/null
+          curl -fsS http://127.0.0.1:5077/api/status | jq -e '.version == "0.8.9"' >/dev/null
 
           tools=$(curl -fsS http://127.0.0.1:5077/api/tools)
-          echo "$tools" | jq -e '.frameworkVersion == "0.8.8" and (.permissionTypes | sort) == (["DELETE","EXTERNAL","READ","SENSITIVE","WRITE"] | sort)' >/dev/null
+          echo "$tools" | jq -e '.frameworkVersion == "0.8.9" and (.permissionTypes | sort) == (["DELETE","EXTERNAL","READ","SENSITIVE","WRITE"] | sort)' >/dev/null
           echo "$tools" | jq -e '(.tools | length) == 13 and any(.tools[]; .name == "local.clock" and .localOnly == true and .requiredPermissions == ["READ"]) and any(.tools[]; .name == "local.text_stats" and .timeoutMs == 2000) and any(.tools[]; .name == "memory.search") and any(.tools[]; .name == "documents.search") and any(.tools[]; .name == "local.calculate") and any(.tools[]; .name == "local.date_math") and any(.tools[]; .name == "app.summary") and any(.tools[]; .name == "workspace.list" and .requiredPermissions == ["READ"]) and any(.tools[]; .name == "workspace.read_text" and .requiredPermissions == ["READ"]) and any(.tools[]; .name == "workspace.write_text" and .requiredPermissions == ["WRITE"] and .requiresConfirmation == true) and any(.tools[]; .name == "workspace.create_directory" and .requiredPermissions == ["WRITE"] and .requiresConfirmation == true) and any(.tools[]; .name == "workspace.move" and .requiredPermissions == ["WRITE"] and .requiresConfirmation == true) and any(.tools[]; .name == "workspace.delete" and .requiredPermissions == ["DELETE"] and .requiresConfirmation == true)' >/dev/null
 
           text_tool=$(curl -fsS http://127.0.0.1:5077/api/tools/local.text_stats)
@@ -80,6 +80,9 @@ jobs:
             -H 'Content-Type: application/json' \
             -d '{"toolName":"local.text_stats","arguments":{"text":"Xin chào\nAI cá nhân"},"approvedPermissions":["read"],"confirmed":false}')
           echo "$tool_result" | jq -e '.status == "succeeded" and .success == true and .toolName == "local.text_stats" and .output.wordCount == 5 and .output.lineCount == 2 and .approvedPermissions == ["READ"] and .requiredPermissions == ["READ"]' >/dev/null
+
+          audit_log=$(curl -fsS 'http://127.0.0.1:5077/api/tools/audit?limit=20')
+          echo "$audit_log" | jq -e '.auditVersion == "0.8.9" and (.entries | length) >= 3 and any(.entries[]; .toolName == "local.text_stats" and .status == "succeeded" and .success == true and (.inputSha256 | length) == 64 and (.outputSha256 | length) == 64 and .actor == "user-request" and .reversibility == "not-applicable") and any(.entries[]; .toolName == "local.text_stats" and .status == "denied") and any(.entries[]; .toolName == "local.text_stats" and .status == "invalid-input")' >/dev/null
 
           clock_result=$(curl -fsS -X POST http://127.0.0.1:5077/api/tools/execute \
             -H 'Content-Type: application/json' \
@@ -576,6 +579,10 @@ jobs:
           grep -Fq '/api/tools/orchestrate/execute' src/PersonalAI.Web/Services/ToolFrameworkEndpoints.cs
           grep -Fq '/api/tools/orchestrate/synthesize' src/PersonalAI.Web/Services/ToolFrameworkEndpoints.cs
           grep -Fq '/api/tools/orchestrate/continue-native' src/PersonalAI.Web/Services/ToolFrameworkEndpoints.cs
+          grep -Fq '/api/tools/audit' src/PersonalAI.Web/Services/ToolFrameworkEndpoints.cs
+          grep -Fq 'IToolAuditLog' src/PersonalAI.Web/Services/ToolAuditLog.cs
+          grep -Fq 'tool-audit.db' src/PersonalAI.Web/Services/ToolAuditLog.cs
+          grep -Fq 'Nhật ký thực thi gần đây' src/PersonalAI.Web/wwwroot/v080.js
           grep -Fq 'ContinueFunctionCallAsync' src/PersonalAI.Web/Services/IAiProvider.cs
           grep -Fq 'GetByName' src/PersonalAI.Web/Services/AiProviderResolver.cs
           grep -Fq 'function_call_output' src/PersonalAI.Web/Services/OpenAiChatService.cs
@@ -594,7 +601,7 @@ jobs:
           grep -Fq 'Nguồn đề xuất:' src/PersonalAI.Web/wwwroot/app.js
           grep -Fq 'Tham số' src/PersonalAI.Web/wwwroot/app.js
           grep -Fq 'CÔNG CỤ NỘI BỘ TRÊN MÁY NÀY' src/PersonalAI.Web/wwwroot/v080.js
-          grep -Fq 'Hoàn tất câu trả lời từ kết quả công cụ v0.8.8' src/PersonalAI.Web/wwwroot/v080.js
+          grep -Fq 'Nhật ký công cụ v0.8.9' src/PersonalAI.Web/wwwroot/v080.js
           grep -Fq 'Mô hình' src/PersonalAI.Web/wwwroot/index.html
           grep -Fq 'Khóa truy cập' src/PersonalAI.Web/wwwroot/index.html
           ! grep -Fq 'Planner:' src/PersonalAI.Web/wwwroot/app.js

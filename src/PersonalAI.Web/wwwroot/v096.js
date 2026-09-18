@@ -305,7 +305,9 @@
       "task.step.execute": "Chạy bước tác vụ",
       "task.retry.prepare": "Chuẩn bị thử lại",
       "task.resume": "Tiếp tục tác vụ",
-      "task.cancel": "Hủy tác vụ"
+      "task.cancel": "Hủy tác vụ",
+      "undo.available": "Có thể hoàn tác",
+      "undo.execute": "Thực hiện hoàn tác"
     };
     return labels[action] || action || "Sự kiện";
   }
@@ -339,7 +341,12 @@
       "context-managed-chat": "Lượt chat dùng Context Manager",
       "documents-only-no-source": "Không có nguồn phù hợp trong chế độ chỉ tài liệu",
       "external-confirmation-required": "Cần xác nhận gửi dữ liệu ra ngoài",
-      "user-confirmed-external": "Người dùng xác nhận gửi ra ngoài"
+      "user-confirmed-external": "Người dùng xác nhận gửi ra ngoài",
+      "reversible-tool-action": "Hành động có inverse an toàn",
+      "user-confirmed-undo": "Người dùng xác nhận hoàn tác",
+      "undo-expired": "Bản ghi hoàn tác đã hết hạn",
+      "undo-not-available": "Bản ghi không còn khả dụng",
+      "undo-precondition-failed": "Trạng thái hiện tại không còn khớp"
     }[reason] || reason || "—";
   }
 

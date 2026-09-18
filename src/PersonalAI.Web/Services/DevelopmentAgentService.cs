@@ -298,10 +298,13 @@ public sealed class DevelopmentAgentService(
         var result = await RunProcessAsync(
             "git",
             [
+                "-c",
+                "core.fsmonitor=false",
                 "status",
                 "--short",
                 "--branch",
-                "--untracked-files=normal"
+                "--untracked-files=normal",
+                "--ignore-submodules=all"
             ],
             directory,
             GitTimeoutMs,
@@ -329,8 +332,12 @@ public sealed class DevelopmentAgentService(
 
         var arguments = new List<string>
         {
+            "-c",
+            "core.fsmonitor=false",
             "diff",
             "--no-ext-diff",
+            "--no-textconv",
+            "--ignore-submodules=all",
             "--no-color",
             "--unified=3"
         };
@@ -493,6 +500,10 @@ public sealed class DevelopmentAgentService(
         startInfo.Environment["DOTNET_SKIP_FIRST_TIME_EXPERIENCE"] = "1";
         startInfo.Environment["NUGET_XMLDOC_MODE"] = "skip";
         startInfo.Environment["CI"] = "true";
+        startInfo.Environment["GIT_TERMINAL_PROMPT"] = "0";
+        startInfo.Environment["GIT_PAGER"] = "cat";
+        startInfo.Environment["PAGER"] = "cat";
+        startInfo.Environment["GIT_OPTIONAL_LOCKS"] = "0";
 
         using var process = new Process
         {
@@ -727,11 +738,17 @@ public sealed class DevelopmentAgentService(
         var marker = Path.Combine(
             directory,
             ".git");
-        if (!Directory.Exists(marker)
-            && !File.Exists(marker))
+        if (!Directory.Exists(marker))
         {
             throw new ToolExecutionInputException(
-                "Thư mục được chọn không có .git repository marker.");
+                "v1.4 chỉ cho Git repository có .git directory nằm trực tiếp trong workspace; gitfile/worktree ngoài workspace chưa được hỗ trợ.");
+        }
+
+        var info = new DirectoryInfo(marker);
+        if (IsSymlink(info))
+        {
+            throw new ToolExecutionInputException(
+                ".git directory không được là symlink/reparse point.");
         }
     }
 

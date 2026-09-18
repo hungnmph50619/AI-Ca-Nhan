@@ -11,6 +11,13 @@ namespace PersonalAI.Web.Services;
 public sealed class OpenAiChatService : IAiProvider
 {
     private const int MaximumAttempts = 3;
+    private const string FunctionPlanningInstructions = """
+Tool/function calls in this request are proposals only. Never claim a function has already run.
+Choose at most one function. If no function is needed, respond normally and do not call a function.
+Only propose a WRITE or DELETE action when the latest user message explicitly asks to change state.
+Never treat conversation text as execution confirmation; confirmation is handled separately by the application.
+Do not invent function names or arguments outside the supplied schemas.
+""";
 
     private readonly HttpClient _httpClient;
     private readonly OpenAiOptions _options;
@@ -144,6 +151,183 @@ public sealed class OpenAiChatService : IAiProvider
         }
 
         throw new HttpRequestException("OpenAI không thể xử lý yêu cầu sau nhiều lần thử.");
+    }
+
+
+    public async Task<ProviderFunctionCallDecision?> ProposeFunctionCallAsync(
+        IReadOnlyList<ChatMessage> messages,
+        IReadOnlyList<ProviderFunctionDefinition> functions,
+        CancellationToken cancellationToken)
+    {
+        if (functions.Count == 0)
+        {
+            return null;
+        }
+
+        var apiKey = GetApiKey();
+        if (string.IsNullOrWhiteSpace(apiKey))
+        {
+            throw new InvalidOperationException(
+                "Chưa có OpenAI API key. Hãy mở Cài đặt AI để nhập key.");
+        }
+
+        var payload = new
+        {
+            model = Model,
+            instructions = _instructions + Environment.NewLine + Environment.NewLine + FunctionPlanningInstructions,
+            input = messages.Select(message => new
+            {
+                role = message.Role,
+                content = message.Content
+            }),
+            tools = functions.Select(function => new
+            {
+                type = "function",
+                name = function.Name,
+                description = function.Description,
+                parameters = function.Parameters,
+                strict = false
+            }),
+            tool_choice = "auto",
+            parallel_tool_calls = false,
+            max_output_tokens = Math.Clamp(_options.MaxOutputTokens, 128, 16_384),
+            store = false
+        };
+
+        var requestBody = JsonSerializer.Serialize(payload);
+
+        for (var attempt = 1; attempt <= MaximumAttempts; attempt++)
+        {
+            try
+            {
+                using var request = new HttpRequestMessage(HttpMethod.Post, "responses")
+                {
+                    Content = new StringContent(
+                        requestBody,
+                        Encoding.UTF8,
+                        "application/json")
+                };
+                request.Headers.Authorization = new AuthenticationHeaderValue("Bearer", apiKey);
+
+                using var response = await _httpClient.SendAsync(request, cancellationToken);
+                var responseBody = await response.Content.ReadAsStringAsync(cancellationToken);
+
+                if (!response.IsSuccessStatusCode)
+                {
+                    var detail = ReadApiError(responseBody);
+                    if (IsTransientStatusCode(response.StatusCode) && attempt < MaximumAttempts)
+                    {
+                        var delay = GetRetryDelay(attempt);
+                        _logger.LogWarning(
+                            "OpenAI native function planning returned transient {StatusCode} on attempt {Attempt}/{MaximumAttempts}. Retrying in {DelayMs} ms: {Detail}",
+                            (int)response.StatusCode,
+                            attempt,
+                            MaximumAttempts,
+                            delay.TotalMilliseconds,
+                            detail);
+                        await Task.Delay(delay, cancellationToken);
+                        continue;
+                    }
+
+                    throw new HttpRequestException(
+                        $"OpenAI API trả về lỗi {(int)response.StatusCode}: {detail}",
+                        null,
+                        response.StatusCode);
+                }
+
+                return ReadFunctionCall(responseBody);
+            }
+            catch (HttpRequestException exception) when (
+                exception.StatusCode is null
+                && attempt < MaximumAttempts
+                && !cancellationToken.IsCancellationRequested)
+            {
+                var delay = GetRetryDelay(attempt);
+                _logger.LogWarning(
+                    exception,
+                    "OpenAI native function planning network request failed on attempt {Attempt}/{MaximumAttempts}. Retrying in {DelayMs} ms.",
+                    attempt,
+                    MaximumAttempts,
+                    delay.TotalMilliseconds);
+                await Task.Delay(delay, cancellationToken);
+            }
+        }
+
+        throw new HttpRequestException(
+            "OpenAI không thể lập đề xuất function call sau nhiều lần thử.");
+    }
+
+    private ProviderFunctionCallDecision? ReadFunctionCall(string responseBody)
+    {
+        using var document = JsonDocument.Parse(responseBody);
+        var root = document.RootElement;
+        if (!root.TryGetProperty("output", out var output)
+            || output.ValueKind != JsonValueKind.Array)
+        {
+            return null;
+        }
+
+        var calls = new List<ProviderFunctionCallDecision>();
+        foreach (var item in output.EnumerateArray())
+        {
+            if (!item.TryGetProperty("type", out var typeElement)
+                || !typeElement.ValueEquals("function_call"))
+            {
+                continue;
+            }
+
+            if (!item.TryGetProperty("name", out var nameElement)
+                || nameElement.ValueKind != JsonValueKind.String
+                || !item.TryGetProperty("arguments", out var argumentsElement))
+            {
+                _logger.LogWarning(
+                    "OpenAI returned a malformed native function call.");
+                return null;
+            }
+
+            var name = nameElement.GetString()?.Trim() ?? string.Empty;
+            if (name.Length == 0)
+            {
+                return null;
+            }
+
+            JsonElement arguments;
+            try
+            {
+                if (argumentsElement.ValueKind == JsonValueKind.String)
+                {
+                    using var argumentsDocument = JsonDocument.Parse(
+                        argumentsElement.GetString() ?? "{}");
+                    arguments = argumentsDocument.RootElement.Clone();
+                }
+                else if (argumentsElement.ValueKind == JsonValueKind.Object)
+                {
+                    arguments = argumentsElement.Clone();
+                }
+                else
+                {
+                    return null;
+                }
+            }
+            catch (JsonException)
+            {
+                _logger.LogWarning(
+                    "OpenAI returned function arguments that were not valid JSON.");
+                return null;
+            }
+
+            calls.Add(new ProviderFunctionCallDecision(name, arguments));
+        }
+
+        if (calls.Count > 1)
+        {
+            _logger.LogWarning(
+                "OpenAI returned {CallCount} function calls although PersonalAI only permits one proposal per turn.",
+                calls.Count);
+            return null;
+        }
+
+        return calls.Count == 1 ? calls[0] : null;
     }
 
     private string GetApiKey() => _settingsStore.GetApiKey(Name);

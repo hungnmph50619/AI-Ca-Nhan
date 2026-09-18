@@ -839,7 +839,8 @@ jobs:
               con = sqlite3.connect(path)
               try:
                   rows = con.execute("select workspace_id, agent, action, tool, target, reason, result from audit_events order by occurred_at desc limit 30").fetchall()
-                  print(json.dumps({"databaseExists": True, "rowCount": len(rows), "rows": rows}, ensure_ascii=False))
+                  workspaces = con.execute("select workspace_id, count(*) from audit_events group by workspace_id order by workspace_id").fetchall()
+                  print(json.dumps({"databaseExists": True, "rowCount": len(rows), "workspaceCounts": workspaces, "rows": rows}, ensure_ascii=False))
               finally:
                   con.close()
           PY

@@ -387,6 +387,39 @@ jobs:
           ! echo "$context_preview" | grep -Fq 'workspace-ci-secret-094'
           ! echo "$context_preview" | grep -Fq 'life-context-secret-160'
 
+          decision_status=$(curl -fsS http://127.0.0.1:5077/api/decisions/status)
+          echo "$decision_status" | jq -e '.version == "1.7.0" and .supported == true and .requiresUserDecision == true and .autoActionEnabled == false and .toolExecutionEnabled == false and .persistsAnalyses == false and .contextGroundingEnabled == true and .maximumQuestionCharacters == 4000 and .maximumOptions == 8 and .maximumCriteria == 8 and any(.contextKinds[]; . == "life-context")' >/dev/null
+
+          decision_invalid_code=$(curl -sS -o /tmp/decision-invalid.json -w '%{http_code}' -X POST http://127.0.0.1:5077/api/decisions/preview \
+            -H "X-PersonalAI-Workspace: $custom_workspace_id" \
+            -H 'Content-Type: application/json' \
+            -d '{"question":"Chọn gì?","options":["Chỉ một lựa chọn"],"criteria":[]}')
+          test "$decision_invalid_code" = "400"
+          jq -e '(.error | contains("2") and contains("8"))' /tmp/decision-invalid.json >/dev/null
+
+          decision_preview=$(curl -fsS -X POST http://127.0.0.1:5077/api/decisions/preview \
+            -H "X-PersonalAI-Workspace: $custom_workspace_id" \
+            -H 'Content-Type: application/json' \
+            -d '{"question":"workspace-ci-secret-094 workspace scoped document 094 task theo workspace life-context-secret-160 calendar nên chọn phương án nào?","options":["Giữ phương án A","Chọn phương án B"],"criteria":["Chi phí","Rủi ro"],"constraints":"Không tự thực thi hành động.","useKnowledge":true,"useMemory":true,"useTaskContext":true,"useLifeContext":true}')
+          echo "$decision_preview" | jq -e '.workspaceId == "'"$custom_workspace_id"'" and (.decisionId | type) == "string" and (.options | length) == 2 and (.criteria | length) == 2 and .requiresUserDecision == true and .autoActionEnabled == false and .toolExecutionEnabled == false and .context.workspaceId == "'"$custom_workspace_id"'" and .context.selectedMemories >= 1 and .context.selectedDocuments >= 1 and .context.selectedTasks >= 1 and .context.selectedLifeContext >= 1 and any(.sources[]; .fileName == "workspace-094.txt")' >/dev/null
+          ! echo "$decision_preview" | grep -Fq 'workspace-ci-secret-094'
+          ! echo "$decision_preview" | grep -Fq 'life-context-secret-160'
+
+          decision_preview_audit=$(curl -fsS -H "X-PersonalAI-Workspace: $custom_workspace_id" 'http://127.0.0.1:5077/api/audit?limit=200')
+          echo "$decision_preview_audit" | jq -e 'any(.items[]; .action == "decision.preview" and .agent == "personal-ai" and .result == "succeeded")' >/dev/null
+          ! echo "$decision_preview_audit" | grep -Fq 'workspace-ci-secret-094'
+          ! echo "$decision_preview_audit" | grep -Fq 'life-context-secret-160'
+
+          ai_configured=$(curl -fsS http://127.0.0.1:5077/api/status | jq -r '.configured')
+          if [ "$ai_configured" = "false" ]; then
+            decision_analyze_code=$(curl -sS -o /tmp/decision-analyze-unconfigured.json -w '%{http_code}' -X POST http://127.0.0.1:5077/api/decisions/analyze \
+              -H "X-PersonalAI-Workspace: $custom_workspace_id" \
+              -H 'Content-Type: application/json' \
+              -d '{"question":"Nên chọn phương án nào?","options":["Phương án A","Phương án B"],"criteria":["Rủi ro"],"useKnowledge":false,"useMemory":false,"useTaskContext":false,"useLifeContext":false}')
+            test "$decision_analyze_code" = "503"
+            jq -e '(.error | contains("chưa được cấu hình"))' /tmp/decision-analyze-unconfigured.json >/dev/null
+          fi
+
           context_without_tasks=$(curl -fsS -X POST http://127.0.0.1:5077/api/context/preview \
             -H "X-PersonalAI-Workspace: $custom_workspace_id" \
             -H 'Content-Type: application/json' \

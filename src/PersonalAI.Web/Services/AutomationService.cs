@@ -474,6 +474,14 @@ public sealed class AutomationCoordinator(
                 ?? throw new AutomationValidationException(
                     "Automation không còn tồn tại.");
 
+            if (current.State
+                is AutomationStates.Completed
+                    or AutomationStates.Failed)
+            {
+                throw new AutomationValidationException(
+                    "Automation đã kết thúc; không thể chạy lại cùng automation.");
+            }
+
             if (!manualTrigger
                 && (!current.Enabled
                     || current.State
@@ -897,7 +905,9 @@ public sealed class AutomationCoordinator(
             LastRunAt = DateTimeOffset.UtcNow,
             LastRunStatus =
                 AutomationRunStatuses.Failed,
-            LastMessage = message
+            LastMessage = message,
+            RunCount = current.RunCount
+                + (execution is null ? 0 : 1)
         };
         store.Save(updated);
         RecordRunAudit(

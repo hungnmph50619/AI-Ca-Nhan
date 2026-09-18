@@ -119,6 +119,7 @@ public sealed class ChatTurnService(
             knowledgeMode,
             request.UseMemory,
             request.UseTaskContext,
+            request.UseLifeContext,
             cancellationToken);
 
         if (knowledgeMode == "documents-only"

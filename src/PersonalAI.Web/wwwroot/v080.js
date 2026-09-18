@@ -1,5 +1,5 @@
 (() => {
-  const VERSION = "0.9.2";
+  const VERSION = "0.9.3";
   let loading = false;
 
   if (document.readyState === "loading") {
@@ -80,7 +80,7 @@
 
     const intro = document.createElement("div");
     intro.className = "v080-framework-intro";
-    intro.innerHTML = "<strong>Nhật ký hoạt động công cụ v0.9.2</strong><p>Mỗi đề xuất, lần chạy và lần gửi kết quả ra nhà cung cấp AI được ghi dấu trên máy. Nhật ký không lưu toàn bộ tham số hay nội dung kết quả; chỉ lưu thông tin vận hành và mã băm để đối chiếu.</p>";
+    intro.innerHTML = "<strong>Nhật ký hoạt động công cụ v0.9.3</strong><p>Mỗi đề xuất, lần chạy và lần gửi kết quả ra nhà cung cấp AI được ghi dấu trên máy. Nhật ký không lưu toàn bộ tham số hay nội dung kết quả; chỉ lưu thông tin vận hành và mã băm để đối chiếu.</p>";
 
     const permissionLegend = document.createElement("div");
     permissionLegend.className = "v080-permission-legend";
@@ -98,7 +98,7 @@
 
     const note = document.createElement("p");
     note.className = "security-copy";
-    note.textContent = "v0.9.2 giữ nguyên quy trình đề xuất → quyền → xác nhận → thực thi. Nhật ký hoạt động được lưu cục bộ tối đa 30 ngày hoặc 2.000 sự kiện; dữ liệu tham số và kết quả đầy đủ không được ghi vào nhật ký." ;
+    note.textContent = "v0.9.3 giữ nguyên quy trình đề xuất → quyền → xác nhận → thực thi. Nhật ký hoạt động được lưu cục bộ tối đa 30 ngày hoặc 2.000 sự kiện; dữ liệu tham số và kết quả đầy đủ không được ghi vào nhật ký." ;
 
     const activity = createActivitySection();
     card.append(header, intro, permissionLegend, status, list, activity, note);

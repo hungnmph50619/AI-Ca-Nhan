@@ -54,6 +54,34 @@
   box-shadow: 0 0 0 3px rgba(142, 157, 148, .12);
 }
 
+.v090-task-form select {
+  width: 100%;
+  min-height: 92px;
+  box-sizing: border-box;
+  border: 1px solid #d9dfd8;
+  border-radius: 12px;
+  padding: 8px 10px;
+  font: inherit;
+  color: inherit;
+  background: #fff;
+}
+
+.v090-task-form select:focus {
+  outline: none;
+  border-color: #8e9d94;
+  box-shadow: 0 0 0 3px rgba(142, 157, 148, .12);
+}
+
+.v090-task-dependencies {
+  margin: 8px 0 0;
+  padding: 8px 10px;
+  border-radius: 10px;
+  background: #f7f9f5;
+  color: #556259;
+  font-size: 11px;
+  line-height: 1.5;
+}
+
 .v090-task-form-actions,
 .v090-task-actions {
   display: flex;

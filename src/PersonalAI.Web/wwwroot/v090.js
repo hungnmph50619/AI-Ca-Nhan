@@ -1,6 +1,7 @@
 (() => {
-  const VERSION = "0.9.2";
+  const VERSION = "0.9.3";
   let busy = false;
+  let knownTasks = [];
 
   if (document.readyState === "loading") {
     document.addEventListener("DOMContentLoaded", initialize, { once: true });
@@ -86,9 +87,9 @@
     const intro = document.createElement("div");
     intro.className = "v090-task-intro";
     const introTitle = document.createElement("strong");
-    introTitle.textContent = "Tác vụ bền vững và thử lại an toàn v0.9.2";
+    introTitle.textContent = "Tác vụ có phụ thuộc v0.9.3";
     const introText = document.createElement("p");
-    introText.textContent = "Tác vụ được lưu trên máy và vẫn còn sau khi khởi động lại ứng dụng. Nếu một bước có lỗi, PersonalAI sẽ đánh giá mức an toàn trước khi cho chuẩn bị thử lại; bước thử lại vẫn không tự chạy." ;
+    introText.textContent = "Tác vụ có thể phụ thuộc vào tác vụ khác và từng bước có thể khai báo phụ thuộc vào các bước trước. PersonalAI chỉ cho chạy khi các phụ thuộc đã hoàn tất; không có chuỗi nào tự chạy." ;
     intro.append(introTitle, introText);
 
     const form = document.createElement("form");
@@ -108,6 +109,22 @@
     textarea.required = true;
     textarea.placeholder = "Ví dụ: tạo thư mục ghi chú và lưu một tệp kế hoạch ngắn trong thư mục làm việc.";
 
+    const dependencyLabel = document.createElement("label");
+    dependencyLabel.className = "field-label";
+    dependencyLabel.setAttribute("for", "taskDependencySelect");
+    dependencyLabel.textContent = "Phụ thuộc vào tác vụ";
+
+    const dependencySelect = document.createElement("select");
+    dependencySelect.id = "taskDependencySelect";
+    dependencySelect.multiple = true;
+    dependencySelect.size = 4;
+    dependencySelect.setAttribute("aria-describedby", "taskDependencyHint");
+
+    const dependencyHint = document.createElement("p");
+    dependencyHint.id = "taskDependencyHint";
+    dependencyHint.className = "field-hint";
+    dependencyHint.textContent = "Không bắt buộc. Giữ Ctrl (Windows) hoặc Command (macOS) để chọn nhiều tác vụ. Tác vụ mới sẽ chờ các tác vụ đã chọn hoàn tất.";
+
     const formActions = document.createElement("div");
     formActions.className = "v090-task-form-actions";
     const create = document.createElement("button");
@@ -121,7 +138,14 @@
     hint.className = "field-hint";
     hint.textContent = "Lập kế hoạch chỉ tạo danh sách bước; chưa có công cụ nào được chạy ở giai đoạn này.";
 
-    form.append(label, textarea, formActions, hint);
+    form.append(
+      label,
+      textarea,
+      dependencyLabel,
+      dependencySelect,
+      dependencyHint,
+      formActions,
+      hint);
     form.addEventListener("submit", createTask);
 
     const feedback = document.createElement("div");
@@ -148,7 +172,7 @@
 
     const note = document.createElement("p");
     note.className = "security-copy";
-    note.textContent = "v0.9.2 lưu tối đa 50 tác vụ trên máy. Không có bước nào tự chạy hoặc tự thử lại. Bước chỉ đọc có thể được chuẩn bị thử lại trực tiếp; thao tác có tác động phải được kiểm tra theo chính sách an toàn và một số trường hợp như nối thêm văn bản sẽ bị chặn thử lại để tránh lặp dữ liệu." ;
+    note.textContent = "v0.9.3 giữ tối đa 50 tác vụ trên máy, hỗ trợ phụ thuộc giữa tác vụ và giữa các bước. Phụ thuộc không làm tăng quyền tự động: mỗi bước vẫn phải được người dùng chủ động chạy và các thao tác có tác động vẫn cần xác nhận." ;
 
     card.append(header, intro, form, feedback, listHeader, list, note);
     dialog.appendChild(card);
@@ -198,6 +222,10 @@
     const input = document.querySelector("#taskGoalInput");
     if (!input) return;
     const goal = input.value.trim();
+    const dependencySelect = document.querySelector("#taskDependencySelect");
+    const dependsOnTaskIds = dependencySelect
+      ? Array.from(dependencySelect.selectedOptions).map(option => option.value)
+      : [];
     if (goal.length < 3) {
       setFeedback("Mục tiêu cần có ít nhất 3 ký tự.", true);
       return;
@@ -210,7 +238,7 @@
       const response = await fetch("/api/tasks", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ goal })
+        body: JSON.stringify({ goal, dependsOnTaskIds })
       });
       const payload = await response.json().catch(() => ({}));
       if (!response.ok) {
@@ -218,7 +246,12 @@
       }
 
       input.value = "";
-      setFeedback("Đã tạo kế hoạch. Chưa có bước nào được chạy.");
+      if (dependencySelect) {
+        Array.from(dependencySelect.options).forEach(option => {
+          option.selected = false;
+        });
+      }
+      setFeedback("Đã tạo kế hoạch và quan hệ phụ thuộc. Chưa có bước nào được chạy.");
       await loadTasksAfterMutation();
     } catch (error) {
       setFeedback(error.message || "Không lập được kế hoạch tác vụ.", true);
@@ -233,6 +266,22 @@
     const step = currentStep(task);
     if (!step) {
       setFeedback("Tác vụ không còn bước nào để chạy.", true);
+      return;
+    }
+
+    const taskBlockers = taskDependencyBlockers(task);
+    if (taskBlockers.length > 0) {
+      setFeedback(
+        "Tác vụ đang chờ: " + taskBlockers.map(item => item.label).join("; "),
+        true);
+      return;
+    }
+
+    const stepBlockers = stepDependencyBlockers(task, step);
+    if (stepBlockers.length > 0) {
+      setFeedback(
+        `Bước ${step.index} đang chờ bước ${stepBlockers.join(", ")} hoàn tất.`,
+        true);
       return;
     }
 
@@ -434,7 +483,9 @@
 
   function renderTasks(payload) {
     const tasks = Array.isArray(payload.tasks) ? payload.tasks : [];
+    knownTasks = tasks;
     updateTaskCount(tasks);
+    renderDependencyOptions(tasks);
 
     const list = document.querySelector("#taskList");
     if (!list) return;
@@ -477,6 +528,16 @@
     plan.className = "v090-task-plan";
     plan.textContent = task.plan || "Kế hoạch tác vụ";
 
+    const dependencyInfo = document.createElement("p");
+    dependencyInfo.className = "v090-task-dependencies";
+    const taskDependencies = dependencyTaskIds(task);
+    dependencyInfo.hidden = taskDependencies.length === 0;
+    dependencyInfo.textContent = taskDependencies.length === 0
+      ? ""
+      : "Phụ thuộc tác vụ: " + taskDependencies
+          .map(id => taskDependencyDisplay(id))
+          .join(" · ");
+
     const steps = document.createElement("div");
     steps.className = "v090-task-steps";
     (Array.isArray(task.steps) ? task.steps : []).forEach(step => {
@@ -491,9 +552,15 @@
       const run = document.createElement("button");
       run.type = "button";
       run.className = step.requiresConfirmation ? "primary-button" : "secondary-button";
-      run.textContent = step.requiresConfirmation
-        ? "Xác nhận & chạy bước này"
-        : "Chạy bước này";
+      const blockers = taskDependencyBlockers(task);
+      run.textContent = blockers.length > 0
+        ? "Đang chờ tác vụ phụ thuộc"
+        : step.requiresConfirmation
+          ? "Xác nhận & chạy bước này"
+          : "Chạy bước này";
+      run.title = blockers.length > 0
+        ? blockers.map(item => item.label).join("; ")
+        : "";
       run.disabled = busy;
       run.addEventListener("click", () => executeNext(task));
       actions.appendChild(run);
@@ -547,9 +614,22 @@
       const resultText = document.createElement("p");
       resultText.textContent = task.result;
       result.append(resultTitle, resultText);
-      article.append(header, provenance, plan, steps, result, actions);
+      article.append(
+        header,
+        provenance,
+        plan,
+        dependencyInfo,
+        steps,
+        result,
+        actions);
     } else {
-      article.append(header, provenance, plan, steps, actions);
+      article.append(
+        header,
+        provenance,
+        plan,
+        dependencyInfo,
+        steps,
+        actions);
     }
 
     return article;
@@ -576,6 +656,10 @@
     meta.className = "v090-task-step-meta";
     appendMeta(meta, "Công cụ: " + toolDisplayName(step.toolName));
     appendMeta(meta, "Quyền: " + formatPermissions(step.requiredPermissions));
+    const stepDependencies = stepDependencyIndexes(step);
+    if (stepDependencies.length > 0) {
+      appendMeta(meta, "Phụ thuộc bước: " + stepDependencies.join(", "));
+    }
     if (step.requiresConfirmation) appendMeta(meta, "Cần xác nhận trước khi chạy");
     if (Number(step.attemptCount || 0) > 0) {
       appendMeta(meta, `Đã chạy ${Number(step.attemptCount)} lần`);
@@ -614,6 +698,81 @@
     const steps = Array.isArray(task.steps) ? task.steps : [];
     const current = Number(task.currentStep);
     return steps.find(step => Number(step.index) === current) || null;
+  }
+
+  function dependencyTaskIds(task) {
+    return Array.isArray(task?.dependsOnTaskIds)
+      ? task.dependsOnTaskIds.filter(Boolean)
+      : [];
+  }
+
+  function stepDependencyIndexes(step) {
+    return Array.isArray(step?.dependsOn)
+      ? step.dependsOn
+          .map(value => Number(value))
+          .filter(value => Number.isInteger(value) && value > 0)
+      : [];
+  }
+
+  function findKnownTask(id) {
+    return knownTasks.find(task => String(task.id) === String(id)) || null;
+  }
+
+  function taskDependencyDisplay(id) {
+    const task = findKnownTask(id);
+    if (!task) return "không còn tồn tại";
+    return `${task.goal || "Tác vụ"} — ${taskStatusLabel(task.status)}`;
+  }
+
+  function taskDependencyBlockers(task) {
+    return dependencyTaskIds(task)
+      .map(id => {
+        const dependency = findKnownTask(id);
+        if (!dependency) {
+          return { id, label: `${id} (không còn tồn tại)` };
+        }
+        if (dependency.status === "completed") return null;
+        return {
+          id,
+          label: `${dependency.goal || "Tác vụ"} (${taskStatusLabel(dependency.status)})`
+        };
+      })
+      .filter(Boolean);
+  }
+
+  function stepDependencyBlockers(task, step) {
+    const steps = Array.isArray(task?.steps) ? task.steps : [];
+    return stepDependencyIndexes(step).filter(index => {
+      const dependency = steps.find(
+        candidate => Number(candidate.index) === Number(index));
+      return !dependency || dependency.status !== "completed";
+    });
+  }
+
+  function renderDependencyOptions(tasks) {
+    const select = document.querySelector("#taskDependencySelect");
+    if (!select) return;
+
+    const selected = new Set(
+      Array.from(select.selectedOptions).map(option => option.value));
+    select.replaceChildren();
+
+    tasks
+      .filter(task => task.status !== "cancelled")
+      .forEach(task => {
+        const option = document.createElement("option");
+        option.value = task.id;
+        option.textContent = `${task.goal || "Tác vụ"} — ${taskStatusLabel(task.status)}`;
+        option.selected = selected.has(String(task.id));
+        select.appendChild(option);
+      });
+
+    if (select.options.length === 0) {
+      const option = document.createElement("option");
+      option.disabled = true;
+      option.textContent = "Chưa có tác vụ nào để chọn làm phụ thuộc";
+      select.appendChild(option);
+    }
   }
 
   function setBusy(value) {

@@ -1,4 +1,6 @@
 using System.Diagnostics;
+using System.Security.Cryptography;
+using System.Text;
 using System.Text.Json;
 using PersonalAI.Web.Models;
 
@@ -90,6 +92,7 @@ public sealed class ToolExecutionService(
     IToolRegistry registry,
     IToolInputValidator validator,
     IToolPolicy policy,
+    IToolAuditLog auditLog,
     ILogger<ToolExecutionService> logger) : IToolExecutionService
 {
     public async Task<ToolExecutionResponse> ExecuteAsync(
@@ -101,9 +104,61 @@ public sealed class ToolExecutionService(
         var stopwatch = Stopwatch.StartNew();
         var requestedName = (request.ToolName ?? string.Empty).Trim();
 
+        async Task<ToolExecutionResponse> FinishAsync(
+            Guid auditInvocationId,
+            string toolName,
+            string status,
+            bool success,
+            JsonElement? output,
+            string? error,
+            Stopwatch auditStopwatch,
+            DateTimeOffset auditStartedAt,
+            IReadOnlyList<string> requiredPermissions,
+            IReadOnlyList<string> approvedPermissions)
+        {
+            var response = Complete(
+                auditInvocationId,
+                toolName,
+                status,
+                success,
+                output,
+                error,
+                auditStopwatch,
+                auditStartedAt,
+                requiredPermissions,
+                approvedPermissions);
+
+            ToolDefinition? auditDefinition = null;
+            if (registry.TryGet(toolName, out var registeredTool) && registeredTool is not null)
+            {
+                auditDefinition = registeredTool.Definition;
+            }
+
+            try
+            {
+                await auditLog.UpsertAsync(
+                    CreateAuditEntry(
+                        response,
+                        auditDefinition,
+                        request.Confirmed,
+                        request.Arguments),
+                    CancellationToken.None);
+            }
+            catch (Exception exception)
+            {
+                logger.LogError(
+                    exception,
+                    "Could not persist tool audit entry for {ToolName}. Invocation {InvocationId}.",
+                    toolName,
+                    auditInvocationId);
+            }
+
+            return response;
+        }
+
         if (!registry.TryGet(requestedName, out var tool) || tool is null)
         {
-            return Complete(
+            return await FinishAsync(
                 invocationId,
                 requestedName,
                 ToolExecutionStatuses.NotFound,
@@ -120,7 +175,7 @@ public sealed class ToolExecutionService(
         var validation = validator.Validate(definition.InputSchema, request.Arguments);
         if (!validation.IsValid)
         {
-            return Complete(
+            return await FinishAsync(
                 invocationId,
                 definition.Name,
                 ToolExecutionStatuses.InvalidInput,
@@ -139,7 +194,7 @@ public sealed class ToolExecutionService(
             request.Confirmed);
         if (!policyDecision.Allowed)
         {
-            return Complete(
+            return await FinishAsync(
                 invocationId,
                 definition.Name,
                 ToolExecutionStatuses.Denied,
@@ -158,7 +213,7 @@ public sealed class ToolExecutionService(
         try
         {
             var output = await tool.ExecuteAsync(request.Arguments, timeoutCts.Token);
-            return Complete(
+            return await FinishAsync(
                 invocationId,
                 definition.Name,
                 ToolExecutionStatuses.Succeeded,
@@ -172,7 +227,7 @@ public sealed class ToolExecutionService(
         }
         catch (ToolExecutionInputException exception)
         {
-            return Complete(
+            return await FinishAsync(
                 invocationId,
                 definition.Name,
                 ToolExecutionStatuses.InvalidInput,
@@ -193,7 +248,7 @@ public sealed class ToolExecutionService(
                 definition.Name,
                 definition.TimeoutMs,
                 invocationId);
-            return Complete(
+            return await FinishAsync(
                 invocationId,
                 definition.Name,
                 ToolExecutionStatuses.TimedOut,
@@ -216,7 +271,7 @@ public sealed class ToolExecutionService(
                 "Tool {ToolName} failed. Invocation {InvocationId}.",
                 definition.Name,
                 invocationId);
-            return Complete(
+            return await FinishAsync(
                 invocationId,
                 definition.Name,
                 ToolExecutionStatuses.Failed,
@@ -228,6 +283,78 @@ public sealed class ToolExecutionService(
                 definition.RequiredPermissions,
                 policyDecision.ApprovedPermissions);
         }
+    }
+
+    private static ToolAuditEntry CreateAuditEntry(
+        ToolExecutionResponse response,
+        ToolDefinition? definition,
+        bool confirmed,
+        JsonElement arguments)
+    {
+        var input = Fingerprint(arguments);
+        var output = response.Output is null
+            ? (Hash: (string?)null, Bytes: (int?)null)
+            : Fingerprint(response.Output.Value);
+
+        return new ToolAuditEntry(
+            response.InvocationId,
+            response.ToolName,
+            definition?.Version ?? string.Empty,
+            response.Status,
+            response.Success,
+            response.StartedAt,
+            response.CompletedAt,
+            response.DurationMs,
+            response.RequiredPermissions,
+            response.ApprovedPermissions,
+            confirmed,
+            "user-request",
+            input.Hash,
+            input.Bytes,
+            output.Hash,
+            output.Bytes,
+            DetermineReversibility(definition),
+            definition?.LocalOnly ?? true,
+            response.Error);
+    }
+
+    private static (string Hash, int Bytes) Fingerprint(JsonElement element)
+    {
+        var json = element.ValueKind == JsonValueKind.Undefined
+            ? "{}"
+            : element.GetRawText();
+        var bytes = Encoding.UTF8.GetBytes(json);
+        return (
+            Convert.ToHexString(SHA256.HashData(bytes)).ToLowerInvariant(),
+            bytes.Length);
+    }
+
+    private static string DetermineReversibility(ToolDefinition? definition)
+    {
+        if (definition is null)
+        {
+            return "unknown";
+        }
+
+        if (definition.RequiredPermissions.Any(permission =>
+            permission.Equals(ToolPermissions.Delete, StringComparison.OrdinalIgnoreCase)))
+        {
+            return "not-automatically-reversible";
+        }
+
+        if (definition.RequiredPermissions.Any(permission =>
+            permission.Equals(ToolPermissions.External, StringComparison.OrdinalIgnoreCase)))
+        {
+            return "external-dependent";
+        }
+
+        if (definition.RequiredPermissions.Any(permission =>
+            permission.Equals(ToolPermissions.Write, StringComparison.OrdinalIgnoreCase)))
+        {
+            return "not-guaranteed";
+        }
+
+        return "not-applicable";
     }
 
     private static ToolExecutionResponse Complete(

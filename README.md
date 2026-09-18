@@ -1,10 +1,10 @@
-# AI Cá Nhân — Decision Engine v1.7.0
+# AI Cá Nhân — Controlled Automation v1.8.0
 
-PersonalAI là trợ lý AI cá nhân chạy bằng ASP.NET Core 8, ưu tiên dữ liệu cục bộ, có thể dùng Gemini hoặc OpenAI cho phần sinh câu trả lời. v1.0.0 vẫn là **Stable Personal AI Core**; v1.1 thêm Controlled Computer Use, v1.2 Browser Agent, v1.3 Connector Foundation, v1.4 Software Development Agent, v1.5 Android Companion, v1.6 Life Context Foundation và v1.7 thêm **Decision Engine** để phân tích lựa chọn dựa trên context mà không tự hành động thay người dùng.
+PersonalAI là trợ lý AI cá nhân chạy bằng ASP.NET Core 8, ưu tiên dữ liệu cục bộ, có thể dùng Gemini hoặc OpenAI cho phần sinh câu trả lời. v1.0.0 vẫn là **Stable Personal AI Core**; v1.1 thêm Controlled Computer Use, v1.2 Browser Agent, v1.3 Connector Foundation, v1.4 Software Development Agent, v1.5 Android Companion, v1.6 Life Context Foundation, v1.7 Decision Engine và v1.8 thêm **Automation có kiểm soát** với scheduler nền nhưng không auto-confirm side effect.
 
 > Đây vẫn là ứng dụng thiết kế cho một người dùng trên máy cá nhân. Không đưa trực tiếp lên Internet hoặc dùng như hệ thống nhiều người dùng nếu chưa bổ sung authentication, authorization và hardening triển khai phù hợp.
 
-## Có gì trong v1.7.0?
+## Có gì trong v1.8.0?
 
 ### Chat và AI provider
 
@@ -406,6 +406,72 @@ toolExecutionEnabled = false
 
 Recommendation không phải authorization để PersonalAI hành động.
 
+### Controlled Automation
+
+v1.8.0 thêm scheduler nền cho **task đã tồn tại**.
+
+Automation hỗ trợ:
+
+- one-time schedule;
+- interval schedule từ 5 phút đến 7 ngày;
+- tối đa 50 automation / workspace;
+- persistence bằng SQLite;
+- restart recovery;
+- run-now;
+- pause / enable;
+- resume sau review;
+- workspace isolation;
+- Audit.
+
+Boundary quan trọng:
+
+```text
+mỗi scheduler tick
+        ↓
+tối đa 1 task step
+        ↓
+chỉ LocalOnly + READ + không confirmation
+```
+
+Scheduler luôn gọi Task Engine với:
+
+```text
+confirmed = false
+```
+
+Nếu step cần WRITE, DELETE, EXTERNAL, SENSITIVE, COMPUTER, BROWSER, CONNECTOR, DEVELOPMENT hoặc confirmation riêng:
+
+```text
+automation
+   ↓
+awaiting-confirmation
+   ↓
+enabled = false
+```
+
+Không có đường auto-confirm.
+
+Decision Engine recommendation cũng không tự tạo/chạy automation; muốn hành động vẫn phải là một request riêng do người dùng xác nhận.
+
+API:
+
+```http
+GET    /api/automations/status
+GET    /api/automations
+GET    /api/automations/{id}
+POST   /api/automations
+PATCH  /api/automations/{id}/enabled
+POST   /api/automations/{id}/resume
+POST   /api/automations/{id}/run-now
+DELETE /api/automations/{id}?confirmed=true
+```
+
+Storage:
+
+```text
+%LOCALAPPDATA%\PersonalAI\Automation\automations.db
+```
+
 ### Tasks
 
 Task Engine hỗ trợ:
@@ -477,13 +543,13 @@ Undo khả dụng 7 ngày, tối đa 500 record, snapshot tối đa 512 KB.
 
 ## Stable Core contract
 
-v1.7.0 giữ API contract của Stable Core và mở rộng controlled capability layer:
+v1.8.0 giữ API contract của Stable Core và mở rộng controlled capability layer:
 
-- Version: `1.7.0`
+- Version: `1.8.0`
 - API contract: `1`
 - Channel: `controlled`
 - Stable Core: v1.0 semantics
-- Controlled modules: `computer-use`, `browser-agent`, `connectors`, `software-development`, `android-companion`, `life-context`, `decision-engine`
+- Controlled modules: `computer-use`, `browser-agent`, `connectors`, `software-development`, `android-companion`, `life-context`, `decision-engine`, `automation`
 
 Capabilities:
 
@@ -510,7 +576,7 @@ Unhandled API exception được sanitize; stack trace và đường dẫn local
 
 ## Guardrails hiện tại
 
-v1.7.0 **không phải autonomous agent**.
+v1.8.0 **không phải autonomous agent**.
 
 Hiện tại:
 
@@ -542,8 +608,12 @@ Hiện tại:
 - Decision Engine auto-action: tắt
 - Decision Engine tool execution: tắt
 - Decision Engine persistent analysis: tắt
+- Automation explicit create: bắt buộc
+- Automation auto-confirm: tắt
+- Decision recommendation auto-execution: tắt
+- Automation tối đa một task step mỗi tick: bật
 - Automatic multi-step execution: tắt
-- Background scheduler: tắt
+- Background scheduler: bật
 - Autonomous agent loop: tắt
 - Parallel tool calls: tắt
 
@@ -554,7 +624,7 @@ Chưa có:
 - browser download/upload;
 - screenshot/OCR;
 - mouse click hoặc keyboard typing;
-- background scheduler;
+- cron expression tùy ý / sub-minute schedule;
 - autonomous agent loop;
 - automatic confirmation;
 - Gmail/Calendar/Microsoft provider-specific OAuth;
@@ -566,6 +636,8 @@ Chưa có:
 - Android background agent/sensor collection;
 - Life Context background GPS/calendar/activity/sensor collection;
 - Decision Engine automatic action/tool execution;
+- Decision → automation implicit execution;
+- background WRITE/DELETE/EXTERNAL/SENSITIVE action;
 - persistent decision history;
 - cloud multi-user auth.
 
@@ -634,6 +706,7 @@ Undo\undo.db
 Connectors\connections.json
 Companion\devices.json
 LifeContext\life-context.json
+Automation\automations.db
 Workspace\
 ```
 
@@ -649,6 +722,7 @@ Undo:Root      / Undo__Root
 Connectors:Root / Connectors__Root
 Companion:Root  / Companion__Root
 LifeContext:Root / LifeContext__Root
+Automation:Root  / Automation__Root
 ```
 
 ## Kiến trúc mức cao
@@ -673,6 +747,7 @@ ASP.NET Core
   ├── Android Companion
   ├── Life Context
   ├── Decision Engine
+  ├── Automation
   │
   ├── Context Manager
   │      ├── Memory selection
@@ -734,6 +809,7 @@ GitHub Actions hiện kiểm tra regression cho các nền chính, gồm:
 - Life Context consent/encryption/retention/isolation;
 - Context Manager Life Context selection/opt-out;
 - Decision Engine validation/context preview/no-auto-action contract;
+- Automation persistence/workspace isolation/one-step scheduler/no-auto-confirm;
 - JavaScript syntax;
 - UI guardrails tiếng Việt.
 
@@ -761,10 +837,11 @@ docs/releases/v1.4.0.md
 docs/releases/v1.5.0.md
 docs/releases/v1.6.0.md
 docs/releases/v1.7.0.md
+docs/releases/v1.8.0.md
 ```
 
-## Hướng phát triển sau v1.7
+## Hướng phát triển sau v1.8
 
-Computer Use, Browser Agent, Connector Foundation, Software Development Agent, Android Companion, Life Context và Decision Engine hiện nằm trong controlled capability layer.
+Computer Use, Browser Agent, Connector Foundation, Software Development Agent, Android Companion, Life Context, Decision Engine và Automation hiện nằm trong controlled capability layer.
 
-Theo roadmap gốc, mốc kế tiếp là **v1.8 — Automation**, sau đó là **v1.9 Reliability / Security → v2.0 Personal AI OS**.
+Theo roadmap gốc, mốc kế tiếp là **v1.9 — Reliability / Security**, sau đó là **v2.0 — Personal AI OS**.

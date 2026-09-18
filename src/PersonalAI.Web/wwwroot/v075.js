@@ -134,7 +134,7 @@
     if (summary) {
       const chunkCount = managementState.documents.reduce((sum, item) => sum + Number(item.chunkCount || 0), 0);
       const indexedCount = managementState.documents.reduce((sum, item) => sum + Number(item.indexedChunkCount || 0), 0);
-      summary.textContent = `${payload.total ?? managementState.documents.length} tài liệu · ${chunkCount} đoạn · ${indexedCount} véc-tơ · ${payload.embeddingModel || "mô hình trên máy"}`;
+      summary.textContent = `${payload.total ?? managementState.documents.length} tài liệu · ${chunkCount} đoạn · ${indexedCount} véc-tơ · xử lý trên máy`;
     }
 
     showFeedback("");
@@ -319,7 +319,7 @@
       const anchor = document.createElement("a");
       const date = new Date().toISOString().slice(0, 10);
       anchor.href = url;
-      anchor.download = `personal-ai-knowledge-metadata-${date}.json`;
+      anchor.download = `personal-ai-thong-tin-tai-lieu-${date}.json`;
       document.body.appendChild(anchor);
       anchor.click();
       anchor.remove();

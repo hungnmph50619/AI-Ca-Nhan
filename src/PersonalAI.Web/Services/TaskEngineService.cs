@@ -1,4 +1,3 @@
-using System.Collections.Concurrent;
 using System.Text.Json;
 using PersonalAI.Web.Models;
 
@@ -24,6 +23,10 @@ public interface ITaskEngineService
     Task<PersonalTask?> CancelAsync(
         Guid taskId,
         CancellationToken cancellationToken = default);
+
+    Task<PersonalTask?> ResumeAsync(
+        Guid taskId,
+        CancellationToken cancellationToken = default);
 }
 
 public sealed class PersonalTaskValidationException(string message) : Exception(message);
@@ -37,7 +40,6 @@ public sealed class TaskEngineService : ITaskEngineService
     public const int MaximumGoalCharacters = 2_000;
     public const int MaximumPlanCharacters = 2_000;
 
-    private static readonly ConcurrentDictionary<Guid, PersonalTask> Tasks = new();
     private static readonly SemaphoreSlim MutationGate = new(1, 1);
 
     private readonly IToolRegistry _registry;
@@ -46,6 +48,7 @@ public sealed class TaskEngineService : ITaskEngineService
     private readonly IToolResultSynthesisService _synthesizer;
     private readonly IAiProviderResolver _providerResolver;
     private readonly IToolActivityStore _activityStore;
+    private readonly IPersonalTaskStore _taskStore;
     private readonly ILogger<TaskEngineService> _logger;
 
     public TaskEngineService(
@@ -55,6 +58,7 @@ public sealed class TaskEngineService : ITaskEngineService
         IToolResultSynthesisService synthesizer,
         IAiProviderResolver providerResolver,
         IToolActivityStore activityStore,
+        IPersonalTaskStore taskStore,
         ILogger<TaskEngineService> logger)
     {
         _registry = registry;
@@ -63,6 +67,7 @@ public sealed class TaskEngineService : ITaskEngineService
         _synthesizer = synthesizer;
         _providerResolver = providerResolver;
         _activityStore = activityStore;
+        _taskStore = taskStore;
         _logger = logger;
     }
 
@@ -113,9 +118,7 @@ public sealed class TaskEngineService : ITaskEngineService
             provider.Name,
             provider.Model);
 
-        Tasks[task.Id] = task;
-        TrimTasks();
-        return task;
+        return _taskStore.Save(task);
     }
 
     public PersonalTask Prepare(PreparePersonalTaskRequest request)
@@ -233,25 +236,21 @@ public sealed class TaskEngineService : ITaskEngineService
             "Máy chủ",
             "Kế hoạch cấu trúc");
 
-        Tasks[task.Id] = task;
-        TrimTasks();
-        return task;
+        return _taskStore.Save(task);
     }
 
     public PersonalTaskListResponse GetAll()
     {
-        var tasks = Tasks.Values
-            .OrderByDescending(task => task.CreatedAt)
-            .ToArray();
+        var tasks = _taskStore.GetAll();
 
         return new PersonalTaskListResponse(
-            Persistent: false,
+            Persistent: true,
             MaximumTasks,
             tasks);
     }
 
     public PersonalTask? Get(Guid taskId) =>
-        Tasks.TryGetValue(taskId, out var task) ? task : null;
+        _taskStore.Get(taskId);
 
     public async Task<PersonalTaskStepExecutionResponse?> ExecuteNextAsync(
         Guid taskId,
@@ -261,9 +260,16 @@ public sealed class TaskEngineService : ITaskEngineService
         await MutationGate.WaitAsync(cancellationToken);
         try
         {
-            if (!Tasks.TryGetValue(taskId, out var task))
+            var task = _taskStore.Get(taskId);
+            if (task is null)
             {
                 return null;
+            }
+
+            if (task.Status == PersonalTaskStatuses.Interrupted)
+            {
+                throw new PersonalTaskValidationException(
+                    "Tác vụ bị gián đoạn trong lúc một bước đang chạy. Hãy kiểm tra trạng thái thực tế rồi khôi phục tác vụ trước khi tiếp tục.");
             }
 
             if (task.Status is PersonalTaskStatuses.Completed
@@ -330,7 +336,7 @@ public sealed class TaskEngineService : ITaskEngineService
                 Steps = runningSteps,
                 StartedAt = task.StartedAt ?? startedAt
             };
-            Tasks[taskId] = runningTask;
+            _taskStore.Save(runningTask);
 
             ToolExecutionResponse execution;
             try
@@ -350,12 +356,12 @@ public sealed class TaskEngineService : ITaskEngineService
                     Status = PersonalTaskStepStatuses.Pending,
                     StartedAt = null
                 };
-                Tasks[taskId] = runningTask with
+                _taskStore.Save(runningTask with
                 {
                     Status = task.Status,
                     Steps = ReplaceStep(runningSteps, position, revertedStep),
                     StartedAt = task.StartedAt
-                };
+                });
                 throw;
             }
 
@@ -436,7 +442,7 @@ public sealed class TaskEngineService : ITaskEngineService
                 };
             }
 
-            Tasks[taskId] = finishedTask;
+            _taskStore.Save(finishedTask);
             return new PersonalTaskStepExecutionResponse(
                 finishedTask,
                 execution,
@@ -455,7 +461,8 @@ public sealed class TaskEngineService : ITaskEngineService
         await MutationGate.WaitAsync(cancellationToken);
         try
         {
-            if (!Tasks.TryGetValue(taskId, out var task))
+            var task = _taskStore.Get(taskId);
+            if (task is null)
             {
                 return null;
             }
@@ -473,8 +480,66 @@ public sealed class TaskEngineService : ITaskEngineService
                 CompletedAt = DateTimeOffset.UtcNow,
                 Result = "Tác vụ đã được người dùng hủy."
             };
-            Tasks[taskId] = cancelled;
-            return cancelled;
+            return _taskStore.Save(cancelled);
+        }
+        finally
+        {
+            MutationGate.Release();
+        }
+    }
+
+    public async Task<PersonalTask?> ResumeAsync(
+        Guid taskId,
+        CancellationToken cancellationToken = default)
+    {
+        await MutationGate.WaitAsync(cancellationToken);
+        try
+        {
+            var task = _taskStore.Get(taskId);
+            if (task is null)
+            {
+                return null;
+            }
+
+            if (task.Status != PersonalTaskStatuses.Interrupted)
+            {
+                return task;
+            }
+
+            var position = task.CurrentStep - 1;
+            if (position < 0 || position >= task.Steps.Count)
+            {
+                throw new PersonalTaskValidationException(
+                    "Tác vụ bị gián đoạn nhưng không còn bước hợp lệ để khôi phục.");
+            }
+
+            var step = task.Steps[position];
+            if (step.Status != PersonalTaskStepStatuses.Interrupted)
+            {
+                throw new PersonalTaskValidationException(
+                    "Không tìm thấy bước bị gián đoạn để khôi phục.");
+            }
+
+            var resumedStep = step with
+            {
+                Status = PersonalTaskStepStatuses.Pending,
+                InvocationId = null,
+                LocalSummary = null,
+                StartedAt = null,
+                CompletedAt = null
+            };
+            var resumedSteps = ReplaceStep(task.Steps, position, resumedStep);
+            var resumedTask = task with
+            {
+                Status = task.StartedAt is null
+                    ? PersonalTaskStatuses.Planned
+                    : PersonalTaskStatuses.Running,
+                Steps = resumedSteps,
+                CompletedAt = null,
+                Result = null
+            };
+
+            return _taskStore.Save(resumedTask);
         }
         finally
         {
@@ -695,21 +760,6 @@ Quy tắc bắt buộc:
         return result.Length <= 4_000
             ? result
             : result[..4_000].TrimEnd() + "…";
-    }
-
-    private static void TrimTasks()
-    {
-        if (Tasks.Count <= MaximumTasks)
-        {
-            return;
-        }
-
-        foreach (var task in Tasks.Values
-                     .OrderBy(item => item.CreatedAt)
-                     .Take(Tasks.Count - MaximumTasks))
-        {
-            Tasks.TryRemove(task.Id, out _);
-        }
     }
 
     private void TryRecordActivity(ToolActivityEvent activity)

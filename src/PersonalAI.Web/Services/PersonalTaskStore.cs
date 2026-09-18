@@ -279,7 +279,9 @@ public sealed class SqlitePersonalTaskStore : IPersonalTaskStore
                 return null;
             }
 
-            return task;
+            return string.IsNullOrWhiteSpace(task.WorkspaceId)
+                ? task with { WorkspaceId = PersonalWorkspaceIds.Personal }
+                : task with { WorkspaceId = task.WorkspaceId.Trim().ToLowerInvariant() };
         }
         catch (JsonException exception)
         {

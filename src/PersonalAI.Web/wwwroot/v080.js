@@ -1,5 +1,5 @@
 (() => {
-  const VERSION = "0.8.3";
+  const VERSION = "0.8.4";
   let loading = false;
 
   if (document.readyState === "loading") {
@@ -80,7 +80,7 @@
 
     const intro = document.createElement("div");
     intro.className = "v080-framework-intro";
-    intro.innerHTML = "<strong>File Tools v0.8.3</strong><p>Framework hiện có 11 công cụ. Workspace có thể liệt kê, đọc, tạo thư mục và ghi/sửa tệp văn bản local; WRITE luôn cần permission và xác nhận rõ ràng.</p>";
+    intro.innerHTML = "<strong>File Mutation Safety v0.8.4</strong><p>Framework hiện có 13 công cụ. Workspace có thêm move/rename và delete an toàn; mutation luôn bị sandbox, không ghi đè đích và delete không xóa đệ quy.</p>";
 
     const permissionLegend = document.createElement("div");
     permissionLegend.className = "v080-permission-legend";
@@ -98,7 +98,7 @@
 
     const note = document.createElement("p");
     note.className = "security-copy";
-    note.textContent = "Workspace v0.8.3 vẫn bị sandbox trong thư mục đã cấp quyền. Tool READ không cần xác nhận riêng; mọi tool WRITE bắt buộc xác nhận rõ ràng. DELETE / EXTERNAL / SENSITIVE chưa được mở và chat/model chưa tự chọn hay tự gọi công cụ.";
+    note.textContent = "Workspace v0.8.4 vẫn bị sandbox trong thư mục đã cấp quyền. WRITE và DELETE đều bắt buộc permission tương ứng cùng xác nhận rõ ràng; delete chỉ xóa tệp hoặc thư mục rỗng, không xóa đệ quy. EXTERNAL / SENSITIVE chưa được mở và chat/model chưa tự chọn hay tự gọi công cụ.";
 
     card.append(header, intro, permissionLegend, status, list, note);
     dialog.appendChild(card);

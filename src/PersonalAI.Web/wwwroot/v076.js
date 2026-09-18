@@ -47,7 +47,7 @@
     panel.innerHTML = `
       <div class="v076-quality-copy">
         <strong>Chất lượng tìm kiếm trên máy</strong>
-        <span id="v076QualitySummary">Đang kiểm tra cơ sở dữ liệu, tệp gốc, đoạn dữ liệu và véc-tơ…</span>
+        <span id="v076QualitySummary">Đang kiểm tra cơ sở dữ liệu, tệp gốc, các đoạn dữ liệu và véc-tơ…</span>
       </div>
       <div class="v076-quality-actions">
         <button class="secondary-button" id="v076QualityCheck" type="button">Kiểm tra</button>
@@ -66,7 +66,7 @@
     if (busy) return;
     const response = await fetch("/api/knowledge/quality/status", { cache: "no-store" });
     const payload = await response.json().catch(() => ({}));
-    if (!response.ok) throw new Error(payload.error || "Không kiểm tra được chất lượng tìm kiếm tăng cường.");
+    if (!response.ok) throw new Error(payload.error || "Không kiểm tra được chất lượng tìm kiếm.");
     renderQuality(payload);
   }
 
@@ -88,8 +88,8 @@
     if (repair) {
       repair.disabled = busy || status === "healthy";
       repair.title = status === "error"
-        ? "Chỉ sửa các lỗi chỉ mục an toàn; tệp gốc mất hoặc mã kiểm tra lệch sẽ được bỏ qua."
-        : "Re-chỉ mục hoặc tạo lại véc-tơ cho các lỗi có thể sửa an toàn.";
+        ? "Chỉ sửa các lỗi chỉ mục an toàn; tệp gốc bị mất hoặc mã kiểm tra không khớp sẽ được bỏ qua."
+        : "Lập lại chỉ mục hoặc tạo lại véc-tơ cho các lỗi có thể sửa an toàn.";
     }
   }
 
@@ -98,12 +98,12 @@
     const panel = document.querySelector("#v076QualityPanel");
     const summary = document.querySelector("#v076QualitySummary");
     if (panel) panel.dataset.status = "error";
-    if (summary) summary.textContent = message || "Không kiểm tra được chất lượng tìm kiếm tăng cường.";
+    if (summary) summary.textContent = message || "Không kiểm tra được chất lượng tìm kiếm.";
   }
 
   async function repairQuality() {
     if (busy) return;
-    if (!window.confirm("Sửa các lỗi đoạn dữ liệu/véc-tơ có thể phục hồi an toàn? Tệp gốc bị mất hoặc mã kiểm tra lệch sẽ không bị tự động thay đổi.")) return;
+    if (!window.confirm("Sửa các lỗi đoạn dữ liệu/véc-tơ có thể phục hồi an toàn? Tệp gốc bị mất hoặc mã kiểm tra không khớp sẽ không bị tự động thay đổi.")) return;
 
     busy = true;
     setButtonsDisabled(true);
@@ -113,7 +113,7 @@
     try {
       const response = await fetch("/api/knowledge/quality/repair", { method: "POST" });
       const payload = await response.json().catch(() => ({}));
-      if (!response.ok) throw new Error(payload.error || "Không sửa được chỉ mục tìm kiếm tăng cường.");
+      if (!response.ok) throw new Error(payload.error || "Không sửa được chỉ mục tìm kiếm.");
       renderQuality(payload.statusAfterRepair || {});
       document.querySelector("#knowledgeRefreshButton")?.click();
     } catch (error) {

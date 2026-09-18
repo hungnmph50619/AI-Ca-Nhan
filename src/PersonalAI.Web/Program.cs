@@ -16,6 +16,7 @@ builder.Services.Configure<JsonOptions>(options => options.SerializerOptions.Pro
 builder.Services.Configure<FormOptions>(options => options.MultipartBodyLengthLimit = SqliteKnowledgeDocumentStore.MaximumFileSize + (64 * 1024));
 builder.Services.AddDataProtection().SetApplicationName("PersonalAI");
 builder.Services.AddWorkspaceFoundation();
+builder.Services.AddStableCore();
 builder.Services.AddSingleton<IAiSettingsStore, AiSettingsStore>();
 builder.Services.AddSingleton<KnowledgeDocumentExtractor>();
 builder.Services.AddSingleton<IKnowledgeDocumentStore, SqliteKnowledgeDocumentStore>();
@@ -60,6 +61,7 @@ app.Use(async (context, next) =>
     await next();
 });
 
+app.UseSystemHardening();
 app.UseWorkspaceValidation();
 app.UseDefaultFiles();
 app.UseStaticFiles();
@@ -67,6 +69,7 @@ app.UseStaticFiles();
 app.MapWorkspaceFoundation();
 app.MapAuditFoundation();
 app.MapUndoFoundation();
+app.MapStableCore();
 
 app.MapGet("/api/status", (
     IAiProviderResolver providerResolver,
@@ -82,7 +85,9 @@ app.MapGet("/api/status", (
         teamProfile = teamProfiles.DefaultProfileId,
         workspaceId = workspaceContext.CurrentWorkspaceId,
         workspaceName = workspaceContext.CurrentWorkspace.Name,
-        version = "0.9.7"
+        version = PersonalAiRelease.Version,
+        apiContractVersion = PersonalAiRelease.ApiContractVersion,
+        channel = PersonalAiRelease.Channel
     });
 });
 

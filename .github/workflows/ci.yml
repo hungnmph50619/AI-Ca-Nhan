@@ -535,6 +535,88 @@ jobs:
           echo "$connector_audit" | jq -e 'any(.items[]; .action == "connector.create" and .target == "connector:'"$connector_id"'" and .result == "succeeded")' >/dev/null
           ! echo "$connector_audit" | grep -Fq 'ci-connector-secret-130'
 
+          development_status=$(curl -fsS http://127.0.0.1:5077/api/development/status)
+          echo "$development_status" | jq -e '.version == "1.4.0" and .workspaceId == "personal" and .gitAvailable == true and .dotnetAvailable == true and .arbitraryShellEnabled == false and .arbitraryProcessEnabled == false and .gitWriteActionsEnabled == false and .maximumScannedFiles == 2000 and .maximumSearchHits == 100 and .maximumProcessOutputCharacters == 48000' >/dev/null
+
+          mkdir -p /tmp/personalai-workspace/dev-ci
+          printf '%s\n' '<Project Sdk="Microsoft.NET.Sdk">' '  <PropertyGroup>' '    <OutputType>Exe</OutputType>' '    <TargetFramework>net8.0</TargetFramework>' '    <ImplicitUsings>enable</ImplicitUsings>' '    <Nullable>enable</Nullable>' '  </PropertyGroup>' '</Project>' > /tmp/personalai-workspace/dev-ci/DevCi.csproj
+          printf '%s\n' 'Console.WriteLine("development-ci-marker-140");' > /tmp/personalai-workspace/dev-ci/Program.cs
+
+          mkdir -p /tmp/personalai-workspace/dev-git
+          git -C /tmp/personalai-workspace/dev-git init -q
+          git -C /tmp/personalai-workspace/dev-git config user.email ci@example.invalid
+          git -C /tmp/personalai-workspace/dev-git config user.name CI
+          printf '%s\n' 'before' > /tmp/personalai-workspace/dev-git/tracked.txt
+          git -C /tmp/personalai-workspace/dev-git add tracked.txt
+          git -C /tmp/personalai-workspace/dev-git commit -qm initial
+          printf '%s\n' 'after' > /tmp/personalai-workspace/dev-git/tracked.txt
+
+          dev_unconfirmed_code=$(curl -sS -o /tmp/dev-unconfirmed.json -w '%{http_code}' -X POST http://127.0.0.1:5077/api/tools/execute \
+            -H 'Content-Type: application/json' \
+            -d '{"toolName":"dev.workspace.inspect","arguments":{},"approvedPermissions":["READ","SENSITIVE","DEVELOPMENT"],"confirmed":false}')
+          test "$dev_unconfirmed_code" = "403"
+          jq -e '.status == "denied" and (.error | contains("xác nhận"))' /tmp/dev-unconfirmed.json >/dev/null
+
+          dev_missing_permission_code=$(curl -sS -o /tmp/dev-missing-permission.json -w '%{http_code}' -X POST http://127.0.0.1:5077/api/tools/execute \
+            -H 'Content-Type: application/json' \
+            -d '{"toolName":"dev.workspace.inspect","arguments":{},"approvedPermissions":["READ","SENSITIVE"],"confirmed":true}')
+          test "$dev_missing_permission_code" = "403"
+          jq -e '.status == "denied" and (.error | contains("PHÁT TRIỂN PHẦN MỀM"))' /tmp/dev-missing-permission.json >/dev/null
+
+          dev_inspect=$(curl -fsS -X POST http://127.0.0.1:5077/api/tools/execute \
+            -H 'Content-Type: application/json' \
+            -d '{"toolName":"dev.workspace.inspect","arguments":{},"approvedPermissions":["READ","SENSITIVE","DEVELOPMENT"],"confirmed":true}')
+          echo "$dev_inspect" | jq -e '.status == "succeeded" and .output.workspaceId == "personal" and .output.scannedFiles >= 3 and any(.output.projects[]; .path == "dev-ci/DevCi.csproj" and .kind == "dotnet-project") and any(.output.detectedLanguages[]; . == "C# / .NET")' >/dev/null
+
+          dev_search=$(curl -fsS -X POST http://127.0.0.1:5077/api/tools/execute \
+            -H 'Content-Type: application/json' \
+            -d '{"toolName":"dev.search.text","arguments":{"query":"development-ci-marker-140","maximumHits":10},"approvedPermissions":["READ","SENSITIVE","DEVELOPMENT"],"confirmed":true}')
+          echo "$dev_search" | jq -e '.status == "succeeded" and .output.matchCount >= 1 and any(.output.hits[]; .path == "dev-ci/Program.cs" and .lineNumber == 1 and (.preview | contains("development-ci-marker-140")))' >/dev/null
+
+          custom_dev_inspect=$(curl -fsS -X POST http://127.0.0.1:5077/api/tools/execute \
+            -H "X-PersonalAI-Workspace: $custom_workspace_id" \
+            -H 'Content-Type: application/json' \
+            -d '{"toolName":"dev.workspace.inspect","arguments":{},"approvedPermissions":["READ","SENSITIVE","DEVELOPMENT"],"confirmed":true}')
+          echo "$custom_dev_inspect" | jq -e '.status == "succeeded" and .output.workspaceId == "'"$custom_workspace_id"'" and all(.output.projects[]; .path != "dev-ci/DevCi.csproj")' >/dev/null
+
+          dev_git_status=$(curl -fsS -X POST http://127.0.0.1:5077/api/tools/execute \
+            -H 'Content-Type: application/json' \
+            -d '{"toolName":"dev.git.status","arguments":{"repositoryPath":"dev-git"},"approvedPermissions":["READ","SENSITIVE","DEVELOPMENT"],"confirmed":true}')
+          echo "$dev_git_status" | jq -e '.status == "succeeded" and .output.succeeded == true and (.output.output | contains("tracked.txt"))' >/dev/null
+
+          dev_git_diff=$(curl -fsS -X POST http://127.0.0.1:5077/api/tools/execute \
+            -H 'Content-Type: application/json' \
+            -d '{"toolName":"dev.git.diff","arguments":{"repositoryPath":"dev-git","staged":false},"approvedPermissions":["READ","SENSITIVE","DEVELOPMENT"],"confirmed":true}')
+          echo "$dev_git_diff" | jq -e '.status == "succeeded" and .output.succeeded == true and (.output.output | contains("-before")) and (.output.output | contains("+after"))' >/dev/null
+
+          dev_escape_code=$(curl -sS -o /tmp/dev-escape.json -w '%{http_code}' -X POST http://127.0.0.1:5077/api/tools/execute \
+            -H 'Content-Type: application/json' \
+            -d '{"toolName":"dev.git.status","arguments":{"repositoryPath":"../"},"approvedPermissions":["READ","SENSITIVE","DEVELOPMENT"],"confirmed":true}')
+          test "$dev_escape_code" = "400"
+          jq -e '.status == "invalid-input" and (.error | contains("không cho phép"))' /tmp/dev-escape.json >/dev/null
+
+          dev_restore=$(curl -fsS -X POST http://127.0.0.1:5077/api/tools/execute \
+            -H 'Content-Type: application/json' \
+            -d '{"toolName":"dev.dotnet.restore","arguments":{"targetPath":"dev-ci/DevCi.csproj"},"approvedPermissions":["READ","WRITE","EXTERNAL","SENSITIVE","DEVELOPMENT"],"confirmed":true}')
+          echo "$dev_restore" | jq -e '.status == "succeeded" and .output.tool == "dotnet-restore" and .output.succeeded == true and .output.exitCode == 0 and .output.targetPath == "dev-ci/DevCi.csproj"' >/dev/null
+
+          dev_build=$(curl -fsS -X POST http://127.0.0.1:5077/api/tools/execute \
+            -H 'Content-Type: application/json' \
+            -d '{"toolName":"dev.dotnet.build","arguments":{"targetPath":"dev-ci/DevCi.csproj","configuration":"Debug"},"approvedPermissions":["READ","WRITE","SENSITIVE","DEVELOPMENT"],"confirmed":true}')
+          echo "$dev_build" | jq -e '.status == "succeeded" and .output.tool == "dotnet-build" and .output.succeeded == true and .output.exitCode == 0 and .output.outputTruncated == false' >/dev/null
+          test -f /tmp/personalai-workspace/dev-ci/bin/Debug/net8.0/DevCi.dll
+
+          dev_test_denied_code=$(curl -sS -o /tmp/dev-test-unconfirmed.json -w '%{http_code}' -X POST http://127.0.0.1:5077/api/tools/execute \
+            -H 'Content-Type: application/json' \
+            -d '{"toolName":"dev.dotnet.test","arguments":{"targetPath":"dev-ci/DevCi.csproj","configuration":"Debug"},"approvedPermissions":["READ","WRITE","SENSITIVE","DEVELOPMENT"],"confirmed":false}')
+          test "$dev_test_denied_code" = "403"
+
+          dev_target_escape_code=$(curl -sS -o /tmp/dev-target-escape.json -w '%{http_code}' -X POST http://127.0.0.1:5077/api/tools/execute \
+            -H 'Content-Type: application/json' \
+            -d '{"toolName":"dev.dotnet.build","arguments":{"targetPath":"../PersonalAI.sln","configuration":"Debug"},"approvedPermissions":["READ","WRITE","SENSITIVE","DEVELOPMENT"],"confirmed":true}')
+          test "$dev_target_escape_code" = "400"
+          jq -e '.status == "invalid-input"' /tmp/dev-target-escape.json >/dev/null
+
           text_tool=$(curl -fsS http://127.0.0.1:5077/api/tools/local.text_stats)
           echo "$text_tool" | jq -e '.name == "local.text_stats" and .inputSchema.type == "object" and .inputSchema.additionalProperties == false and .inputSchema.required == ["text"]' >/dev/null
 

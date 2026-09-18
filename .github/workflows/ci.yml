@@ -1672,18 +1672,18 @@ jobs:
           grep -Fq 'Task Dependencies' docs/releases/v0.9.3.md
           grep -Fq 'v090.css' src/PersonalAI.Web/wwwroot/index.html
           grep -Fq 'v090.js' src/PersonalAI.Web/wwwroot/index.html
-          grep -Fq 'Tác vụ có Undo Foundation v1.6.0' src/PersonalAI.Web/wwwroot/v090.js
+          grep -Fq 'Tác vụ có Undo Foundation v1.7.0' src/PersonalAI.Web/wwwroot/v090.js
           grep -Fq 'MỤC TIÊU → KẾ HOẠCH → TỪNG BƯỚC' src/PersonalAI.Web/wwwroot/v090.js
           grep -Fq 'arguments_sha256' src/PersonalAI.Web/Services/ToolActivityStore.cs
           grep -Fq 'output_sha256' src/PersonalAI.Web/Services/ToolActivityStore.cs
           grep -Fq 'v089.css' src/PersonalAI.Web/wwwroot/index.html
-          grep -Fq 'Nhật ký hoạt động công cụ v1.6.0' src/PersonalAI.Web/wwwroot/v080.js
+          grep -Fq 'Nhật ký hoạt động công cụ v1.7.0' src/PersonalAI.Web/wwwroot/v080.js
           grep -Fq 'Nhật ký hoạt động gần đây' src/PersonalAI.Web/wwwroot/v080.js
           grep -Fq 'v088.css' src/PersonalAI.Web/wwwroot/index.html
           grep -Fq 'Nguồn đề xuất:' src/PersonalAI.Web/wwwroot/app.js
           grep -Fq 'Tham số' src/PersonalAI.Web/wwwroot/app.js
           grep -Fq 'CÔNG CỤ NỘI BỘ TRÊN MÁY NÀY' src/PersonalAI.Web/wwwroot/v080.js
-          grep -Fq 'Nhật ký hoạt động công cụ v1.6.0' src/PersonalAI.Web/wwwroot/v080.js
+          grep -Fq 'Nhật ký hoạt động công cụ v1.7.0' src/PersonalAI.Web/wwwroot/v080.js
           grep -Fq 'Mô hình' src/PersonalAI.Web/wwwroot/index.html
           grep -Fq 'Khóa truy cập' src/PersonalAI.Web/wwwroot/index.html
           ! grep -Fq 'Planner:' src/PersonalAI.Web/wwwroot/app.js
@@ -1787,9 +1787,9 @@ jobs:
           grep -Fq 'v097.js' src/PersonalAI.Web/wwwroot/index.html
           ! grep -Fq 'MapDelete("/api/undo' src/PersonalAI.Web/Services/UndoEndpoints.cs
           grep -Fq 'Stable Personal AI Core' docs/releases/v1.0.0.md
-          grep -Fq '# AI Cá Nhân — Life Context Foundation v1.6.0' README.md
+          grep -Fq '# AI Cá Nhân — Decision Engine v1.7.0' README.md
           ! grep -Fq '# AI Cá Nhân — MVP v0.5.3' README.md
-          grep -Fq 'public const string Version = "1.6.0"' src/PersonalAI.Web/Models/SystemModels.cs
+          grep -Fq 'public const string Version = "1.7.0"' src/PersonalAI.Web/Models/SystemModels.cs
           grep -Fq 'public const string ApiContractVersion = "1"' src/PersonalAI.Web/Models/SystemModels.cs
           grep -Fq 'public const string Channel = "controlled"' src/PersonalAI.Web/Models/SystemModels.cs
           grep -Fq '/api/system/health' src/PersonalAI.Web/Services/SystemEndpoints.cs
@@ -1969,6 +1969,31 @@ jobs:
           grep -Fq 'lifeContextCharacters' src/PersonalAI.Web/wwwroot/app.js
           ! grep -Fq 'android.permission.ACCESS_FINE_LOCATION' android/PersonalAI.Companion/app/src/main/AndroidManifest.xml
           ! grep -Fq 'android.permission.ACTIVITY_RECOGNITION' android/PersonalAI.Companion/app/src/main/AndroidManifest.xml
+          grep -Fq 'Decision Engine' docs/releases/v1.7.0.md
+          grep -Fq 'IDecisionEngineService' src/PersonalAI.Web/Services/DecisionEngineService.cs
+          grep -Fq '/api/decisions/status' src/PersonalAI.Web/Services/DecisionEngineEndpoints.cs
+          grep -Fq '/api/decisions/preview' src/PersonalAI.Web/Services/DecisionEngineEndpoints.cs
+          grep -Fq '/api/decisions/analyze' src/PersonalAI.Web/Services/DecisionEngineEndpoints.cs
+          grep -Fq 'RequiresUserDecision: true' src/PersonalAI.Web/Services/DecisionEngineService.cs
+          grep -Fq 'AutoActionEnabled: false' src/PersonalAI.Web/Services/DecisionEngineService.cs
+          grep -Fq 'ToolExecutionEnabled: false' src/PersonalAI.Web/Services/DecisionEngineService.cs
+          grep -Fq 'PersistsAnalyses: false' src/PersonalAI.Web/Services/DecisionEngineService.cs
+          grep -Fq 'DecisionEngineRequiresUserDecision: true' src/PersonalAI.Web/Services/SystemCoreService.cs
+          grep -Fq 'DecisionEngineAutoActionEnabled: false' src/PersonalAI.Web/Services/SystemCoreService.cs
+          grep -Fq 'DecisionEngineToolExecutionEnabled: false' src/PersonalAI.Web/Services/SystemCoreService.cs
+          grep -Fq 'DecisionEnginePersistsAnalyses: false' src/PersonalAI.Web/Services/SystemCoreService.cs
+          grep -Fq 'MaximumQuestionCharacters = 4_000' src/PersonalAI.Web/Services/DecisionEngineService.cs
+          grep -Fq 'MaximumOptions = 8' src/PersonalAI.Web/Services/DecisionEngineService.cs
+          grep -Fq 'MaximumCriteria = 8' src/PersonalAI.Web/Services/DecisionEngineService.cs
+          grep -Fq 'v170.css' src/PersonalAI.Web/wwwroot/index.html
+          grep -Fq 'v170.js' src/PersonalAI.Web/wwwroot/index.html
+          grep -Fq 'EVIDENCE · TRADE-OFF · USER DECIDES' src/PersonalAI.Web/wwwroot/v170.js
+          ! grep -Fq 'IToolOrchestrationService' src/PersonalAI.Web/Services/DecisionEngineService.cs
+          ! grep -Fq 'IPersonalAiTool' src/PersonalAI.Web/Services/DecisionEngineService.cs
+          ! grep -Fq 'IPersonalAiTool' src/PersonalAI.Web/Services/DecisionEngineEndpoints.cs
+          ! grep -Fq '/api/decisions/execute' src/PersonalAI.Web/Services/DecisionEngineEndpoints.cs
+          ! grep -Fq '/api/decisions/apply' src/PersonalAI.Web/Services/DecisionEngineEndpoints.cs
+
 
 
 
@@ -2037,3 +2062,4 @@ jobs:
           node --check src/PersonalAI.Web/wwwroot/v140.js
           node --check src/PersonalAI.Web/wwwroot/v150.js
           node --check src/PersonalAI.Web/wwwroot/v160.js
+          node --check src/PersonalAI.Web/wwwroot/v170.js

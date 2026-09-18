@@ -55,10 +55,10 @@ jobs:
             exit 1
           fi
 
-          curl -fsS http://127.0.0.1:5077/api/status | jq -e '.version == "0.9.1"' >/dev/null
+          curl -fsS http://127.0.0.1:5077/api/status | jq -e '.version == "0.9.3"' >/dev/null
 
           tools=$(curl -fsS http://127.0.0.1:5077/api/tools)
-          echo "$tools" | jq -e '.frameworkVersion == "0.9.1" and (.permissionTypes | sort) == (["DELETE","EXTERNAL","READ","SENSITIVE","WRITE"] | sort)' >/dev/null
+          echo "$tools" | jq -e '.frameworkVersion == "0.9.3" and (.permissionTypes | sort) == (["DELETE","EXTERNAL","READ","SENSITIVE","WRITE"] | sort)' >/dev/null
           echo "$tools" | jq -e '(.tools | length) == 13 and any(.tools[]; .name == "local.clock" and .localOnly == true and .requiredPermissions == ["READ"]) and any(.tools[]; .name == "local.text_stats" and .timeoutMs == 2000) and any(.tools[]; .name == "memory.search") and any(.tools[]; .name == "documents.search") and any(.tools[]; .name == "local.calculate") and any(.tools[]; .name == "local.date_math") and any(.tools[]; .name == "app.summary") and any(.tools[]; .name == "workspace.list" and .requiredPermissions == ["READ"]) and any(.tools[]; .name == "workspace.read_text" and .requiredPermissions == ["READ"]) and any(.tools[]; .name == "workspace.write_text" and .requiredPermissions == ["WRITE"] and .requiresConfirmation == true) and any(.tools[]; .name == "workspace.create_directory" and .requiredPermissions == ["WRITE"] and .requiresConfirmation == true) and any(.tools[]; .name == "workspace.move" and .requiredPermissions == ["WRITE"] and .requiresConfirmation == true) and any(.tools[]; .name == "workspace.delete" and .requiredPermissions == ["DELETE"] and .requiresConfirmation == true)' >/dev/null
 
           text_tool=$(curl -fsS http://127.0.0.1:5077/api/tools/local.text_stats)
@@ -151,6 +151,53 @@ jobs:
 
           tasks_after=$(curl -fsS http://127.0.0.1:5077/api/tasks)
           echo "$tasks_after" | jq -e '(.tasks | length) >= 2 and any(.tasks[]; .id == "'"$task_id"'" and .status == "completed") and any(.tasks[]; .id == "'"$cancel_task_id"'" and .status == "cancelled")' >/dev/null
+
+          invalid_step_dependency_code=$(curl -sS -o /tmp/task-invalid-step-dependency.json -w '%{http_code}' -X POST http://127.0.0.1:5077/api/tasks/prepare \
+            -H 'Content-Type: application/json' \
+            -d '{"goal":"Kiểm tra phụ thuộc bước sai","plan":"Bước đầu tiên không được phụ thuộc chính nó.","steps":[{"title":"Bước lỗi","description":"Kiểm tra dependency.","toolName":"local.clock","arguments":{},"dependsOn":[1]}]}')
+          test "$invalid_step_dependency_code" = "400"
+          jq -e '(.error | contains("bước đầu tiên"))' /tmp/task-invalid-step-dependency.json >/dev/null
+
+          step_dependency_task=$(curl -fsS -X POST http://127.0.0.1:5077/api/tasks/prepare \
+            -H 'Content-Type: application/json' \
+            -d '{"goal":"Kiểm tra phụ thuộc giữa các bước","plan":"Bước 2 chỉ hợp lệ sau khi bước 1 hoàn tất.","steps":[{"title":"Tính 6 nhân 7","description":"Bước nền.","toolName":"local.calculate","arguments":{"expression":"6 * 7"},"dependsOn":[]},{"title":"Đọc giờ","description":"Chỉ chạy sau bước 1.","toolName":"local.clock","arguments":{},"dependsOn":[1]}]}')
+          echo "$step_dependency_task" | jq -e '.steps[0].dependsOn == [] and .steps[1].dependsOn == [1]' >/dev/null
+          step_dependency_task_id=$(echo "$step_dependency_task" | jq -r '.id')
+          step_dependency_first=$(curl -fsS -X POST "http://127.0.0.1:5077/api/tasks/$step_dependency_task_id/execute-next" \
+            -H 'Content-Type: application/json' \
+            -d '{"confirmed":false}')
+          echo "$step_dependency_first" | jq -e '.task.status == "running" and .task.steps[0].status == "completed" and .task.currentStep == 2' >/dev/null
+          step_dependency_second=$(curl -fsS -X POST "http://127.0.0.1:5077/api/tasks/$step_dependency_task_id/execute-next" \
+            -H 'Content-Type: application/json' \
+            -d '{"confirmed":false}')
+          echo "$step_dependency_second" | jq -e '.task.status == "completed" and .task.steps[1].status == "completed"' >/dev/null
+
+          dependency_parent=$(curl -fsS -X POST http://127.0.0.1:5077/api/tasks/prepare \
+            -H 'Content-Type: application/json' \
+            -d '{"goal":"Tác vụ nguồn cho dependency","plan":"Hoàn tất phép tính trước.","steps":[{"title":"Tính 7 nhân 8","description":"Tác vụ nguồn.","toolName":"local.calculate","arguments":{"expression":"7 * 8"}}]}')
+          dependency_parent_id=$(echo "$dependency_parent" | jq -r '.id')
+          dependency_child_payload=$(jq -nc --arg parent "$dependency_parent_id" '{goal:"Tác vụ phụ thuộc",plan:"Chỉ chạy sau tác vụ nguồn.",dependsOnTaskIds:[$parent],steps:[{title:"Đọc giờ",description:"Chạy sau prerequisite.",toolName:"local.clock",arguments:{}}]}')
+          dependency_child=$(curl -fsS -X POST http://127.0.0.1:5077/api/tasks/prepare \
+            -H 'Content-Type: application/json' \
+            -d "$dependency_child_payload")
+          dependency_child_id=$(echo "$dependency_child" | jq -r '.id')
+          echo "$dependency_child" | jq -e '.dependsOnTaskIds == ["'"$dependency_parent_id"'"]' >/dev/null
+
+          dependency_blocked_code=$(curl -sS -o /tmp/task-dependency-blocked.json -w '%{http_code}' -X POST "http://127.0.0.1:5077/api/tasks/$dependency_child_id/execute-next" \
+            -H 'Content-Type: application/json' \
+            -d '{"confirmed":false}')
+          test "$dependency_blocked_code" = "400"
+          jq -e '(.error | contains("chờ các tác vụ phụ thuộc"))' /tmp/task-dependency-blocked.json >/dev/null
+
+          dependency_parent_execution=$(curl -fsS -X POST "http://127.0.0.1:5077/api/tasks/$dependency_parent_id/execute-next" \
+            -H 'Content-Type: application/json' \
+            -d '{"confirmed":false}')
+          echo "$dependency_parent_execution" | jq -e '.task.status == "completed" and .execution.output.result == 56' >/dev/null
+
+          dependency_child_execution=$(curl -fsS -X POST "http://127.0.0.1:5077/api/tasks/$dependency_child_id/execute-next" \
+            -H 'Content-Type: application/json' \
+            -d '{"confirmed":false}')
+          echo "$dependency_child_execution" | jq -e '.task.status == "completed" and .task.steps[0].status == "completed"' >/dev/null
 
           invalid_proposal_code=$(curl -sS -o /tmp/tool-proposal-invalid.json -w '%{http_code}' -X POST http://127.0.0.1:5077/api/tools/orchestrate/prepare \
             -H 'Content-Type: application/json' \
@@ -720,20 +767,28 @@ jobs:
           grep -Fq 'PersonalTaskStatuses.Interrupted' src/PersonalAI.Web/Services/PersonalTaskStore.cs
           grep -Fq 'MaximumSteps = 8' src/PersonalAI.Web/Services/TaskEngineService.cs
           grep -Fq 'Persistent: true' src/PersonalAI.Web/Services/TaskEngineService.cs
+          grep -Fq 'DependsOnTaskIds' src/PersonalAI.Web/Models/TaskModels.cs
+          grep -Fq 'DependsOn' src/PersonalAI.Web/Models/TaskModels.cs
+          grep -Fq 'EnsureTaskDependenciesSatisfied' src/PersonalAI.Web/Services/TaskEngineService.cs
+          grep -Fq 'NormalizeTaskDependencies' src/PersonalAI.Web/Services/TaskEngineService.cs
+          grep -Fq 'dependsOn' src/PersonalAI.Web/Services/TaskEngineService.cs
+          grep -Fq 'taskDependencySelect' src/PersonalAI.Web/wwwroot/v090.js
+          grep -Fq 'Phụ thuộc bước' src/PersonalAI.Web/wwwroot/v090.js
+          grep -Fq 'Task Dependencies' docs/releases/v0.9.3.md
           grep -Fq 'v090.css' src/PersonalAI.Web/wwwroot/index.html
           grep -Fq 'v090.js' src/PersonalAI.Web/wwwroot/index.html
-          grep -Fq 'Tác vụ bền vững v0.9.1' src/PersonalAI.Web/wwwroot/v090.js
+          grep -Fq 'Tác vụ có phụ thuộc v0.9.3' src/PersonalAI.Web/wwwroot/v090.js
           grep -Fq 'MỤC TIÊU → KẾ HOẠCH → TỪNG BƯỚC' src/PersonalAI.Web/wwwroot/v090.js
           grep -Fq 'arguments_sha256' src/PersonalAI.Web/Services/ToolActivityStore.cs
           grep -Fq 'output_sha256' src/PersonalAI.Web/Services/ToolActivityStore.cs
           grep -Fq 'v089.css' src/PersonalAI.Web/wwwroot/index.html
-          grep -Fq 'Nhật ký hoạt động công cụ v0.9.1' src/PersonalAI.Web/wwwroot/v080.js
+          grep -Fq 'Nhật ký hoạt động công cụ v0.9.3' src/PersonalAI.Web/wwwroot/v080.js
           grep -Fq 'Nhật ký hoạt động gần đây' src/PersonalAI.Web/wwwroot/v080.js
           grep -Fq 'v088.css' src/PersonalAI.Web/wwwroot/index.html
           grep -Fq 'Nguồn đề xuất:' src/PersonalAI.Web/wwwroot/app.js
           grep -Fq 'Tham số' src/PersonalAI.Web/wwwroot/app.js
           grep -Fq 'CÔNG CỤ NỘI BỘ TRÊN MÁY NÀY' src/PersonalAI.Web/wwwroot/v080.js
-          grep -Fq 'Nhật ký hoạt động công cụ v0.9.1' src/PersonalAI.Web/wwwroot/v080.js
+          grep -Fq 'Nhật ký hoạt động công cụ v0.9.3' src/PersonalAI.Web/wwwroot/v080.js
           grep -Fq 'Mô hình' src/PersonalAI.Web/wwwroot/index.html
           grep -Fq 'Khóa truy cập' src/PersonalAI.Web/wwwroot/index.html
           ! grep -Fq 'Planner:' src/PersonalAI.Web/wwwroot/app.js

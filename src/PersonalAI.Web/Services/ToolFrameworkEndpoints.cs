@@ -4,7 +4,7 @@ namespace PersonalAI.Web.Services;
 
 public static class ToolFrameworkEndpoints
 {
-    public const string FrameworkVersion = "0.9.5";
+    public const string FrameworkVersion = "0.9.6";
 
     private static readonly string[] PermissionTypes =
     [
@@ -63,11 +63,19 @@ public static class ToolFrameworkEndpoints
             ToolExecutionRequest request,
             IToolExecutionService executor,
             IToolActivityStore activityStore,
+            IAuditRecorder audit,
             ILoggerFactory loggerFactory,
             CancellationToken cancellationToken) =>
         {
             var response = await executor.ExecuteAsync(request, cancellationToken);
             TryRecordDirectExecution(activityStore, loggerFactory, request, response);
+            audit.Record(
+                AuditAgents.User,
+                "tool.execute",
+                $"tool-invocation:{response.InvocationId:D}",
+                request.Confirmed ? "direct-request-confirmed" : "direct-request",
+                response.Status,
+                response.ToolName);
             var statusCode = response.Status switch
             {
                 ToolExecutionStatuses.Succeeded => StatusCodes.Status200OK,
@@ -83,11 +91,20 @@ public static class ToolFrameworkEndpoints
 
         app.MapPost("/api/tools/orchestrate/prepare", (
             ToolProposalDraft request,
-            IToolOrchestrationService orchestration) =>
+            IToolOrchestrationService orchestration,
+            IAuditRecorder audit) =>
         {
             try
             {
-                return Results.Ok(orchestration.Prepare(request));
+                var proposal = orchestration.Prepare(request);
+                audit.Record(
+                    AuditAgents.User,
+                    "tool.proposal.prepare",
+                    $"tool-proposal:{proposal.ProposalId:D}",
+                    "manual-proposal",
+                    AuditResults.Proposed,
+                    proposal.ToolName);
+                return Results.Ok(proposal);
             }
             catch (ToolProposalValidationException exception)
             {
@@ -98,6 +115,7 @@ public static class ToolFrameworkEndpoints
         app.MapPost("/api/tools/orchestrate/execute", async (
             ExecuteToolProposalRequest request,
             IToolOrchestrationService orchestration,
+            IAuditRecorder audit,
             CancellationToken cancellationToken) =>
         {
             var response = await orchestration.ExecuteAsync(
@@ -120,12 +138,23 @@ public static class ToolFrameworkEndpoints
                 _ => StatusCodes.Status500InternalServerError
             };
 
+            audit.Record(
+                AuditAgents.User,
+                "tool.execute",
+                $"tool-invocation:{response.Execution.InvocationId:D}",
+                request.Confirmed
+                    ? "approved-proposal-confirmed"
+                    : "approved-proposal",
+                response.Execution.Status,
+                response.Proposal.ToolName);
+
             return Results.Json(response, statusCode: statusCode);
         });
 
         app.MapPost("/api/tools/orchestrate/synthesize", async (
             ToolResultSynthesisRequest request,
             IToolOrchestrationService orchestration,
+            IAuditRecorder audit,
             CancellationToken cancellationToken) =>
         {
             try
@@ -134,6 +163,17 @@ public static class ToolFrameworkEndpoints
                     request.InvocationId,
                     request.ConfirmedExternal,
                     cancellationToken);
+                if (response is not null)
+                {
+                    audit.Record(
+                        AuditAgents.PersonalAi,
+                        "tool.synthesize",
+                        $"tool-invocation:{request.InvocationId:D}",
+                        request.ConfirmedExternal
+                            ? "user-confirmed-external"
+                            : "user-request",
+                        AuditResults.Succeeded);
+                }
                 return response is null
                     ? Results.NotFound(new ApiError(
                         "Kết quả công cụ không tồn tại hoặc đã hết thời gian diễn giải."))
@@ -141,6 +181,12 @@ public static class ToolFrameworkEndpoints
             }
             catch (ToolExternalConfirmationRequiredException exception)
             {
+                audit.Record(
+                    AuditAgents.PersonalAi,
+                    "tool.synthesize",
+                    $"tool-invocation:{request.InvocationId:D}",
+                    "external-confirmation-required",
+                    AuditResults.Denied);
                 return Results.Json(
                     new ApiError(exception.Message),
                     statusCode: StatusCodes.Status403Forbidden);
@@ -172,6 +218,7 @@ public static class ToolFrameworkEndpoints
         app.MapPost("/api/tools/orchestrate/continue-native", async (
             ToolNativeContinuationRequest request,
             IToolOrchestrationService orchestration,
+            IAuditRecorder audit,
             CancellationToken cancellationToken) =>
         {
             try
@@ -180,6 +227,17 @@ public static class ToolFrameworkEndpoints
                     request.InvocationId,
                     request.ConfirmedExternal,
                     cancellationToken);
+                if (response is not null)
+                {
+                    audit.Record(
+                        AuditAgents.PersonalAi,
+                        "tool.native-continue",
+                        $"tool-invocation:{request.InvocationId:D}",
+                        request.ConfirmedExternal
+                            ? "user-confirmed-external"
+                            : "user-request",
+                        AuditResults.Succeeded);
+                }
                 return response is null
                     ? Results.NotFound(new ApiError(
                         "Kết quả công cụ không tồn tại hoặc lượt hoàn tất bằng AI đã hết hạn."))
@@ -187,6 +245,12 @@ public static class ToolFrameworkEndpoints
             }
             catch (ToolExternalConfirmationRequiredException exception)
             {
+                audit.Record(
+                    AuditAgents.PersonalAi,
+                    "tool.native-continue",
+                    $"tool-invocation:{request.InvocationId:D}",
+                    "external-confirmation-required",
+                    AuditResults.Denied);
                 return Results.Json(
                     new ApiError(exception.Message),
                     statusCode: StatusCodes.Status403Forbidden);

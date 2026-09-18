@@ -204,7 +204,7 @@
       item.fileType,
       formatBytes(item.fileSize),
       `${item.chunkCount} đoạn`,
-      `${item.indexedChunkCount}/${item.chunkCount} véc-tơ`,
+      `${item.indexedChunkCount}/${item.chunkCount} vector`,
       item.pageCount ? `${item.pageCount} trang` : null,
       formatDate(item.createdAt)
     ].filter(Boolean).join(" · ");
@@ -213,7 +213,7 @@
     status.className = `v075-index-status status-${item.indexStatus || "unknown"}`;
     status.textContent = statusLabel(item.indexStatus);
     status.title = item.missingEmbeddingCount > 0
-      ? `Còn ${item.missingEmbeddingCount} đoạn chưa có véc-tơ hiện hành.`
+      ? `Còn ${item.missingEmbeddingCount} đoạn chưa có vector hiện hành.`
       : "Chỉ mục hiện hành đã đầy đủ.";
 
     content.append(title, meta, status);
@@ -280,7 +280,7 @@
       });
       const payload = await response.json().catch(() => ({}));
       if (!response.ok) throw new Error(payload.error || "Không re-index được tài liệu.");
-      showFeedback(`Đã re-index “${payload.fileName}”: ${payload.chunkCount} đoạn, ${payload.indexedChunkCount} véc-tơ.`, "success");
+      showFeedback(`Đã re-index “${payload.fileName}”: ${payload.chunkCount} đoạn, ${payload.indexedChunkCount} vector.`, "success");
     });
   }
 

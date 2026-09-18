@@ -1,0 +1,271 @@
+using PersonalAI.Web.Models;
+
+namespace PersonalAI.Web.Services;
+
+public interface ISystemCoreService
+{
+    Task<SystemHealthResponse> GetHealthAsync(
+        CancellationToken cancellationToken = default);
+
+    SystemCapabilitiesResponse GetCapabilities();
+}
+
+public sealed class SystemCoreService(
+    IPersonalWorkspaceStore workspaceStore,
+    IWorkspaceContextAccessor workspaceContext,
+    IPersonalMemoryStore memoryStore,
+    IKnowledgeDocumentStore knowledgeStore,
+    IPersonalTaskStore taskStore,
+    IWorkspaceFileService workspaceFiles,
+    IToolRegistry toolRegistry,
+    IAuditStore auditStore,
+    IUndoService undoService,
+    IAiProviderResolver providerResolver,
+    ILogger<SystemCoreService> logger) : ISystemCoreService
+{
+    private static readonly string[] StableModules =
+    [
+        "workspace",
+        "memory",
+        "documents",
+        "rag",
+        "tasks",
+        "files",
+        "context",
+        "tools",
+        "audit",
+        "undo",
+        "conversations"
+    ];
+
+    private static readonly string[] ReservedModules =
+    [
+        "agents",
+        "policies",
+        "browser",
+        "computer-use",
+        "connectors"
+    ];
+
+    public async Task<SystemHealthResponse> GetHealthAsync(
+        CancellationToken cancellationToken = default)
+    {
+        var modules = new List<CoreModuleHealth>();
+
+        modules.Add(Check(
+            "workspace",
+            () =>
+            {
+                var items = workspaceStore.GetAll();
+                _ = workspaceContext.CurrentWorkspace;
+                return new CoreModuleHealth(
+                    "workspace",
+                    CoreHealthStatuses.Healthy,
+                    "Workspace contract và workspace hiện tại đọc được.",
+                    items.Count);
+            }));
+
+        modules.Add(await CheckAsync(
+            "memory",
+            async () =>
+            {
+                var items = await memoryStore.GetAllAsync(cancellationToken);
+                return new CoreModuleHealth(
+                    "memory",
+                    CoreHealthStatuses.Healthy,
+                    "Memory store đọc được trong workspace hiện tại.",
+                    items.Count);
+            }));
+
+        modules.Add(await CheckAsync(
+            "documents",
+            async () =>
+            {
+                var items = await knowledgeStore.GetAllAsync(cancellationToken);
+                return new CoreModuleHealth(
+                    "documents",
+                    CoreHealthStatuses.Healthy,
+                    "Knowledge store và metadata tài liệu đọc được.",
+                    items.Count);
+            }));
+
+        modules.Add(Check(
+            "tasks",
+            () =>
+            {
+                var items = taskStore.GetAll();
+                return new CoreModuleHealth(
+                    "tasks",
+                    CoreHealthStatuses.Healthy,
+                    "Task store đọc được và recovery contract đã khởi tạo.",
+                    items.Count);
+            }));
+
+        modules.Add(Check(
+            "files",
+            () =>
+            {
+                var listing = workspaceFiles.List(".", 1);
+                return new CoreModuleHealth(
+                    "files",
+                    CoreHealthStatuses.Healthy,
+                    "Filesystem sandbox của workspace truy cập được.",
+                    listing.Entries.Count);
+            }));
+
+        modules.Add(Check(
+            "tools",
+            () =>
+            {
+                var tools = toolRegistry.GetAll();
+                return new CoreModuleHealth(
+                    "tools",
+                    CoreHealthStatuses.Healthy,
+                    "Tool registry hợp lệ và đã khởi tạo.",
+                    tools.Count);
+            }));
+
+        modules.Add(Check(
+            "audit",
+            () =>
+            {
+                var summary = auditStore.GetSummary(
+                    workspaceContext.CurrentWorkspaceId);
+                return new CoreModuleHealth(
+                    "audit",
+                    CoreHealthStatuses.Healthy,
+                    "Audit store đọc được trong workspace hiện tại.",
+                    summary.TotalEvents);
+            }));
+
+        modules.Add(Check(
+            "undo",
+            () =>
+            {
+                var response = undoService.GetRecent(1);
+                return new CoreModuleHealth(
+                    "undo",
+                    CoreHealthStatuses.Healthy,
+                    "Undo store đọc được trong workspace hiện tại.",
+                    response.Items.Count);
+            }));
+
+        modules.Add(Check(
+            "ai-provider",
+            () =>
+            {
+                var provider = providerResolver.GetActive();
+                return provider.IsConfigured
+                    ? new CoreModuleHealth(
+                        "ai-provider",
+                        CoreHealthStatuses.Healthy,
+                        $"Nhà cung cấp {provider.Name} đã được cấu hình.")
+                    : new CoreModuleHealth(
+                        "ai-provider",
+                        CoreHealthStatuses.Unconfigured,
+                        $"Nhà cung cấp {provider.Name} chưa có cấu hình đầy đủ.");
+            },
+            CoreHealthStatuses.Degraded));
+
+        var localModules = modules
+            .Where(module => module.Module != "ai-provider")
+            .ToArray();
+        var ready = localModules.All(
+            module => module.Status != CoreHealthStatuses.Unavailable);
+        var degraded = modules.Any(
+            module => module.Status is CoreHealthStatuses.Degraded
+                or CoreHealthStatuses.Unconfigured);
+        var status = !ready
+            ? CoreHealthStatuses.Unavailable
+            : degraded
+                ? CoreHealthStatuses.Degraded
+                : CoreHealthStatuses.Healthy;
+
+        return new SystemHealthResponse(
+            PersonalAiRelease.Version,
+            PersonalAiRelease.ApiContractVersion,
+            PersonalAiRelease.Channel,
+            ready,
+            status,
+            workspaceContext.CurrentWorkspaceId,
+            DateTimeOffset.UtcNow,
+            modules);
+    }
+
+    public SystemCapabilitiesResponse GetCapabilities() =>
+        new(
+            PersonalAiRelease.Version,
+            PersonalAiRelease.ApiContractVersion,
+            PersonalAiRelease.Channel,
+            StableModules,
+            ReservedModules,
+            new CoreSafetyContract(
+                WorkspaceIsolation: true,
+                WriteRequiresConfirmation: true,
+                DeleteRequiresConfirmation: true,
+                ExternalRequiresConfirmation: true,
+                UndoRequiresConfirmation: true,
+                AutomaticMultiStepExecution: false,
+                BackgroundScheduler: false,
+                AutonomousAgentLoop: false,
+                ParallelToolCalls: false),
+            new CoreLimitsContract(
+                PersonalWorkspaceStore.MaximumWorkspaces,
+                SqlitePersonalTaskStore.MaximumTasks,
+                ContextManagerService.MaximumContextCharacters,
+                WorkspaceFileService.MaximumFileBytes,
+                SqliteAuditStore.RetentionDays,
+                SqliteAuditStore.MaximumEntries,
+                SqliteUndoStore.AvailabilityDays,
+                SqliteUndoStore.MaximumEntries,
+                SqliteUndoStore.MaximumSnapshotBytes),
+            WorkspaceEndpoints.WorkspaceHeaderName,
+            SystemHardeningMiddleware.RequestIdHeaderName);
+
+    private CoreModuleHealth Check(
+        string module,
+        Func<CoreModuleHealth> action,
+        string failureStatus = CoreHealthStatuses.Unavailable)
+    {
+        try
+        {
+            return action();
+        }
+        catch (Exception exception)
+        {
+            logger.LogWarning(
+                exception,
+                "Core health check failed for module {Module}.",
+                module);
+            return new CoreModuleHealth(
+                module,
+                failureStatus,
+                "Module không vượt qua kiểm tra readiness cục bộ.");
+        }
+    }
+
+    private async Task<CoreModuleHealth> CheckAsync(
+        string module,
+        Func<Task<CoreModuleHealth>> action)
+    {
+        try
+        {
+            return await action();
+        }
+        catch (OperationCanceledException)
+        {
+            throw;
+        }
+        catch (Exception exception)
+        {
+            logger.LogWarning(
+                exception,
+                "Core health check failed for module {Module}.",
+                module);
+            return new CoreModuleHealth(
+                module,
+                CoreHealthStatuses.Unavailable,
+                "Module không vượt qua kiểm tra readiness cục bộ.");
+        }
+    }
+}

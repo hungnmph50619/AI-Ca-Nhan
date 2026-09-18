@@ -255,9 +255,7 @@
 
   async function renameDocument(item) {
     if (managementState.busy) return;
-    const value = window.prompt(
-      "Tên mới của tài liệu. Không thể đổi định dạng tệp:",
-      item.fileName);
+    const value = await window.PersonalAiUi.prompt("Tên mới của tài liệu. Không thể đổi định dạng tệp:", item.fileName, { title: "Đổi tên tài liệu", confirmText: "Đổi tên", maxLength: 180 });
     if (value === null) return;
 
     await runMutation(`Đang đổi tên “${item.fileName}”…`, async () => {
@@ -286,7 +284,7 @@
 
   async function deleteOneDocument(item) {
     if (managementState.busy) return;
-    if (!window.confirm(`Xóa vĩnh viễn “${item.fileName}” khỏi Kho dữ liệu?`)) return;
+    if (!(await window.PersonalAiUi.confirm(`Xóa vĩnh viễn “${item.fileName}” khỏi Kho dữ liệu?`, { title: "Xác nhận xóa tài liệu", confirmText: "Xóa vĩnh viễn", danger: true }))) return;
     managementState.selected = new Set([item.id]);
     await deleteSelectedDocuments(true);
   }
@@ -294,7 +292,7 @@
   async function deleteSelectedDocuments(skipConfirm = false) {
     if (managementState.busy || managementState.selected.size === 0) return;
     const ids = [...managementState.selected];
-    if (!skipConfirm && !window.confirm(`Xóa vĩnh viễn ${ids.length} tài liệu đã chọn?`)) return;
+    if (!skipConfirm && !(await window.PersonalAiUi.confirm(`Xóa vĩnh viễn ${ids.length} tài liệu đã chọn?`, { title: "Xác nhận xóa tài liệu", confirmText: "Xóa vĩnh viễn", danger: true }))) return;
 
     await runMutation(`Đang xóa ${ids.length} tài liệu…`, async () => {
       const response = await fetch("/api/knowledge/documents/bulk-delete", {

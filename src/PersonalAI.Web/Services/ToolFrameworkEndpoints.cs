@@ -15,7 +15,8 @@ public static class ToolFrameworkEndpoints
         ToolPermissions.Sensitive,
         ToolPermissions.Computer,
         ToolPermissions.Browser,
-        ToolPermissions.Connector
+        ToolPermissions.Connector,
+        ToolPermissions.Development
     ];
 
     public static IServiceCollection AddToolFramework(this IServiceCollection services)

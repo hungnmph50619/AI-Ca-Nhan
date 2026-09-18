@@ -27,6 +27,7 @@ builder.Services.AddSingleton<IKnowledgeHybridSearchService, KnowledgeHybridSear
 builder.Services.AddKnowledgeQuality();
 builder.Services.AddAuditFoundation();
 builder.Services.AddUndoFoundation();
+builder.Services.AddComputerUse();
 builder.Services.AddToolFramework();
 builder.Services.AddTaskEngine();
 builder.Services.AddSingleton<IKnowledgeGroundingService, KnowledgeGroundingService>();
@@ -69,6 +70,7 @@ app.UseStaticFiles();
 app.MapWorkspaceFoundation();
 app.MapAuditFoundation();
 app.MapUndoFoundation();
+app.MapComputerUse();
 app.MapStableCore();
 
 app.MapGet("/api/status", (

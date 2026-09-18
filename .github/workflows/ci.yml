@@ -2185,7 +2185,7 @@ jobs:
           grep -Fq 'lifeContextCharacters' src/PersonalAI.Web/wwwroot/app.js
           ! grep -Fq 'android.permission.ACCESS_FINE_LOCATION' android/PersonalAI.Companion/app/src/main/AndroidManifest.xml
           ! grep -Fq 'android.permission.ACTIVITY_RECOGNITION' android/PersonalAI.Companion/app/src/main/AndroidManifest.xml
-          grep -Fq 'Decision Engine' docs/releases/v1.8.0.md
+          grep -Fq 'Decision Engine' docs/releases/v1.7.0.md
           grep -Fq 'IDecisionEngineService' src/PersonalAI.Web/Services/DecisionEngineService.cs
           grep -Fq '/api/decisions/status' src/PersonalAI.Web/Services/DecisionEngineEndpoints.cs
           grep -Fq '/api/decisions/preview' src/PersonalAI.Web/Services/DecisionEngineEndpoints.cs
@@ -2209,6 +2209,34 @@ jobs:
           ! grep -Fq 'IPersonalAiTool' src/PersonalAI.Web/Services/DecisionEngineEndpoints.cs
           ! grep -Fq '/api/decisions/execute' src/PersonalAI.Web/Services/DecisionEngineEndpoints.cs
           ! grep -Fq '/api/decisions/apply' src/PersonalAI.Web/Services/DecisionEngineEndpoints.cs
+          grep -Fq 'Controlled Automation' docs/releases/v1.8.0.md
+          grep -Fq 'IAutomationStore' src/PersonalAI.Web/Services/AutomationStore.cs
+          grep -Fq 'IAutomationCoordinator' src/PersonalAI.Web/Services/AutomationService.cs
+          grep -Fq 'AutomationBackgroundService' src/PersonalAI.Web/Services/AutomationService.cs
+          grep -Fq 'AddHostedService<AutomationBackgroundService>()' src/PersonalAI.Web/Services/AutomationEndpoints.cs
+          grep -Fq '/api/automations/status' src/PersonalAI.Web/Services/AutomationEndpoints.cs
+          grep -Fq '/api/automations/{automationId:guid}/run-now' src/PersonalAI.Web/Services/AutomationEndpoints.cs
+          grep -Fq '/api/automations/{automationId:guid}/resume' src/PersonalAI.Web/Services/AutomationEndpoints.cs
+          grep -Fq 'MaximumAutomationsPerWorkspace = 50' src/PersonalAI.Web/Services/AutomationStore.cs
+          grep -Fq 'MinimumIntervalMinutes = 5' src/PersonalAI.Web/Services/AutomationService.cs
+          grep -Fq 'MaximumIntervalMinutes = 10_080' src/PersonalAI.Web/Services/AutomationService.cs
+          grep -Fq 'SchedulerPollSeconds = 30' src/PersonalAI.Web/Services/AutomationService.cs
+          grep -Fq 'confirmed: false' src/PersonalAI.Web/Services/AutomationService.cs
+          ! grep -Fq 'confirmed: true,' src/PersonalAI.Web/Services/AutomationService.cs
+          grep -Fq 'AutomationRequiresExplicitCreation: true' src/PersonalAI.Web/Services/SystemCoreService.cs
+          grep -Fq 'AutomationAutoConfirmationEnabled: false' src/PersonalAI.Web/Services/SystemCoreService.cs
+          grep -Fq 'AutomationDecisionRecommendationAutoExecutionEnabled: false' src/PersonalAI.Web/Services/SystemCoreService.cs
+          grep -Fq 'AutomationRunsAtMostOneTaskStepPerTick: true' src/PersonalAI.Web/Services/SystemCoreService.cs
+          grep -Fq 'BackgroundScheduler: true' src/PersonalAI.Web/Services/SystemCoreService.cs
+          grep -Fq 'AutomaticMultiStepExecution: false' src/PersonalAI.Web/Services/SystemCoreService.cs
+          grep -Fq 'v180.css' src/PersonalAI.Web/wwwroot/index.html
+          grep -Fq 'v180.js' src/PersonalAI.Web/wwwroot/index.html
+          grep -Fq 'SCHEDULE · ONE STEP · NO AUTO-CONFIRM' src/PersonalAI.Web/wwwroot/v180.js
+          grep -Fq 'automation: "Automation"' src/PersonalAI.Web/wwwroot/v100.js
+          grep -Fq 'automation: "Automation"' src/PersonalAI.Web/wwwroot/v096.js
+          ! grep -Fq '/api/decisions' src/PersonalAI.Web/Services/AutomationService.cs
+          ! grep -Fq 'IDecisionEngineService' src/PersonalAI.Web/Services/AutomationService.cs
+
 
 
 

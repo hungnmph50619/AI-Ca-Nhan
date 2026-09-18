@@ -63,7 +63,10 @@ app.UseStaticFiles();
 
 app.MapWorkspaceFoundation();
 
-app.MapGet("/api/status", (IAiProviderResolver providerResolver, ITeamProfileCatalog teamProfiles) =>
+app.MapGet("/api/status", (
+    IAiProviderResolver providerResolver,
+    ITeamProfileCatalog teamProfiles,
+    IWorkspaceContextAccessor workspaceContext) =>
 {
     var aiProvider = providerResolver.GetActive();
     return Results.Ok(new
@@ -72,7 +75,9 @@ app.MapGet("/api/status", (IAiProviderResolver providerResolver, ITeamProfileCat
         provider = aiProvider.Name,
         model = aiProvider.Model,
         teamProfile = teamProfiles.DefaultProfileId,
-        version = "0.9.3"
+        workspaceId = workspaceContext.CurrentWorkspaceId,
+        workspaceName = workspaceContext.CurrentWorkspace.Name,
+        version = "0.9.4"
     });
 });
 

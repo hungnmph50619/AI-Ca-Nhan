@@ -246,7 +246,7 @@
 
     const copy = document.createElement("p");
     copy.textContent =
-      `Workspace isolation: ${yesNo(safety.workspaceIsolation)} · WRITE confirm: ${yesNo(safety.writeRequiresConfirmation)} · DELETE confirm: ${yesNo(safety.deleteRequiresConfirmation)} · Undo confirm: ${yesNo(safety.undoRequiresConfirmation)} · Agent loop tự trị: ${yesNo(safety.autonomousAgentLoop)} · Scheduler nền: ${yesNo(safety.backgroundScheduler)}`;
+      `Workspace isolation: ${yesNo(safety.workspaceIsolation)} · WRITE confirm: ${yesNo(safety.writeRequiresConfirmation)} · DELETE confirm: ${yesNo(safety.deleteRequiresConfirmation)} · Undo confirm: ${yesNo(safety.undoRequiresConfirmation)} · Computer confirm: ${yesNo(safety.computerControlRequiresConfirmation)} · Browser confirm: ${yesNo(safety.browserUseRequiresConfirmation)} · Browser private network: ${yesNo(safety.browserPrivateNetworkAccess)} · Agent loop tự trị: ${yesNo(safety.autonomousAgentLoop)} · Scheduler nền: ${yesNo(safety.backgroundScheduler)}`;
 
     const limitsCopy = document.createElement("p");
     limitsCopy.textContent =
@@ -284,6 +284,8 @@
       tools: "Tool Registry",
       audit: "Audit",
       undo: "Undo",
+      "computer-use": "Computer Use",
+      "browser-agent": "Browser Agent",
       "ai-provider": "AI Provider"
     }[module] || module || "Module";
   }

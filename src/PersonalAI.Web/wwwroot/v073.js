@@ -12,7 +12,7 @@
     if (brandVersion) brandVersion.textContent = `Phiên bản ${VERSION}`;
 
     const knowledgeIntro = document.querySelector(".knowledge-intro strong");
-    if (knowledgeIntro) knowledgeIntro.textContent = `Kho dữ liệu hybrid v${VERSION}`;
+    if (knowledgeIntro) knowledgeIntro.textContent = `Kho dữ liệu tìm kiếm kết hợp v${VERSION}`;
 
     const row = document.querySelector(".knowledge-search-row");
     const keywordButton = document.querySelector("#knowledgeSearchButton");
@@ -34,7 +34,7 @@
     const searchForm = document.querySelector("#knowledgeSearchForm");
     const hint = searchForm?.querySelector(".field-hint");
     if (hint) {
-      hint.textContent = "Từ khóa = FTS; ngữ nghĩa = vector local; tìm kết hợp = hợp nhất hai nguồn và rerank. Chat dùng tìm kết hợp tự động.";
+      hint.textContent = "Từ khóa = chỉ mục toàn văn; ngữ nghĩa = véc-tơ trên máy; tìm kết hợp = hợp nhất hai nguồn rồi xếp hạng lại. Khi trò chuyện, hệ thống tự dùng tìm kiếm kết hợp.";
     }
 
     const vectorStatus = document.querySelector("#knowledgeEmbeddingStatus");
@@ -64,7 +64,7 @@
     setSearchBusy(true, input, keywordButton, semanticButton, hybridButton);
     resultsNode.hidden = false;
     resultsNode.setAttribute("aria-busy", "true");
-    summaryNode.textContent = "Đang hợp nhất từ khóa + vector và rerank…";
+    summaryNode.textContent = "Đang hợp nhất từ khóa và véc-tơ rồi xếp hạng lại…";
     listNode.replaceChildren();
 
     try {
@@ -104,7 +104,7 @@
     if (results.length === 0) {
       const empty = document.createElement("p");
       empty.className = "knowledge-search-empty";
-      empty.textContent = "Không tìm thấy kết quả đủ mạnh sau khi kết hợp từ khóa và vector local.";
+      empty.textContent = "Không tìm thấy kết quả đủ mạnh sau khi kết hợp từ khóa và véc-tơ trên máy.";
       listNode.appendChild(empty);
       return;
     }

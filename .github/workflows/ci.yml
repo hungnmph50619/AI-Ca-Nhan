@@ -30,6 +30,7 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
+          trap 'echo "Smoke test failed at line ${LINENO}: ${BASH_COMMAND}" >&2' ERR
           rm -rf /tmp/personalai-workspace
           mkdir -p /tmp/personalai-workspace/notes
           printf 'Workspace root file.\n' >/tmp/personalai-workspace/readme.txt

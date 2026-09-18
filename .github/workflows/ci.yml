@@ -431,7 +431,7 @@ jobs:
           fi
 
           automation_status=$(curl -fsS http://127.0.0.1:5077/api/automations/status)
-          echo "$automation_status" | jq -e '.version == "1.8.0" and .supported == true and .backgroundSchedulerEnabled == true and .autoConfirmationEnabled == false and .decisionRecommendationAutoExecutionEnabled == false and .maximumAutomationsPerWorkspace == 50 and .minimumIntervalMinutes == 5 and .maximumIntervalMinutes == 10080 and .schedulerPollSeconds == 30 and .maximumDueBatchSize == 20' >/dev/null
+          echo "$automation_status" | jq -e '.version == "1.8.0" and .supported == true and .backgroundSchedulerEnabled == true and .autoConfirmationEnabled == false and .decisionRecommendationAutoExecutionEnabled == false and .maximumAutomationsPerWorkspace == 50 and .minimumIntervalMinutes == 5 and .maximumIntervalMinutes == 10080 and .schedulerPollSeconds == 30 and .maximumDueBatchSize == 1' >/dev/null
 
           automation_future=$(date -u -d '+30 minutes' '+%Y-%m-%dT%H:%M:%SZ')
 
@@ -451,6 +451,12 @@ jobs:
             -d '{"name":"Safe read once","taskId":"'"$automation_safe_task_id"'","scheduleKind":"once","startAt":"'"$automation_future"'","confirmed":true}')
           automation_safe_id=$(echo "$automation_safe" | jq -r '.id')
           echo "$automation_safe" | jq -e '.workspaceId == "personal" and .state == "scheduled" and .enabled == true and .scheduleKind == "once" and .runCount == 0' >/dev/null
+
+          automation_duplicate_code=$(curl -sS -o /tmp/automation-duplicate.json -w '%{http_code}' -X POST http://127.0.0.1:5077/api/automations \
+            -H 'Content-Type: application/json' \
+            -d '{"name":"Competing schedule","taskId":"'"$automation_safe_task_id"'","scheduleKind":"once","startAt":"'"$automation_future"'","confirmed":true}')
+          test "$automation_duplicate_code" = "400"
+          jq -e '(.error | contains("đã có automation"))' /tmp/automation-duplicate.json >/dev/null
 
           automation_run_unconfirmed_code=$(curl -sS -o /tmp/automation-run-unconfirmed.json -w '%{http_code}' -X POST "http://127.0.0.1:5077/api/automations/$automation_safe_id/run-now" \
             -H 'Content-Type: application/json' \
@@ -2224,6 +2230,8 @@ jobs:
           grep -Fq '/api/automations/{automationId:guid}/run-now' src/PersonalAI.Web/Services/AutomationEndpoints.cs
           grep -Fq '/api/automations/{automationId:guid}/resume' src/PersonalAI.Web/Services/AutomationEndpoints.cs
           grep -Fq 'MaximumAutomationsPerWorkspace = 50' src/PersonalAI.Web/Services/AutomationStore.cs
+          grep -Fq 'MaximumDueBatchSize = 1' src/PersonalAI.Web/Services/AutomationService.cs
+          grep -Fq 'Task này đã có automation chưa kết thúc' src/PersonalAI.Web/Services/AutomationService.cs
           grep -Fq 'MinimumIntervalMinutes = 5' src/PersonalAI.Web/Services/AutomationService.cs
           grep -Fq 'MaximumIntervalMinutes = 10_080' src/PersonalAI.Web/Services/AutomationService.cs
           grep -Fq 'SchedulerPollSeconds = 30' src/PersonalAI.Web/Services/AutomationService.cs

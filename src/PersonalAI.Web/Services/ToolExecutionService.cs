@@ -78,6 +78,7 @@ public sealed class ToolPolicy : IToolPolicy
             "COMPUTER" => "ĐIỀU KHIỂN MÁY",
             "BROWSER" => "TRÌNH DUYỆT",
             "CONNECTOR" => "KẾT NỐI",
+            "DEVELOPMENT" => "PHÁT TRIỂN PHẦN MỀM",
             _ => permission
         };
 }
@@ -288,6 +289,7 @@ public sealed class ToolExecutionService(
             "COMPUTER" => "ĐIỀU KHIỂN MÁY",
             "BROWSER" => "TRÌNH DUYỆT",
             "CONNECTOR" => "KẾT NỐI",
+            "DEVELOPMENT" => "PHÁT TRIỂN PHẦN MỀM",
             _ => permission
         };
 

@@ -10,6 +10,8 @@ public interface ITaskEngineService
         string goal,
         CancellationToken cancellationToken = default);
 
+    PersonalTask Prepare(PreparePersonalTaskRequest request);
+
     PersonalTaskListResponse GetAll();
 
     PersonalTask? Get(Guid taskId);
@@ -110,6 +112,126 @@ public sealed class TaskEngineService : ITaskEngineService
             null,
             provider.Name,
             provider.Model);
+
+        Tasks[task.Id] = task;
+        TrimTasks();
+        return task;
+    }
+
+    public PersonalTask Prepare(PreparePersonalTaskRequest request)
+    {
+        ArgumentNullException.ThrowIfNull(request);
+
+        var goal = (request.Goal ?? string.Empty).Trim();
+        if (goal.Length < 3)
+        {
+            throw new PersonalTaskValidationException(
+                "Mục tiêu cần có ít nhất 3 ký tự.");
+        }
+
+        if (goal.Length > MaximumGoalCharacters)
+        {
+            throw new PersonalTaskValidationException(
+                $"Mục tiêu không được dài hơn {MaximumGoalCharacters:N0} ký tự.");
+        }
+
+        var plan = (request.Plan ?? string.Empty).Trim();
+        if (plan.Length == 0)
+        {
+            throw new PersonalTaskValidationException(
+                "Kế hoạch tác vụ không được để trống.");
+        }
+
+        if (plan.Length > MaximumPlanCharacters)
+        {
+            plan = plan[..MaximumPlanCharacters];
+        }
+
+        var drafts = request.Steps ?? [];
+        if (drafts.Count == 0)
+        {
+            throw new PersonalTaskValidationException(
+                "Kế hoạch phải có ít nhất một bước.");
+        }
+
+        if (drafts.Count > MaximumSteps)
+        {
+            throw new PersonalTaskValidationException(
+                $"Mỗi tác vụ hiện hỗ trợ tối đa {MaximumSteps} bước.");
+        }
+
+        var steps = new List<PersonalTaskStep>(drafts.Count);
+        for (var index = 0; index < drafts.Count; index++)
+        {
+            var draft = drafts[index];
+            var toolName = (draft.ToolName ?? string.Empty).Trim();
+            if (!_registry.TryGet(toolName, out var tool) || tool is null)
+            {
+                throw InvalidStep(
+                    index + 1,
+                    "dùng công cụ không có trong danh mục hiện tại.");
+            }
+
+            if (draft.Arguments.ValueKind != JsonValueKind.Object)
+            {
+                throw InvalidStep(
+                    index + 1,
+                    "không có tham số công cụ hợp lệ.");
+            }
+
+            var validation = _validator.Validate(
+                tool.Definition.InputSchema,
+                draft.Arguments);
+            if (!validation.IsValid)
+            {
+                throw InvalidStep(
+                    index + 1,
+                    string.Join(" ", validation.Errors));
+            }
+
+            var title = string.IsNullOrWhiteSpace(draft.Title)
+                ? $"Bước {index + 1}"
+                : draft.Title.Trim();
+            var description = string.IsNullOrWhiteSpace(draft.Description)
+                ? title
+                : draft.Description.Trim();
+            if (title.Length > 160)
+            {
+                title = title[..160];
+            }
+            if (description.Length > 500)
+            {
+                description = description[..500];
+            }
+
+            var requiresConfirmation = tool.Definition.RequiresConfirmation
+                || tool.Definition.RequiredPermissions.Any(
+                    ToolPermissions.RequiresExplicitConfirmation);
+
+            steps.Add(new PersonalTaskStep(
+                index + 1,
+                title,
+                description,
+                tool.Definition.Name,
+                draft.Arguments.Clone(),
+                tool.Definition.RequiredPermissions.ToArray(),
+                requiresConfirmation,
+                PersonalTaskStepStatuses.Pending));
+        }
+
+        var task = new PersonalTask(
+            Guid.NewGuid(),
+            goal,
+            PersonalTaskStatuses.Planned,
+            plan,
+            steps,
+            1,
+            DateTimeOffset.UtcNow,
+            null,
+            null,
+            null,
+            "Máy chủ",
+            "Kế hoạch cấu trúc");
 
         Tasks[task.Id] = task;
         TrimTasks();

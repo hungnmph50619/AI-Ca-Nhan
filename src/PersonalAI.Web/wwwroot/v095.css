@@ -1,0 +1,97 @@
+.context-report {
+  margin-top: 12px;
+  border: 1px solid #dde4de;
+  border-radius: 12px;
+  background: #f8faf7;
+  overflow: hidden;
+}
+
+.context-report-summary {
+  cursor: pointer;
+  list-style: none;
+  padding: 9px 11px;
+  font-size: 12px;
+  font-weight: 700;
+  color: #4d5a51;
+}
+
+.context-report-summary::-webkit-details-marker {
+  display: none;
+}
+
+.context-report-summary::before {
+  content: "◇";
+  display: inline-block;
+  margin-right: 7px;
+  color: #76867a;
+}
+
+.context-report[open] .context-report-summary {
+  border-bottom: 1px solid #e3e8e2;
+}
+
+.context-report-body {
+  padding: 10px 11px 11px;
+}
+
+.context-report-meta {
+  margin: 0 0 8px;
+  font-size: 11px;
+  color: #728077;
+  line-height: 1.5;
+}
+
+.context-report-items {
+  display: grid;
+  gap: 7px;
+}
+
+.context-report-item {
+  display: grid;
+  gap: 2px;
+  padding: 7px 8px;
+  border-radius: 9px;
+  background: #fff;
+  border: 1px solid #e6ebe5;
+}
+
+.context-report-item-label {
+  font-size: 11px;
+  color: #455148;
+}
+
+.context-report-item-reason {
+  font-size: 11px;
+  color: #6c7870;
+  line-height: 1.45;
+}
+
+.context-manager-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  min-height: 28px;
+  padding: 0 9px;
+  border: 1px solid #dce4dc;
+  border-radius: 999px;
+  background: #f7faf6;
+  color: #5b685f;
+  font-size: 11px;
+  font-weight: 700;
+  white-space: nowrap;
+}
+
+.context-manager-badge::before {
+  content: "◇";
+  color: #7b8d80;
+}
+
+@media (max-width: 720px) {
+  .context-manager-badge {
+    display: none;
+  }
+
+  .context-report-summary {
+    line-height: 1.45;
+  }
+}

@@ -65,6 +65,31 @@ public sealed record ToolCatalogResponse(
     IReadOnlyList<string> PermissionTypes,
     IReadOnlyList<ToolDefinition> Tools);
 
+public sealed record ToolAuditEntry(
+    Guid InvocationId,
+    string ToolName,
+    string ToolVersion,
+    string Status,
+    bool? Success,
+    DateTimeOffset StartedAt,
+    DateTimeOffset? CompletedAt,
+    int? DurationMs,
+    IReadOnlyList<string> RequiredPermissions,
+    IReadOnlyList<string> ApprovedPermissions,
+    bool Confirmed,
+    string Actor,
+    string InputSha256,
+    int InputBytes,
+    string? OutputSha256,
+    int? OutputBytes,
+    string Reversibility,
+    bool LocalOnly,
+    string? Error);
+
+public sealed record ToolAuditResponse(
+    string AuditVersion,
+    IReadOnlyList<ToolAuditEntry> Entries);
+
 public sealed record ToolPolicyDecision(
     bool Allowed,
     IReadOnlyList<string> ApprovedPermissions,

@@ -54,11 +54,11 @@ jobs:
             exit 1
           fi
 
-          curl -fsS http://127.0.0.1:5077/api/status | jq -e '.version == "0.8.2"' >/dev/null
+          curl -fsS http://127.0.0.1:5077/api/status | jq -e '.version == "0.8.3"' >/dev/null
 
           tools=$(curl -fsS http://127.0.0.1:5077/api/tools)
-          echo "$tools" | jq -e '.frameworkVersion == "0.8.2" and (.permissionTypes | sort) == (["DELETE","EXTERNAL","READ","SENSITIVE","WRITE"] | sort)' >/dev/null
-          echo "$tools" | jq -e '(.tools | length) == 9 and any(.tools[]; .name == "local.clock" and .localOnly == true and .requiredPermissions == ["READ"]) and any(.tools[]; .name == "local.text_stats" and .timeoutMs == 2000) and any(.tools[]; .name == "memory.search") and any(.tools[]; .name == "documents.search") and any(.tools[]; .name == "local.calculate") and any(.tools[]; .name == "local.date_math") and any(.tools[]; .name == "app.summary") and any(.tools[]; .name == "workspace.list" and .requiredPermissions == ["READ"]) and any(.tools[]; .name == "workspace.read_text" and .requiredPermissions == ["READ"])' >/dev/null
+          echo "$tools" | jq -e '.frameworkVersion == "0.8.3" and (.permissionTypes | sort) == (["DELETE","EXTERNAL","READ","SENSITIVE","WRITE"] | sort)' >/dev/null
+          echo "$tools" | jq -e '(.tools | length) == 11 and any(.tools[]; .name == "local.clock" and .localOnly == true and .requiredPermissions == ["READ"]) and any(.tools[]; .name == "local.text_stats" and .timeoutMs == 2000) and any(.tools[]; .name == "memory.search") and any(.tools[]; .name == "documents.search") and any(.tools[]; .name == "local.calculate") and any(.tools[]; .name == "local.date_math") and any(.tools[]; .name == "app.summary") and any(.tools[]; .name == "workspace.list" and .requiredPermissions == ["READ"]) and any(.tools[]; .name == "workspace.read_text" and .requiredPermissions == ["READ"]) and any(.tools[]; .name == "workspace.write_text" and .requiredPermissions == ["WRITE"] and .requiresConfirmation == true) and any(.tools[]; .name == "workspace.create_directory" and .requiredPermissions == ["WRITE"] and .requiresConfirmation == true)' >/dev/null
 
           text_tool=$(curl -fsS http://127.0.0.1:5077/api/tools/local.text_stats)
           echo "$text_tool" | jq -e '.name == "local.text_stats" and .inputSchema.type == "object" and .inputSchema.additionalProperties == false and .inputSchema.required == ["text"]' >/dev/null
@@ -110,6 +110,80 @@ jobs:
             -H 'Content-Type: application/json' \
             -d '{"toolName":"workspace.read_text","arguments":{"path":"notes/plan.md","maxCharacters":12},"approvedPermissions":["READ"],"confirmed":false}')
           echo "$workspace_read" | jq -e '.status == "succeeded" and .output.path == "notes/plan.md" and .output.returnedCharacterCount == 12 and .output.characterCount > .output.returnedCharacterCount and .output.truncated == true and (.output.content | startswith("Workspace"))' >/dev/null
+
+          write_unconfirmed_code=$(curl -sS -o /tmp/workspace-write-unconfirmed.json -w '%{http_code}' -X POST http://127.0.0.1:5077/api/tools/execute \
+            -H 'Content-Type: application/json' \
+            -d '{"toolName":"workspace.write_text","arguments":{"path":"drafts/note.txt","content":"Draft","mode":"create"},"approvedPermissions":["WRITE"],"confirmed":false}')
+          test "$write_unconfirmed_code" = "403"
+          jq -e '.status == "denied" and (.error | contains("xác nhận"))' /tmp/workspace-write-unconfirmed.json >/dev/null
+
+          write_missing_permission_code=$(curl -sS -o /tmp/workspace-write-permission.json -w '%{http_code}' -X POST http://127.0.0.1:5077/api/tools/execute \
+            -H 'Content-Type: application/json' \
+            -d '{"toolName":"workspace.write_text","arguments":{"path":"drafts/note.txt","content":"Draft","mode":"create"},"approvedPermissions":["READ"],"confirmed":true}')
+          test "$write_missing_permission_code" = "403"
+          jq -e '.status == "denied" and (.error | contains("WRITE"))' /tmp/workspace-write-permission.json >/dev/null
+
+          workspace_mkdir=$(curl -fsS -X POST http://127.0.0.1:5077/api/tools/execute \
+            -H 'Content-Type: application/json' \
+            -d '{"toolName":"workspace.create_directory","arguments":{"path":"drafts"},"approvedPermissions":["WRITE"],"confirmed":true}')
+          echo "$workspace_mkdir" | jq -e '.status == "succeeded" and .output.path == "drafts" and .output.created == true and .requiredPermissions == ["WRITE"]' >/dev/null
+
+          workspace_create=$(curl -fsS -X POST http://127.0.0.1:5077/api/tools/execute \
+            -H 'Content-Type: application/json' \
+            -d '{"toolName":"workspace.write_text","arguments":{"path":"drafts/note.txt","content":"First line.","mode":"create"},"approvedPermissions":["WRITE"],"confirmed":true}')
+          echo "$workspace_create" | jq -e '.status == "succeeded" and .output.path == "drafts/note.txt" and .output.mode == "create" and .output.created == true and .output.bytesWritten > 0 and (.output.sha256 | length) == 64 and .approvedPermissions == ["WRITE"]' >/dev/null
+          create_hash=$(echo "$workspace_create" | jq -r '.output.sha256')
+
+          created_read=$(curl -fsS -X POST http://127.0.0.1:5077/api/tools/execute \
+            -H 'Content-Type: application/json' \
+            -d '{"toolName":"workspace.read_text","arguments":{"path":"drafts/note.txt"},"approvedPermissions":["READ"],"confirmed":false}')
+          echo "$created_read" | jq -e '.status == "succeeded" and .output.content == "First line."' >/dev/null
+
+          append_payload=$(jq -nc --arg hash "$create_hash" '{toolName:"workspace.write_text",arguments:{path:"drafts/note.txt",content:"\nSecond line.",mode:"append",expectedSha256:$hash},approvedPermissions:["WRITE"],confirmed:true}')
+          workspace_append=$(curl -fsS -X POST http://127.0.0.1:5077/api/tools/execute \
+            -H 'Content-Type: application/json' -d "$append_payload")
+          echo "$workspace_append" | jq -e '.status == "succeeded" and .output.mode == "append" and .output.created == false and .output.previousSha256 != .output.sha256 and (.output.sha256 | length) == 64' >/dev/null
+          append_hash=$(echo "$workspace_append" | jq -r '.output.sha256')
+
+          stale_payload=$(jq -nc --arg hash "$create_hash" '{toolName:"workspace.write_text",arguments:{path:"drafts/note.txt",content:"stale overwrite","mode":"overwrite",expectedSha256:$hash},approvedPermissions:["WRITE"],confirmed:true}')
+          stale_code=$(curl -sS -o /tmp/workspace-stale.json -w '%{http_code}' -X POST http://127.0.0.1:5077/api/tools/execute \
+            -H 'Content-Type: application/json' -d "$stale_payload")
+          test "$stale_code" = "400"
+          jq -e '.status == "invalid-input" and (.error | contains("expectedSha256"))' /tmp/workspace-stale.json >/dev/null
+
+          overwrite_payload=$(jq -nc --arg hash "$append_hash" '{toolName:"workspace.write_text",arguments:{path:"drafts/note.txt",content:"Replaced safely.","mode":"overwrite",expectedSha256:$hash},approvedPermissions:["WRITE"],confirmed:true}')
+          workspace_overwrite=$(curl -fsS -X POST http://127.0.0.1:5077/api/tools/execute \
+            -H 'Content-Type: application/json' -d "$overwrite_payload")
+          echo "$workspace_overwrite" | jq -e '.status == "succeeded" and .output.mode == "overwrite" and .output.created == false and .output.previousSha256 != .output.sha256' >/dev/null
+
+          overwritten_read=$(curl -fsS -X POST http://127.0.0.1:5077/api/tools/execute \
+            -H 'Content-Type: application/json' \
+            -d '{"toolName":"workspace.read_text","arguments":{"path":"drafts/note.txt"},"approvedPermissions":["READ"],"confirmed":false}')
+          echo "$overwritten_read" | jq -e '.status == "succeeded" and .output.content == "Replaced safely."' >/dev/null
+
+          duplicate_create_code=$(curl -sS -o /tmp/workspace-duplicate-create.json -w '%{http_code}' -X POST http://127.0.0.1:5077/api/tools/execute \
+            -H 'Content-Type: application/json' \
+            -d '{"toolName":"workspace.write_text","arguments":{"path":"drafts/note.txt","content":"duplicate","mode":"create"},"approvedPermissions":["WRITE"],"confirmed":true}')
+          test "$duplicate_create_code" = "400"
+          jq -e '.status == "invalid-input" and (.error | contains("đã tồn tại"))' /tmp/workspace-duplicate-create.json >/dev/null
+
+          write_traversal_code=$(curl -sS -o /tmp/workspace-write-traversal.json -w '%{http_code}' -X POST http://127.0.0.1:5077/api/tools/execute \
+            -H 'Content-Type: application/json' \
+            -d '{"toolName":"workspace.write_text","arguments":{"path":"../outside.txt","content":"blocked","mode":"create"},"approvedPermissions":["WRITE"],"confirmed":true}')
+          test "$write_traversal_code" = "400"
+          jq -e '.status == "invalid-input" and (.error | contains(".."))' /tmp/workspace-write-traversal.json >/dev/null
+
+          write_symlink_code=$(curl -sS -o /tmp/workspace-write-symlink.json -w '%{http_code}' -X POST http://127.0.0.1:5077/api/tools/execute \
+            -H 'Content-Type: application/json' \
+            -d '{"toolName":"workspace.write_text","arguments":{"path":"escape/v083.txt","content":"blocked","mode":"create"},"approvedPermissions":["WRITE"],"confirmed":true}')
+          test "$write_symlink_code" = "400"
+          jq -e '.status == "invalid-input" and (.error | contains("symbolic link"))' /tmp/workspace-write-symlink.json >/dev/null
+
+          binary_overwrite_code=$(curl -sS -o /tmp/workspace-binary-overwrite.json -w '%{http_code}' -X POST http://127.0.0.1:5077/api/tools/execute \
+            -H 'Content-Type: application/json' \
+            -d '{"toolName":"workspace.write_text","arguments":{"path":"binary.bin","content":"text","mode":"overwrite"},"approvedPermissions":["WRITE"],"confirmed":true}')
+          test "$binary_overwrite_code" = "400"
+          jq -e '.status == "invalid-input" and (.error | contains("nhị phân"))' /tmp/workspace-binary-overwrite.json >/dev/null
 
           traversal_code=$(curl -sS -o /tmp/workspace-traversal.json -w '%{http_code}' -X POST http://127.0.0.1:5077/api/tools/execute \
             -H 'Content-Type: application/json' \
@@ -326,6 +400,8 @@ jobs:
           grep -Fq 'app.MapToolFramework();' src/PersonalAI.Web/Program.cs
           grep -Fq 'memory.search' src/PersonalAI.Web/Services/InternalTools.cs
           grep -Fq 'documents.search' src/PersonalAI.Web/Services/InternalTools.cs
+          grep -Fq 'workspace.write_text' src/PersonalAI.Web/Services/WorkspaceFileTools.cs
+          grep -Fq 'workspace.create_directory' src/PersonalAI.Web/Services/WorkspaceFileTools.cs
           grep -Fq 'workspace.list' src/PersonalAI.Web/Services/WorkspaceFileTools.cs
           grep -Fq 'workspace.read_text' src/PersonalAI.Web/Services/WorkspaceFileTools.cs
 

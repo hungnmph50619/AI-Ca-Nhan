@@ -23,6 +23,19 @@ public sealed record CreatePersonalTaskRequest(string Goal);
 
 public sealed record ExecutePersonalTaskStepRequest(bool Confirmed = false);
 
+public sealed record PreparePersonalTaskRequest(
+    string Goal,
+    string Plan,
+    IReadOnlyList<PersonalTaskStepDraft> Steps);
+
+public sealed record PersonalTaskStepDraft(
+    string Title,
+    string Description,
+    string ToolName,
+    JsonElement Arguments);
+
+
+
 public sealed record PersonalTaskStep(
     int Index,
     string Title,

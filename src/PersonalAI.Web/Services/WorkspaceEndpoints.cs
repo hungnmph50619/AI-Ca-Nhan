@@ -78,11 +78,19 @@ public static class WorkspaceEndpoints
 
         app.MapPost("/api/workspaces", (
             CreatePersonalWorkspaceRequest request,
-            IPersonalWorkspaceStore workspaceStore) =>
+            IPersonalWorkspaceStore workspaceStore,
+            IAuditRecorder audit) =>
         {
             try
             {
                 var workspace = workspaceStore.Create(request);
+                audit.Record(
+                    AuditAgents.User,
+                    "workspace.create",
+                    $"workspace:{workspace.Id}",
+                    "user-request",
+                    AuditResults.Succeeded,
+                    workspaceId: workspace.Id);
                 return Results.Created(
                     $"/api/workspaces/{workspace.Id}",
                     workspace);
@@ -96,13 +104,24 @@ public static class WorkspaceEndpoints
         app.MapPatch("/api/workspaces/{workspaceId}", (
             string workspaceId,
             UpdatePersonalWorkspaceRequest request,
-            IPersonalWorkspaceStore workspaceStore) =>
+            IPersonalWorkspaceStore workspaceStore,
+            IAuditRecorder audit) =>
         {
             try
             {
                 var workspace = workspaceStore.Update(
                     workspaceId,
                     request);
+                if (workspace is not null)
+                {
+                    audit.Record(
+                        AuditAgents.User,
+                        "workspace.update",
+                        $"workspace:{workspace.Id}",
+                        "user-request",
+                        AuditResults.Succeeded,
+                        workspaceId: workspace.Id);
+                }
                 return workspace is null
                     ? Results.NotFound(new ApiError(
                         "Không tìm thấy không gian làm việc."))

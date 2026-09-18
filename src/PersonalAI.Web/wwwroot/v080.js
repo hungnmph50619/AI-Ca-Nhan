@@ -1,5 +1,5 @@
 (() => {
-  const VERSION = "1.2.0";
+  const VERSION = "1.3.0";
   let loading = false;
 
   if (document.readyState === "loading") {
@@ -80,7 +80,7 @@
 
     const intro = document.createElement("div");
     intro.className = "v080-framework-intro";
-    intro.innerHTML = "<strong>Nhật ký hoạt động công cụ v1.2.0</strong><p>Mỗi đề xuất, lần chạy và lần gửi kết quả ra nhà cung cấp AI được ghi dấu trên máy. Nhật ký không lưu toàn bộ tham số hay nội dung kết quả; chỉ lưu thông tin vận hành và mã băm để đối chiếu.</p>";
+    intro.innerHTML = "<strong>Nhật ký hoạt động công cụ v1.3.0</strong><p>Mỗi đề xuất, lần chạy và lần gửi kết quả ra nhà cung cấp AI được ghi dấu trên máy. Nhật ký không lưu toàn bộ tham số hay nội dung kết quả; chỉ lưu thông tin vận hành và mã băm để đối chiếu.</p>";
 
     const permissionLegend = document.createElement("div");
     permissionLegend.className = "v080-permission-legend";
@@ -98,7 +98,7 @@
 
     const note = document.createElement("p");
     note.className = "security-copy";
-    note.textContent = "v1.2.0 giữ nguyên quy trình đề xuất → quyền → xác nhận → thực thi. Nhật ký hoạt động được lưu cục bộ tối đa 30 ngày hoặc 2.000 sự kiện; dữ liệu tham số và kết quả đầy đủ không được ghi vào nhật ký." ;
+    note.textContent = "v1.3.0 giữ nguyên quy trình đề xuất → quyền → xác nhận → thực thi. Nhật ký hoạt động được lưu cục bộ tối đa 30 ngày hoặc 2.000 sự kiện; dữ liệu tham số và kết quả đầy đủ không được ghi vào nhật ký." ;
 
     const activity = createActivitySection();
     card.append(header, intro, permissionLegend, status, list, activity, note);
@@ -341,6 +341,8 @@
       "browser.navigate": "Điều hướng web",
       "browser.page.observe": "Đọc trang web",
       "browser.link.open": "Mở liên kết",
+      "connectors.list": "Danh sách connector",
+      "connector.http.get": "Đọc connector HTTPS",
       "workspace.create_directory": "Tạo thư mục",
       "workspace.delete": "Xóa tệp hoặc thư mục",
       "workspace.list": "Liệt kê thư mục làm việc",
@@ -370,6 +372,8 @@
       "browser.navigate": "HTTP GET tới URL công khai qua SSRF guard; luôn cần xác nhận BÊN NGOÀI + TRÌNH DUYỆT.",
       "browser.page.observe": "Đọc snapshot text và link của trang hiện tại; không tạo network request mới.",
       "browser.link.open": "Mở link theo index từ snapshot hiện tại qua URL/DNS guard.",
+      "connectors.list": "Liệt kê connector đã cấu hình trong workspace; metadata được coi là nhạy cảm.",
+      "connector.http.get": "Đọc JSON/text qua authenticated HTTPS GET cùng origin bằng credential đã mã hóa.",
       "workspace.create_directory": "Tạo thư mục bên trong thư mục làm việc đã cấp quyền; chặn đường dẫn vượt phạm vi và liên kết tượng trưng.",
       "workspace.delete": "Xóa tệp hoặc thư mục rỗng trong thư mục làm việc; không xóa đệ quy và có thể kiểm tra mã băm SHA-256 trước khi xóa tệp.",
       "workspace.list": "Liệt kê trực tiếp các tệp và thư mục trong thư mục làm việc đã cấp quyền; chỉ trả đường dẫn tương đối và không đi qua liên kết tượng trưng.",
@@ -388,7 +392,8 @@
       EXTERNAL: "BÊN NGOÀI",
       SENSITIVE: "NHẠY CẢM",
       COMPUTER: "ĐIỀU KHIỂN MÁY",
-      BROWSER: "TRÌNH DUYỆT"
+      BROWSER: "TRÌNH DUYỆT",
+      CONNECTOR: "KẾT NỐI"
     };
     return labels[String(permission || "").toUpperCase()] || "KHÔNG XÁC ĐỊNH";
   }

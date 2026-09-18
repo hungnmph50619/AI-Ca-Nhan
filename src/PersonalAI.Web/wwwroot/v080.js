@@ -1,5 +1,5 @@
 (() => {
-  const VERSION = "0.8.7";
+  const VERSION = "0.8.8";
   let loading = false;
 
   if (document.readyState === "loading") {
@@ -80,7 +80,7 @@
 
     const intro = document.createElement("div");
     intro.className = "v080-framework-intro";
-    intro.innerHTML = "<strong>Provider-native Function Calling v0.8.7</strong><p>Chat dùng function/tool calling gốc của OpenAI Responses hoặc Gemini để chọn một công cụ. Function call vẫn chỉ tạo proposal; server validate schema và giữ nguyên permission/confirmation pipeline.</p>";
+    intro.innerHTML = "<strong>Native Tool Result Round-trip v0.8.8</strong><p>Sau khi một native function proposal được người dùng cho phép chạy, PersonalAI có thể gửi kết quả trở lại đúng provider/model để tạo câu trả lời cuối. Lượt tiếp tục không cấp thêm tool.</p>";
 
     const permissionLegend = document.createElement("div");
     permissionLegend.className = "v080-permission-legend";
@@ -98,7 +98,7 @@
 
     const note = document.createElement("p");
     note.className = "security-copy";
-    note.textContent = "v0.8.7 bỏ planner JSON tự chế khỏi luồng chat và dùng native function calling của provider. Tên function được ánh xạ an toàn, model không tự cấp permission, chỉ một proposal được chấp nhận mỗi lượt; WRITE/DELETE vẫn cần xác nhận riêng.";
+    note.textContent = "v0.8.8 giữ proposal → permission → confirmation → execution. Tool result được tóm tắt local trước; native round-trip chỉ xảy ra khi bạn xác nhận gửi output ra đúng provider/model, và lượt tiếp tục bị khóa không cho gọi thêm tool.";
 
     card.append(header, intro, permissionLegend, status, list, note);
     dialog.appendChild(card);

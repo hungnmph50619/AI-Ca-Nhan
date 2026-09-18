@@ -16,7 +16,10 @@ public sealed record ToolCallProposal(
     string AssistantMessage,
     IReadOnlyList<string> RequiredPermissions,
     bool RequiresConfirmation,
-    DateTimeOffset ExpiresAt);
+    DateTimeOffset ExpiresAt,
+    string PlanningMode = "manual",
+    string? PlanningProvider = null,
+    string? PlanningModel = null);
 
 public sealed record ExecuteToolProposalRequest(
     Guid ProposalId,
@@ -42,9 +45,12 @@ public sealed record ToolResultSynthesisResponse(
     bool OutputTruncated,
     DateTimeOffset CreatedAt);
 
-internal sealed record ToolPlannerDecision(
-    string Action,
-    string? ToolName,
-    JsonElement? Arguments,
-    string? Reason,
-    string? Message);
+
+public sealed record ProviderFunctionDefinition(
+    string Name,
+    string Description,
+    JsonElement Parameters);
+
+public sealed record ProviderFunctionCallDecision(
+    string Name,
+    JsonElement Arguments);

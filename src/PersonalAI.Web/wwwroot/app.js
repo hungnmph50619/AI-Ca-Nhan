@@ -705,6 +705,14 @@ function createToolProposalNode(proposal) {
 
   const heading = documentElement("strong", "tool-proposal-title", proposal.toolName);
   const reason = documentElement("p", "tool-proposal-reason", proposal.reason || "Đề xuất công cụ");
+  const planner = proposal.planningMode === "provider-native"
+    ? documentElement(
+        "div",
+        "tool-proposal-planner",
+        "Planner: " + (proposal.planningProvider || "AI")
+          + " native function calling"
+          + (proposal.planningModel ? " · " + proposal.planningModel : ""))
+    : documentElement("div", "tool-proposal-planner", "Planner: server/manual");
   const permissions = documentElement(
     "div",
     "tool-proposal-permissions",
@@ -743,7 +751,7 @@ function createToolProposalNode(proposal) {
     actions.append(button);
   }
 
-  section.append(heading, reason, permissions, argumentsTitle, argumentsPre, actions);
+  section.append(heading, reason, planner, permissions, argumentsTitle, argumentsPre, actions);
   return section;
 }
 
@@ -978,6 +986,9 @@ function normalizeToolProposal(value) {
       : [],
     requiresConfirmation: value.requiresConfirmation === true,
     expiresAt: typeof value.expiresAt === "string" ? value.expiresAt : "",
+    planningMode: typeof value.planningMode === "string" ? value.planningMode : "manual",
+    planningProvider: typeof value.planningProvider === "string" ? value.planningProvider : "",
+    planningModel: typeof value.planningModel === "string" ? value.planningModel : "",
     executed: value.executed === true,
     executionStatus: typeof value.executionStatus === "string" ? value.executionStatus : ""
   };

@@ -97,7 +97,7 @@
   function renderHybridResults(payload, summaryNode, listNode) {
     const results = Array.isArray(payload.results) ? payload.results : [];
     summaryNode.textContent = results.length > 0
-      ? `${results.length} đoạn đã rerank · ${payload.strategy || "hybrid"}`
+      ? `${results.length} đoạn đã được xếp hạng lại · tìm kiếm kết hợp`
       : "Không có đoạn đủ liên quan";
     listNode.replaceChildren();
 
@@ -125,7 +125,7 @@
           : `Đoạn ${result.chunkIndex}`;
       const hybridScore = Number(result.hybridScore);
       const scoreText = Number.isFinite(hybridScore)
-        ? ` · rerank ${hybridScore.toFixed(0)}`
+        ? ` · điểm kết hợp ${hybridScore.toFixed(0)}`
         : "";
       const sourceText = result.matchSource ? ` · ${formatMatchSource(result.matchSource)}` : "";
       meta.textContent = `${location}${scoreText}${sourceText}`;
@@ -139,8 +139,8 @@
   }
 
   function formatMatchSource(value) {
-    if (value === "keyword+semantic") return "từ khóa + vector";
-    if (value === "semantic") return "vector";
+    if (value === "keyword+semantic") return "từ khóa + véc-tơ";
+    if (value === "semantic") return "véc-tơ";
     if (value === "keyword") return "từ khóa";
     return value;
   }

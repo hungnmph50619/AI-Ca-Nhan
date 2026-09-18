@@ -188,6 +188,24 @@ public sealed class AutomationService(
             return null;
         }
 
+        if (request.Enabled
+            && current.State
+                is AutomationStates.AwaitingConfirmation
+                    or AutomationStates.Interrupted)
+        {
+            throw new AutomationValidationException(
+                "Automation cần review; hãy dùng endpoint resume sau khi đã kiểm tra task.");
+        }
+
+        if (request.Enabled
+            && current.State
+                is AutomationStates.Completed
+                    or AutomationStates.Failed)
+        {
+            throw new AutomationValidationException(
+                "Automation đã kết thúc; không thể bật lại cùng automation.");
+        }
+
         var now = DateTimeOffset.UtcNow;
         var updated = request.Enabled
             ? current with
@@ -252,6 +270,14 @@ public sealed class AutomationService(
         {
             throw new AutomationValidationException(
                 "Automation đã kết thúc; hãy tạo automation mới nếu cần.");
+        }
+
+        if (current.State
+            is not (AutomationStates.AwaitingConfirmation
+                or AutomationStates.Interrupted))
+        {
+            throw new AutomationValidationException(
+                "Resume chỉ dùng cho automation đang chờ confirmation hoặc bị gián đoạn sau khi người dùng review.");
         }
 
         var task = taskEngine.Get(current.TaskId)
@@ -480,6 +506,15 @@ public sealed class AutomationCoordinator(
             {
                 throw new AutomationValidationException(
                     "Automation đã kết thúc; không thể chạy lại cùng automation.");
+            }
+
+            if (manualTrigger
+                && current.State
+                    is AutomationStates.AwaitingConfirmation
+                        or AutomationStates.Interrupted)
+            {
+                throw new AutomationValidationException(
+                    "Automation cần review; hãy dùng resume trước khi kích hoạt lại.");
             }
 
             if (!manualTrigger

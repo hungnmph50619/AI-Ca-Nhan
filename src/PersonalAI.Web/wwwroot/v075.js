@@ -279,7 +279,7 @@
         method: "POST"
       });
       const payload = await response.json().catch(() => ({}));
-      if (!response.ok) throw new Error(payload.error || "Không re-index được tài liệu.");
+      if (!response.ok) throw new Error(payload.error || "Không lập lại chỉ mục cho tài liệu được.");
       showFeedback(`Đã re-index “${payload.fileName}”: ${payload.chunkCount} đoạn, ${payload.indexedChunkCount} vector.`, "success");
     });
   }
@@ -314,7 +314,7 @@
     try {
       const response = await fetch("/api/knowledge/documents/export", { cache: "no-store" });
       const payload = await response.json().catch(() => ({}));
-      if (!response.ok) throw new Error(payload.error || "Không xuất được metadata tài liệu.");
+      if (!response.ok) throw new Error(payload.error || "Không xuất được thông tin mô tả của tài liệu.");
 
       const blob = new Blob([JSON.stringify(payload, null, 2)], { type: "application/json" });
       const url = URL.createObjectURL(blob);

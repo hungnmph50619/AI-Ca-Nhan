@@ -828,6 +828,12 @@
       "local.date_math": "Tính toán ngày giờ",
       "local.text_stats": "Thống kê văn bản",
       "memory.search": "Tìm trong trí nhớ",
+      "computer.screen.info": "Thông tin màn hình",
+      "computer.cursor.position": "Vị trí con trỏ",
+      "computer.windows.list": "Danh sách cửa sổ",
+      "computer.window.active": "Cửa sổ đang hoạt động",
+      "computer.window.focus": "Chuyển focus cửa sổ",
+      "computer.cursor.move": "Di chuyển con trỏ",
       "workspace.create_directory": "Tạo thư mục",
       "workspace.delete": "Xóa tệp hoặc thư mục",
       "workspace.list": "Liệt kê thư mục làm việc",
@@ -843,7 +849,8 @@
       WRITE: "GHI",
       DELETE: "XÓA",
       EXTERNAL: "BÊN NGOÀI",
-      SENSITIVE: "NHẠY CẢM"
+      SENSITIVE: "NHẠY CẢM",
+      COMPUTER: "ĐIỀU KHIỂN MÁY"
     };
     const permissions = Array.isArray(values) ? values : [];
     return permissions.map(value => labels[String(value).toUpperCase()] || "KHÔNG XÁC ĐỊNH").join(", ") || "Không có";
@@ -881,6 +888,20 @@
       case "documents.search":
         add("Nội dung cần tìm", value.query);
         add("Số kết quả tối đa", value.limit);
+        break;
+      case "computer.windows.list":
+        add("Số cửa sổ tối đa", value.limit);
+        break;
+      case "computer.window.focus":
+        add("Window ID", value.windowId);
+        break;
+      case "computer.cursor.move":
+        add("Tọa độ X", value.x);
+        add("Tọa độ Y", value.y);
+        break;
+      case "computer.screen.info":
+      case "computer.cursor.position":
+      case "computer.window.active":
         break;
       case "workspace.list":
         add("Thư mục", value.path || ".");

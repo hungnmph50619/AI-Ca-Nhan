@@ -495,6 +495,9 @@ public sealed class DevelopmentAgentService(
             startInfo.ArgumentList.Add(argument);
         }
 
+        RestrictChildEnvironment(
+            startInfo);
+
         startInfo.Environment["DOTNET_CLI_TELEMETRY_OPTOUT"] = "1";
         startInfo.Environment["DOTNET_NOLOGO"] = "1";
         startInfo.Environment["DOTNET_SKIP_FIRST_TIME_EXPERIENCE"] = "1";
@@ -582,6 +585,55 @@ public sealed class DevelopmentAgentService(
                 executable);
             throw new ToolExecutionInputException(
                 $"Không thể khởi động {executable}.");
+        }
+    }
+
+    private static void RestrictChildEnvironment(
+        ProcessStartInfo startInfo)
+    {
+        var allowedNames = OperatingSystem.IsWindows()
+            ? new[]
+            {
+                "PATH",
+                "PATHEXT",
+                "SystemRoot",
+                "WINDIR",
+                "TEMP",
+                "TMP",
+                "USERPROFILE",
+                "HOME",
+                "DOTNET_ROOT",
+                "NUGET_PACKAGES",
+                "SSL_CERT_FILE",
+                "SSL_CERT_DIR"
+            }
+            : new[]
+            {
+                "PATH",
+                "HOME",
+                "TMPDIR",
+                "TMP",
+                "TEMP",
+                "DOTNET_ROOT",
+                "NUGET_PACKAGES",
+                "SSL_CERT_FILE",
+                "SSL_CERT_DIR",
+                "LANG",
+                "LC_ALL"
+            };
+
+        var preserved = allowedNames
+            .Select(name => (
+                Name: name,
+                Value: Environment.GetEnvironmentVariable(name)))
+            .Where(item =>
+                !string.IsNullOrWhiteSpace(item.Value))
+            .ToArray();
+
+        startInfo.Environment.Clear();
+        foreach (var item in preserved)
+        {
+            startInfo.Environment[item.Name] = item.Value!;
         }
     }
 

@@ -3,6 +3,7 @@ namespace PersonalAI.Web.Services;
 public interface IAiProviderResolver
 {
     IAiProvider GetActive();
+    IAiProvider GetByName(string provider);
 }
 
 public sealed class AiProviderResolver : IAiProviderResolver
@@ -21,8 +22,13 @@ public sealed class AiProviderResolver : IAiProviderResolver
         _openAi = openAi;
     }
 
-    public IAiProvider GetActive() =>
-        _settingsStore.ActiveProvider.Equals("OpenAI", StringComparison.OrdinalIgnoreCase)
+    public IAiProvider GetActive() => GetByName(_settingsStore.ActiveProvider);
+
+    public IAiProvider GetByName(string provider) =>
+        provider.Equals("OpenAI", StringComparison.OrdinalIgnoreCase)
             ? _openAi
-            : _gemini;
+            : provider.Equals("Gemini", StringComparison.OrdinalIgnoreCase)
+                ? _gemini
+                : throw new InvalidOperationException(
+                    "Nhà cung cấp AI của native tool call không còn được hỗ trợ.");
 }

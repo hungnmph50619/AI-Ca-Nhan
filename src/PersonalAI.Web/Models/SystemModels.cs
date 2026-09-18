@@ -2,9 +2,9 @@ namespace PersonalAI.Web.Models;
 
 public static class PersonalAiRelease
 {
-    public const string Version = "1.0.0";
+    public const string Version = "1.1.0";
     public const string ApiContractVersion = "1";
-    public const string Channel = "stable";
+    public const string Channel = "controlled";
 }
 
 public static class CoreHealthStatuses
@@ -37,6 +37,8 @@ public sealed record CoreSafetyContract(
     bool DeleteRequiresConfirmation,
     bool ExternalRequiresConfirmation,
     bool UndoRequiresConfirmation,
+    bool ComputerControlRequiresConfirmation,
+    bool SensitiveComputerObservationRequiresConfirmation,
     bool AutomaticMultiStepExecution,
     bool BackgroundScheduler,
     bool AutonomousAgentLoop,
@@ -58,6 +60,7 @@ public sealed record SystemCapabilitiesResponse(
     string ApiContractVersion,
     string Channel,
     IReadOnlyList<string> StableModules,
+    IReadOnlyList<string> ControlledModules,
     IReadOnlyList<string> ReservedModules,
     CoreSafetyContract Safety,
     CoreLimitsContract Limits,

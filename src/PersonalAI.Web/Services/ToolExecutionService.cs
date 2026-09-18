@@ -66,6 +66,17 @@ public sealed class ToolPolicy : IToolPolicy
             true,
             normalized.Order(StringComparer.Ordinal).ToArray());
     }
+
+    private static string LocalizePermission(string permission) =>
+        permission.ToUpperInvariant() switch
+        {
+            "READ" => "ĐỌC",
+            "WRITE" => "GHI",
+            "DELETE" => "XÓA",
+            "EXTERNAL" => "BÊN NGOÀI",
+            "SENSITIVE" => "NHẠY CẢM",
+            _ => permission
+        };
 }
 
 public interface IToolExecutionService

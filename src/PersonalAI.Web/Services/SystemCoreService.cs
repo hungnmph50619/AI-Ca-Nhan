@@ -23,6 +23,7 @@ public sealed class SystemCoreService(
     IComputerUseService computerUse,
     IBrowserAgentService browserAgent,
     IConnectorService connectors,
+    IDevelopmentAgentService development,
     IAiProviderResolver providerResolver,
     ILogger<SystemCoreService> logger) : ISystemCoreService
 {
@@ -45,7 +46,8 @@ public sealed class SystemCoreService(
     [
         "computer-use",
         "browser-agent",
-        "connectors"
+        "connectors",
+        "software-development"
     ];
 
     private static readonly string[] ReservedModules =
@@ -219,6 +221,23 @@ public sealed class SystemCoreService(
             CoreHealthStatuses.Degraded));
 
         modules.Add(Check(
+            "software-development",
+            () =>
+            {
+                var status = development.GetStatus();
+                var detail = status.DotnetAvailable || status.GitAvailable
+                    ? "Software Development Agent khả dụng; shell/process tùy ý và Git write actions đang tắt."
+                    : "Development Agent đã đăng ký nhưng git/dotnet chưa có trong PATH.";
+                return new CoreModuleHealth(
+                    "software-development",
+                    status.DotnetAvailable || status.GitAvailable
+                        ? CoreHealthStatuses.Healthy
+                        : CoreHealthStatuses.Unconfigured,
+                    detail);
+            },
+            CoreHealthStatuses.Degraded));
+
+        modules.Add(Check(
             "ai-provider",
             () =>
             {
@@ -240,7 +259,8 @@ public sealed class SystemCoreService(
                 module.Module != "ai-provider"
                 && module.Module != "computer-use"
                 && module.Module != "browser-agent"
-                && module.Module != "connectors")
+                && module.Module != "connectors"
+                && module.Module != "software-development")
             .ToArray();
         var ready = localModules.All(
             module => module.Status != CoreHealthStatuses.Unavailable);
@@ -286,6 +306,10 @@ public sealed class SystemCoreService(
                 ConnectorUseRequiresConfirmation: true,
                 ConnectorSecretsEncrypted: true,
                 ConnectorWriteActionsEnabled: false,
+                DevelopmentUseRequiresConfirmation: true,
+                DevelopmentArbitraryShellEnabled: false,
+                DevelopmentGitWriteActionsEnabled: false,
+                DevelopmentArbitraryProcessEnabled: false,
                 AutomaticMultiStepExecution: false,
                 BackgroundScheduler: false,
                 AutonomousAgentLoop: false,
@@ -307,7 +331,10 @@ public sealed class SystemCoreService(
                 ConnectorService.MaximumConnectionsPerWorkspace,
                 ConnectorService.MaximumResponseBytes,
                 ConnectorService.MaximumReturnedCharacters,
-                ConnectorService.MaximumRedirects),
+                ConnectorService.MaximumRedirects,
+                DevelopmentAgentService.MaximumScannedFiles,
+                DevelopmentAgentService.MaximumSearchHits,
+                DevelopmentAgentService.MaximumProcessOutputCharacters),
             WorkspaceEndpoints.WorkspaceHeaderName,
             SystemHardeningMiddleware.RequestIdHeaderName);
 

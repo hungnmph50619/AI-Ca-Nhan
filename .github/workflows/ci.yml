@@ -1594,6 +1594,7 @@ jobs:
           grep -Fq 'MaximumScannedFiles = 2_000' src/PersonalAI.Web/Services/DevelopmentAgentService.cs
           grep -Fq 'MaximumSearchHits = 100' src/PersonalAI.Web/Services/DevelopmentAgentService.cs
           grep -Fq 'MaximumProcessOutputCharacters = 48_000' src/PersonalAI.Web/Services/DevelopmentAgentService.cs
+          grep -Fq 'MaximumToolTimeoutMs = 180_000' src/PersonalAI.Web/Services/ToolRegistry.cs
           grep -Fq 'UseShellExecute = false' src/PersonalAI.Web/Services/DevelopmentAgentService.cs
           grep -Fq 'startInfo.ArgumentList.Add(argument)' src/PersonalAI.Web/Services/DevelopmentAgentService.cs
           grep -Fq 'GIT_TERMINAL_PROMPT' src/PersonalAI.Web/Services/DevelopmentAgentService.cs

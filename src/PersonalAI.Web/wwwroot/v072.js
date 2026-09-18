@@ -70,8 +70,10 @@
 
     const query = input.value.trim();
     if (query.length < 2) {
+      resultsNode.hidden = false;
+      summaryNode.textContent = "Hãy nhập ít nhất 2 ký tự để tìm kiếm ngữ nghĩa.";
+      listNode.replaceChildren();
       input.focus();
-      input.reportValidity();
       return;
     }
 

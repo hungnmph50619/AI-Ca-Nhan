@@ -1,10 +1,10 @@
-# AI Cá Nhân — Connector Foundation v1.3.0
+# AI Cá Nhân — Software Development Agent v1.4.0
 
-PersonalAI là trợ lý AI cá nhân chạy bằng ASP.NET Core 8, ưu tiên dữ liệu cục bộ, có thể dùng Gemini hoặc OpenAI cho phần sinh câu trả lời. v1.0.0 vẫn là **Stable Personal AI Core**; v1.1 thêm Controlled Computer Use, v1.2 thêm Browser Agent có guard và v1.3 thêm **Connector Foundation** với credential mã hóa, workspace isolation và authenticated read-only HTTPS access.
+PersonalAI là trợ lý AI cá nhân chạy bằng ASP.NET Core 8, ưu tiên dữ liệu cục bộ, có thể dùng Gemini hoặc OpenAI cho phần sinh câu trả lời. v1.0.0 vẫn là **Stable Personal AI Core**; v1.1 thêm Controlled Computer Use, v1.2 thêm Browser Agent có guard, v1.3 thêm Connector Foundation và v1.4 thêm **Software Development Agent có kiểm soát** cho inspect/search source, Git read-only và dotnet restore/build/test.
 
 > Đây vẫn là ứng dụng thiết kế cho một người dùng trên máy cá nhân. Không đưa trực tiếp lên Internet hoặc dùng như hệ thống nhiều người dùng nếu chưa bổ sung authentication, authorization và hardening triển khai phù hợp.
 
-## Có gì trong v1.3.0?
+## Có gì trong v1.4.0?
 
 ### Chat và AI provider
 
@@ -121,8 +121,9 @@ Tool Framework có permission contract:
 - COMPUTER
 - BROWSER
 - CONNECTOR
+- DEVELOPMENT
 
-WRITE, DELETE, EXTERNAL, SENSITIVE, COMPUTER, BROWSER và CONNECTOR yêu cầu confirmation theo policy hiện tại. COMPUTER dùng cho desktop control; BROWSER dùng cho browser session/navigation; CONNECTOR dùng cho authenticated external integrations.
+WRITE, DELETE, EXTERNAL, SENSITIVE, COMPUTER, BROWSER, CONNECTOR và DEVELOPMENT yêu cầu confirmation theo policy hiện tại. COMPUTER dùng cho desktop control; BROWSER dùng cho browser session/navigation; CONNECTOR dùng cho authenticated external integrations; DEVELOPMENT dùng cho source/process capability phục vụ phát triển phần mềm.
 
 Các tool local gồm nhóm đọc/tiện ích và workspace files, ví dụ:
 
@@ -239,6 +240,40 @@ Storage mặc định:
 %LOCALAPPDATA%\PersonalAI\Connectors\connections.json
 ```
 
+### Software Development Agent
+
+v1.4.0 thêm controlled development capability nhưng **không mở terminal tùy ý**.
+
+Development tools:
+
+- `dev.workspace.inspect` — phát hiện project manifest/ngôn ngữ trong workspace;
+- `dev.search.text` — tìm text trong source mà không dùng grep/shell;
+- `dev.git.status` — Git status read-only;
+- `dev.git.diff` — Git diff read-only, external diff/textconv bị tắt;
+- `dev.dotnet.restore` — restore target .NET cụ thể;
+- `dev.dotnet.build` — build `--no-restore`;
+- `dev.dotnet.test` — test `--no-restore`.
+
+Tất cả dùng permission `DEVELOPMENT` và `SENSITIVE`, luôn cần explicit confirmation. Restore còn dùng `EXTERNAL`.
+
+v1.4.0 cố ý chưa có:
+
+- generic shell / cmd / PowerShell / sh;
+- arbitrary executable hoặc arbitrary CLI args;
+- git add/commit/push/pull/reset/checkout/merge/rebase;
+- autonomous edit-build-test loop;
+- background coding agent.
+
+File edit vẫn dùng các `workspace.*` tools hiện có để giữ path sandbox, SHA guard và Undo.
+
+Status:
+
+```http
+GET /api/development/status
+```
+
+`dotnet build/test` có thể chạy MSBuild task hoặc test code do project định nghĩa, nên chỉ nên dùng với workspace/repository mà người dùng tin cậy.
+
 ### Tasks
 
 Task Engine hỗ trợ:
@@ -310,13 +345,13 @@ Undo khả dụng 7 ngày, tối đa 500 record, snapshot tối đa 512 KB.
 
 ## Stable Core contract
 
-v1.3.0 giữ API contract của Stable Core và mở rộng controlled capability layer:
+v1.4.0 giữ API contract của Stable Core và mở rộng controlled capability layer:
 
-- Version: `1.3.0`
+- Version: `1.4.0`
 - API contract: `1`
 - Channel: `controlled`
 - Stable Core: v1.0 semantics
-- Controlled modules: `computer-use`, `browser-agent`, `connectors`
+- Controlled modules: `computer-use`, `browser-agent`, `connectors`, `software-development`
 
 Capabilities:
 
@@ -343,7 +378,7 @@ Unhandled API exception được sanitize; stack trace và đường dẫn local
 
 ## Guardrails hiện tại
 
-v1.3.0 **không phải autonomous agent**.
+v1.4.0 **không phải autonomous agent**.
 
 Hiện tại:
 
@@ -360,6 +395,10 @@ Hiện tại:
 - Connector confirmation: bắt buộc
 - Connector credential encryption: bật
 - Connector write actions: tắt
+- Development confirmation: bắt buộc
+- Development arbitrary shell: tắt
+- Development arbitrary process: tắt
+- Development Git write actions: tắt
 - Automatic multi-step execution: tắt
 - Background scheduler: tắt
 - Autonomous agent loop: tắt
@@ -377,6 +416,9 @@ Chưa có:
 - automatic confirmation;
 - Gmail/Calendar/Microsoft provider-specific OAuth;
 - connector write actions;
+- arbitrary shell/process execution;
+- Git write actions;
+- autonomous coding loop;
 - cloud multi-user auth.
 
 ## Yêu cầu
@@ -475,6 +517,7 @@ ASP.NET Core
   ├── Audit
   ├── Undo
   ├── Connectors
+  ├── Software Development Agent
   │
   ├── Context Manager
   │      ├── Memory selection
@@ -551,10 +594,11 @@ Các mốc capability:
 docs/releases/v1.1.0.md
 docs/releases/v1.2.0.md
 docs/releases/v1.3.0.md
+docs/releases/v1.4.0.md
 ```
 
-## Hướng phát triển sau v1.3
+## Hướng phát triển sau v1.4
 
-Computer Use, Browser Agent và Connector Foundation hiện nằm trong controlled capability layer. Theo roadmap, bước kế tiếp là **v1.4 — Software Development Agent**.
+Computer Use, Browser Agent, Connector Foundation và Software Development Agent hiện nằm trong controlled capability layer.
 
-Software Development Agent phải tiếp tục dùng Workspace/Files/Tools/Audit/Undo và không được biến shell/process execution thành quyền mặc định không kiểm soát.
+Mốc tiếp theo cần được lấy trực tiếp từ roadmap hiện hành trước khi mở thêm quyền; README không tự suy diễn tên/version kế tiếp.

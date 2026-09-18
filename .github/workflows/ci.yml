@@ -1597,9 +1597,9 @@ jobs:
           grep -Fq 'UseShellExecute = false' src/PersonalAI.Web/Services/DevelopmentAgentService.cs
           grep -Fq 'startInfo.ArgumentList.Add(argument)' src/PersonalAI.Web/Services/DevelopmentAgentService.cs
           grep -Fq 'GIT_TERMINAL_PROMPT' src/PersonalAI.Web/Services/DevelopmentAgentService.cs
-          grep -Fq '--no-ext-diff' src/PersonalAI.Web/Services/DevelopmentAgentService.cs
-          grep -Fq '--no-textconv' src/PersonalAI.Web/Services/DevelopmentAgentService.cs
-          grep -Fq '--ignore-submodules=all' src/PersonalAI.Web/Services/DevelopmentAgentService.cs
+          grep -Fq -- '--no-ext-diff' src/PersonalAI.Web/Services/DevelopmentAgentService.cs
+          grep -Fq -- '--no-textconv' src/PersonalAI.Web/Services/DevelopmentAgentService.cs
+          grep -Fq -- '--ignore-submodules=all' src/PersonalAI.Web/Services/DevelopmentAgentService.cs
           grep -Fq 'v140.css' src/PersonalAI.Web/wwwroot/index.html
           grep -Fq 'v140.js' src/PersonalAI.Web/wwwroot/index.html
           grep -Fq 'CONTROLLED CAPABILITY · NO ARBITRARY SHELL' src/PersonalAI.Web/wwwroot/v140.js

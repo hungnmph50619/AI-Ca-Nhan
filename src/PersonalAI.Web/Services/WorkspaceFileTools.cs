@@ -98,17 +98,21 @@ public sealed class WorkspaceFileService : IWorkspaceFileService
         encoderShouldEmitUTF8Identifier: false,
         throwOnInvalidBytes: true);
 
-    private readonly string _root;
-    private readonly string _rootWithSeparator;
+    private readonly string _baseRoot;
     private readonly StringComparison _pathComparison;
+    private readonly IWorkspaceContextAccessor _workspaceContext;
 
-    public WorkspaceFileService(IConfiguration configuration, IHostEnvironment hostEnvironment)
+    public WorkspaceFileService(
+        IConfiguration configuration,
+        IHostEnvironment hostEnvironment,
+        IWorkspaceContextAccessor workspaceContext)
     {
+        _workspaceContext = workspaceContext;
         var configuredRoot = configuration["Workspace:Root"]?.Trim();
         if (!string.IsNullOrWhiteSpace(configuredRoot))
         {
             var expanded = Environment.ExpandEnvironmentVariables(configuredRoot);
-            _root = Path.GetFullPath(
+            _baseRoot = Path.GetFullPath(
                 Path.IsPathRooted(expanded)
                     ? expanded
                     : Path.Combine(hostEnvironment.ContentRootPath, expanded));
@@ -121,13 +125,10 @@ public sealed class WorkspaceFileService : IWorkspaceFileService
                 localAppData = hostEnvironment.ContentRootPath;
             }
 
-            _root = Path.GetFullPath(Path.Combine(localAppData, "PersonalAI", "Workspace"));
-            Directory.CreateDirectory(_root);
+            _baseRoot = Path.GetFullPath(Path.Combine(localAppData, "PersonalAI", "Workspace"));
+            Directory.CreateDirectory(_baseRoot);
         }
 
-        _rootWithSeparator = _root.EndsWith(Path.DirectorySeparatorChar)
-            ? _root
-            : _root + Path.DirectorySeparatorChar;
         _pathComparison = OperatingSystem.IsWindows()
             ? StringComparison.OrdinalIgnoreCase
             : StringComparison.Ordinal;
@@ -859,7 +860,8 @@ public sealed class WorkspaceFileService : IWorkspaceFileService
 
     private string ResolvePath(string? relativePath, bool allowRoot)
     {
-        if (!Directory.Exists(_root))
+        var root = GetActiveRoot();
+        if (!Directory.Exists(root))
         {
             throw new ToolExecutionInputException(
                 "Thư mục làm việc chưa tồn tại. Hãy tạo thư mục đã cấu hình trước khi dùng công cụ tệp.");
@@ -887,7 +889,7 @@ public sealed class WorkspaceFileService : IWorkspaceFileService
         string fullPath;
         try
         {
-            fullPath = Path.GetFullPath(Path.Combine(_root, value));
+            fullPath = Path.GetFullPath(Path.Combine(root, value));
         }
         catch (Exception exception) when (
             exception is ArgumentException
@@ -898,15 +900,18 @@ public sealed class WorkspaceFileService : IWorkspaceFileService
                 "Đường dẫn trong thư mục làm việc không hợp lệ.");
         }
 
-        var withinRoot = fullPath.Equals(_root, _pathComparison)
-            || fullPath.StartsWith(_rootWithSeparator, _pathComparison);
+        var rootWithSeparator = root.EndsWith(Path.DirectorySeparatorChar)
+            ? root
+            : root + Path.DirectorySeparatorChar;
+        var withinRoot = fullPath.Equals(root, _pathComparison)
+            || fullPath.StartsWith(rootWithSeparator, _pathComparison);
         if (!withinRoot)
         {
             throw new ToolExecutionInputException(
                 "Đường dẫn nằm ngoài thư mục làm việc đã cấp quyền.");
         }
 
-        if (!allowRoot && fullPath.Equals(_root, _pathComparison))
+        if (!allowRoot && fullPath.Equals(root, _pathComparison))
         {
             throw new ToolExecutionInputException(
                 "Cần chỉ định một tệp bên trong thư mục làm việc.");
@@ -917,13 +922,14 @@ public sealed class WorkspaceFileService : IWorkspaceFileService
 
     private void EnsureNoSymlinkTraversal(string fullPath)
     {
-        var relative = Path.GetRelativePath(_root, fullPath);
+        var root = GetActiveRoot();
+        var relative = Path.GetRelativePath(root, fullPath);
         if (relative == ".")
         {
             return;
         }
 
-        var current = _root;
+        var current = root;
         foreach (var segment in relative.Split(
                      Path.DirectorySeparatorChar,
                      StringSplitOptions.RemoveEmptyEntries))
@@ -949,10 +955,31 @@ public sealed class WorkspaceFileService : IWorkspaceFileService
 
     private string ToRelativePath(string fullPath)
     {
-        var relative = Path.GetRelativePath(_root, fullPath);
+        var relative = Path.GetRelativePath(GetActiveRoot(), fullPath);
         return relative == "."
             ? "."
             : relative.Replace('\\', '/');
+    }
+
+    private string GetActiveRoot()
+    {
+        if (_workspaceContext.CurrentWorkspaceId == PersonalWorkspaceIds.Personal)
+        {
+            return _baseRoot;
+        }
+
+        if (!Directory.Exists(_baseRoot))
+        {
+            throw new ToolExecutionInputException(
+                "Thư mục làm việc gốc chưa tồn tại. Hãy tạo thư mục đã cấu hình trước khi dùng công cụ tệp.");
+        }
+
+        var workspaceRoot = Path.Combine(
+            _baseRoot,
+            "workspaces",
+            _workspaceContext.CurrentWorkspaceId);
+        Directory.CreateDirectory(workspaceRoot);
+        return Path.GetFullPath(workspaceRoot);
     }
 }
 

@@ -333,8 +333,10 @@ public sealed class ConnectorService : IConnectorService, IDisposable
             requestedPath);
         var redirectCount = 0;
 
-        while (true)
+        try
         {
+            while (true)
+            {
             cancellationToken.ThrowIfCancellationRequested();
             await ValidatePublicHostAsync(
                 current,
@@ -438,6 +440,18 @@ public sealed class ConnectorService : IConnectorService, IDisposable
                 returned,
                 truncated,
                 DateTimeOffset.UtcNow);
+            }
+        }
+        catch (HttpRequestException exception)
+        {
+            throw new ToolExecutionInputException(
+                $"Không thể đọc connector qua HTTPS: {SafeInline(exception.Message, 180)}");
+        }
+        catch (TaskCanceledException) when (
+            !cancellationToken.IsCancellationRequested)
+        {
+            throw new ToolExecutionInputException(
+                $"Connector vượt quá thời gian chờ {RequestTimeoutSeconds} giây.");
         }
     }
 

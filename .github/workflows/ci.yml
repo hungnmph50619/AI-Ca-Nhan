@@ -67,13 +67,13 @@ jobs:
             -H 'Content-Type: application/json' \
             -d '{"toolName":"local.text_stats","arguments":{"text":"xin chao"},"approvedPermissions":[],"confirmed":false}')
           test "$denied_code" = "403"
-          jq -e '.status == "denied" and .success == false and (.error | contains("READ"))' /tmp/tool-denied.json >/dev/null
+          jq -e '.status == "denied" and .success == false and (.error | contains("ĐỌC"))' /tmp/tool-denied.json >/dev/null
 
           invalid_code=$(curl -sS -o /tmp/tool-invalid.json -w '%{http_code}' -X POST http://127.0.0.1:5077/api/tools/execute \
             -H 'Content-Type: application/json' \
             -d '{"toolName":"local.text_stats","arguments":{},"approvedPermissions":["READ"],"confirmed":false}')
           test "$invalid_code" = "400"
-          jq -e '.status == "invalid-input" and .success == false and (.error | contains("text"))' /tmp/tool-invalid.json >/dev/null
+          jq -e '.status == "invalid-input" and .success == false and (.error | contains("văn bản"))' /tmp/tool-invalid.json >/dev/null
 
           tool_result=$(curl -fsS -X POST http://127.0.0.1:5077/api/tools/execute \
             -H 'Content-Type: application/json' \
@@ -105,13 +105,13 @@ jobs:
             -H 'Content-Type: application/json' \
             -d '{"toolName":"local.not_registered","arguments":{},"reason":"invalid"}')
           test "$invalid_proposal_code" = "400"
-          jq -e '(.error | contains("registry"))' /tmp/tool-proposal-invalid.json >/dev/null
+          jq -e '(.error | contains("danh mục công cụ"))' /tmp/tool-proposal-invalid.json >/dev/null
 
           invalid_args_proposal_code=$(curl -sS -o /tmp/tool-proposal-invalid-args.json -w '%{http_code}' -X POST http://127.0.0.1:5077/api/tools/orchestrate/prepare \
             -H 'Content-Type: application/json' \
             -d '{"toolName":"local.calculate","arguments":{},"reason":"missing expression"}')
           test "$invalid_args_proposal_code" = "400"
-          jq -e '(.error | contains("expression"))' /tmp/tool-proposal-invalid-args.json >/dev/null
+          jq -e '(.error | contains("biểu thức"))' /tmp/tool-proposal-invalid-args.json >/dev/null
 
           read_proposal=$(curl -fsS -X POST http://127.0.0.1:5077/api/tools/orchestrate/prepare \
             -H 'Content-Type: application/json' \
@@ -209,7 +209,7 @@ jobs:
             -H 'Content-Type: application/json' \
             -d '{"toolName":"workspace.write_text","arguments":{"path":"drafts/note.txt","content":"Draft","mode":"create"},"approvedPermissions":["READ"],"confirmed":true}')
           test "$write_missing_permission_code" = "403"
-          jq -e '.status == "denied" and (.error | contains("WRITE"))' /tmp/workspace-write-permission.json >/dev/null
+          jq -e '.status == "denied" and (.error | contains("GHI"))' /tmp/workspace-write-permission.json >/dev/null
 
           workspace_mkdir=$(curl -fsS -X POST http://127.0.0.1:5077/api/tools/execute \
             -H 'Content-Type: application/json' \
@@ -237,7 +237,7 @@ jobs:
           stale_code=$(curl -sS -o /tmp/workspace-stale.json -w '%{http_code}' -X POST http://127.0.0.1:5077/api/tools/execute \
             -H 'Content-Type: application/json' -d "$stale_payload")
           test "$stale_code" = "400"
-          jq -e '.status == "invalid-input" and (.error | contains("expectedSha256"))' /tmp/workspace-stale.json >/dev/null
+          jq -e '.status == "invalid-input" and (.error | contains("SHA-256"))' /tmp/workspace-stale.json >/dev/null
 
           overwrite_payload=$(jq -nc --arg hash "$append_hash" '{toolName:"workspace.write_text",arguments:{path:"drafts/note.txt",content:"Replaced safely.","mode":"overwrite",expectedSha256:$hash},approvedPermissions:["WRITE"],confirmed:true}')
           workspace_overwrite=$(curl -fsS -X POST http://127.0.0.1:5077/api/tools/execute \
@@ -261,7 +261,7 @@ jobs:
           move_stale_code=$(curl -sS -o /tmp/workspace-move-stale.json -w '%{http_code}' -X POST http://127.0.0.1:5077/api/tools/execute \
             -H 'Content-Type: application/json' -d "$move_stale_payload")
           test "$move_stale_code" = "400"
-          jq -e '.status == "invalid-input" and (.error | contains("expectedSha256"))' /tmp/workspace-move-stale.json >/dev/null
+          jq -e '.status == "invalid-input" and (.error | contains("SHA-256"))' /tmp/workspace-move-stale.json >/dev/null
 
           move_payload=$(jq -nc --arg hash "$overwrite_hash" '{toolName:"workspace.move",arguments:{sourcePath:"drafts/note.txt",destinationPath:"drafts/renamed.txt",expectedSha256:$hash},approvedPermissions:["WRITE"],confirmed:true}')
           workspace_move=$(curl -fsS -X POST http://127.0.0.1:5077/api/tools/execute \
@@ -283,13 +283,13 @@ jobs:
             -H 'Content-Type: application/json' \
             -d '{"toolName":"workspace.delete","arguments":{"path":"drafts/renamed.txt"},"approvedPermissions":["WRITE"],"confirmed":true}')
           test "$delete_permission_code" = "403"
-          jq -e '.status == "denied" and (.error | contains("DELETE"))' /tmp/workspace-delete-permission.json >/dev/null
+          jq -e '.status == "denied" and (.error | contains("XÓA"))' /tmp/workspace-delete-permission.json >/dev/null
 
           delete_stale_payload=$(jq -nc --arg hash "$append_hash" '{toolName:"workspace.delete",arguments:{path:"drafts/renamed.txt",expectedSha256:$hash},approvedPermissions:["DELETE"],confirmed:true}')
           delete_stale_code=$(curl -sS -o /tmp/workspace-delete-stale.json -w '%{http_code}' -X POST http://127.0.0.1:5077/api/tools/execute \
             -H 'Content-Type: application/json' -d "$delete_stale_payload")
           test "$delete_stale_code" = "400"
-          jq -e '.status == "invalid-input" and (.error | contains("expectedSha256"))' /tmp/workspace-delete-stale.json >/dev/null
+          jq -e '.status == "invalid-input" and (.error | contains("SHA-256"))' /tmp/workspace-delete-stale.json >/dev/null
 
           nonempty_delete_code=$(curl -sS -o /tmp/workspace-delete-nonempty.json -w '%{http_code}' -X POST http://127.0.0.1:5077/api/tools/execute \
             -H 'Content-Type: application/json' \
@@ -324,7 +324,7 @@ jobs:
             -H 'Content-Type: application/json' \
             -d '{"toolName":"workspace.delete","arguments":{"path":"escape"},"approvedPermissions":["DELETE"],"confirmed":true}')
           test "$delete_symlink_code" = "400"
-          jq -e '.status == "invalid-input" and (.error | contains("symbolic link"))' /tmp/workspace-delete-symlink.json >/dev/null
+          jq -e '.status == "invalid-input" and (.error | contains("liên kết tượng trưng"))' /tmp/workspace-delete-symlink.json >/dev/null
 
           duplicate_create_code=$(curl -sS -o /tmp/workspace-duplicate-create.json -w '%{http_code}' -X POST http://127.0.0.1:5077/api/tools/execute \
             -H 'Content-Type: application/json' \
@@ -342,7 +342,7 @@ jobs:
             -H 'Content-Type: application/json' \
             -d '{"toolName":"workspace.write_text","arguments":{"path":"escape/v083.txt","content":"blocked","mode":"create"},"approvedPermissions":["WRITE"],"confirmed":true}')
           test "$write_symlink_code" = "400"
-          jq -e '.status == "invalid-input" and (.error | contains("symbolic link"))' /tmp/workspace-write-symlink.json >/dev/null
+          jq -e '.status == "invalid-input" and (.error | contains("liên kết tượng trưng"))' /tmp/workspace-write-symlink.json >/dev/null
 
           binary_overwrite_code=$(curl -sS -o /tmp/workspace-binary-overwrite.json -w '%{http_code}' -X POST http://127.0.0.1:5077/api/tools/execute \
             -H 'Content-Type: application/json' \
@@ -360,7 +360,7 @@ jobs:
             -H 'Content-Type: application/json' \
             -d '{"toolName":"workspace.read_text","arguments":{"path":"escape/passwd"},"approvedPermissions":["READ"],"confirmed":false}')
           test "$symlink_code" = "400"
-          jq -e '.status == "invalid-input" and (.error | contains("symbolic link"))' /tmp/workspace-symlink.json >/dev/null
+          jq -e '.status == "invalid-input" and (.error | contains("liên kết tượng trưng"))' /tmp/workspace-symlink.json >/dev/null
 
           binary_code=$(curl -sS -o /tmp/workspace-binary.json -w '%{http_code}' -X POST http://127.0.0.1:5077/api/tools/execute \
             -H 'Content-Type: application/json' \

@@ -384,23 +384,24 @@
     if (managementBusy) return;
 
     const promptUi = window.PersonalAiUi?.prompt;
-    let name;
-    if (typeof promptUi === "function") {
-      name = await promptUi(
-        "Tên mới của không gian làm việc:",
-        workspace.name || "",
-        {
-          title: "Đổi tên không gian",
-          confirmText: "Lưu",
-          maxLength: 60
-        });
-    } else {
-      name = window.prompt(
-        "Tên mới của không gian làm việc:",
-        workspace.name || "");
+    if (typeof promptUi !== "function") {
+      setWorkspaceFeedback(
+        "Không mở được hộp nhập tên an toàn.",
+        true);
+      return;
     }
 
-    if (name === null) return;
+    const nameResult = await promptUi(
+      "Tên mới của không gian làm việc:",
+      workspace.name || "",
+      {
+        title: "Đổi tên không gian",
+        confirmText: "Lưu",
+        maxLength: 60
+      });
+
+    if (nameResult === null) return;
+    let name = nameResult;
     name = String(name).trim();
     if (name.length < 2) {
       setWorkspaceFeedback("Tên không gian cần có ít nhất 2 ký tự.", true);

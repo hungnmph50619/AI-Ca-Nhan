@@ -207,6 +207,39 @@ public sealed class ToolExecutionService(
                 policyDecision.ApprovedPermissions);
         }
 
+        try
+        {
+            await auditLog.UpsertAsync(
+                CreateRunningAuditEntry(
+                    invocationId,
+                    definition,
+                    startedAt,
+                    policyDecision.ApprovedPermissions,
+                    request.Confirmed,
+                    request.Arguments),
+                cancellationToken);
+        }
+        catch (Exception exception)
+        {
+            logger.LogError(
+                exception,
+                "Tool audit log was unavailable before executing {ToolName}. Invocation {InvocationId}.",
+                definition.Name,
+                invocationId);
+
+            return Complete(
+                invocationId,
+                definition.Name,
+                ToolExecutionStatuses.Failed,
+                false,
+                null,
+                "Không thể ghi nhật ký công cụ nên thao tác chưa được thực thi.",
+                stopwatch,
+                startedAt,
+                definition.RequiredPermissions,
+                policyDecision.ApprovedPermissions);
+        }
+
         using var timeoutCts = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
         timeoutCts.CancelAfter(definition.TimeoutMs);
 
@@ -283,6 +316,37 @@ public sealed class ToolExecutionService(
                 definition.RequiredPermissions,
                 policyDecision.ApprovedPermissions);
         }
+    }
+
+    private static ToolAuditEntry CreateRunningAuditEntry(
+        Guid invocationId,
+        ToolDefinition definition,
+        DateTimeOffset startedAt,
+        IReadOnlyList<string> approvedPermissions,
+        bool confirmed,
+        JsonElement arguments)
+    {
+        var input = Fingerprint(arguments);
+        return new ToolAuditEntry(
+            invocationId,
+            definition.Name,
+            definition.Version,
+            "running",
+            null,
+            startedAt,
+            null,
+            null,
+            definition.RequiredPermissions,
+            approvedPermissions,
+            confirmed,
+            "user-request",
+            input.Hash,
+            input.Bytes,
+            null,
+            null,
+            DetermineReversibility(definition),
+            definition.LocalOnly,
+            null);
     }
 
     private static ToolAuditEntry CreateAuditEntry(

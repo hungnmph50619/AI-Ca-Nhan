@@ -246,7 +246,7 @@
 
     const copy = document.createElement("p");
     copy.textContent =
-      `Workspace isolation: ${yesNo(safety.workspaceIsolation)} · WRITE confirm: ${yesNo(safety.writeRequiresConfirmation)} · DELETE confirm: ${yesNo(safety.deleteRequiresConfirmation)} · Undo confirm: ${yesNo(safety.undoRequiresConfirmation)} · Computer confirm: ${yesNo(safety.computerControlRequiresConfirmation)} · Browser confirm: ${yesNo(safety.browserUseRequiresConfirmation)} · Connector confirm: ${yesNo(safety.connectorUseRequiresConfirmation)} · Development confirm: ${yesNo(safety.developmentUseRequiresConfirmation)} · Arbitrary shell: ${yesNo(safety.developmentArbitraryShellEnabled)} · Git write: ${yesNo(safety.developmentGitWriteActionsEnabled)} · Agent loop tự trị: ${yesNo(safety.autonomousAgentLoop)} · Scheduler nền: ${yesNo(safety.backgroundScheduler)}`;
+      `Workspace isolation: ${yesNo(safety.workspaceIsolation)} · WRITE confirm: ${yesNo(safety.writeRequiresConfirmation)} · DELETE confirm: ${yesNo(safety.deleteRequiresConfirmation)} · Undo confirm: ${yesNo(safety.undoRequiresConfirmation)} · Computer confirm: ${yesNo(safety.computerControlRequiresConfirmation)} · Browser confirm: ${yesNo(safety.browserUseRequiresConfirmation)} · Connector confirm: ${yesNo(safety.connectorUseRequiresConfirmation)} · Development confirm: ${yesNo(safety.developmentUseRequiresConfirmation)} · Android pairing: ${yesNo(safety.companionPairingRequired)} · Device token hashed: ${yesNo(safety.companionDeviceTokensHashed)} · Remote tool exec: ${yesNo(safety.companionRemoteToolExecutionEnabled)} · Agent loop tự trị: ${yesNo(safety.autonomousAgentLoop)} · Scheduler nền: ${yesNo(safety.backgroundScheduler)}`;
 
     const limitsCopy = document.createElement("p");
     limitsCopy.textContent =
@@ -288,6 +288,7 @@
       "browser-agent": "Browser Agent",
       connectors: "Connectors",
       "software-development": "Software Development",
+      "android-companion": "Android Companion",
       "ai-provider": "AI Provider"
     }[module] || module || "Module";
   }

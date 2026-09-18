@@ -24,6 +24,7 @@ public sealed class SystemCoreService(
     IBrowserAgentService browserAgent,
     IConnectorService connectors,
     IDevelopmentAgentService development,
+    ICompanionService companion,
     IAiProviderResolver providerResolver,
     ILogger<SystemCoreService> logger) : ISystemCoreService
 {
@@ -47,7 +48,8 @@ public sealed class SystemCoreService(
         "computer-use",
         "browser-agent",
         "connectors",
-        "software-development"
+        "software-development",
+        "android-companion"
     ];
 
     private static readonly string[] ReservedModules =
@@ -238,6 +240,28 @@ public sealed class SystemCoreService(
             CoreHealthStatuses.Degraded));
 
         modules.Add(Check(
+            "android-companion",
+            () =>
+            {
+                var status = companion.GetStatus();
+                var devices = companion.GetDevices(
+                    workspaceContext.CurrentWorkspaceId);
+                return status.Enabled
+                    ? new CoreModuleHealth(
+                        "android-companion",
+                        CoreHealthStatuses.Healthy,
+                        status.SecureTransportRequired
+                            ? "Android Companion khả dụng; client API yêu cầu HTTPS."
+                            : "Android Companion khả dụng; HTTP không mã hóa đang được cho phép bằng cấu hình explicit.",
+                        devices.Devices.Count)
+                    : new CoreModuleHealth(
+                        "android-companion",
+                        CoreHealthStatuses.Unconfigured,
+                        "Android Companion đang bị tắt trong cấu hình.");
+            },
+            CoreHealthStatuses.Degraded));
+
+        modules.Add(Check(
             "ai-provider",
             () =>
             {
@@ -260,7 +284,8 @@ public sealed class SystemCoreService(
                 && module.Module != "computer-use"
                 && module.Module != "browser-agent"
                 && module.Module != "connectors"
-                && module.Module != "software-development")
+                && module.Module != "software-development"
+                && module.Module != "android-companion")
             .ToArray();
         var ready = localModules.All(
             module => module.Status != CoreHealthStatuses.Unavailable);
@@ -310,6 +335,10 @@ public sealed class SystemCoreService(
                 DevelopmentArbitraryShellEnabled: false,
                 DevelopmentGitWriteActionsEnabled: false,
                 DevelopmentArbitraryProcessEnabled: false,
+                CompanionPairingRequired: true,
+                CompanionDeviceTokensHashed: true,
+                CompanionRemoteToolExecutionEnabled: false,
+                CompanionRemoteTaskMutationEnabled: false,
                 AutomaticMultiStepExecution: false,
                 BackgroundScheduler: false,
                 AutonomousAgentLoop: false,
@@ -334,7 +363,9 @@ public sealed class SystemCoreService(
                 ConnectorService.MaximumRedirects,
                 DevelopmentAgentService.MaximumScannedFiles,
                 DevelopmentAgentService.MaximumSearchHits,
-                DevelopmentAgentService.MaximumProcessOutputCharacters),
+                DevelopmentAgentService.MaximumProcessOutputCharacters,
+                CompanionService.MaximumDevicesPerWorkspace,
+                CompanionService.PairingLifetimeMinutes),
             WorkspaceEndpoints.WorkspaceHeaderName,
             SystemHardeningMiddleware.RequestIdHeaderName);
 

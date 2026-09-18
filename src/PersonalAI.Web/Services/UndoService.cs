@@ -324,16 +324,44 @@ public sealed class UndoService(
     private static bool ReadBoolean(
         JsonElement element,
         string property) =>
-        element.TryGetProperty(property, out var value)
+        TryGetPropertyIgnoreCase(element, property, out var value)
         && value.ValueKind == JsonValueKind.True;
 
     private static string ReadString(
         JsonElement element,
         string property) =>
-        element.TryGetProperty(property, out var value)
+        TryGetPropertyIgnoreCase(element, property, out var value)
         && value.ValueKind == JsonValueKind.String
             ? value.GetString() ?? string.Empty
             : string.Empty;
+
+    private static bool TryGetPropertyIgnoreCase(
+        JsonElement element,
+        string property,
+        out JsonElement value)
+    {
+        if (element.ValueKind == JsonValueKind.Object)
+        {
+            if (element.TryGetProperty(property, out value))
+            {
+                return true;
+            }
+
+            foreach (var candidate in element.EnumerateObject())
+            {
+                if (candidate.Name.Equals(
+                    property,
+                    StringComparison.OrdinalIgnoreCase))
+                {
+                    value = candidate.Value;
+                    return true;
+                }
+            }
+        }
+
+        value = default;
+        return false;
+    }
 
     private static bool TryReadString(
         JsonElement element,

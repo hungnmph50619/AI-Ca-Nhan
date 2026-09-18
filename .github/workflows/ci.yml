@@ -590,6 +590,20 @@ jobs:
           grep -Fq 'char.IsHighSurrogate' src/PersonalAI.Web/Services/ToolOrchestrationService.cs
           grep -Fq 'MaximumNativeResultCharacters = 16_000' src/PersonalAI.Web/Services/ToolOrchestrationService.cs
           grep -Fq 'v088.css' src/PersonalAI.Web/wwwroot/index.html
+          grep -Fq 'Nguồn đề xuất:' src/PersonalAI.Web/wwwroot/app.js
+          grep -Fq 'Tham số' src/PersonalAI.Web/wwwroot/app.js
+          grep -Fq 'CÔNG CỤ NỘI BỘ TRÊN MÁY NÀY' src/PersonalAI.Web/wwwroot/v080.js
+          grep -Fq 'Hoàn tất câu trả lời từ kết quả công cụ v0.8.8' src/PersonalAI.Web/wwwroot/v080.js
+          grep -Fq 'Mô hình' src/PersonalAI.Web/wwwroot/index.html
+          grep -Fq 'Khóa API' src/PersonalAI.Web/wwwroot/index.html
+          ! grep -Fq 'Planner:' src/PersonalAI.Web/wwwroot/app.js
+          ! grep -Fq 'Permission:' src/PersonalAI.Web/wwwroot/app.js
+          ! grep -Fq 'Arguments' src/PersonalAI.Web/wwwroot/app.js
+          ! grep -Fq 'Native Tool Result Round-trip' src/PersonalAI.Web/wwwroot/v080.js
+          ! grep -Fq 'INTERNAL TOOLS' src/PersonalAI.Web/wwwroot/v080.js
+          ! grep -Fq 'Chat thông thường' src/PersonalAI.Web/wwwroot/v054.js
+          ! grep -Fq 'API key' src/PersonalAI.Web/wwwroot/index.html
+          ! grep -Fq 'API key' src/PersonalAI.Web/wwwroot/app.js
           grep -Fq 'ToolResultSynthesisService' src/PersonalAI.Web/Services/ToolResultSynthesisService.cs
           grep -Fq 'UseTools' src/PersonalAI.Web/Models/ChatModels.cs
           grep -Fq 'v085.css' src/PersonalAI.Web/wwwroot/index.html

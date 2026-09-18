@@ -805,7 +805,10 @@ async function executeToolProposal(proposal, button) {
         outputPreview: createToolOutputPreview(payload.execution?.output),
         canAiSynthesize: payload.canAiSynthesize === true,
         synthesisExpiresAt: payload.synthesisExpiresAt,
-        aiSynthesized: false
+        aiSynthesized: false,
+        canNativeContinue: payload.canNativeContinue === true,
+        nativeContinueExpiresAt: payload.nativeContinueExpiresAt,
+        nativeContinued: false
       })
     });
     touchConversation(conversation);
@@ -835,9 +838,11 @@ function createToolExecutionNode(execution) {
   const privacy = documentElement(
     "p",
     "tool-execution-privacy",
-    execution.aiSynthesized
-      ? "Tóm tắt ban đầu được tạo local. Output đã được gửi sang nhà cung cấp AI theo xác nhận của bạn để diễn giải."
-      : "Tóm tắt phía trên được tạo local. Output chưa được gửi sang nhà cung cấp AI.");
+    execution.nativeContinued
+      ? "Tóm tắt ban đầu được tạo local. Output đã được gửi về đúng provider native theo xác nhận của bạn để hoàn tất câu trả lời."
+      : execution.aiSynthesized
+        ? "Tóm tắt ban đầu được tạo local. Output đã được gửi sang nhà cung cấp AI theo xác nhận của bạn để diễn giải."
+        : "Tóm tắt phía trên được tạo local. Output chưa được gửi sang nhà cung cấp AI.");
 
   const details = document.createElement("details");
   details.className = "tool-execution-details";
@@ -847,12 +852,34 @@ function createToolExecutionNode(execution) {
   details.append(summary, preview);
 
   const actions = documentElement("div", "tool-execution-actions");
-  const expiresAt = new Date(execution.synthesisExpiresAt);
-  const synthesisExpired = !execution.synthesisExpiresAt
-    || Number.isNaN(expiresAt.getTime())
-    || expiresAt.getTime() <= Date.now();
 
-  if (execution.canAiSynthesize) {
+  if (execution.canNativeContinue) {
+    const expiresAt = new Date(execution.nativeContinueExpiresAt);
+    const nativeExpired = !execution.nativeContinueExpiresAt
+      || Number.isNaN(expiresAt.getTime())
+      || expiresAt.getTime() <= Date.now();
+    const nativeButton = documentElement(
+      "button",
+      "primary-button",
+      execution.nativeContinued ? "Đã hoàn tất bằng AI" : "Hoàn tất câu trả lời bằng AI");
+    nativeButton.type = "button";
+
+    if (execution.nativeContinued) {
+      nativeButton.disabled = true;
+    } else if (nativeExpired) {
+      nativeButton.disabled = true;
+      nativeButton.textContent = "Native continuation đã hết hạn";
+    } else {
+      nativeButton.addEventListener(
+        "click",
+        () => continueNativeToolExecution(execution, nativeButton));
+    }
+    actions.appendChild(nativeButton);
+  } else if (execution.canAiSynthesize) {
+    const expiresAt = new Date(execution.synthesisExpiresAt);
+    const synthesisExpired = !execution.synthesisExpiresAt
+      || Number.isNaN(expiresAt.getTime())
+      || expiresAt.getTime() <= Date.now();
     const synthesizeButton = documentElement(
       "button",
       "secondary-button",
@@ -877,6 +904,57 @@ function createToolExecutionNode(execution) {
     section.appendChild(actions);
   }
   return section;
+}
+
+async function continueNativeToolExecution(execution, button) {
+  if (execution.nativeContinued || state.busy) return;
+
+  const confirmed = window.confirm(
+    "Để hoàn tất câu trả lời theo native function-call protocol, output của công cụ sẽ được gửi về đúng provider/model đã tạo proposal.\n\n"
+    + "PersonalAI sẽ không cấp thêm tool trong lượt tiếp tục này. Chỉ tiếp tục nếu bạn đồng ý gửi phần kết quả ra provider.");
+  if (!confirmed) return;
+
+  const originalText = button.textContent;
+  button.disabled = true;
+  button.textContent = "Đang hoàn tất…";
+
+  try {
+    const response = await fetch("/api/tools/orchestrate/continue-native", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        invocationId: execution.invocationId,
+        confirmedExternal: true
+      })
+    });
+    const payload = await response.json().catch(() => ({}));
+    if (!response.ok) {
+      throw new Error(payload.error || "Không thể hoàn tất native function call.");
+    }
+
+    execution.nativeContinued = true;
+
+    const conversation = getActiveConversation();
+    const storedMessage = conversation.messages.find(message =>
+      message?.toolExecution?.invocationId === execution.invocationId);
+    if (storedMessage?.toolExecution) {
+      storedMessage.toolExecution.nativeContinued = true;
+    }
+
+    conversation.messages.push({
+      role: "assistant",
+      content: payload.message || "AI đã hoàn tất câu trả lời từ kết quả công cụ."
+    });
+    touchConversation(conversation);
+    trimMessages(conversation);
+    persistWorkspace();
+    renderConversationList();
+    renderConversation();
+  } catch (error) {
+    button.disabled = false;
+    button.textContent = originalText;
+    appendSystemError(error.message);
+  }
 }
 
 async function synthesizeToolExecution(execution, button) {
@@ -965,7 +1043,12 @@ function normalizeToolExecution(value) {
     synthesisExpiresAt: typeof value.synthesisExpiresAt === "string"
       ? value.synthesisExpiresAt
       : "",
-    aiSynthesized: value.aiSynthesized === true
+    aiSynthesized: value.aiSynthesized === true,
+    canNativeContinue: value.canNativeContinue === true,
+    nativeContinueExpiresAt: typeof value.nativeContinueExpiresAt === "string"
+      ? value.nativeContinueExpiresAt
+      : "",
+    nativeContinued: value.nativeContinued === true
   };
 }
 

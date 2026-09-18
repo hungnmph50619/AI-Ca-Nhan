@@ -369,7 +369,7 @@ async function uploadKnowledgeDocument(file) {
 
 async function deleteKnowledgeDocument(document) {
   if (state.knowledgeBusy) return;
-  if (!window.confirm(`Xóa tài liệu “${document.fileName}” khỏi kho dữ liệu?`)) return;
+  if (!(await showVietnameseConfirm(`Xóa tài liệu “${document.fileName}” khỏi kho dữ liệu?`, { title: "Xác nhận xóa", confirmText: "Xóa", danger: true }))) return;
 
   setKnowledgeBusy(true);
   setKnowledgeFeedback(`Đang xóa “${document.fileName}”…`);
@@ -432,6 +432,151 @@ function createKnowledgeDocumentNode(document) {
   item.append(type, details, status, deleteButton);
   return item;
 }
+
+
+function createVietnameseDialogShell(title, message) {
+  const dialog = document.createElement("dialog");
+  dialog.className = "settings-dialog app-message-dialog";
+  dialog.setAttribute("aria-modal", "true");
+
+  const card = document.createElement("div");
+  card.className = "settings-card app-message-card";
+
+  const header = document.createElement("header");
+  header.className = "settings-header";
+  const headingWrap = document.createElement("div");
+  const eyebrow = documentElement("p", "eyebrow", "THÔNG BÁO TỪ ỨNG DỤNG");
+  const heading = documentElement("h2", "app-message-title", title);
+  headingWrap.append(eyebrow, heading);
+  header.appendChild(headingWrap);
+
+  const body = documentElement("p", "app-message-copy", message);
+  const actions = documentElement("div", "settings-actions app-message-actions");
+
+  card.append(header, body, actions);
+  dialog.appendChild(card);
+  document.body.appendChild(dialog);
+
+  return { dialog, card, actions };
+}
+
+function showVietnameseConfirm(message, options = {}) {
+  return new Promise(resolve => {
+    const title = options.title || "Xác nhận";
+    const confirmText = options.confirmText || "Xác nhận";
+    const cancelText = options.cancelText || "Hủy";
+    const { dialog, actions } = createVietnameseDialogShell(title, message);
+
+    const cancel = documentElement("button", "secondary-button", cancelText);
+    cancel.type = "button";
+    const confirm = documentElement(
+      "button",
+      options.danger ? "danger-button" : "primary-button",
+      confirmText);
+    confirm.type = "button";
+
+    let settled = false;
+    const finish = value => {
+      if (settled) return;
+      settled = true;
+      dialog.close();
+      dialog.remove();
+      resolve(value);
+    };
+
+    cancel.addEventListener("click", () => finish(false));
+    confirm.addEventListener("click", () => finish(true));
+    dialog.addEventListener("cancel", event => {
+      event.preventDefault();
+      finish(false);
+    });
+    actions.append(cancel, confirm);
+    dialog.showModal();
+    confirm.focus();
+  });
+}
+
+function showVietnamesePrompt(message, initialValue = "", options = {}) {
+  return new Promise(resolve => {
+    const title = options.title || "Nhập thông tin";
+    const confirmText = options.confirmText || "Xác nhận";
+    const cancelText = options.cancelText || "Hủy";
+    const { dialog, card, actions } = createVietnameseDialogShell(title, message);
+
+    const input = document.createElement("input");
+    input.className = "app-message-input";
+    input.type = "text";
+    input.maxLength = Number(options.maxLength || 180);
+    input.value = initialValue || "";
+    input.placeholder = options.placeholder || "";
+    card.insertBefore(input, actions);
+
+    const cancel = documentElement("button", "secondary-button", cancelText);
+    cancel.type = "button";
+    const confirm = documentElement("button", "primary-button", confirmText);
+    confirm.type = "button";
+
+    let settled = false;
+    const finish = value => {
+      if (settled) return;
+      settled = true;
+      dialog.close();
+      dialog.remove();
+      resolve(value);
+    };
+
+    cancel.addEventListener("click", () => finish(null));
+    confirm.addEventListener("click", () => finish(input.value));
+    input.addEventListener("keydown", event => {
+      if (event.key === "Enter") {
+        event.preventDefault();
+        finish(input.value);
+      }
+    });
+    dialog.addEventListener("cancel", event => {
+      event.preventDefault();
+      finish(null);
+    });
+    actions.append(cancel, confirm);
+    dialog.showModal();
+    input.focus();
+    input.select();
+  });
+}
+
+function showVietnameseNotice(message, options = {}) {
+  return new Promise(resolve => {
+    const title = options.title || "Thông báo";
+    const buttonText = options.buttonText || "Đóng";
+    const { dialog, actions } = createVietnameseDialogShell(title, message);
+    const close = documentElement("button", "primary-button", buttonText);
+    close.type = "button";
+
+    let settled = false;
+    const finish = () => {
+      if (settled) return;
+      settled = true;
+      dialog.close();
+      dialog.remove();
+      resolve();
+    };
+
+    close.addEventListener("click", finish);
+    dialog.addEventListener("cancel", event => {
+      event.preventDefault();
+      finish();
+    });
+    actions.appendChild(close);
+    dialog.showModal();
+    close.focus();
+  });
+}
+
+window.PersonalAiUi = {
+  confirm: showVietnameseConfirm,
+  prompt: showVietnamesePrompt,
+  notice: showVietnameseNotice
+};
 
 function documentElement(tagName, className, text = "") {
   const node = document.createElement(tagName);
@@ -760,10 +905,11 @@ async function executeToolProposal(proposal, button) {
 
   let confirmed = false;
   if (proposal.requiresConfirmation) {
-    confirmed = window.confirm(
+    confirmed = await showVietnameseConfirm(
       "Chạy " + toolDisplayName(proposal.toolName) + " với quyền "
       + formatPermissionList(proposal.requiredPermissions)
-      + "?\n\nChỉ xác nhận khi các tham số hiển thị phía trên đúng với thao tác bạn muốn.");
+      + "?\n\nChỉ xác nhận khi các tham số hiển thị phía trên đúng với thao tác bạn muốn.",
+      { title: "Xác nhận chạy công cụ", confirmText: "Xác nhận và chạy" });
     if (!confirmed) return;
   }
 
@@ -909,9 +1055,10 @@ function createToolExecutionNode(execution) {
 async function continueNativeToolExecution(execution, button) {
   if (execution.nativeContinued || state.busy) return;
 
-  const confirmed = window.confirm(
-    "Để hoàn tất câu trả lời theo cơ chế gọi hàm gốc của nhà cung cấp, kết quả công cụ sẽ được gửi về đúng nhà cung cấp và mô hình đã tạo đề xuất.\n\n"
-    + "PersonalAI sẽ không cấp thêm công cụ trong lượt tiếp tục này. Chỉ tiếp tục nếu bạn đồng ý gửi phần kết quả ra nhà cung cấp AI.");
+  const confirmed = await showVietnameseConfirm(
+    "Để hoàn tất câu trả lời, kết quả công cụ sẽ được gửi về đúng nhà cung cấp và mô hình đã tạo đề xuất.\n\n"
+    + "PersonalAI sẽ không cấp thêm công cụ trong lượt tiếp tục này. Chỉ tiếp tục nếu bạn đồng ý gửi phần kết quả ra nhà cung cấp AI.",
+    { title: "Xác nhận gửi kết quả", confirmText: "Đồng ý và tiếp tục" });
   if (!confirmed) return;
 
   const originalText = button.textContent;
@@ -960,9 +1107,10 @@ async function continueNativeToolExecution(execution, button) {
 async function synthesizeToolExecution(execution, button) {
   if (execution.aiSynthesized || state.busy) return;
 
-  const confirmed = window.confirm(
+  const confirmed = await showVietnameseConfirm(
     "Để AI diễn giải, kết quả của công cụ sẽ được gửi tới nhà cung cấp AI đang cấu hình.\n\n"
-    + "Chỉ tiếp tục nếu bạn đồng ý gửi phần kết quả này ra ngoài ứng dụng chạy trên máy.");
+    + "Chỉ tiếp tục nếu bạn đồng ý gửi phần kết quả này ra ngoài ứng dụng chạy trên máy.",
+    { title: "Xác nhận gửi kết quả", confirmText: "Đồng ý và diễn giải" });
   if (!confirmed) return;
 
   const originalText = button.textContent;
@@ -1345,11 +1493,11 @@ function appendSystemError(message) {
   scrollToBottom();
 }
 
-function clearActiveConversation() {
+async function clearActiveConversation() {
   if (state.busy) return;
   const conversation = getActiveConversation();
   if (conversation.messages.length > 0
-      && !window.confirm("Xóa toàn bộ nội dung trong cuộc trò chuyện này?")) {
+      && !(await showVietnameseConfirm("Xóa toàn bộ nội dung trong cuộc trò chuyện này?", { title: "Xác nhận xóa nội dung", confirmText: "Xóa", danger: true }))) {
     return;
   }
 
@@ -1422,12 +1570,12 @@ function selectConversation(conversationId) {
   elements.input.focus();
 }
 
-function renameConversation(conversationId) {
+async function renameConversation(conversationId) {
   if (state.busy) return;
   const conversation = state.conversations.find(item => item.id === conversationId);
   if (!conversation) return;
 
-  const title = window.prompt("Đổi tên cuộc trò chuyện:", conversation.title)?.trim();
+  const title = (await showVietnamesePrompt("Nhập tên mới cho cuộc trò chuyện:", conversation.title, { title: "Đổi tên cuộc trò chuyện", confirmText: "Lưu tên" }))?.trim();
   if (!title) return;
 
   conversation.title = createConversationTitle(title);
@@ -1436,11 +1584,11 @@ function renameConversation(conversationId) {
   renderConversationList();
 }
 
-function deleteConversation(conversationId) {
+async function deleteConversation(conversationId) {
   if (state.busy) return;
   const conversation = state.conversations.find(item => item.id === conversationId);
   if (!conversation) return;
-  if (!window.confirm(`Xóa cuộc trò chuyện “${conversation.title}”?`)) return;
+  if (!(await showVietnameseConfirm(`Xóa cuộc trò chuyện “${conversation.title}”?`, { title: "Xác nhận xóa cuộc trò chuyện", confirmText: "Xóa", danger: true }))) return;
 
   state.conversations = state.conversations.filter(item => item.id !== conversationId);
   if (state.conversations.length === 0) {

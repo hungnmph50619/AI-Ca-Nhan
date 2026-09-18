@@ -137,7 +137,7 @@
       document.querySelector("#memoryRefreshButton")?.click();
     } catch {
       input.checked = !input.checked;
-      window.alert("Không thể thay đổi trạng thái trí nhớ.");
+      await window.PersonalAiUi.notice("Không thể thay đổi trạng thái trí nhớ.", { title: "Không thể thực hiện" });
     } finally {
       input.disabled = false;
     }
@@ -145,7 +145,7 @@
 
   async function exportMemories() {
     const response = await fetch(`${api}/export`, { cache: "no-store" });
-    if (!response.ok) return window.alert("Không thể xuất trí nhớ.");
+    if (!response.ok) return window.PersonalAiUi.notice("Không thể xuất trí nhớ.", { title: "Không thể xuất dữ liệu" });
 
     const data = await response.json();
     const blob = new Blob([JSON.stringify(data, null, 2)], { type: "application/json" });
@@ -161,13 +161,13 @@
     const file = event.target.files?.[0];
     event.target.value = "";
     if (!file) return;
-    if (file.size > 5 * 1024 * 1024) return window.alert("Tệp nhập quá lớn. Tối đa 5 MB.");
+    if (file.size > 5 * 1024 * 1024) return window.PersonalAiUi.notice("Tệp nhập quá lớn. Tối đa 5 MB.", { title: "Tệp quá lớn" });
 
     try {
       const parsed = JSON.parse(await file.text());
       const source = Array.isArray(parsed) ? parsed : parsed.memories;
       if (!Array.isArray(source)) throw new Error();
-      if (!window.confirm(`Nhập ${source.length} trí nhớ? Nội dung trùng sẽ được bỏ qua.`)) return;
+      if (!(await window.PersonalAiUi.confirm(`Nhập ${source.length} trí nhớ? Nội dung trùng sẽ được bỏ qua.`, { title: "Xác nhận nhập trí nhớ", confirmText: "Nhập dữ liệu" }))) return;
 
       const response = await fetch(`${api}/import`, {
         method: "POST",
@@ -177,24 +177,24 @@
       const result = await response.json();
       if (!response.ok) throw new Error(result.error || "Nhập thất bại.");
 
-      window.alert(`Đã nhập ${result.imported}, bỏ qua ${result.skipped} trí nhớ trùng.`);
+      await window.PersonalAiUi.notice(`Đã nhập ${result.imported}, bỏ qua ${result.skipped} trí nhớ trùng.`, { title: "Nhập dữ liệu hoàn tất" });
       location.reload();
     } catch (error) {
-      window.alert(error.message || "Tệp dữ liệu không hợp lệ.");
+      await window.PersonalAiUi.notice(error.message || "Tệp dữ liệu không hợp lệ.", { title: "Không thể nhập dữ liệu" });
     }
   }
 
   async function deleteAll() {
-    if (!memories.length) return window.alert("Chưa có trí nhớ để xóa.");
+    if (!memories.length) return window.PersonalAiUi.notice("Chưa có trí nhớ để xóa.", { title: "Không có dữ liệu" });
 
-    const phrase = window.prompt(`Thao tác này sẽ xóa toàn bộ ${memories.length} trí nhớ. Nhập XOA TAT CA để xác nhận:`);
+    const phrase = await window.PersonalAiUi.prompt(`Thao tác này sẽ xóa toàn bộ ${memories.length} trí nhớ. Nhập XOA TAT CA để xác nhận:`, "", { title: "Xác nhận xóa toàn bộ trí nhớ", confirmText: "Tiếp tục", placeholder: "XOA TAT CA" });
     if (phrase !== "XOA TAT CA") return;
 
     const response = await fetch(api, { method: "DELETE" });
-    if (!response.ok) return window.alert("Không thể xóa toàn bộ trí nhớ.");
+    if (!response.ok) return window.PersonalAiUi.notice("Không thể xóa toàn bộ trí nhớ.", { title: "Không thể xóa dữ liệu" });
 
     const result = await response.json();
-    window.alert(`Đã xóa ${result.deleted} trí nhớ.`);
+    await window.PersonalAiUi.notice(`Đã xóa ${result.deleted} trí nhớ.`, { title: "Đã xóa dữ liệu" });
     location.reload();
   }
 

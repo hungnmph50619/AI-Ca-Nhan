@@ -152,7 +152,7 @@
     const url = URL.createObjectURL(blob);
     const link = document.createElement("a");
     link.href = url;
-    link.download = `personal-ai-memory-${new Date().toISOString().slice(0, 10)}.json`;
+    link.download = `tri-nho-ca-nhan-${new Date().toISOString().slice(0, 10)}.json`;
     link.click();
     URL.revokeObjectURL(url);
   }
@@ -187,8 +187,8 @@
   async function deleteAll() {
     if (!memories.length) return window.PersonalAiUi.notice("Chưa có trí nhớ để xóa.", { title: "Không có dữ liệu" });
 
-    const phrase = await window.PersonalAiUi.prompt(`Thao tác này sẽ xóa toàn bộ ${memories.length} trí nhớ. Nhập XOA TAT CA để xác nhận:`, "", { title: "Xác nhận xóa toàn bộ trí nhớ", confirmText: "Tiếp tục", placeholder: "XOA TAT CA" });
-    if (phrase !== "XOA TAT CA") return;
+    const phrase = await window.PersonalAiUi.prompt(`Thao tác này sẽ xóa toàn bộ ${memories.length} trí nhớ. Nhập XÓA TẤT CẢ để xác nhận:`, "", { title: "Xác nhận xóa toàn bộ trí nhớ", confirmText: "Tiếp tục", placeholder: "XÓA TẤT CẢ" });
+    if (phrase !== "XÓA TẤT CẢ") return;
 
     const response = await fetch(api, { method: "DELETE" });
     if (!response.ok) return window.PersonalAiUi.notice("Không thể xóa toàn bộ trí nhớ.", { title: "Không thể xóa dữ liệu" });

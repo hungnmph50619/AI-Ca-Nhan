@@ -45,13 +45,6 @@ public sealed record ToolResultSynthesisResponse(
     bool OutputTruncated,
     DateTimeOffset CreatedAt);
 
-internal sealed record ToolPlannerDecision(
-    string Action,
-    string? ToolName,
-    JsonElement? Arguments,
-    string? Reason,
-    string? Message);
-
 
 public sealed record ProviderFunctionDefinition(
     string Name,

@@ -12,7 +12,8 @@ public static class ToolFrameworkEndpoints
         ToolPermissions.Write,
         ToolPermissions.Delete,
         ToolPermissions.External,
-        ToolPermissions.Sensitive
+        ToolPermissions.Sensitive,
+        ToolPermissions.Computer
     ];
 
     public static IServiceCollection AddToolFramework(this IServiceCollection services)

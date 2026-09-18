@@ -9,16 +9,18 @@ public static class ToolPermissions
     public const string Delete = "DELETE";
     public const string External = "EXTERNAL";
     public const string Sensitive = "SENSITIVE";
+    public const string Computer = "COMPUTER";
 
     public static readonly IReadOnlySet<string> All = new HashSet<string>(
-        [Read, Write, Delete, External, Sensitive],
+        [Read, Write, Delete, External, Sensitive, Computer],
         StringComparer.OrdinalIgnoreCase);
 
     public static bool RequiresExplicitConfirmation(string permission) =>
         permission.Equals(Write, StringComparison.OrdinalIgnoreCase)
         || permission.Equals(Delete, StringComparison.OrdinalIgnoreCase)
         || permission.Equals(External, StringComparison.OrdinalIgnoreCase)
-        || permission.Equals(Sensitive, StringComparison.OrdinalIgnoreCase);
+        || permission.Equals(Sensitive, StringComparison.OrdinalIgnoreCase)
+        || permission.Equals(Computer, StringComparison.OrdinalIgnoreCase);
 }
 
 public static class ToolExecutionStatuses

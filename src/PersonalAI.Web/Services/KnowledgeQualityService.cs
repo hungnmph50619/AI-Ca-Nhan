@@ -126,7 +126,7 @@ public sealed class KnowledgeQualityService(
             if (!fileNameIsSafe || !File.Exists(originalPath))
             {
                 issues.Add(Issue(document, "missing-original", "error",
-                    "Không tìm thấy tệp gốc local hoặc tên tệp lưu nội bộ không hợp lệ."));
+                    "Không tìm thấy tệp gốc trên máy hoặc tên tệp lưu nội bộ không hợp lệ."));
             }
             else
             {
@@ -134,27 +134,27 @@ public sealed class KnowledgeQualityService(
                 if (!string.Equals(actualHash, document.Sha256, StringComparison.OrdinalIgnoreCase))
                 {
                     issues.Add(Issue(document, "hash-mismatch", "error",
-                        "Checksum tệp gốc không còn khớp metadata đã lưu; không nên re-index tự động."));
+                        "Mã kiểm tra của tệp gốc không còn khớp thông tin mô tả đã lưu; không nên tự động lập lại chỉ mục."));
                 }
             }
 
             if (document.ChunkCount == 0)
             {
                 issues.Add(Issue(document, "missing-chunks", "warning",
-                    "Tài liệu chưa có chunk để tìm kiếm."));
+                    "Tài liệu chưa có đoạn dữ liệu để tìm kiếm."));
             }
             else if (document.DistinctChunkIndexes != document.ChunkCount
                      || document.MinChunkIndex != 1
                      || document.MaxChunkIndex != document.ChunkCount)
             {
                 issues.Add(Issue(document, "non-contiguous-chunks", "warning",
-                    "Thứ tự chunk không liên tục hoặc có chunk index trùng."));
+                    "Thứ tự đoạn dữ liệu không liên tục hoặc có số thứ tự bị trùng."));
             }
 
             if (document.IndexedChunkCount < document.ChunkCount)
             {
                 issues.Add(Issue(document, "missing-embeddings", "warning",
-                    $"Còn {document.ChunkCount - document.IndexedChunkCount} chunk chưa có vector hiện hành."));
+                    $"Còn {document.ChunkCount - document.IndexedChunkCount} đoạn dữ liệu chưa có véc-tơ hiện hành."));
             }
 
             if (!string.Equals(document.Status, "ready", StringComparison.OrdinalIgnoreCase))
@@ -217,13 +217,13 @@ public sealed class KnowledgeQualityService(
         if (cases.Count == 0)
         {
             throw new KnowledgeDocumentValidationException(
-                "Hãy cung cấp ít nhất một trường hợp benchmark RAG.");
+                "Hãy cung cấp ít nhất một trường hợp đánh giá chất lượng tìm kiếm.");
         }
 
         if (cases.Count > MaximumEvaluationCases)
         {
             throw new KnowledgeDocumentValidationException(
-                $"Mỗi lần benchmark tối đa {MaximumEvaluationCases} trường hợp.");
+                $"Mỗi lần đánh giá tối đa {MaximumEvaluationCases} trường hợp.");
         }
 
         var limit = Math.Clamp(request.Limit ?? 5, 1, 10);
@@ -240,7 +240,7 @@ public sealed class KnowledgeQualityService(
             if (query.Length < 2 || expectedFileName.Length == 0)
             {
                 throw new KnowledgeDocumentValidationException(
-                    "Mỗi benchmark case cần query từ 2 ký tự và expectedFileName hợp lệ.");
+                    "Mỗi trường hợp đánh giá cần nội dung tìm kiếm từ 2 ký tự và tên tệp kỳ vọng hợp lệ.");
             }
 
             var response = await hybridSearch.SearchAsync(query, limit, cancellationToken);
@@ -301,7 +301,7 @@ public sealed class KnowledgeQualityService(
             if (!before.DatabaseHealthy)
             {
                 throw new KnowledgeDocumentValidationException(
-                    "SQLite không vượt qua integrity check. Không chạy sửa tự động để tránh làm hỏng dữ liệu thêm.");
+                    "Cơ sở dữ liệu SQLite không vượt qua kiểm tra tính toàn vẹn. Không chạy sửa tự động để tránh làm hỏng dữ liệu thêm.");
             }
 
             var grouped = before.Issues

@@ -1,10 +1,10 @@
-# AI Cá Nhân — Stable Core v1.0.0
+# AI Cá Nhân — Controlled Computer Use v1.1.0
 
-PersonalAI là trợ lý AI cá nhân chạy bằng ASP.NET Core 8, ưu tiên dữ liệu cục bộ, có thể dùng Gemini hoặc OpenAI cho phần sinh câu trả lời. v1.0.0 là mốc **Stable Personal AI Core**: Memory, RAG, Tools, Tasks, Workspace, Context, Audit và Undo đã được ghép thành một core có contract và regression test rõ ràng trước khi mở rộng sang Browser, Computer Use hoặc Connectors.
+PersonalAI là trợ lý AI cá nhân chạy bằng ASP.NET Core 8, ưu tiên dữ liệu cục bộ, có thể dùng Gemini hoặc OpenAI cho phần sinh câu trả lời. v1.0.0 vẫn là **Stable Personal AI Core**; v1.1.0 là capability layer đầu tiên phía trên core đó, bổ sung **Computer Use có kiểm soát trên Windows** mà không mở autonomous agent loop.
 
 > Đây vẫn là ứng dụng thiết kế cho một người dùng trên máy cá nhân. Không đưa trực tiếp lên Internet hoặc dùng như hệ thống nhiều người dùng nếu chưa bổ sung authentication, authorization và hardening triển khai phù hợp.
 
-## Có gì trong v1.0.0?
+## Có gì trong v1.1.0?
 
 ### Chat và AI provider
 
@@ -118,8 +118,9 @@ Tool Framework có permission contract:
 - DELETE
 - EXTERNAL
 - SENSITIVE
+- COMPUTER
 
-WRITE, DELETE, EXTERNAL và SENSITIVE yêu cầu confirmation theo policy hiện tại.
+WRITE, DELETE, EXTERNAL, SENSITIVE và COMPUTER yêu cầu confirmation theo policy hiện tại. COMPUTER được dùng riêng cho các thao tác điều khiển desktop.
 
 Các tool local gồm nhóm đọc/tiện ích và workspace files, ví dụ:
 
@@ -133,6 +134,34 @@ Các tool local gồm nhóm đọc/tiện ích và workspace files, ví dụ:
 - workspace list/read/write/create directory/move/delete
 
 Tool proposal không đồng nghĩa tool execution. AI có thể đề xuất tool nhưng người dùng vẫn kiểm soát việc chạy và các bước xác nhận.
+
+### Controlled Computer Use
+
+v1.1.0 thêm lớp Computer Use chạy qua chính Tool Framework hiện có.
+
+Backend hiện hỗ trợ **Windows interactive session**.
+
+Các tool quan sát:
+
+- `computer.screen.info` — kích thước desktop/màn hình, READ;
+- `computer.cursor.position` — vị trí cursor, READ;
+- `computer.windows.list` — visible window metadata, READ + SENSITIVE + confirmation;
+- `computer.window.active` — foreground window metadata, READ + SENSITIVE + confirmation.
+
+Các action có kiểm soát:
+
+- `computer.window.focus` — chuyển focus tới visible window, WRITE + COMPUTER + SENSITIVE + confirmation;
+- `computer.cursor.move` — di chuyển cursor, WRITE + COMPUTER + confirmation.
+
+v1.1.0 cố ý **chưa có** screenshot, OCR, click chuột, scroll, gõ phím, clipboard, mở ứng dụng, shell hay arbitrary process execution.
+
+Status cục bộ:
+
+```http
+GET /api/computer/status
+```
+
+Window title/process metadata được coi là dữ liệu nhạy cảm. Tool có SENSITIVE permission không tự được gửi kết quả ra provider AI để synthesis/native continuation.
 
 ### Tasks
 
@@ -205,11 +234,13 @@ Undo khả dụng 7 ngày, tối đa 500 record, snapshot tối đa 512 KB.
 
 ## Stable Core contract
 
-v1.0.0 có release contract tập trung:
+v1.1.0 giữ API contract của Stable Core và mở controlled capability layer:
 
-- Version: `1.0.0`
+- Version: `1.1.0`
 - API contract: `1`
-- Channel: `stable`
+- Channel: `controlled`
+- Stable Core: v1.0 semantics
+- Controlled module: `computer-use`
 
 Capabilities:
 
@@ -236,7 +267,7 @@ Unhandled API exception được sanitize; stack trace và đường dẫn local
 
 ## Guardrails hiện tại
 
-v1.0.0 **không phải autonomous agent**.
+v1.1.0 **không phải autonomous agent**.
 
 Hiện tại:
 
@@ -245,6 +276,8 @@ Hiện tại:
 - DELETE confirmation: bắt buộc
 - EXTERNAL confirmation: bắt buộc
 - Undo confirmation: bắt buộc
+- Computer-control confirmation: bắt buộc
+- Sensitive computer observation confirmation: bắt buộc
 - Automatic multi-step execution: tắt
 - Background scheduler: tắt
 - Autonomous agent loop: tắt
@@ -253,7 +286,8 @@ Hiện tại:
 Chưa có:
 
 - browser automation;
-- computer control;
+- screenshot/OCR;
+- mouse click hoặc keyboard typing;
 - background scheduler;
 - autonomous agent loop;
 - automatic confirmation;
@@ -417,21 +451,20 @@ Chi tiết từng mốc nằm trong:
 docs/releases/
 ```
 
-Mốc stable hiện tại:
+Mốc Stable Core:
 
 ```text
 docs/releases/v1.0.0.md
 ```
 
-## Hướng phát triển sau v1.0
+Mốc capability hiện tại:
 
-Sau Stable Core, các capability có quyền cao hơn nên được mở theo từng lớp, ví dụ:
+```text
+docs/releases/v1.1.0.md
+```
 
-1. read-only connectors;
-2. browser observation/navigation có consent;
-3. external actions có explicit confirmation;
-4. computer-use sandbox;
-5. policy engine;
-6. agent orchestration với giới hạn vòng lặp và ngân sách rõ ràng.
+## Hướng phát triển sau v1.1
 
-Các bước này chưa được coi là đã có trong v1.0.0.
+Computer Use v1.1 đã mở capability desktop đầu tiên theo mô hình permission + confirmation. Theo roadmap, bước kế tiếp là **v1.2 — Browser Agent**, với browser-specific observation/action contract, origin/URL guard, confirmation cho external side effects và audit đầy đủ.
+
+Browser Agent không nên dựa vào click desktop mù làm cơ chế chính.

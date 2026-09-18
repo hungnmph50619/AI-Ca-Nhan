@@ -16,7 +16,7 @@ public sealed class ToolInputValidator : IToolInputValidator
 
         if (schema.ValueKind != JsonValueKind.Object)
         {
-            return new ToolInputValidationResult(false, ["Input schema không hợp lệ."]);
+            return new ToolInputValidationResult(false, ["Lược đồ dữ liệu đầu vào không hợp lệ."]);
         }
 
         if (arguments.ValueKind != JsonValueKind.Object)
@@ -84,7 +84,7 @@ public sealed class ToolInputValidator : IToolInputValidator
     {
         if (schema.ValueKind != JsonValueKind.Object)
         {
-            errors.Add($"Schema của trường {name} không hợp lệ.");
+            errors.Add($"Lược đồ của trường {name} không hợp lệ.");
             return;
         }
 

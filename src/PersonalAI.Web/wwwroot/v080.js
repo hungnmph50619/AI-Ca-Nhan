@@ -80,7 +80,7 @@
 
     const intro = document.createElement("div");
     intro.className = "v080-framework-intro";
-    intro.innerHTML = "<strong>File Tools v0.8.3</strong><p>Framework hiện có 9 công cụ local, bổ sung workspace.list và workspace.read_text để đọc workspace được cấp quyền. Đường dẫn luôn tương đối, bị chặn path traversal/symlink và có giới hạn kích thước.</p>";
+    intro.innerHTML = "<strong>File Tools v0.8.3</strong><p>Framework hiện có 11 công cụ. Workspace có thể liệt kê, đọc, tạo thư mục và ghi/sửa tệp văn bản local; WRITE luôn cần permission và xác nhận rõ ràng.</p>";
 
     const permissionLegend = document.createElement("div");
     permissionLegend.className = "v080-permission-legend";
@@ -98,7 +98,7 @@
 
     const note = document.createElement("p");
     note.className = "security-copy";
-    note.textContent = "Các workspace tool v0.8.2 chỉ đọc local và dùng READ; không thể ghi, xóa hay đi ra ngoài workspace. WRITE / DELETE / EXTERNAL / SENSITIVE vẫn cần xác nhận rõ ràng. Chat/model chưa tự chọn hay tự gọi công cụ ở bản này.";
+    note.textContent = "Workspace v0.8.3 vẫn bị sandbox trong thư mục đã cấp quyền. Tool READ không cần xác nhận riêng; mọi tool WRITE bắt buộc xác nhận rõ ràng. DELETE / EXTERNAL / SENSITIVE chưa được mở và chat/model chưa tự chọn hay tự gọi công cụ.";
 
     card.append(header, intro, permissionLegend, status, list, note);
     dialog.appendChild(card);

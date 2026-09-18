@@ -8,7 +8,8 @@ public sealed record ChatRequest(
     string KnowledgeMode = "normal",
     bool UseMemory = true,
     bool UseTools = false,
-    bool UseTaskContext = true);
+    bool UseTaskContext = true,
+    bool UseLifeContext = true);
 
 public sealed record ChatSource(
     Guid DocumentId,

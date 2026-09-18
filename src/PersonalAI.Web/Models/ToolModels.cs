@@ -58,7 +58,8 @@ public sealed record ToolExecutionResponse(
     DateTimeOffset StartedAt,
     DateTimeOffset CompletedAt,
     IReadOnlyList<string> RequiredPermissions,
-    IReadOnlyList<string> ApprovedPermissions);
+    IReadOnlyList<string> ApprovedPermissions,
+    Guid? UndoId = null);
 
 public sealed record ToolCatalogResponse(
     string FrameworkVersion,

@@ -4,7 +4,7 @@ namespace PersonalAI.Web.Services;
 
 public static class ToolFrameworkEndpoints
 {
-    public const string FrameworkVersion = "0.8.4";
+    public const string FrameworkVersion = "0.8.5";
 
     private static readonly string[] PermissionTypes =
     [
@@ -35,6 +35,7 @@ public static class ToolFrameworkEndpoints
         services.AddSingleton<IToolInputValidator, ToolInputValidator>();
         services.AddSingleton<IToolPolicy, ToolPolicy>();
         services.AddSingleton<IToolExecutionService, ToolExecutionService>();
+        services.AddScoped<IToolOrchestrationService, ToolOrchestrationService>();
         return services;
     }
 
@@ -60,6 +61,48 @@ public static class ToolFrameworkEndpoints
         {
             var response = await executor.ExecuteAsync(request, cancellationToken);
             var statusCode = response.Status switch
+            {
+                ToolExecutionStatuses.Succeeded => StatusCodes.Status200OK,
+                ToolExecutionStatuses.InvalidInput => StatusCodes.Status400BadRequest,
+                ToolExecutionStatuses.Denied => StatusCodes.Status403Forbidden,
+                ToolExecutionStatuses.NotFound => StatusCodes.Status404NotFound,
+                ToolExecutionStatuses.TimedOut => StatusCodes.Status504GatewayTimeout,
+                _ => StatusCodes.Status500InternalServerError
+            };
+
+            return Results.Json(response, statusCode: statusCode);
+        });
+
+        app.MapPost("/api/tools/orchestrate/prepare", (
+            ToolProposalDraft request,
+            IToolOrchestrationService orchestration) =>
+        {
+            try
+            {
+                return Results.Ok(orchestration.Prepare(request));
+            }
+            catch (ToolProposalValidationException exception)
+            {
+                return Results.BadRequest(new ApiError(exception.Message));
+            }
+        });
+
+        app.MapPost("/api/tools/orchestrate/execute", async (
+            ExecuteToolProposalRequest request,
+            IToolOrchestrationService orchestration,
+            CancellationToken cancellationToken) =>
+        {
+            var response = await orchestration.ExecuteAsync(
+                request.ProposalId,
+                request.Confirmed,
+                cancellationToken);
+            if (response is null)
+            {
+                return Results.NotFound(new ApiError(
+                    "Đề xuất công cụ không tồn tại, đã hết hạn hoặc đã được dùng."));
+            }
+
+            var statusCode = response.Execution.Status switch
             {
                 ToolExecutionStatuses.Succeeded => StatusCodes.Status200OK,
                 ToolExecutionStatuses.InvalidInput => StatusCodes.Status400BadRequest,

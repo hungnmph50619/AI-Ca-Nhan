@@ -3,6 +3,7 @@ const WORKSPACE_STORAGE_KEY = "personal-ai-v0.4-workspace";
 const MAX_STORED_MESSAGES = 40;
 const MAX_TITLE_LENGTH = 42;
 const CUSTOM_MODEL_VALUE = "__custom__";
+const USE_TOOLS_STORAGE_KEY = "personal-ai-v0.8.5-use-tools";
 const DEFAULT_MODELS = {
   Gemini: "gemini-3.1-flash-lite",
   OpenAI: "gpt-5.6-luna"
@@ -70,7 +71,8 @@ const elements = {
   apiKeyHint: document.querySelector("#apiKeyHint"),
   settingsFeedback: document.querySelector("#settingsFeedback"),
   saveSettings: document.querySelector("#saveSettingsButton"),
-  testConnection: document.querySelector("#testConnectionButton")
+  testConnection: document.querySelector("#testConnectionButton"),
+  useTools: document.querySelector("#useToolsToggle")
 };
 
 initialize();
@@ -81,6 +83,9 @@ async function initialize() {
   localStorage.removeItem(LEGACY_MESSAGES_STORAGE_KEY);
   renderConversationList();
   renderConversation();
+  if (elements.useTools) {
+    elements.useTools.checked = loadUseToolsPreference();
+  }
   await Promise.all([refreshStatus(), refreshKnowledgeDocuments(false)]);
   elements.input.focus();
 }
@@ -133,6 +138,13 @@ function bindEvents() {
     saveAiSettings(false);
   });
   elements.testConnection.addEventListener("click", () => saveAiSettings(true));
+  elements.useTools?.addEventListener("change", () => {
+    try {
+      localStorage.setItem(USE_TOOLS_STORAGE_KEY, elements.useTools.checked ? "1" : "0");
+    } catch {
+      // Preference persistence is best-effort only.
+    }
+  });
   elements.provider.addEventListener("change", () => {
     const selectedProvider = elements.provider.value;
     populateModelOptions(selectedProvider, DEFAULT_MODELS[selectedProvider]);
@@ -588,7 +600,8 @@ async function sendCurrentMessage(event) {
         messages: conversation.messages.map(message => ({
           role: message.role,
           content: message.content
-        }))
+        })),
+        useTools: elements.useTools?.checked === true
       })
     });
     const payload = await response.json().catch(() => ({}));
@@ -600,7 +613,8 @@ async function sendCurrentMessage(event) {
     conversation.messages.push({
       role: "assistant",
       content: payload.message,
-      sources: normalizeSources(payload.sources)
+      sources: normalizeSources(payload.sources),
+      toolProposal: normalizeToolProposal(payload.toolProposal)
     });
     touchConversation(conversation);
     trimMessages(conversation);
@@ -623,13 +637,13 @@ function renderConversation() {
 
   conversation.messages.forEach(message => {
     elements.messages.appendChild(
-      createMessageNode(message.role, message.content, message.sources));
+      createMessageNode(message.role, message.content, message.sources, message.toolProposal));
   });
 
   scrollToBottom();
 }
 
-function createMessageNode(role, content, sources = []) {
+function createMessageNode(role, content, sources = [], toolProposal = null) {
   const row = document.createElement("article");
   row.className = `message-row ${role}`;
 
@@ -644,6 +658,10 @@ function createMessageNode(role, content, sources = []) {
   const normalizedSources = normalizeSources(sources);
   if (role === "assistant" && normalizedSources.length > 0) {
     bubble.appendChild(createMessageSourcesNode(normalizedSources));
+  }
+
+  if (role === "assistant" && toolProposal) {
+    bubble.appendChild(createToolProposalNode(toolProposal));
   }
 
   row.append(avatar, bubble);
@@ -669,6 +687,158 @@ function createMessageSourcesNode(sources) {
 
   section.append(heading, list);
   return section;
+}
+
+
+function createToolProposalNode(proposal) {
+  const section = documentElement("section", "tool-proposal");
+  section.dataset.proposalId = proposal.proposalId;
+
+  const heading = documentElement("strong", "tool-proposal-title", proposal.toolName);
+  const reason = documentElement("p", "tool-proposal-reason", proposal.reason || "Đề xuất công cụ");
+  const permissions = documentElement(
+    "div",
+    "tool-proposal-permissions",
+    "Permission: " + (proposal.requiredPermissions.join(", ") || "không có"));
+
+  const argumentsTitle = documentElement("span", "tool-proposal-arguments-title", "Arguments");
+  const argumentsPre = documentElement("pre", "tool-proposal-arguments");
+  argumentsPre.textContent = safeJsonStringify(proposal.arguments);
+
+  const actions = documentElement("div", "tool-proposal-actions");
+  const button = documentElement(
+    "button",
+    proposal.requiresConfirmation ? "primary-button" : "secondary-button",
+    proposal.requiresConfirmation ? "Xác nhận & chạy" : "Chạy công cụ");
+  button.type = "button";
+
+  const expiresAt = new Date(proposal.expiresAt);
+  const expired = Number.isNaN(expiresAt.getTime()) || expiresAt.getTime() <= Date.now();
+  if (proposal.executed) {
+    button.disabled = true;
+    button.textContent = "Đã chạy";
+  } else if (expired) {
+    button.disabled = true;
+    button.textContent = "Đề xuất đã hết hạn";
+  } else {
+    button.addEventListener("click", () => executeToolProposal(proposal, button));
+  }
+
+  if (proposal.requiresConfirmation) {
+    const warning = documentElement(
+      "span",
+      "tool-proposal-warning",
+      "Thao tác này chưa chạy. Cần xác nhận rõ ràng trước khi thực thi.");
+    actions.append(warning, button);
+  } else {
+    actions.append(button);
+  }
+
+  section.append(heading, reason, permissions, argumentsTitle, argumentsPre, actions);
+  return section;
+}
+
+async function executeToolProposal(proposal, button) {
+  if (proposal.executed || state.busy) return;
+
+  let confirmed = false;
+  if (proposal.requiresConfirmation) {
+    confirmed = window.confirm(
+      "Chạy " + proposal.toolName + " với permission "
+      + proposal.requiredPermissions.join(", ")
+      + "?\n\nHãy chỉ xác nhận nếu arguments hiển thị phía trên đúng với thao tác bạn muốn.");
+    if (!confirmed) return;
+  }
+
+  button.disabled = true;
+  const originalText = button.textContent;
+  button.textContent = "Đang chạy…";
+
+  try {
+    const response = await fetch("/api/tools/orchestrate/execute", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        proposalId: proposal.proposalId,
+        confirmed
+      })
+    });
+    const payload = await response.json().catch(() => ({}));
+    if (!response.ok) {
+      throw new Error(
+        payload.error
+        || payload.execution?.error
+        || "Không thể thực thi đề xuất công cụ.");
+    }
+
+    proposal.executed = true;
+    proposal.executionStatus = payload.execution?.status || "succeeded";
+    button.textContent = "Đã chạy";
+
+    const conversation = getActiveConversation();
+    conversation.messages.push({
+      role: "assistant",
+      content: formatToolExecutionMessage(payload)
+    });
+    touchConversation(conversation);
+    trimMessages(conversation);
+    persistWorkspace();
+    renderConversationList();
+    renderConversation();
+  } catch (error) {
+    button.disabled = false;
+    button.textContent = originalText;
+    appendSystemError(error.message);
+  }
+}
+
+function formatToolExecutionMessage(payload) {
+  const toolName = payload?.execution?.toolName || payload?.proposal?.toolName || "công cụ";
+  const output = payload?.execution?.output;
+  let serialized = safeJsonStringify(output);
+  if (serialized.length > 6000) {
+    serialized = serialized.slice(0, 6000) + "\n… (kết quả hiển thị đã được rút gọn)";
+  }
+
+  return "**Công cụ đã chạy:** " + toolName + "\n\nKết quả:\n\n" + serialized;
+}
+
+function safeJsonStringify(value) {
+  try {
+    return JSON.stringify(value ?? {}, null, 2);
+  } catch {
+    return "{}";
+  }
+}
+
+function normalizeToolProposal(value) {
+  if (!value || typeof value !== "object") return null;
+  if (typeof value.proposalId !== "string" || !value.proposalId) return null;
+  if (typeof value.toolName !== "string" || !value.toolName) return null;
+  if (!value.arguments || typeof value.arguments !== "object" || Array.isArray(value.arguments)) return null;
+
+  return {
+    proposalId: value.proposalId,
+    toolName: value.toolName,
+    arguments: value.arguments,
+    reason: typeof value.reason === "string" ? value.reason : "",
+    assistantMessage: typeof value.assistantMessage === "string" ? value.assistantMessage : "",
+    requiredPermissions: Array.isArray(value.requiredPermissions)
+      ? value.requiredPermissions.filter(item => typeof item === "string").slice(0, 8)
+      : [],
+    requiresConfirmation: value.requiresConfirmation === true,
+    expiresAt: typeof value.expiresAt === "string" ? value.expiresAt : "",
+    executed: value.executed === true,
+    executionStatus: typeof value.executionStatus === "string" ? value.executionStatus : ""
+  };
+}
+
+function loadUseToolsPreference() {
+  try {
+    return localStorage.getItem(USE_TOOLS_STORAGE_KEY) === "1";
+  } catch {
+    return false;
+  }
 }
 
 function appendTyping() {
@@ -966,7 +1136,8 @@ function normalizeMessages(value) {
       .map(item => ({
         role: item.role,
         content: item.content,
-        sources: item.role === "assistant" ? normalizeSources(item.sources) : []
+        sources: item.role === "assistant" ? normalizeSources(item.sources) : [],
+        toolProposal: item.role === "assistant" ? normalizeToolProposal(item.toolProposal) : null
       }))
     : [];
 }

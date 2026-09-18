@@ -67,7 +67,7 @@ app.MapGet("/api/status", (IAiProviderResolver providerResolver, ITeamProfileCat
         provider = aiProvider.Name,
         model = aiProvider.Model,
         teamProfile = teamProfiles.DefaultProfileId,
-        version = "0.8.4"
+        version = "0.8.5"
     });
 });
 
@@ -323,7 +323,7 @@ app.MapPost("/api/settings/ai/test", async (IAiProviderResolver providerResolver
 app.MapGet("/api/team-profiles", (ITeamProfileCatalog teamProfiles) =>
     Results.Ok(new { active = teamProfiles.DefaultProfileId, profiles = teamProfiles.GetAll() }));
 
-app.MapPost("/api/chat", async (ChatRequest request, IAiProviderResolver providerResolver, IKnowledgeGroundingService groundingService, IPersonalMemoryGroundingService memoryGroundingService, CancellationToken cancellationToken) =>
+app.MapPost("/api/chat", async (ChatRequest request, IAiProviderResolver providerResolver, IKnowledgeGroundingService groundingService, IPersonalMemoryGroundingService memoryGroundingService, IToolOrchestrationService toolOrchestration, CancellationToken cancellationToken) =>
 {
     if (request.Messages is null || request.Messages.Count == 0)
         return Results.BadRequest(new ApiError("Hãy nhập một câu hỏi."));
@@ -345,6 +345,23 @@ app.MapPost("/api/chat", async (ChatRequest request, IAiProviderResolver provide
     try
     {
         var aiProvider = providerResolver.GetActive();
+
+        if (request.UseTools && knowledgeMode == "normal")
+        {
+            var proposal = await toolOrchestration.ProposeAsync(
+                request.Messages,
+                cancellationToken);
+            if (proposal is not null)
+            {
+                return Results.Ok(new ChatResponse(
+                    proposal.AssistantMessage,
+                    aiProvider.Model,
+                    aiProvider.Name,
+                    [],
+                    proposal));
+            }
+        }
+
         var grounded = request.UseKnowledge
             ? await groundingService.GroundAsync(request.Messages, knowledgeMode, cancellationToken)
             : new KnowledgeGroundingResult(request.Messages, []);

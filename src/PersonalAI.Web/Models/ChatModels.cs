@@ -6,7 +6,8 @@ public sealed record ChatRequest(
     IReadOnlyList<ChatMessage> Messages,
     bool UseKnowledge = true,
     string KnowledgeMode = "normal",
-    bool UseMemory = true);
+    bool UseMemory = true,
+    bool UseTools = false);
 
 public sealed record ChatSource(
     Guid DocumentId,
@@ -20,6 +21,7 @@ public sealed record ChatResponse(
     string Message,
     string Model,
     string Provider,
-    IReadOnlyList<ChatSource> Sources);
+    IReadOnlyList<ChatSource> Sources,
+    ToolCallProposal? ToolProposal = null);
 
 public sealed record ApiError(string Error);

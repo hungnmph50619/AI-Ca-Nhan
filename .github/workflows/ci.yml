@@ -54,10 +54,10 @@ jobs:
             exit 1
           fi
 
-          curl -fsS http://127.0.0.1:5077/api/status | jq -e '.version == "0.8.6"' >/dev/null
+          curl -fsS http://127.0.0.1:5077/api/status | jq -e '.version == "0.8.7"' >/dev/null
 
           tools=$(curl -fsS http://127.0.0.1:5077/api/tools)
-          echo "$tools" | jq -e '.frameworkVersion == "0.8.6" and (.permissionTypes | sort) == (["DELETE","EXTERNAL","READ","SENSITIVE","WRITE"] | sort)' >/dev/null
+          echo "$tools" | jq -e '.frameworkVersion == "0.8.7" and (.permissionTypes | sort) == (["DELETE","EXTERNAL","READ","SENSITIVE","WRITE"] | sort)' >/dev/null
           echo "$tools" | jq -e '(.tools | length) == 13 and any(.tools[]; .name == "local.clock" and .localOnly == true and .requiredPermissions == ["READ"]) and any(.tools[]; .name == "local.text_stats" and .timeoutMs == 2000) and any(.tools[]; .name == "memory.search") and any(.tools[]; .name == "documents.search") and any(.tools[]; .name == "local.calculate") and any(.tools[]; .name == "local.date_math") and any(.tools[]; .name == "app.summary") and any(.tools[]; .name == "workspace.list" and .requiredPermissions == ["READ"]) and any(.tools[]; .name == "workspace.read_text" and .requiredPermissions == ["READ"]) and any(.tools[]; .name == "workspace.write_text" and .requiredPermissions == ["WRITE"] and .requiresConfirmation == true) and any(.tools[]; .name == "workspace.create_directory" and .requiredPermissions == ["WRITE"] and .requiresConfirmation == true) and any(.tools[]; .name == "workspace.move" and .requiredPermissions == ["WRITE"] and .requiresConfirmation == true) and any(.tools[]; .name == "workspace.delete" and .requiredPermissions == ["DELETE"] and .requiresConfirmation == true)' >/dev/null
 
           text_tool=$(curl -fsS http://127.0.0.1:5077/api/tools/local.text_stats)
@@ -116,7 +116,7 @@ jobs:
           read_proposal=$(curl -fsS -X POST http://127.0.0.1:5077/api/tools/orchestrate/prepare \
             -H 'Content-Type: application/json' \
             -d '{"toolName":"local.calculate","arguments":{"expression":"7 * 6"},"reason":"Cần tính toán","assistantMessage":"Tôi đề xuất dùng máy tính local."}')
-          echo "$read_proposal" | jq -e '.toolName == "local.calculate" and .requiredPermissions == ["READ"] and .requiresConfirmation == false and (.proposalId | length) > 20' >/dev/null
+          echo "$read_proposal" | jq -e '.toolName == "local.calculate" and .requiredPermissions == ["READ"] and .requiresConfirmation == false and .planningMode == "manual" and .planningProvider == null and (.proposalId | length) > 20' >/dev/null
           read_proposal_id=$(echo "$read_proposal" | jq -r '.proposalId')
 
           read_execution=$(curl -fsS -X POST http://127.0.0.1:5077/api/tools/orchestrate/execute \
@@ -567,6 +567,18 @@ jobs:
           grep -Fq 'UseTools' src/PersonalAI.Web/Models/ChatModels.cs
           grep -Fq 'v085.css' src/PersonalAI.Web/wwwroot/index.html
           grep -Fq 'v086.css' src/PersonalAI.Web/wwwroot/index.html
+          grep -Fq 'v087.css' src/PersonalAI.Web/wwwroot/index.html
+          grep -Fq 'ProposeFunctionCallAsync' src/PersonalAI.Web/Services/IAiProvider.cs
+          grep -Fq 'parallel_tool_calls = false' src/PersonalAI.Web/Services/OpenAiChatService.cs
+          grep -Fq 'tool_choice = "auto"' src/PersonalAI.Web/Services/OpenAiChatService.cs
+          grep -Fq 'function_call' src/PersonalAI.Web/Services/OpenAiChatService.cs
+          grep -Fq 'functionDeclarations' src/PersonalAI.Web/Services/GeminiChatService.cs
+          grep -Fq 'functionCallingConfig' src/PersonalAI.Web/Services/GeminiChatService.cs
+          grep -Fq 'mode = "AUTO"' src/PersonalAI.Web/Services/GeminiChatService.cs
+          grep -Fq 'planningMode: "provider-native"' src/PersonalAI.Web/Services/ToolOrchestrationService.cs
+          grep -Fq 'CreateProviderFunctionName' src/PersonalAI.Web/Services/ToolOrchestrationService.cs
+          ! grep -Fq 'BuildPlannerPrompt' src/PersonalAI.Web/Services/ToolOrchestrationService.cs
+          ! grep -Fq 'TryParsePlannerDecision' src/PersonalAI.Web/Services/ToolOrchestrationService.cs
 
       - name: Setup Node.js
         uses: actions/setup-node@v4

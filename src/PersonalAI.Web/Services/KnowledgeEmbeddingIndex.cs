@@ -217,10 +217,6 @@ public sealed class KnowledgeEmbeddingIndex(
     private async Task InitializeAsync(CancellationToken cancellationToken)
     {
         var workspaceId = storagePaths.CurrentWorkspaceId;
-        if (_initializedWorkspaces.Contains(workspaceId))
-        {
-            return;
-        }
 
         await _initializationLock.WaitAsync(cancellationToken);
         try
@@ -261,10 +257,6 @@ public sealed class KnowledgeEmbeddingIndex(
     {
         await InitializeAsync(cancellationToken);
         var workspaceId = storagePaths.CurrentWorkspaceId;
-        if (_backfilledWorkspaces.Contains(workspaceId))
-        {
-            return;
-        }
 
         await _backfillLock.WaitAsync(cancellationToken);
         try

@@ -25,6 +25,7 @@ builder.Services.AddSingleton<IKnowledgeDocumentManagementService, KnowledgeDocu
 builder.Services.AddSingleton<IKnowledgeHybridSearchService, KnowledgeHybridSearchService>();
 builder.Services.AddKnowledgeQuality();
 builder.Services.AddAuditFoundation();
+builder.Services.AddUndoFoundation();
 builder.Services.AddToolFramework();
 builder.Services.AddTaskEngine();
 builder.Services.AddSingleton<IKnowledgeGroundingService, KnowledgeGroundingService>();
@@ -65,6 +66,7 @@ app.UseStaticFiles();
 
 app.MapWorkspaceFoundation();
 app.MapAuditFoundation();
+app.MapUndoFoundation();
 
 app.MapGet("/api/status", (
     IAiProviderResolver providerResolver,
@@ -80,7 +82,7 @@ app.MapGet("/api/status", (
         teamProfile = teamProfiles.DefaultProfileId,
         workspaceId = workspaceContext.CurrentWorkspaceId,
         workspaceName = workspaceContext.CurrentWorkspace.Name,
-        version = "0.9.6"
+        version = "0.9.7"
     });
 });
 

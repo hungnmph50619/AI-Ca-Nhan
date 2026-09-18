@@ -4,7 +4,7 @@ namespace PersonalAI.Web.Services;
 
 public static class ToolFrameworkEndpoints
 {
-    public const string FrameworkVersion = "0.8.8";
+    public const string FrameworkVersion = "0.8.9";
 
     private static readonly string[] PermissionTypes =
     [
@@ -34,6 +34,7 @@ public static class ToolFrameworkEndpoints
         services.AddSingleton<IToolRegistry, ToolRegistry>();
         services.AddSingleton<IToolInputValidator, ToolInputValidator>();
         services.AddSingleton<IToolPolicy, ToolPolicy>();
+        services.AddSingleton<IToolAuditLog, SqliteToolAuditLog>();
         services.AddSingleton<IToolExecutionService, ToolExecutionService>();
         services.AddScoped<IToolResultSynthesisService, ToolResultSynthesisService>();
         services.AddScoped<IToolOrchestrationService, ToolOrchestrationService>();
@@ -47,6 +48,19 @@ public static class ToolFrameworkEndpoints
                 FrameworkVersion,
                 PermissionTypes,
                 registry.GetAll())));
+
+        app.MapGet("/api/tools/audit", async (
+            int? limit,
+            IToolAuditLog auditLog,
+            CancellationToken cancellationToken) =>
+        {
+            var entries = await auditLog.GetRecentAsync(
+                Math.Clamp(limit ?? 30, 1, SqliteToolAuditLog.MaximumQueryLimit),
+                cancellationToken);
+            return Results.Ok(new ToolAuditResponse(
+                FrameworkVersion,
+                entries));
+        });
 
         app.MapGet("/api/tools/{toolName}", (string toolName, IToolRegistry registry) =>
         {

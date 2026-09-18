@@ -160,7 +160,7 @@ public final class MainActivity extends Activity {
                 runOnUiThread(() -> {
                     pairingCodeInput.setText("");
                     transcript.setLength(0);
-                    conversation.clear();
+                    clearConversation();
                     updateMode();
                     setBusy(false);
                     Toast.makeText(
@@ -301,6 +301,12 @@ public final class MainActivity extends Activity {
         }
     }
 
+    private void clearConversation() {
+        while (conversation.length() > 0) {
+            conversation.remove(0);
+        }
+    }
+
     private void appendTranscript(
             String speaker,
             String message) {
@@ -387,7 +393,7 @@ public final class MainActivity extends Activity {
 
     private void disconnectLocal() {
         tokenStore.clear();
-        conversation.clear();
+        clearConversation();
         transcript.setLength(0);
         chatTranscript.setText("Chưa có tin nhắn.");
         tasksText.setText("Chưa tải tasks.");

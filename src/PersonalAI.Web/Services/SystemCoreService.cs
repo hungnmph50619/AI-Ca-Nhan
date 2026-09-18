@@ -51,7 +51,8 @@ public sealed class SystemCoreService(
         "connectors",
         "software-development",
         "android-companion",
-        "life-context"
+        "life-context",
+        "decision-engine"
     ];
 
     private static readonly string[] ReservedModules =
@@ -286,6 +287,15 @@ public sealed class SystemCoreService(
             }));
 
         modules.Add(Check(
+            "decision-engine",
+            () =>
+                new CoreModuleHealth(
+                    "decision-engine",
+                    CoreHealthStatuses.Healthy,
+                    "Decision Engine khả dụng; chỉ phân tích/recommendation, không tool execution hoặc auto-action."),
+            CoreHealthStatuses.Degraded));
+
+        modules.Add(Check(
             "ai-provider",
             () =>
             {
@@ -310,7 +320,8 @@ public sealed class SystemCoreService(
                 && module.Module != "connectors"
                 && module.Module != "software-development"
                 && module.Module != "android-companion"
-                && module.Module != "life-context")
+                && module.Module != "life-context"
+                && module.Module != "decision-engine")
             .ToArray();
         var ready = localModules.All(
             module => module.Status != CoreHealthStatuses.Unavailable);
@@ -367,6 +378,10 @@ public sealed class SystemCoreService(
                 LifeContextExplicitConsentRequired: true,
                 LifeContextAutomaticCollectionEnabled: false,
                 LifeContextContentEncrypted: true,
+                DecisionEngineRequiresUserDecision: true,
+                DecisionEngineAutoActionEnabled: false,
+                DecisionEngineToolExecutionEnabled: false,
+                DecisionEnginePersistsAnalyses: false,
                 AutomaticMultiStepExecution: false,
                 BackgroundScheduler: false,
                 AutonomousAgentLoop: false,
@@ -397,7 +412,10 @@ public sealed class SystemCoreService(
                 LifeContextService.MaximumSourcesPerWorkspace,
                 LifeContextService.MaximumEntriesPerWorkspace,
                 LifeContextService.MaximumContentCharacters,
-                LifeContextService.MaximumRetentionDays),
+                LifeContextService.MaximumRetentionDays,
+                DecisionEngineService.MaximumQuestionCharacters,
+                DecisionEngineService.MaximumOptions,
+                DecisionEngineService.MaximumCriteria),
             WorkspaceEndpoints.WorkspaceHeaderName,
             SystemHardeningMiddleware.RequestIdHeaderName);
 

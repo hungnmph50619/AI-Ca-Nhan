@@ -175,7 +175,7 @@ public static class ToolFrameworkEndpoints
                     cancellationToken);
                 return response is null
                     ? Results.NotFound(new ApiError(
-                        "Kết quả công cụ không tồn tại hoặc native continuation đã hết hạn."))
+                        "Kết quả công cụ không tồn tại hoặc lượt hoàn tất bằng AI đã hết hạn."))
                     : Results.Ok(response);
             }
             catch (ToolExternalConfirmationRequiredException exception)
@@ -203,7 +203,7 @@ public static class ToolFrameworkEndpoints
             catch (TaskCanceledException) when (!cancellationToken.IsCancellationRequested)
             {
                 return Results.Json(
-                    new ApiError("Hoàn tất câu trả lời native mất quá nhiều thời gian. Hãy thử lại."),
+                    new ApiError("Hoàn tất câu trả lời bằng AI mất quá nhiều thời gian. Hãy thử lại."),
                     statusCode: StatusCodes.Status504GatewayTimeout);
             }
         });

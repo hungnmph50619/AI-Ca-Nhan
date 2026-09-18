@@ -56,8 +56,10 @@
 
     const query = input.value.trim();
     if (query.length < 2) {
+      resultsNode.hidden = false;
+      summaryNode.textContent = "Hãy nhập ít nhất 2 ký tự để tìm kiếm kết hợp.";
+      listNode.replaceChildren();
       input.focus();
-      input.reportValidity();
       return;
     }
 

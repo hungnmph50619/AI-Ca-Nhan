@@ -16,6 +16,11 @@ public interface IToolOrchestrationService
         Guid proposalId,
         bool confirmed,
         CancellationToken cancellationToken = default);
+
+    Task<ToolResultSynthesisResponse?> SynthesizeAsync(
+        Guid invocationId,
+        bool confirmedExternal,
+        CancellationToken cancellationToken = default);
 }
 
 public sealed class ToolProposalValidationException(string message) : Exception(message);
@@ -23,6 +28,7 @@ public sealed class ToolProposalValidationException(string message) : Exception(
 public sealed class ToolOrchestrationService : IToolOrchestrationService
 {
     private static readonly TimeSpan ProposalLifetime = TimeSpan.FromMinutes(10);
+    private static readonly TimeSpan CompletedInvocationLifetime = TimeSpan.FromMinutes(10);
     private const int MaximumPlannerConversationCharacters = 24_000;
     private const int MaximumPlannerTextLength = 1_000;
 
@@ -30,20 +36,25 @@ public sealed class ToolOrchestrationService : IToolOrchestrationService
     private readonly IToolInputValidator _validator;
     private readonly IToolExecutionService _executor;
     private readonly IAiProviderResolver _providerResolver;
+    private readonly IToolResultSynthesisService _synthesizer;
     private readonly ILogger<ToolOrchestrationService> _logger;
     private static readonly ConcurrentDictionary<Guid, ToolCallProposal> Proposals = new();
+    private static readonly ConcurrentDictionary<Guid, CompletedToolInvocation> CompletedInvocations = new();
+    private static readonly SemaphoreSlim SynthesisGate = new(1, 1);
 
     public ToolOrchestrationService(
         IToolRegistry registry,
         IToolInputValidator validator,
         IToolExecutionService executor,
         IAiProviderResolver providerResolver,
+        IToolResultSynthesisService synthesizer,
         ILogger<ToolOrchestrationService> logger)
     {
         _registry = registry;
         _validator = validator;
         _executor = executor;
         _providerResolver = providerResolver;
+        _synthesizer = synthesizer;
         _logger = logger;
     }
 
@@ -190,7 +201,11 @@ public sealed class ToolOrchestrationService : IToolOrchestrationService
                     tool.Definition.RequiredPermissions,
                     Confirmed: false),
                 cancellationToken);
-            return new ToolProposalExecutionResponse(proposal, denied);
+            return new ToolProposalExecutionResponse(
+                proposal,
+                denied,
+                _synthesizer.CreateLocalSummary(proposal, denied),
+                false);
         }
 
         if (!Proposals.TryRemove(proposalId, out proposal))
@@ -205,7 +220,83 @@ public sealed class ToolOrchestrationService : IToolOrchestrationService
                 tool.Definition.RequiredPermissions,
                 Confirmed: confirmed),
             cancellationToken);
-        return new ToolProposalExecutionResponse(proposal, execution);
+
+        var localSummary = _synthesizer.CreateLocalSummary(proposal, execution);
+        var canAiSynthesize = execution.Success
+            && execution.Output is not null
+            && !proposal.RequiredPermissions.Any(permission =>
+                permission.Equals(ToolPermissions.Sensitive, StringComparison.OrdinalIgnoreCase));
+        DateTimeOffset? synthesisExpiresAt = null;
+
+        if (canAiSynthesize)
+        {
+            synthesisExpiresAt = DateTimeOffset.UtcNow.Add(CompletedInvocationLifetime);
+            CompletedInvocations[execution.InvocationId] = new CompletedToolInvocation(
+                proposal,
+                execution,
+                synthesisExpiresAt.Value,
+                null);
+        }
+
+        return new ToolProposalExecutionResponse(
+            proposal,
+            execution,
+            localSummary,
+            canAiSynthesize,
+            synthesisExpiresAt);
+    }
+
+    public async Task<ToolResultSynthesisResponse?> SynthesizeAsync(
+        Guid invocationId,
+        bool confirmedExternal,
+        CancellationToken cancellationToken = default)
+    {
+        CleanupExpired();
+
+        if (!CompletedInvocations.TryGetValue(invocationId, out var completed))
+        {
+            return null;
+        }
+
+        if (completed.AiSynthesis is not null)
+        {
+            return completed.AiSynthesis;
+        }
+
+        if (!confirmedExternal)
+        {
+            throw new ToolExternalConfirmationRequiredException(
+                "Diễn giải bằng AI sẽ gửi kết quả công cụ tới nhà cung cấp AI đang cấu hình và cần xác nhận rõ ràng.");
+        }
+
+        await SynthesisGate.WaitAsync(cancellationToken);
+        try
+        {
+            if (!CompletedInvocations.TryGetValue(invocationId, out completed))
+            {
+                return null;
+            }
+
+            if (completed.AiSynthesis is not null)
+            {
+                return completed.AiSynthesis;
+            }
+
+            var synthesis = await _synthesizer.SynthesizeWithAiAsync(
+                completed.Proposal,
+                completed.Execution,
+                cancellationToken);
+
+            CompletedInvocations[invocationId] = completed with
+            {
+                AiSynthesis = synthesis
+            };
+            return synthesis;
+        }
+        finally
+        {
+            SynthesisGate.Release();
+        }
     }
 
     private string BuildPlannerPrompt(IReadOnlyList<ChatMessage> messages)
@@ -377,16 +468,32 @@ Không tự thêm permission. Không tự xác nhận. Arguments phải tuân th
             }
         }
 
-        if (Proposals.Count <= 100)
+        foreach (var pair in CompletedInvocations)
         {
-            return;
+            if (pair.Value.ExpiresAt <= now)
+            {
+                CompletedInvocations.TryRemove(pair.Key, out _);
+            }
         }
 
-        foreach (var proposal in Proposals.Values
-                     .OrderBy(value => value.ExpiresAt)
-                     .Take(Proposals.Count - 100))
+        if (Proposals.Count > 100)
         {
-            Proposals.TryRemove(proposal.ProposalId, out _);
+            foreach (var proposal in Proposals.Values
+                         .OrderBy(value => value.ExpiresAt)
+                         .Take(Proposals.Count - 100))
+            {
+                Proposals.TryRemove(proposal.ProposalId, out _);
+            }
+        }
+
+        if (CompletedInvocations.Count > 100)
+        {
+            foreach (var completed in CompletedInvocations.Values
+                         .OrderBy(value => value.ExpiresAt)
+                         .Take(CompletedInvocations.Count - 100))
+            {
+                CompletedInvocations.TryRemove(completed.Execution.InvocationId, out _);
+            }
         }
     }
 
@@ -402,4 +509,10 @@ Không tự thêm permission. Không tự xác nhận. Arguments phải tuân th
 
         return text;
     }
+
+    private sealed record CompletedToolInvocation(
+        ToolCallProposal Proposal,
+        ToolExecutionResponse Execution,
+        DateTimeOffset ExpiresAt,
+        ToolResultSynthesisResponse? AiSynthesis);
 }

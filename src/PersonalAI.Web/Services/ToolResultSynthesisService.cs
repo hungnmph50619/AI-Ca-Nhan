@@ -33,14 +33,14 @@ public sealed class ToolResultSynthesisService(
         if (!execution.Success)
         {
             return execution.Error is null
-                ? $"Công cụ {execution.ToolName} không hoàn tất."
-                : $"Công cụ {execution.ToolName} không hoàn tất: {execution.Error}";
+                ? $"Công cụ {GetToolDisplayName(execution.ToolName)} không hoàn tất."
+                : $"Công cụ {GetToolDisplayName(execution.ToolName)} không hoàn tất: {execution.Error}";
         }
 
         var output = execution.Output;
         if (output is null || output.Value.ValueKind != JsonValueKind.Object)
         {
-            return $"Công cụ {execution.ToolName} đã chạy thành công.";
+            return $"Công cụ {GetToolDisplayName(execution.ToolName)} đã chạy thành công.";
         }
 
         var value = output.Value;
@@ -59,7 +59,7 @@ public sealed class ToolResultSynthesisService(
             "workspace.create_directory" => SummarizeCreateDirectory(value),
             "workspace.move" => SummarizeMove(value),
             "workspace.delete" => SummarizeDelete(value),
-            _ => $"Công cụ {proposal.ToolName} đã chạy thành công."
+            _ => $"Công cụ {GetToolDisplayName(proposal.ToolName)} đã chạy thành công."
         };
     }
 
@@ -285,6 +285,25 @@ UNTRUSTED_TOOL_RESULT:
         var type = LocalizeEntryType(GetString(output, "type"));
         return $"Đã xóa {type} {path}.";
     }
+
+    private static string GetToolDisplayName(string toolName) =>
+        toolName switch
+        {
+            "app.summary" => "Tổng quan ứng dụng",
+            "documents.search" => "Tìm trong tài liệu",
+            "local.calculate" => "Máy tính",
+            "local.clock" => "Đồng hồ hệ thống",
+            "local.date_math" => "Tính toán ngày giờ",
+            "local.text_stats" => "Thống kê văn bản",
+            "memory.search" => "Tìm trong trí nhớ",
+            "workspace.create_directory" => "Tạo thư mục",
+            "workspace.delete" => "Xóa tệp hoặc thư mục",
+            "workspace.list" => "Liệt kê thư mục làm việc",
+            "workspace.move" => "Di chuyển hoặc đổi tên",
+            "workspace.read_text" => "Đọc tệp văn bản",
+            "workspace.write_text" => "Ghi tệp văn bản",
+            _ => "không xác định"
+        };
 
     private static string LocalizeWriteMode(string? mode) =>
         mode?.ToLowerInvariant() switch

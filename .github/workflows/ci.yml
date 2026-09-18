@@ -831,18 +831,18 @@ jobs:
           echo "=== AUDIT DB DIAGNOSTIC ==="
           ls -la /tmp/personalai-audit || true
           python3 - <<'PY'
-import os, sqlite3, json
-path = "/tmp/personalai-audit/audit.db"
-if not os.path.exists(path):
-    print(json.dumps({"databaseExists": False}))
-else:
-    con = sqlite3.connect(path)
-    try:
-        rows = con.execute("select workspace_id, agent, action, tool, target, reason, result from audit_events order by occurred_at desc limit 30").fetchall()
-        print(json.dumps({"databaseExists": True, "rowCount": len(rows), "rows": rows}, ensure_ascii=False))
-    finally:
-        con.close()
-PY
+          import os, sqlite3, json
+          path = "/tmp/personalai-audit/audit.db"
+          if not os.path.exists(path):
+              print(json.dumps({"databaseExists": False}))
+          else:
+              con = sqlite3.connect(path)
+              try:
+                  rows = con.execute("select workspace_id, agent, action, tool, target, reason, result from audit_events order by occurred_at desc limit 30").fetchall()
+                  print(json.dumps({"databaseExists": True, "rowCount": len(rows), "rows": rows}, ensure_ascii=False))
+              finally:
+                  con.close()
+          PY
           echo "=== PERSONAL AUDIT API ==="
           curl -fsS 'http://127.0.0.1:5077/api/audit?limit=30' | jq '{storage, retentionDays, maximumEntries, items: [.items[] | {workspaceId, agent, action, tool, target, reason, result}]}'
           echo "=== END AUDIT DB DIAGNOSTIC ==="

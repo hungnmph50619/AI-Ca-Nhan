@@ -146,7 +146,7 @@ public sealed class CompanionService : ICompanionService
         {
             CleanupPairings(now);
 
-            foreach (var code in _pairings
+            foreach (var existingCode in _pairings
                 .Where(item =>
                     item.Value.WorkspaceId.Equals(
                         normalizedWorkspace,
@@ -154,7 +154,7 @@ public sealed class CompanionService : ICompanionService
                 .Select(item => item.Key)
                 .ToArray())
             {
-                _pairings.Remove(code);
+                _pairings.Remove(existingCode);
             }
 
             var code = CreatePairingCode();
@@ -448,9 +448,8 @@ public sealed class CompanionService : ICompanionService
 
         if (code.Length != PairingCodeLength
             || code.Any(character =>
-                !PairingAlphabet.Contains(
-                    character,
-                    StringComparison.Ordinal)))
+                PairingAlphabet.IndexOf(
+                    character) < 0))
         {
             throw new CompanionPairingException(
                 "Mã ghép nối không hợp lệ.");

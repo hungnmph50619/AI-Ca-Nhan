@@ -167,7 +167,9 @@ public sealed class DevelopmentGitStatusTool(
         var result = await development.GitStatusAsync(
             path,
             cancellationToken);
-        return JsonSerializer.SerializeToElement(result);
+        return DevelopmentToolExecutionGuard.RequireSuccess(
+            result,
+            "git status");
     }
 
     private static JsonElement ParseSchema(string json)
@@ -230,7 +232,9 @@ public sealed class DevelopmentGitDiffTool(
             path,
             staged,
             cancellationToken);
-        return JsonSerializer.SerializeToElement(result);
+        return DevelopmentToolExecutionGuard.RequireSuccess(
+            result,
+            staged ? "git diff --cached" : "git diff");
     }
 
     private static JsonElement ParseSchema(string json)
@@ -270,7 +274,9 @@ public sealed class DevelopmentDotnetRestoreTool(
             arguments.GetProperty("targetPath").GetString()
                 ?? string.Empty,
             cancellationToken);
-        return JsonSerializer.SerializeToElement(result);
+        return DevelopmentToolExecutionGuard.RequireSuccess(
+            result,
+            "dotnet restore");
     }
 
     private static JsonElement TargetSchema(bool includeConfiguration)
@@ -343,7 +349,9 @@ public sealed class DevelopmentDotnetBuildTool(
                 ?? string.Empty,
             ReadConfiguration(arguments),
             cancellationToken);
-        return JsonSerializer.SerializeToElement(result);
+        return DevelopmentToolExecutionGuard.RequireSuccess(
+            result,
+            "dotnet build");
     }
 
     private static string ReadConfiguration(JsonElement arguments) =>
@@ -411,7 +419,9 @@ public sealed class DevelopmentDotnetTestTool(
                 ? configurationElement.GetString() ?? "Debug"
                 : "Debug",
             cancellationToken);
-        return JsonSerializer.SerializeToElement(result);
+        return DevelopmentToolExecutionGuard.RequireSuccess(
+            result,
+            "dotnet test");
     }
 
     private static JsonElement TargetSchema()
@@ -436,5 +446,42 @@ public sealed class DevelopmentDotnetTestTool(
             }
             """);
         return document.RootElement.Clone();
+    }
+}
+
+
+internal static class DevelopmentToolExecutionGuard
+{
+    public static JsonElement RequireSuccess(
+        DevelopmentGitResult result,
+        string operation)
+    {
+        var output = JsonSerializer.SerializeToElement(result);
+        if (result.Succeeded)
+        {
+            return output;
+        }
+
+        throw new ToolExecutionFailedException(
+            $"{operation} kết thúc với exit code {result.ExitCode}.",
+            output);
+    }
+
+    public static JsonElement RequireSuccess(
+        DevelopmentProcessResult result,
+        string operation)
+    {
+        var output = JsonSerializer.SerializeToElement(result);
+        if (result.Succeeded)
+        {
+            return output;
+        }
+
+        var reason = result.TimedOut
+            ? $"{operation} vượt quá thời gian chờ được kiểm soát."
+            : $"{operation} kết thúc với exit code {result.ExitCode}.";
+        throw new ToolExecutionFailedException(
+            reason,
+            output);
     }
 }

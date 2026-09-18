@@ -55,7 +55,68 @@ jobs:
             exit 1
           fi
 
-          curl -fsS http://127.0.0.1:5077/api/status | jq -e '.version == "0.9.7"' >/dev/null
+          curl -fsS http://127.0.0.1:5077/api/status | jq -e '.version == "1.0.0"' >/dev/null
+
+          curl -fsS -D /tmp/status-headers http://127.0.0.1:5077/api/status -o /tmp/status-body.json
+          grep -Eiq '^X-PersonalAI-Request-Id: [a-f0-9]{32}' /tmp/status-headers
+          grep -Eiq '^X-PersonalAI-Api-Version: 1' /tmp/status-headers
+          grep -Eiq '^X-Content-Type-Options: nosniff' /tmp/status-headers
+          jq -e '.version == "1.0.0" and .apiContractVersion == "1" and .channel == "stable"' /tmp/status-body.json >/dev/null
+
+          capabilities=$(curl -fsS http://127.0.0.1:5077/api/system/capabilities)
+          echo "$capabilities" | jq -e '
+            .version == "1.0.0"
+            and .apiContractVersion == "1"
+            and .channel == "stable"
+            and .workspaceHeader == "X-PersonalAI-Workspace"
+            and .requestIdHeader == "X-PersonalAI-Request-Id"
+            and all(["workspace","memory","documents","rag","tasks","files","context","tools","audit","undo","conversations"][]; . as $module | any($ARGS.positional[]; . == $module))
+          ' --args \
+            "$(echo "$capabilities" | jq -r '.stableModules[]')" >/dev/null
+          echo "$capabilities" | jq -e '
+            any(.reservedModules[]; . == "agents")
+            and any(.reservedModules[]; . == "policies")
+            and any(.reservedModules[]; . == "browser")
+            and any(.reservedModules[]; . == "computer-use")
+            and any(.reservedModules[]; . == "connectors")
+            and .safety.workspaceIsolation == true
+            and .safety.writeRequiresConfirmation == true
+            and .safety.deleteRequiresConfirmation == true
+            and .safety.externalRequiresConfirmation == true
+            and .safety.undoRequiresConfirmation == true
+            and .safety.automaticMultiStepExecution == false
+            and .safety.backgroundScheduler == false
+            and .safety.autonomousAgentLoop == false
+            and .safety.parallelToolCalls == false
+            and .limits.maximumWorkspaces == 20
+            and .limits.maximumTasksPerWorkspace == 50
+            and .limits.maximumContextCharacters == 7600
+            and .limits.maximumWorkspaceFileBytes == 524288
+            and .limits.auditRetentionDays == 90
+            and .limits.maximumAuditEntries == 10000
+            and .limits.undoAvailabilityDays == 7
+            and .limits.maximumUndoEntries == 500
+            and .limits.maximumUndoSnapshotBytes == 524288
+          ' >/dev/null
+
+          core_health=$(curl -fsS http://127.0.0.1:5077/api/system/health)
+          echo "$core_health" | jq -e '
+            .version == "1.0.0"
+            and .apiContractVersion == "1"
+            and .channel == "stable"
+            and .ready == true
+            and .workspaceId == "personal"
+            and (.status == "healthy" or .status == "degraded")
+            and any(.modules[]; .module == "workspace" and .status == "healthy")
+            and any(.modules[]; .module == "memory" and .status == "healthy")
+            and any(.modules[]; .module == "documents" and .status == "healthy")
+            and any(.modules[]; .module == "tasks" and .status == "healthy")
+            and any(.modules[]; .module == "files" and .status == "healthy")
+            and any(.modules[]; .module == "tools" and .status == "healthy")
+            and any(.modules[]; .module == "audit" and .status == "healthy")
+            and any(.modules[]; .module == "undo" and .status == "healthy")
+            and any(.modules[]; .module == "ai-provider" and (.status == "healthy" or .status == "unconfigured"))
+          ' >/dev/null
 
           workspaces=$(curl -fsS http://127.0.0.1:5077/api/workspaces)
           echo "$workspaces" | jq -e '.currentWorkspaceId == "personal" and .maximumWorkspaces == 20 and (.workspaces | length) >= 5 and any(.workspaces[]; .id == "personal" and .isBuiltIn == true) and any(.workspaces[]; .id == "work") and any(.workspaces[]; .id == "study") and any(.workspaces[]; .id == "ai-ca-nhan") and any(.workspaces[]; .id == "travel")' >/dev/null
@@ -68,13 +129,18 @@ jobs:
           echo "$custom_workspace" | jq -e '.isBuiltIn == false and (.activeModules | sort) == (["memory","documents","tasks","files","conversations"] | sort) and (.reservedModules | sort) == (["agents","policies"] | sort)' >/dev/null
 
           custom_status=$(curl -fsS -H "X-PersonalAI-Workspace: $custom_workspace_id" http://127.0.0.1:5077/api/status)
-          echo "$custom_status" | jq -e '.version == "0.9.7" and .workspaceName == "CI Workspace"' >/dev/null
+          echo "$custom_status" | jq -e '.version == "1.0.0" and .workspaceName == "CI Workspace"' >/dev/null
 
-          invalid_workspace_code=$(curl -sS -o /tmp/workspace-invalid.json -w '%{http_code}' \
+          custom_core_health=$(curl -fsS -H "X-PersonalAI-Workspace: $custom_workspace_id" http://127.0.0.1:5077/api/system/health)
+          echo "$custom_core_health" | jq -e '.ready == true and .workspaceId == "'"$custom_workspace_id"'" and any(.modules[]; .module == "files" and .status == "healthy")' >/dev/null
+
+          invalid_workspace_code=$(curl -sS -D /tmp/workspace-invalid-headers -o /tmp/workspace-invalid.json -w '%{http_code}' \
             -H 'X-PersonalAI-Workspace: does-not-exist' \
             http://127.0.0.1:5077/api/status)
           test "$invalid_workspace_code" = "400"
           jq -e '(.error | contains("không tồn tại"))' /tmp/workspace-invalid.json >/dev/null
+          grep -Eiq '^X-PersonalAI-Request-Id: [a-f0-9]{32}' /tmp/workspace-invalid-headers
+          grep -Eiq '^X-PersonalAI-Api-Version: 1' /tmp/workspace-invalid-headers
 
           custom_memory=$(curl -fsS -X POST http://127.0.0.1:5077/api/memory \
             -H "X-PersonalAI-Workspace: $custom_workspace_id" \
@@ -264,7 +330,7 @@ jobs:
           test -n "$persistent_undo_id"
 
           tools=$(curl -fsS http://127.0.0.1:5077/api/tools)
-          echo "$tools" | jq -e '.frameworkVersion == "0.9.7" and (.permissionTypes | sort) == (["DELETE","EXTERNAL","READ","SENSITIVE","WRITE"] | sort)' >/dev/null
+          echo "$tools" | jq -e '.frameworkVersion == "1.0.0" and (.permissionTypes | sort) == (["DELETE","EXTERNAL","READ","SENSITIVE","WRITE"] | sort)' >/dev/null
           echo "$tools" | jq -e '(.tools | length) == 13 and any(.tools[]; .name == "local.clock" and .localOnly == true and .requiredPermissions == ["READ"]) and any(.tools[]; .name == "local.text_stats" and .timeoutMs == 2000) and any(.tools[]; .name == "memory.search") and any(.tools[]; .name == "documents.search") and any(.tools[]; .name == "local.calculate") and any(.tools[]; .name == "local.date_math") and any(.tools[]; .name == "app.summary") and any(.tools[]; .name == "workspace.list" and .requiredPermissions == ["READ"]) and any(.tools[]; .name == "workspace.read_text" and .requiredPermissions == ["READ"]) and any(.tools[]; .name == "workspace.write_text" and .requiredPermissions == ["WRITE"] and .requiresConfirmation == true) and any(.tools[]; .name == "workspace.create_directory" and .requiredPermissions == ["WRITE"] and .requiresConfirmation == true) and any(.tools[]; .name == "workspace.move" and .requiredPermissions == ["WRITE"] and .requiresConfirmation == true) and any(.tools[]; .name == "workspace.delete" and .requiredPermissions == ["DELETE"] and .requiresConfirmation == true)' >/dev/null
 
           text_tool=$(curl -fsS http://127.0.0.1:5077/api/tools/local.text_stats)
@@ -1014,18 +1080,18 @@ jobs:
           grep -Fq 'Task Dependencies' docs/releases/v0.9.3.md
           grep -Fq 'v090.css' src/PersonalAI.Web/wwwroot/index.html
           grep -Fq 'v090.js' src/PersonalAI.Web/wwwroot/index.html
-          grep -Fq 'Tác vụ có Undo Foundation v0.9.7' src/PersonalAI.Web/wwwroot/v090.js
+          grep -Fq 'Tác vụ có Undo Foundation v1.0.0' src/PersonalAI.Web/wwwroot/v090.js
           grep -Fq 'MỤC TIÊU → KẾ HOẠCH → TỪNG BƯỚC' src/PersonalAI.Web/wwwroot/v090.js
           grep -Fq 'arguments_sha256' src/PersonalAI.Web/Services/ToolActivityStore.cs
           grep -Fq 'output_sha256' src/PersonalAI.Web/Services/ToolActivityStore.cs
           grep -Fq 'v089.css' src/PersonalAI.Web/wwwroot/index.html
-          grep -Fq 'Nhật ký hoạt động công cụ v0.9.7' src/PersonalAI.Web/wwwroot/v080.js
+          grep -Fq 'Nhật ký hoạt động công cụ v1.0.0' src/PersonalAI.Web/wwwroot/v080.js
           grep -Fq 'Nhật ký hoạt động gần đây' src/PersonalAI.Web/wwwroot/v080.js
           grep -Fq 'v088.css' src/PersonalAI.Web/wwwroot/index.html
           grep -Fq 'Nguồn đề xuất:' src/PersonalAI.Web/wwwroot/app.js
           grep -Fq 'Tham số' src/PersonalAI.Web/wwwroot/app.js
           grep -Fq 'CÔNG CỤ NỘI BỘ TRÊN MÁY NÀY' src/PersonalAI.Web/wwwroot/v080.js
-          grep -Fq 'Nhật ký hoạt động công cụ v0.9.7' src/PersonalAI.Web/wwwroot/v080.js
+          grep -Fq 'Nhật ký hoạt động công cụ v1.0.0' src/PersonalAI.Web/wwwroot/v080.js
           grep -Fq 'Mô hình' src/PersonalAI.Web/wwwroot/index.html
           grep -Fq 'Khóa truy cập' src/PersonalAI.Web/wwwroot/index.html
           ! grep -Fq 'Planner:' src/PersonalAI.Web/wwwroot/app.js
@@ -1122,6 +1188,25 @@ jobs:
           grep -Fq 'v097.css' src/PersonalAI.Web/wwwroot/index.html
           grep -Fq 'v097.js' src/PersonalAI.Web/wwwroot/index.html
           ! grep -Fq 'MapDelete("/api/undo' src/PersonalAI.Web/Services/UndoEndpoints.cs
+          grep -Fq 'Stable Personal AI Core' docs/releases/v1.0.0.md
+          grep -Fq 'public const string Version = "1.0.0"' src/PersonalAI.Web/Models/SystemModels.cs
+          grep -Fq 'public const string ApiContractVersion = "1"' src/PersonalAI.Web/Models/SystemModels.cs
+          grep -Fq 'public const string Channel = "stable"' src/PersonalAI.Web/Models/SystemModels.cs
+          grep -Fq '/api/system/health' src/PersonalAI.Web/Services/SystemEndpoints.cs
+          grep -Fq '/api/system/capabilities' src/PersonalAI.Web/Services/SystemEndpoints.cs
+          grep -Fq 'UseSystemHardening' src/PersonalAI.Web/Program.cs
+          grep -Fq 'app.MapStableCore();' src/PersonalAI.Web/Program.cs
+          grep -Fq 'PersonalAiRelease.Version' src/PersonalAI.Web/Program.cs
+          grep -Fq 'PersonalAiRelease.Version' src/PersonalAI.Web/Services/ToolFrameworkEndpoints.cs
+          grep -Fq 'X-PersonalAI-Request-Id' src/PersonalAI.Web/Services/SystemEndpoints.cs
+          grep -Fq 'AutomaticMultiStepExecution: false' src/PersonalAI.Web/Services/SystemCoreService.cs
+          grep -Fq 'BackgroundScheduler: false' src/PersonalAI.Web/Services/SystemCoreService.cs
+          grep -Fq 'AutonomousAgentLoop: false' src/PersonalAI.Web/Services/SystemCoreService.cs
+          grep -Fq 'ParallelToolCalls: false' src/PersonalAI.Web/Services/SystemCoreService.cs
+          grep -Fq 'v100.css' src/PersonalAI.Web/wwwroot/index.html
+          grep -Fq 'v100.js' src/PersonalAI.Web/wwwroot/index.html
+          grep -Fq 'STABLE CORE · API CONTRACT 1' src/PersonalAI.Web/wwwroot/v100.js
+
 
 
       - name: Setup Node.js
@@ -1152,3 +1237,4 @@ jobs:
           node --check src/PersonalAI.Web/wwwroot/v095.js
           node --check src/PersonalAI.Web/wwwroot/v096.js
           node --check src/PersonalAI.Web/wwwroot/v097.js
+          node --check src/PersonalAI.Web/wwwroot/v100.js

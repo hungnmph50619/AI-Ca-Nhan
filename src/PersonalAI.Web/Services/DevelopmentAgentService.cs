@@ -293,11 +293,14 @@ public sealed class DevelopmentAgentService(
         var directory = ResolveDirectory(
             repositoryPath,
             allowRoot: true);
-        EnsureGitRepository(directory);
+        var repository = ResolveGitRepository(
+            directory);
 
         var result = await RunProcessAsync(
             "git",
             [
+                $"--git-dir={repository.GitDirectory}",
+                $"--work-tree={repository.WorkTree}",
                 "-c",
                 "core.fsmonitor=false",
                 "status",
@@ -328,10 +331,13 @@ public sealed class DevelopmentAgentService(
         var directory = ResolveDirectory(
             repositoryPath,
             allowRoot: true);
-        EnsureGitRepository(directory);
+        var repository = ResolveGitRepository(
+            directory);
 
         var arguments = new List<string>
         {
+            $"--git-dir={repository.GitDirectory}",
+            $"--work-tree={repository.WorkTree}",
             "-c",
             "core.fsmonitor=false",
             "diff",
@@ -784,7 +790,7 @@ public sealed class DevelopmentAgentService(
         return fullPath;
     }
 
-    private static void EnsureGitRepository(
+    private static GitRepositoryPaths ResolveGitRepository(
         string directory)
     {
         var marker = Path.Combine(
@@ -802,6 +808,46 @@ public sealed class DevelopmentAgentService(
             throw new ToolExecutionInputException(
                 ".git directory không được là symlink/reparse point.");
         }
+
+        var blockedIndirections = new[]
+        {
+            Path.Combine(marker, "commondir"),
+            Path.Combine(marker, "objects", "info", "alternates")
+        };
+        if (blockedIndirections.Any(File.Exists))
+        {
+            throw new ToolExecutionInputException(
+                "Git repository dùng commondir/object alternates nên chưa được Development Agent hỗ trợ.");
+        }
+
+        foreach (var relative in new[]
+        {
+            "config",
+            "HEAD",
+            "index",
+            "objects",
+            "refs"
+        })
+        {
+            var path = Path.Combine(
+                marker,
+                relative);
+            FileSystemInfo? entry = Directory.Exists(path)
+                ? new DirectoryInfo(path)
+                : File.Exists(path)
+                    ? new FileInfo(path)
+                    : null;
+            if (entry is not null
+                && IsSymlink(entry))
+            {
+                throw new ToolExecutionInputException(
+                    $"Git metadata {relative} không được là symlink/reparse point.");
+            }
+        }
+
+        return new GitRepositoryPaths(
+            Path.GetFullPath(marker),
+            Path.GetFullPath(directory));
     }
 
     private static string NormalizeConfiguration(
@@ -1240,6 +1286,10 @@ public sealed class DevelopmentAgentService(
     private sealed record DotnetTarget(
         string FullPath,
         string RelativePath);
+
+    private sealed record GitRepositoryPaths(
+        string GitDirectory,
+        string WorkTree);
 
     private sealed record ProcessRunResult(
         int ExitCode,

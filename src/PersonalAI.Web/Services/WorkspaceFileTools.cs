@@ -7,6 +7,8 @@ namespace PersonalAI.Web.Services;
 
 public interface IWorkspaceFileService
 {
+    string GetWorkspaceRoot();
+
     WorkspaceDirectoryListing List(string? relativePath, int maxEntries);
 
     Task<WorkspaceTextFile> ReadTextAsync(
@@ -146,6 +148,9 @@ public sealed class WorkspaceFileService : IWorkspaceFileService
             ? StringComparison.OrdinalIgnoreCase
             : StringComparison.Ordinal;
     }
+
+    public string GetWorkspaceRoot() =>
+        GetActiveRoot();
 
     public WorkspaceDirectoryListing List(string? relativePath, int maxEntries)
     {

@@ -635,7 +635,6 @@ function setKnowledgeFeedback(message, type = "") {
 async function searchKnowledge(event) {
   event.preventDefault();
   if (state.knowledgeBusy || state.knowledgeSearchBusy) return;
-
   const query = elements.knowledgeSearchInput.value.trim();
   if (query.length < 2) {
     elements.knowledgeSearchResults.hidden = false;

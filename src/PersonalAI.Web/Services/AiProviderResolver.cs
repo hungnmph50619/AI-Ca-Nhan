@@ -30,5 +30,5 @@ public sealed class AiProviderResolver : IAiProviderResolver
             : provider.Equals("Gemini", StringComparison.OrdinalIgnoreCase)
                 ? _gemini
                 : throw new InvalidOperationException(
-                    "Nhà cung cấp AI của native tool call không còn được hỗ trợ.");
+                    "Nhà cung cấp AI của lượt dùng công cụ này không còn được hỗ trợ.");
 }

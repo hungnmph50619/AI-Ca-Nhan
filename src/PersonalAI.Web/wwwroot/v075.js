@@ -319,7 +319,7 @@
       const anchor = document.createElement("a");
       const date = new Date().toISOString().slice(0, 10);
       anchor.href = url;
-      anchor.download = `personal-ai-knowledge-metadata-${date}.json`;
+      anchor.download = `personal-ai-thong-tin-tai-lieu-${date}.json`;
       document.body.appendChild(anchor);
       anchor.click();
       anchor.remove();

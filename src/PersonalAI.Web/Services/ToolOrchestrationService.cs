@@ -46,6 +46,7 @@ public sealed class ToolOrchestrationService : IToolOrchestrationService
     private readonly IToolExecutionService _executor;
     private readonly IAiProviderResolver _providerResolver;
     private readonly IToolResultSynthesisService _synthesizer;
+    private readonly IToolActivityStore _activityStore;
     private readonly ILogger<ToolOrchestrationService> _logger;
     private static readonly ConcurrentDictionary<Guid, ToolCallProposal> Proposals = new();
     private static readonly ConcurrentDictionary<Guid, ProviderFunctionCallContext> NativeProposalContexts = new();
@@ -59,6 +60,7 @@ public sealed class ToolOrchestrationService : IToolOrchestrationService
         IToolExecutionService executor,
         IAiProviderResolver providerResolver,
         IToolResultSynthesisService synthesizer,
+        IToolActivityStore activityStore,
         ILogger<ToolOrchestrationService> logger)
     {
         _registry = registry;
@@ -66,6 +68,7 @@ public sealed class ToolOrchestrationService : IToolOrchestrationService
         _executor = executor;
         _providerResolver = providerResolver;
         _synthesizer = synthesizer;
+        _activityStore = activityStore;
         _logger = logger;
     }
 
@@ -219,6 +222,19 @@ public sealed class ToolOrchestrationService : IToolOrchestrationService
             planningModel);
 
         Proposals[proposal.ProposalId] = proposal;
+        TryRecordActivity(new ToolActivityEvent(
+            ToolActivityEventTypes.ProposalCreated,
+            proposal.ToolName,
+            proposal.ProposalId,
+            null,
+            proposal.PlanningMode,
+            proposal.PlanningProvider,
+            proposal.PlanningModel,
+            proposal.RequiredPermissions,
+            null,
+            null,
+            "prepared",
+            proposal.Arguments));
         return proposal;
     }
 
@@ -250,6 +266,21 @@ public sealed class ToolOrchestrationService : IToolOrchestrationService
                     tool.Definition.RequiredPermissions,
                     Confirmed: false),
                 cancellationToken);
+            TryRecordActivity(new ToolActivityEvent(
+                ToolActivityEventTypes.ExecutionDenied,
+                proposal.ToolName,
+                proposal.ProposalId,
+                denied.InvocationId,
+                proposal.PlanningMode,
+                proposal.PlanningProvider,
+                proposal.PlanningModel,
+                proposal.RequiredPermissions,
+                false,
+                null,
+                denied.Status,
+                proposal.Arguments,
+                denied.Output,
+                denied.DurationMs));
             return new ToolProposalExecutionResponse(
                 proposal,
                 denied,
@@ -271,6 +302,22 @@ public sealed class ToolOrchestrationService : IToolOrchestrationService
                 tool.Definition.RequiredPermissions,
                 Confirmed: confirmed),
             cancellationToken);
+
+        TryRecordActivity(new ToolActivityEvent(
+            ToolActivityEventTypes.ExecutionCompleted,
+            proposal.ToolName,
+            proposal.ProposalId,
+            execution.InvocationId,
+            proposal.PlanningMode,
+            proposal.PlanningProvider,
+            proposal.PlanningModel,
+            proposal.RequiredPermissions,
+            confirmed,
+            null,
+            execution.Status,
+            proposal.Arguments,
+            execution.Output,
+            execution.DurationMs));
 
         var localSummary = _synthesizer.CreateLocalSummary(proposal, execution);
         var nonSensitiveOutput = execution.Success
@@ -329,6 +376,18 @@ public sealed class ToolOrchestrationService : IToolOrchestrationService
 
         if (!confirmedExternal)
         {
+            TryRecordActivity(new ToolActivityEvent(
+                ToolActivityEventTypes.AiSynthesisDenied,
+                completed.Proposal.ToolName,
+                completed.Proposal.ProposalId,
+                invocationId,
+                completed.Proposal.PlanningMode,
+                completed.Proposal.PlanningProvider,
+                completed.Proposal.PlanningModel,
+                completed.Proposal.RequiredPermissions,
+                null,
+                false,
+                "denied"));
             throw new ToolExternalConfirmationRequiredException(
                 "Diễn giải bằng AI sẽ gửi kết quả công cụ tới nhà cung cấp AI đang cấu hình và cần xác nhận rõ ràng.");
         }
@@ -355,6 +414,18 @@ public sealed class ToolOrchestrationService : IToolOrchestrationService
             {
                 AiSynthesis = synthesis
             };
+            TryRecordActivity(new ToolActivityEvent(
+                ToolActivityEventTypes.AiSynthesisCompleted,
+                completed.Proposal.ToolName,
+                completed.Proposal.ProposalId,
+                invocationId,
+                completed.Proposal.PlanningMode,
+                synthesis.Provider,
+                synthesis.Model,
+                completed.Proposal.RequiredPermissions,
+                null,
+                true,
+                "succeeded"));
             return synthesis;
         }
         finally
@@ -389,6 +460,18 @@ public sealed class ToolOrchestrationService : IToolOrchestrationService
 
         if (!confirmedExternal)
         {
+            TryRecordActivity(new ToolActivityEvent(
+                ToolActivityEventTypes.NativeContinuationDenied,
+                completed.Proposal.ToolName,
+                completed.Proposal.ProposalId,
+                invocationId,
+                completed.Proposal.PlanningMode,
+                completed.NativeContext.Provider,
+                completed.NativeContext.Model,
+                completed.Proposal.RequiredPermissions,
+                null,
+                false,
+                "denied"));
             throw new ToolExternalConfirmationRequiredException(
                 "Hoàn tất lời gọi hàm gốc sẽ gửi kết quả công cụ tới đúng nhà cung cấp AI đã tạo đề xuất và cần xác nhận rõ ràng.");
         }
@@ -444,6 +527,19 @@ public sealed class ToolOrchestrationService : IToolOrchestrationService
             {
                 NativeContinuation = continuation
             };
+
+            TryRecordActivity(new ToolActivityEvent(
+                ToolActivityEventTypes.NativeContinuationCompleted,
+                completed.Proposal.ToolName,
+                completed.Proposal.ProposalId,
+                invocationId,
+                completed.Proposal.PlanningMode,
+                completed.NativeContext.Provider,
+                completed.NativeContext.Model,
+                completed.Proposal.RequiredPermissions,
+                null,
+                true,
+                "succeeded"));
 
             _logger.LogInformation(
                 "Tool result {InvocationId} continued through native function protocol with {Provider}/{Model}. Truncated output: {OutputTruncated}.",
@@ -624,6 +720,22 @@ public sealed class ToolOrchestrationService : IToolOrchestrationService
             {
                 CompletedInvocations.TryRemove(completed.Execution.InvocationId, out _);
             }
+        }
+    }
+
+    private void TryRecordActivity(ToolActivityEvent activity)
+    {
+        try
+        {
+            _activityStore.Record(activity);
+        }
+        catch (Exception exception)
+        {
+            _logger.LogWarning(
+                exception,
+                "Không thể ghi nhật ký hoạt động công cụ {EventType} cho {ToolName}.",
+                activity.EventType,
+                activity.ToolName);
         }
     }
 

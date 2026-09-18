@@ -53,7 +53,7 @@
       const indexed = Number(payload.indexedChunks || 0).toLocaleString("vi-VN");
       const total = Number(payload.totalChunks || 0).toLocaleString("vi-VN");
       const dimensions = Number(payload.dimensions || 0).toLocaleString("vi-VN");
-      node.textContent = `Véc-tơ trên máy · ${indexed}/${total} đoạn · ${dimensions} chiều · ${payload.embeddingModel || "mô hình trên máy"}`;
+      node.textContent = `Véc-tơ trên máy · ${indexed}/${total} đoạn · ${dimensions} chiều`;
     } catch {
       node.textContent = "Véc-tơ trên máy · sẽ tự lập chỉ mục khi tìm kiếm ngữ nghĩa.";
     }

@@ -4,7 +4,7 @@ namespace PersonalAI.Web.Services;
 
 public static class ToolFrameworkEndpoints
 {
-    public const string FrameworkVersion = "0.8.8";
+    public const string FrameworkVersion = "0.9.0";
 
     private static readonly string[] PermissionTypes =
     [
@@ -35,6 +35,7 @@ public static class ToolFrameworkEndpoints
         services.AddSingleton<IToolInputValidator, ToolInputValidator>();
         services.AddSingleton<IToolPolicy, ToolPolicy>();
         services.AddSingleton<IToolExecutionService, ToolExecutionService>();
+        services.AddSingleton<IToolActivityStore, SqliteToolActivityStore>();
         services.AddScoped<IToolResultSynthesisService, ToolResultSynthesisService>();
         services.AddScoped<IToolOrchestrationService, ToolOrchestrationService>();
         return services;
@@ -55,12 +56,18 @@ public static class ToolFrameworkEndpoints
                 : Results.NotFound(new ApiError("Không tìm thấy công cụ đã đăng ký."));
         });
 
+        app.MapGet("/api/tools/activity", (int? limit, IToolActivityStore activityStore) =>
+            Results.Ok(activityStore.GetRecent(limit ?? 30)));
+
         app.MapPost("/api/tools/execute", async (
             ToolExecutionRequest request,
             IToolExecutionService executor,
+            IToolActivityStore activityStore,
+            ILoggerFactory loggerFactory,
             CancellationToken cancellationToken) =>
         {
             var response = await executor.ExecuteAsync(request, cancellationToken);
+            TryRecordDirectExecution(activityStore, loggerFactory, request, response);
             var statusCode = response.Status switch
             {
                 ToolExecutionStatuses.Succeeded => StatusCodes.Status200OK,
@@ -209,5 +216,40 @@ public static class ToolFrameworkEndpoints
         });
 
         return app;
+    }
+
+    private static void TryRecordDirectExecution(
+        IToolActivityStore activityStore,
+        ILoggerFactory loggerFactory,
+        ToolExecutionRequest request,
+        ToolExecutionResponse response)
+    {
+        try
+        {
+            activityStore.Record(new ToolActivityEvent(
+                ToolActivityEventTypes.DirectExecutionCompleted,
+                response.ToolName,
+                null,
+                response.InvocationId,
+                "direct",
+                null,
+                null,
+                response.RequiredPermissions,
+                request.Confirmed,
+                null,
+                response.Status,
+                request.Arguments,
+                response.Output,
+                response.DurationMs));
+        }
+        catch (Exception exception)
+        {
+            loggerFactory
+                .CreateLogger("ToolActivity")
+                .LogWarning(
+                    exception,
+                    "Không thể ghi nhật ký lần chạy trực tiếp của công cụ {ToolName}.",
+                    response.ToolName);
+        }
     }
 }

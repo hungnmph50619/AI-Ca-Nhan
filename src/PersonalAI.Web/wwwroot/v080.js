@@ -1,5 +1,5 @@
 (() => {
-  const VERSION = "0.8.8";
+  const VERSION = "0.9.0";
   let loading = false;
 
   if (document.readyState === "loading") {
@@ -80,7 +80,7 @@
 
     const intro = document.createElement("div");
     intro.className = "v080-framework-intro";
-    intro.innerHTML = "<strong>Hoàn tất câu trả lời từ kết quả công cụ v0.8.8</strong><p>Sau khi một đề xuất gọi hàm gốc được bạn cho phép chạy, PersonalAI có thể gửi kết quả trở lại đúng nhà cung cấp và mô hình để tạo câu trả lời cuối. Lượt tiếp tục không cấp thêm công cụ.</p>";
+    intro.innerHTML = "<strong>Nhật ký hoạt động công cụ v0.9.0</strong><p>Mỗi đề xuất, lần chạy và lần gửi kết quả ra nhà cung cấp AI được ghi dấu trên máy. Nhật ký không lưu toàn bộ tham số hay nội dung kết quả; chỉ lưu thông tin vận hành và mã băm để đối chiếu.</p>";
 
     const permissionLegend = document.createElement("div");
     permissionLegend.className = "v080-permission-legend";
@@ -98,9 +98,10 @@
 
     const note = document.createElement("p");
     note.className = "security-copy";
-    note.textContent = "v0.8.8 giữ quy trình đề xuất → quyền → xác nhận → thực thi. Kết quả công cụ được tóm tắt trên máy trước; chỉ khi bạn xác nhận thì kết quả mới được gửi về đúng nhà cung cấp và mô hình, đồng thời lượt tiếp tục không được phép gọi thêm công cụ." ;
+    note.textContent = "v0.9.0 giữ nguyên quy trình đề xuất → quyền → xác nhận → thực thi. Nhật ký hoạt động được lưu cục bộ tối đa 30 ngày hoặc 2.000 sự kiện; dữ liệu tham số và kết quả đầy đủ không được ghi vào nhật ký." ;
 
-    card.append(header, intro, permissionLegend, status, list, note);
+    const activity = createActivitySection();
+    card.append(header, intro, permissionLegend, status, list, activity, note);
     dialog.appendChild(card);
     dialog.addEventListener("click", event => {
       if (event.target === dialog) dialog.close();
@@ -112,7 +113,7 @@
   async function openToolsDialog() {
     const dialog = ensureToolsDialog();
     dialog.showModal();
-    await loadCatalog();
+    await Promise.all([loadCatalog(), loadActivity()]);
   }
 
   async function refreshCount() {
@@ -169,6 +170,158 @@
     tools.forEach(tool => list.appendChild(createToolCard(tool)));
   }
 
+  function createActivitySection() {
+    const section = document.createElement("section");
+    section.className = "v089-activity";
+
+    const header = document.createElement("div");
+    header.className = "v089-activity-header";
+
+    const copy = document.createElement("div");
+    const title = document.createElement("strong");
+    title.textContent = "Nhật ký hoạt động gần đây";
+    const hint = document.createElement("span");
+    hint.textContent = "Chỉ lưu dấu vết vận hành, quyền, trạng thái và mã băm; không lưu toàn bộ nội dung tham số hoặc kết quả.";
+    copy.append(title, hint);
+
+    const refresh = document.createElement("button");
+    refresh.id = "toolsActivityRefresh";
+    refresh.type = "button";
+    refresh.className = "secondary-button";
+    refresh.textContent = "Tải lại";
+    refresh.addEventListener("click", () => loadActivity());
+
+    header.append(copy, refresh);
+
+    const status = document.createElement("p");
+    status.id = "toolsActivityStatus";
+    status.className = "field-hint";
+    status.textContent = "Đang đọc nhật ký hoạt động…";
+
+    const list = document.createElement("div");
+    list.id = "toolsActivityList";
+    list.className = "v089-activity-list";
+    list.setAttribute("role", "list");
+
+    section.append(header, status, list);
+    return section;
+  }
+
+  async function loadActivity() {
+    const status = document.querySelector("#toolsActivityStatus");
+    const list = document.querySelector("#toolsActivityList");
+    if (!status || !list) return;
+
+    status.textContent = "Đang đọc nhật ký hoạt động…";
+    try {
+      const response = await fetch("/api/tools/activity?limit=30", { cache: "no-store" });
+      const payload = await response.json().catch(() => ({}));
+      if (!response.ok) throw new Error(payload.error || "Không đọc được nhật ký hoạt động.");
+      renderActivity(payload);
+    } catch (error) {
+      status.textContent = error.message || "Không đọc được nhật ký hoạt động.";
+      list.replaceChildren();
+    }
+  }
+
+  function renderActivity(payload) {
+    const status = document.querySelector("#toolsActivityStatus");
+    const list = document.querySelector("#toolsActivityList");
+    if (!status || !list) return;
+
+    const items = Array.isArray(payload.items) ? payload.items : [];
+    const retentionDays = Number(payload.retentionDays || 30);
+    const maximumEntries = Number(payload.maximumEntries || 2000);
+    status.textContent = items.length + " hoạt động gần nhất · lưu tối đa " + retentionDays + " ngày hoặc " + maximumEntries.toLocaleString("vi-VN") + " sự kiện";
+    list.replaceChildren();
+
+    if (items.length === 0) {
+      const empty = document.createElement("p");
+      empty.className = "v089-activity-empty";
+      empty.textContent = "Chưa có hoạt động công cụ nào được ghi nhận.";
+      list.appendChild(empty);
+      return;
+    }
+
+    items.forEach(item => list.appendChild(createActivityItem(item)));
+  }
+
+  function createActivityItem(item) {
+    const article = document.createElement("article");
+    article.className = "v089-activity-item";
+    article.setAttribute("role", "listitem");
+
+    const header = document.createElement("div");
+    header.className = "v089-activity-item-header";
+    const tool = document.createElement("strong");
+    tool.textContent = toolDisplayName(item.toolName);
+    const time = document.createElement("span");
+    time.className = "v089-activity-time";
+    time.textContent = formatActivityTime(item.occurredAt);
+    header.append(tool, time);
+
+    const event = document.createElement("div");
+    event.className = "v089-activity-event";
+    event.textContent = localizeActivityEvent(item.eventType, item.status);
+
+    const meta = document.createElement("div");
+    meta.className = "v089-activity-meta";
+    const permissions = Array.isArray(item.requiredPermissions)
+      ? item.requiredPermissions.map(localizePermission).join(", ")
+      : "";
+    if (permissions) appendMeta(meta, "Quyền: " + permissions);
+    if (item.planningProvider) {
+      appendMeta(meta, "Nhà cung cấp: " + item.planningProvider + (item.planningModel ? " · " + item.planningModel : ""));
+    }
+    if (item.confirmed === true) appendMeta(meta, "Đã xác nhận thao tác");
+    if (item.confirmed === false) appendMeta(meta, "Chưa xác nhận thao tác");
+    if (item.externalConfirmed === true) appendMeta(meta, "Đã xác nhận gửi kết quả ra ngoài");
+    if (item.externalConfirmed === false) appendMeta(meta, "Không xác nhận gửi kết quả ra ngoài");
+    if (Number.isFinite(Number(item.durationMs))) appendMeta(meta, "Thời gian chạy: " + Number(item.durationMs) + " mili giây");
+
+    const argumentHash = shortHash(item.argumentsSha256);
+    if (argumentHash) appendMeta(meta, "Dấu vết tham số: " + argumentHash, true);
+    const outputHash = shortHash(item.outputSha256);
+    if (outputHash) appendMeta(meta, "Dấu vết kết quả: " + outputHash, true);
+
+    article.append(header, event, meta);
+    return article;
+  }
+
+  function appendMeta(container, text, hash = false) {
+    const span = document.createElement("span");
+    span.textContent = text;
+    if (hash) span.className = "v089-activity-hash";
+    container.appendChild(span);
+  }
+
+  function localizeActivityEvent(eventType, status) {
+    const labels = {
+      "proposal-created": "Đã tạo đề xuất công cụ",
+      "direct-execution-completed": "Đã chạy công cụ trực tiếp",
+      "execution-denied": "Lần chạy bị từ chối",
+      "execution-completed": status === "succeeded" ? "Đã chạy công cụ thành công" : "Đã kết thúc lần chạy công cụ",
+      "ai-synthesis-denied": "Không gửi kết quả để AI diễn giải",
+      "ai-synthesis-completed": "Đã gửi kết quả để AI diễn giải",
+      "native-continuation-denied": "Không gửi kết quả để hoàn tất câu trả lời",
+      "native-continuation-completed": "Đã hoàn tất câu trả lời bằng AI",
+      "task-step-execution-denied": "Bước tác vụ chưa được xác nhận",
+      "task-step-execution-completed": status === "succeeded" ? "Đã chạy bước tác vụ thành công" : "Đã kết thúc bước tác vụ"
+    };
+    return labels[eventType] || "Hoạt động công cụ";
+  }
+
+  function formatActivityTime(value) {
+    if (!value) return "—";
+    const date = new Date(value);
+    if (Number.isNaN(date.getTime())) return "—";
+    return new Intl.DateTimeFormat("vi-VN", { dateStyle: "short", timeStyle: "medium" }).format(date);
+  }
+
+  function shortHash(value) {
+    const text = String(value || "").trim();
+    return text.length >= 12 ? text.slice(0, 12) : text;
+  }
   function toolDisplayName(toolName) {
     const names = {
       "app.summary": "Tổng quan ứng dụng",

@@ -1,0 +1,92 @@
+.v089-activity {
+  margin-top: 18px;
+  padding-top: 16px;
+  border-top: 1px solid var(--line);
+}
+
+.v089-activity-header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 10px;
+}
+
+.v089-activity-header strong {
+  display: block;
+  margin-bottom: 4px;
+}
+
+.v089-activity-header span {
+  display: block;
+  color: var(--muted);
+  font-size: 12px;
+  line-height: 1.45;
+}
+
+.v089-activity-list {
+  display: grid;
+  gap: 9px;
+}
+
+.v089-activity-item {
+  padding: 12px 14px;
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  background: color-mix(in srgb, var(--accent) 3%, #fff);
+}
+
+.v089-activity-item-header {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 10px;
+}
+
+.v089-activity-item-header strong {
+  font-size: 13px;
+}
+
+.v089-activity-time {
+  color: var(--muted);
+  font-size: 11px;
+  white-space: nowrap;
+}
+
+.v089-activity-event {
+  margin: 5px 0 7px;
+  color: #344054;
+  font-size: 12px;
+  font-weight: 650;
+}
+
+.v089-activity-meta {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 5px 8px;
+  color: var(--muted);
+  font-size: 11px;
+  line-height: 1.45;
+}
+
+.v089-activity-hash {
+  font-family: "Cascadia Code", Consolas, monospace;
+}
+
+.v089-activity-empty {
+  margin: 8px 0 0;
+  color: var(--muted);
+  font-size: 12px;
+}
+
+@media (max-width: 640px) {
+  .v089-activity-header {
+    flex-direction: column;
+  }
+
+  .v089-activity-item-header {
+    align-items: flex-start;
+    flex-direction: column;
+    gap: 3px;
+  }
+}

@@ -21,6 +21,7 @@ public sealed class SystemCoreService(
     IAuditStore auditStore,
     IUndoService undoService,
     IComputerUseService computerUse,
+    IBrowserAgentService browserAgent,
     IAiProviderResolver providerResolver,
     ILogger<SystemCoreService> logger) : ISystemCoreService
 {
@@ -41,14 +42,14 @@ public sealed class SystemCoreService(
 
     private static readonly string[] ControlledModules =
     [
-        "computer-use"
+        "computer-use",
+        "browser-agent"
     ];
 
     private static readonly string[] ReservedModules =
     [
         "agents",
         "policies",
-        "browser",
         "connectors"
     ];
 
@@ -181,6 +182,23 @@ public sealed class SystemCoreService(
             CoreHealthStatuses.Degraded));
 
         modules.Add(Check(
+            "browser-agent",
+            () =>
+            {
+                var status = browserAgent.GetStatus();
+                return status.Supported
+                    ? new CoreModuleHealth(
+                        "browser-agent",
+                        CoreHealthStatuses.Healthy,
+                        "Controlled Browser Agent HTTP/HTML khả dụng; private network và side-effect navigation bị chặn.")
+                    : new CoreModuleHealth(
+                        "browser-agent",
+                        CoreHealthStatuses.Unconfigured,
+                        "Browser Agent chưa khả dụng trong môi trường hiện tại.");
+            },
+            CoreHealthStatuses.Degraded));
+
+        modules.Add(Check(
             "ai-provider",
             () =>
             {
@@ -200,7 +218,8 @@ public sealed class SystemCoreService(
         var localModules = modules
             .Where(module =>
                 module.Module != "ai-provider"
-                && module.Module != "computer-use")
+                && module.Module != "computer-use"
+                && module.Module != "browser-agent")
             .ToArray();
         var ready = localModules.All(
             module => module.Status != CoreHealthStatuses.Unavailable);
@@ -240,6 +259,9 @@ public sealed class SystemCoreService(
                 UndoRequiresConfirmation: true,
                 ComputerControlRequiresConfirmation: true,
                 SensitiveComputerObservationRequiresConfirmation: true,
+                BrowserUseRequiresConfirmation: true,
+                BrowserPrivateNetworkAccess: false,
+                BrowserSideEffectsEnabled: false,
                 AutomaticMultiStepExecution: false,
                 BackgroundScheduler: false,
                 AutonomousAgentLoop: false,
@@ -253,7 +275,11 @@ public sealed class SystemCoreService(
                 SqliteAuditStore.MaximumEntries,
                 SqliteUndoStore.AvailabilityDays,
                 SqliteUndoStore.MaximumEntries,
-                SqliteUndoStore.MaximumSnapshotBytes),
+                SqliteUndoStore.MaximumSnapshotBytes,
+                BrowserAgentService.MaximumResponseBytes,
+                BrowserAgentService.MaximumPageTextCharacters,
+                BrowserAgentService.MaximumLinks,
+                BrowserAgentService.MaximumRedirects),
             WorkspaceEndpoints.WorkspaceHeaderName,
             SystemHardeningMiddleware.RequestIdHeaderName);
 

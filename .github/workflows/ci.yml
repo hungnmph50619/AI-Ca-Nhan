@@ -31,14 +31,14 @@ jobs:
         run: |
           set -euo pipefail
           trap 'echo "Smoke test failed at line ${LINENO}: ${BASH_COMMAND}" >&2' ERR
-          rm -rf /tmp/personalai-workspace /tmp/personalai-tasks
+          rm -rf /tmp/personalai-workspace /tmp/personalai-tasks /tmp/personalai-audit
           mkdir -p /tmp/personalai-workspace/notes
           printf 'Workspace root file.\n' >/tmp/personalai-workspace/readme.txt
           printf 'Workspace alpha secure file tool content.\nSecond line.\n' >/tmp/personalai-workspace/notes/plan.md
           printf '\0binary payload' >/tmp/personalai-workspace/binary.bin
           ln -s /tmp /tmp/personalai-workspace/escape
 
-          Workspace__Root=/tmp/personalai-workspace Tasks__Root=/tmp/personalai-tasks dotnet run --project src/PersonalAI.Web/PersonalAI.Web.csproj --configuration Release --no-build --urls http://127.0.0.1:5077 >/tmp/personalai.log 2>&1 &
+          Workspace__Root=/tmp/personalai-workspace Tasks__Root=/tmp/personalai-tasks Audit__Root=/tmp/personalai-audit dotnet run --project src/PersonalAI.Web/PersonalAI.Web.csproj --configuration Release --no-build --urls http://127.0.0.1:5077 >/tmp/personalai.log 2>&1 &
           APP_PID=$!
           trap 'kill "$APP_PID" 2>/dev/null || true' EXIT
 
@@ -55,7 +55,7 @@ jobs:
             exit 1
           fi
 
-          curl -fsS http://127.0.0.1:5077/api/status | jq -e '.version == "0.9.5"' >/dev/null
+          curl -fsS http://127.0.0.1:5077/api/status | jq -e '.version == "0.9.6"' >/dev/null
 
           workspaces=$(curl -fsS http://127.0.0.1:5077/api/workspaces)
           echo "$workspaces" | jq -e '.currentWorkspaceId == "personal" and .maximumWorkspaces == 20 and (.workspaces | length) >= 5 and any(.workspaces[]; .id == "personal" and .isBuiltIn == true) and any(.workspaces[]; .id == "work") and any(.workspaces[]; .id == "study") and any(.workspaces[]; .id == "ai-ca-nhan") and any(.workspaces[]; .id == "travel")' >/dev/null
@@ -68,7 +68,7 @@ jobs:
           echo "$custom_workspace" | jq -e '.isBuiltIn == false and (.activeModules | sort) == (["memory","documents","tasks","files","conversations"] | sort) and (.reservedModules | sort) == (["agents","policies"] | sort)' >/dev/null
 
           custom_status=$(curl -fsS -H "X-PersonalAI-Workspace: $custom_workspace_id" http://127.0.0.1:5077/api/status)
-          echo "$custom_status" | jq -e '.version == "0.9.5" and .workspaceName == "CI Workspace"' >/dev/null
+          echo "$custom_status" | jq -e '.version == "0.9.6" and .workspaceName == "CI Workspace"' >/dev/null
 
           invalid_workspace_code=$(curl -sS -o /tmp/workspace-invalid.json -w '%{http_code}' \
             -H 'X-PersonalAI-Workspace: does-not-exist' \
@@ -164,7 +164,7 @@ jobs:
           echo "$personal_files" | jq -e 'all(.output.entries[]; .name != "workspace-only.txt")' >/dev/null
 
           tools=$(curl -fsS http://127.0.0.1:5077/api/tools)
-          echo "$tools" | jq -e '.frameworkVersion == "0.9.5" and (.permissionTypes | sort) == (["DELETE","EXTERNAL","READ","SENSITIVE","WRITE"] | sort)' >/dev/null
+          echo "$tools" | jq -e '.frameworkVersion == "0.9.6" and (.permissionTypes | sort) == (["DELETE","EXTERNAL","READ","SENSITIVE","WRITE"] | sort)' >/dev/null
           echo "$tools" | jq -e '(.tools | length) == 13 and any(.tools[]; .name == "local.clock" and .localOnly == true and .requiredPermissions == ["READ"]) and any(.tools[]; .name == "local.text_stats" and .timeoutMs == 2000) and any(.tools[]; .name == "memory.search") and any(.tools[]; .name == "documents.search") and any(.tools[]; .name == "local.calculate") and any(.tools[]; .name == "local.date_math") and any(.tools[]; .name == "app.summary") and any(.tools[]; .name == "workspace.list" and .requiredPermissions == ["READ"]) and any(.tools[]; .name == "workspace.read_text" and .requiredPermissions == ["READ"]) and any(.tools[]; .name == "workspace.write_text" and .requiredPermissions == ["WRITE"] and .requiresConfirmation == true) and any(.tools[]; .name == "workspace.create_directory" and .requiredPermissions == ["WRITE"] and .requiresConfirmation == true) and any(.tools[]; .name == "workspace.move" and .requiredPermissions == ["WRITE"] and .requiresConfirmation == true) and any(.tools[]; .name == "workspace.delete" and .requiredPermissions == ["DELETE"] and .requiresConfirmation == true)' >/dev/null
 
           text_tool=$(curl -fsS http://127.0.0.1:5077/api/tools/local.text_stats)
@@ -828,6 +828,24 @@ jobs:
             -d '{"confirmed":false}')
           echo "$persisted_execution" | jq -e '.execution.status == "succeeded" and .execution.output.result == 56 and .task.status == "completed"' >/dev/null
 
+          custom_audit=$(curl -fsS -H "X-PersonalAI-Workspace: $custom_workspace_id" 'http://127.0.0.1:5077/api/audit?limit=200')
+          echo "$custom_audit" | jq -e '.storage == "local-sqlite" and .retentionDays == 90 and .maximumEntries == 10000 and (.items | length) >= 5 and all(.items[]; .workspaceId == "'"$custom_workspace_id"'") and any(.items[]; .agent == "user" and .action == "workspace.create" and .target == "workspace:'"$custom_workspace_id"'" and .reason == "user-request" and .result == "succeeded") and any(.items[]; .action == "memory.create" and (.target | startswith("memory:")) and .tool == null) and any(.items[]; .action == "document.upload" and (.target | startswith("document:"))) and any(.items[]; .action == "task.prepare" and (.target | startswith("task:")) and .result == "prepared") and any(.items[]; .agent == "personal-ai" and .action == "context.preview") and any(.items[]; .action == "tool.execute" and .tool == "workspace.write_text")' >/dev/null
+          ! echo "$custom_audit" | grep -Fq 'workspace-ci-secret-094'
+          echo "$custom_audit" | jq -e 'all(.items[]; (.time | type) == "string" and (.agent | type) == "string" and (.action | type) == "string" and (.target | type) == "string" and (.reason | type) == "string" and (.result | type) == "string")' >/dev/null
+
+          custom_audit_summary=$(curl -fsS -H "X-PersonalAI-Workspace: $custom_workspace_id" http://127.0.0.1:5077/api/audit/summary)
+          echo "$custom_audit_summary" | jq -e '.workspaceId == "'"$custom_workspace_id"'" and .totalEvents >= 5 and .byAgent.user >= 1 and .byAgent["personal-ai"] >= 1 and .byResult.succeeded >= 1' >/dev/null
+
+          custom_ai_audit=$(curl -fsS -H "X-PersonalAI-Workspace: $custom_workspace_id" 'http://127.0.0.1:5077/api/audit?limit=200&agent=personal-ai')
+          echo "$custom_ai_audit" | jq -e '(.items | length) >= 1 and all(.items[]; .agent == "personal-ai")' >/dev/null
+
+          personal_audit=$(curl -fsS 'http://127.0.0.1:5077/api/audit?limit=200')
+          echo "$personal_audit" | jq -e 'all(.items[]; .workspaceId == "personal") and any(.items[]; .action == "tool.execute" and .tool == "local.calculate") and any(.items[]; .action == "task.step.execute")' >/dev/null
+          ! echo "$personal_audit" | grep -Fq 'workspace-ci-secret-094'
+
+          audit_delete_code=$(curl -sS -o /tmp/audit-delete.json -w '%{http_code}' -X DELETE http://127.0.0.1:5077/api/audit)
+          test "$audit_delete_code" = "405"
+
           grep -Fq 'chèn ký hiệu [1], [2]' src/PersonalAI.Web/Services/KnowledgeGroundingService.cs
           grep -Fq 'v076.js' src/PersonalAI.Web/wwwroot/index.html
           grep -Fq 'v076.css' src/PersonalAI.Web/wwwroot/index.html
@@ -883,18 +901,18 @@ jobs:
           grep -Fq 'Task Dependencies' docs/releases/v0.9.3.md
           grep -Fq 'v090.css' src/PersonalAI.Web/wwwroot/index.html
           grep -Fq 'v090.js' src/PersonalAI.Web/wwwroot/index.html
-          grep -Fq 'Tác vụ trong Context Manager v0.9.5' src/PersonalAI.Web/wwwroot/v090.js
+          grep -Fq 'Tác vụ có audit v0.9.6' src/PersonalAI.Web/wwwroot/v090.js
           grep -Fq 'MỤC TIÊU → KẾ HOẠCH → TỪNG BƯỚC' src/PersonalAI.Web/wwwroot/v090.js
           grep -Fq 'arguments_sha256' src/PersonalAI.Web/Services/ToolActivityStore.cs
           grep -Fq 'output_sha256' src/PersonalAI.Web/Services/ToolActivityStore.cs
           grep -Fq 'v089.css' src/PersonalAI.Web/wwwroot/index.html
-          grep -Fq 'Nhật ký hoạt động công cụ v0.9.5' src/PersonalAI.Web/wwwroot/v080.js
+          grep -Fq 'Nhật ký hoạt động công cụ v0.9.6' src/PersonalAI.Web/wwwroot/v080.js
           grep -Fq 'Nhật ký hoạt động gần đây' src/PersonalAI.Web/wwwroot/v080.js
           grep -Fq 'v088.css' src/PersonalAI.Web/wwwroot/index.html
           grep -Fq 'Nguồn đề xuất:' src/PersonalAI.Web/wwwroot/app.js
           grep -Fq 'Tham số' src/PersonalAI.Web/wwwroot/app.js
           grep -Fq 'CÔNG CỤ NỘI BỘ TRÊN MÁY NÀY' src/PersonalAI.Web/wwwroot/v080.js
-          grep -Fq 'Nhật ký hoạt động công cụ v0.9.5' src/PersonalAI.Web/wwwroot/v080.js
+          grep -Fq 'Nhật ký hoạt động công cụ v0.9.6' src/PersonalAI.Web/wwwroot/v080.js
           grep -Fq 'Mô hình' src/PersonalAI.Web/wwwroot/index.html
           grep -Fq 'Khóa truy cập' src/PersonalAI.Web/wwwroot/index.html
           ! grep -Fq 'Planner:' src/PersonalAI.Web/wwwroot/app.js
@@ -970,6 +988,17 @@ jobs:
           grep -Fq 'context-report' src/PersonalAI.Web/wwwroot/app.js
           grep -Fq 'v095.css' src/PersonalAI.Web/wwwroot/index.html
           grep -Fq 'v095.js' src/PersonalAI.Web/wwwroot/index.html
+          grep -Fq 'Audit Foundation' docs/releases/v0.9.6.md
+          grep -Fq 'IAuditStore' src/PersonalAI.Web/Services/AuditStore.cs
+          grep -Fq 'RetentionDays = 90' src/PersonalAI.Web/Services/AuditStore.cs
+          grep -Fq 'MaximumEntries = 10_000' src/PersonalAI.Web/Services/AuditStore.cs
+          grep -Fq '/api/audit' src/PersonalAI.Web/Services/AuditEndpoints.cs
+          grep -Fq '/api/audit/summary' src/PersonalAI.Web/Services/AuditEndpoints.cs
+          grep -Fq 'app.MapAuditFoundation();' src/PersonalAI.Web/Program.cs
+          grep -Fq 'TIME · AGENT · ACTION · TOOL · TARGET · REASON · RESULT' src/PersonalAI.Web/wwwroot/v096.js
+          grep -Fq 'v096.css' src/PersonalAI.Web/wwwroot/index.html
+          grep -Fq 'v096.js' src/PersonalAI.Web/wwwroot/index.html
+          ! grep -Fq 'MapDelete("/api/audit' src/PersonalAI.Web/Services/AuditEndpoints.cs
 
 
       - name: Setup Node.js
@@ -998,3 +1027,4 @@ jobs:
           node --check src/PersonalAI.Web/wwwroot/v090.js
           node --check src/PersonalAI.Web/wwwroot/v094.js
           node --check src/PersonalAI.Web/wwwroot/v095.js
+          node --check src/PersonalAI.Web/wwwroot/v096.js

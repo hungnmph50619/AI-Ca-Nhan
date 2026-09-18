@@ -20,6 +20,7 @@ public sealed class SystemCoreService(
     IToolRegistry toolRegistry,
     IAuditStore auditStore,
     IUndoService undoService,
+    IComputerUseService computerUse,
     IAiProviderResolver providerResolver,
     ILogger<SystemCoreService> logger) : ISystemCoreService
 {
@@ -38,12 +39,16 @@ public sealed class SystemCoreService(
         "conversations"
     ];
 
+    private static readonly string[] ControlledModules =
+    [
+        "computer-use"
+    ];
+
     private static readonly string[] ReservedModules =
     [
         "agents",
         "policies",
         "browser",
-        "computer-use",
         "connectors"
     ];
 
@@ -151,6 +156,31 @@ public sealed class SystemCoreService(
             }));
 
         modules.Add(Check(
+            "computer-use",
+            () =>
+            {
+                var status = computerUse.GetStatus();
+                if (!status.Supported)
+                {
+                    return new CoreModuleHealth(
+                        "computer-use",
+                        CoreHealthStatuses.Unconfigured,
+                        "Computer Use v1.1 hiện chỉ hỗ trợ Windows.");
+                }
+
+                return status.InteractiveSession
+                    ? new CoreModuleHealth(
+                        "computer-use",
+                        CoreHealthStatuses.Healthy,
+                        "Controlled Computer Use khả dụng trong interactive Windows session.")
+                    : new CoreModuleHealth(
+                        "computer-use",
+                        CoreHealthStatuses.Unconfigured,
+                        "Windows hiện không chạy trong interactive session.");
+            },
+            CoreHealthStatuses.Degraded));
+
+        modules.Add(Check(
             "ai-provider",
             () =>
             {
@@ -168,7 +198,9 @@ public sealed class SystemCoreService(
             CoreHealthStatuses.Degraded));
 
         var localModules = modules
-            .Where(module => module.Module != "ai-provider")
+            .Where(module =>
+                module.Module != "ai-provider"
+                && module.Module != "computer-use")
             .ToArray();
         var ready = localModules.All(
             module => module.Status != CoreHealthStatuses.Unavailable);
@@ -198,6 +230,7 @@ public sealed class SystemCoreService(
             PersonalAiRelease.ApiContractVersion,
             PersonalAiRelease.Channel,
             StableModules,
+            ControlledModules,
             ReservedModules,
             new CoreSafetyContract(
                 WorkspaceIsolation: true,
@@ -205,6 +238,8 @@ public sealed class SystemCoreService(
                 DeleteRequiresConfirmation: true,
                 ExternalRequiresConfirmation: true,
                 UndoRequiresConfirmation: true,
+                ComputerControlRequiresConfirmation: true,
+                SensitiveComputerObservationRequiresConfirmation: true,
                 AutomaticMultiStepExecution: false,
                 BackgroundScheduler: false,
                 AutonomousAgentLoop: false,

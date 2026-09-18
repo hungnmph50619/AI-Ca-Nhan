@@ -1,3 +1,4 @@
+using System.Security.Cryptography;
 using System.Text;
 using System.Text.Json;
 using PersonalAI.Web.Models;
@@ -12,6 +13,15 @@ public interface IWorkspaceFileService
         string relativePath,
         int maxCharacters,
         CancellationToken cancellationToken = default);
+
+    Task<WorkspaceWriteResult> WriteTextAsync(
+        string relativePath,
+        string content,
+        string mode,
+        string? expectedSha256,
+        CancellationToken cancellationToken = default);
+
+    WorkspaceDirectoryWriteResult CreateDirectory(string relativePath);
 }
 
 public sealed record WorkspaceDirectoryEntry(
@@ -36,6 +46,21 @@ public sealed record WorkspaceTextFile(
     int CharacterCount,
     int ReturnedCharacterCount,
     bool Truncated);
+
+public sealed record WorkspaceWriteResult(
+    string Path,
+    string Mode,
+    bool Created,
+    int BytesWritten,
+    long SizeBytes,
+    string? PreviousSha256,
+    string Sha256,
+    DateTimeOffset LastModifiedAt);
+
+public sealed record WorkspaceDirectoryWriteResult(
+    string Path,
+    bool Created,
+    DateTimeOffset LastModifiedAt);
 
 public sealed class WorkspaceFileService : IWorkspaceFileService
 {
@@ -243,6 +268,268 @@ public sealed class WorkspaceFileService : IWorkspaceFileService
             truncated);
     }
 
+
+    public async Task<WorkspaceWriteResult> WriteTextAsync(
+        string relativePath,
+        string content,
+        string mode,
+        string? expectedSha256,
+        CancellationToken cancellationToken = default)
+    {
+        cancellationToken.ThrowIfCancellationRequested();
+        var normalizedMode = (mode ?? string.Empty).Trim().ToLowerInvariant();
+        if (normalizedMode is not ("create" or "overwrite" or "append"))
+        {
+            throw new ToolExecutionInputException(
+                "mode phải là create, overwrite hoặc append.");
+        }
+
+        if (content.Length > MaximumReturnedCharacters)
+        {
+            throw new ToolExecutionInputException(
+                $"Nội dung ghi vượt giới hạn {MaximumReturnedCharacters:N0} ký tự.");
+        }
+
+        if (!string.IsNullOrWhiteSpace(expectedSha256))
+        {
+            expectedSha256 = expectedSha256.Trim().ToLowerInvariant();
+            if (expectedSha256.Length != 64
+                || expectedSha256.Any(character => !Uri.IsHexDigit(character)))
+            {
+                throw new ToolExecutionInputException(
+                    "expectedSha256 phải là SHA-256 hex gồm 64 ký tự.");
+            }
+        }
+        else
+        {
+            expectedSha256 = null;
+        }
+
+        byte[] contentBytes;
+        try
+        {
+            contentBytes = StrictUtf8.GetBytes(content);
+        }
+        catch (EncoderFallbackException)
+        {
+            throw new ToolExecutionInputException(
+                "Nội dung chứa ký tự Unicode không hợp lệ.");
+        }
+
+        var fullPath = ResolvePath(relativePath, allowRoot: false);
+        var parentPath = Path.GetDirectoryName(fullPath);
+        if (string.IsNullOrWhiteSpace(parentPath))
+        {
+            throw new ToolExecutionInputException(
+                "Không xác định được thư mục cha của tệp.");
+        }
+
+        EnsureNoSymlinkTraversal(parentPath);
+        if (!Directory.Exists(parentPath))
+        {
+            throw new ToolExecutionInputException(
+                "Thư mục cha chưa tồn tại. Hãy tạo thư mục trước khi ghi tệp.");
+        }
+
+        EnsureNoSymlinkTraversal(fullPath);
+        if (Directory.Exists(fullPath))
+        {
+            throw new ToolExecutionInputException(
+                "Đường dẫn này đang là một thư mục, không phải tệp.");
+        }
+
+        var existed = File.Exists(fullPath);
+        if (normalizedMode == "create" && existed)
+        {
+            throw new ToolExecutionInputException(
+                "Tệp đã tồn tại. Dùng mode overwrite hoặc append nếu muốn thay đổi tệp.");
+        }
+
+        if (normalizedMode is "overwrite" or "append" && !existed)
+        {
+            throw new ToolExecutionInputException(
+                $"Tệp chưa tồn tại nên không thể dùng mode {normalizedMode}.");
+        }
+
+        byte[] existingBytes = [];
+        string? previousSha256 = null;
+        if (existed)
+        {
+            var info = new FileInfo(fullPath);
+            if (IsSymlink(info))
+            {
+                throw new ToolExecutionInputException(
+                    "Không ghi vào symbolic link hoặc reparse point trong workspace.");
+            }
+
+            if (info.Length > MaximumFileBytes)
+            {
+                throw new ToolExecutionInputException(
+                    $"Tệp hiện tại vượt giới hạn {MaximumFileBytes / 1024} KB của workspace tool.");
+            }
+
+            try
+            {
+                existingBytes = await File.ReadAllBytesAsync(fullPath, cancellationToken);
+            }
+            catch (UnauthorizedAccessException)
+            {
+                throw new ToolExecutionInputException(
+                    "Không có quyền đọc tệp hiện tại trước khi ghi.");
+            }
+            catch (IOException)
+            {
+                throw new ToolExecutionInputException(
+                    "Không thể đọc tệp hiện tại trước khi ghi.");
+            }
+
+            ValidateTextBytes(existingBytes);
+            previousSha256 = ComputeSha256(existingBytes);
+            if (expectedSha256 is not null
+                && !string.Equals(previousSha256, expectedSha256, StringComparison.OrdinalIgnoreCase))
+            {
+                throw new ToolExecutionInputException(
+                    "Tệp đã thay đổi so với expectedSha256; từ chối ghi để tránh ghi đè dữ liệu mới hơn.");
+            }
+        }
+        else if (expectedSha256 is not null)
+        {
+            throw new ToolExecutionInputException(
+                "expectedSha256 chỉ dùng khi tệp đã tồn tại.");
+        }
+
+        byte[] finalBytes;
+        if (normalizedMode == "append")
+        {
+            finalBytes = new byte[existingBytes.Length + contentBytes.Length];
+            Buffer.BlockCopy(existingBytes, 0, finalBytes, 0, existingBytes.Length);
+            Buffer.BlockCopy(contentBytes, 0, finalBytes, existingBytes.Length, contentBytes.Length);
+        }
+        else
+        {
+            finalBytes = contentBytes;
+        }
+
+        if (finalBytes.Length > MaximumFileBytes)
+        {
+            throw new ToolExecutionInputException(
+                $"Tệp sau khi ghi sẽ vượt giới hạn {MaximumFileBytes / 1024} KB.");
+        }
+
+        try
+        {
+            if (normalizedMode == "create")
+            {
+                await using var stream = new FileStream(
+                    fullPath,
+                    FileMode.CreateNew,
+                    FileAccess.Write,
+                    FileShare.None,
+                    bufferSize: 81920,
+                    useAsync: true);
+                await stream.WriteAsync(finalBytes, cancellationToken);
+                await stream.FlushAsync(cancellationToken);
+            }
+            else
+            {
+                var temporaryPath = Path.Combine(
+                    parentPath,
+                    $".{Path.GetFileName(fullPath)}.{Guid.NewGuid():N}.tmp");
+                try
+                {
+                    await File.WriteAllBytesAsync(temporaryPath, finalBytes, cancellationToken);
+                    File.Move(temporaryPath, fullPath, overwrite: true);
+                }
+                finally
+                {
+                    if (File.Exists(temporaryPath))
+                    {
+                        File.Delete(temporaryPath);
+                    }
+                }
+            }
+        }
+        catch (UnauthorizedAccessException)
+        {
+            throw new ToolExecutionInputException(
+                "Không có quyền ghi tệp này trong workspace.");
+        }
+        catch (IOException)
+        {
+            throw new ToolExecutionInputException(
+                "Không thể ghi tệp này trong workspace.");
+        }
+
+        var writtenInfo = new FileInfo(fullPath);
+        return new WorkspaceWriteResult(
+            ToRelativePath(fullPath),
+            normalizedMode,
+            !existed,
+            contentBytes.Length,
+            writtenInfo.Length,
+            previousSha256,
+            ComputeSha256(finalBytes),
+            writtenInfo.LastWriteTimeUtc);
+    }
+
+    public WorkspaceDirectoryWriteResult CreateDirectory(string relativePath)
+    {
+        var fullPath = ResolvePath(relativePath, allowRoot: false);
+        EnsureNoSymlinkTraversal(fullPath);
+
+        if (File.Exists(fullPath))
+        {
+            throw new ToolExecutionInputException(
+                "Đường dẫn này đang là một tệp, không thể tạo thư mục.");
+        }
+
+        var existed = Directory.Exists(fullPath);
+        try
+        {
+            Directory.CreateDirectory(fullPath);
+        }
+        catch (UnauthorizedAccessException)
+        {
+            throw new ToolExecutionInputException(
+                "Không có quyền tạo thư mục này trong workspace.");
+        }
+        catch (IOException)
+        {
+            throw new ToolExecutionInputException(
+                "Không thể tạo thư mục này trong workspace.");
+        }
+
+        EnsureNoSymlinkTraversal(fullPath);
+        var info = new DirectoryInfo(fullPath);
+        return new WorkspaceDirectoryWriteResult(
+            ToRelativePath(fullPath),
+            !existed,
+            info.LastWriteTimeUtc);
+    }
+
+    private static void ValidateTextBytes(byte[] bytes)
+    {
+        string text;
+        try
+        {
+            text = StrictUtf8.GetString(bytes);
+        }
+        catch (DecoderFallbackException)
+        {
+            throw new ToolExecutionInputException(
+                "Tệp hiện tại không phải UTF-8 hợp lệ; workspace.write_text chỉ sửa tệp văn bản.");
+        }
+
+        if (text.IndexOf('\0') >= 0)
+        {
+            throw new ToolExecutionInputException(
+                "Tệp hiện tại có dấu hiệu là dữ liệu nhị phân; workspace.write_text từ chối sửa.");
+        }
+    }
+
+    private static string ComputeSha256(byte[] bytes) =>
+        Convert.ToHexString(SHA256.HashData(bytes)).ToLowerInvariant();
+
     private string ResolvePath(string? relativePath, bool allowRoot)
     {
         if (!Directory.Exists(_root))
@@ -419,5 +706,89 @@ public sealed class WorkspaceReadTextTool(IWorkspaceFileService workspace) : IPe
 
         var result = await workspace.ReadTextAsync(path, maxCharacters, cancellationToken);
         return JsonSerializer.SerializeToElement(result);
+    }
+}
+
+
+public sealed class WorkspaceWriteTextTool(IWorkspaceFileService workspace) : IPersonalAiTool
+{
+    private static readonly JsonElement Schema = ToolSchema.Parse(
+        """
+        {
+          "type": "object",
+          "properties": {
+            "path": { "type": "string", "minLength": 1, "maxLength": 500 },
+            "content": { "type": "string", "maxLength": 200000 },
+            "mode": { "type": "string", "enum": ["create", "overwrite", "append"] },
+            "expectedSha256": { "type": "string", "minLength": 64, "maxLength": 64 }
+          },
+          "required": ["path", "content", "mode"],
+          "additionalProperties": false
+        }
+        """);
+
+    public ToolDefinition Definition { get; } = new(
+        "workspace.write_text",
+        "Tạo, ghi đè hoặc nối thêm vào tệp văn bản UTF-8 trong workspace local đã cấp quyền. Chặn path traversal/symlink, giới hạn kích thước và hỗ trợ expectedSha256 để tránh ghi đè phiên bản mới hơn.",
+        "1.0.0",
+        [ToolPermissions.Write],
+        5_000,
+        Schema,
+        LocalOnly: true,
+        RequiresConfirmation: true);
+
+    public async Task<JsonElement> ExecuteAsync(
+        JsonElement arguments,
+        CancellationToken cancellationToken = default)
+    {
+        var path = arguments.GetProperty("path").GetString()?.Trim() ?? string.Empty;
+        var content = arguments.GetProperty("content").GetString() ?? string.Empty;
+        var mode = arguments.GetProperty("mode").GetString()?.Trim() ?? string.Empty;
+        var expectedSha256 = arguments.TryGetProperty("expectedSha256", out var hashElement)
+            ? hashElement.GetString()
+            : null;
+
+        var result = await workspace.WriteTextAsync(
+            path,
+            content,
+            mode,
+            expectedSha256,
+            cancellationToken);
+        return JsonSerializer.SerializeToElement(result);
+    }
+}
+
+public sealed class WorkspaceCreateDirectoryTool(IWorkspaceFileService workspace) : IPersonalAiTool
+{
+    private static readonly JsonElement Schema = ToolSchema.Parse(
+        """
+        {
+          "type": "object",
+          "properties": {
+            "path": { "type": "string", "minLength": 1, "maxLength": 500 }
+          },
+          "required": ["path"],
+          "additionalProperties": false
+        }
+        """);
+
+    public ToolDefinition Definition { get; } = new(
+        "workspace.create_directory",
+        "Tạo thư mục bên trong workspace local đã cấp quyền. Chỉ nhận đường dẫn tương đối và chặn traversal/symlink.",
+        "1.0.0",
+        [ToolPermissions.Write],
+        3_000,
+        Schema,
+        LocalOnly: true,
+        RequiresConfirmation: true);
+
+    public Task<JsonElement> ExecuteAsync(
+        JsonElement arguments,
+        CancellationToken cancellationToken = default)
+    {
+        cancellationToken.ThrowIfCancellationRequested();
+        var path = arguments.GetProperty("path").GetString()?.Trim() ?? string.Empty;
+        var result = workspace.CreateDirectory(path);
+        return Task.FromResult(JsonSerializer.SerializeToElement(result));
     }
 }

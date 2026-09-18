@@ -766,7 +766,8 @@ async function sendCurrentMessage(event) {
           content: message.content
         })),
         useTools: elements.useTools?.checked === true,
-        useTaskContext: true
+        useTaskContext: true,
+        useLifeContext: true
       })
     });
     const payload = await response.json().catch(() => ({}));
@@ -857,6 +858,7 @@ function createContextReportNode(report) {
   if (report.selectedMemories > 0) counts.push(`${report.selectedMemories} trí nhớ`);
   if (report.selectedDocuments > 0) counts.push(`${report.selectedDocuments} tài liệu`);
   if (report.selectedTasks > 0) counts.push(`${report.selectedTasks} tác vụ`);
+  if (report.selectedLifeContext > 0) counts.push(`${report.selectedLifeContext} life context`);
   const budget = report.budget || {};
   const used = Number(budget.usedCharacters) || 0;
   const maximum = Number(budget.maximumCharacters) || 0;
@@ -898,6 +900,7 @@ function contextKindLabel(kind) {
   if (kind === "memory") return "Trí nhớ";
   if (kind === "document") return "Tài liệu";
   if (kind === "task") return "Tác vụ";
+  if (kind === "life-context") return "Life Context";
   return "Ngữ cảnh";
 }
 
@@ -1884,7 +1887,8 @@ function normalizeContextReport(value) {
         usedCharacters: Math.max(0, Number(value.budget.usedCharacters) || 0),
         memoryCharacters: Math.max(0, Number(value.budget.memoryCharacters) || 0),
         documentCharacters: Math.max(0, Number(value.budget.documentCharacters) || 0),
-        taskCharacters: Math.max(0, Number(value.budget.taskCharacters) || 0)
+        taskCharacters: Math.max(0, Number(value.budget.taskCharacters) || 0),
+        lifeContextCharacters: Math.max(0, Number(value.budget.lifeContextCharacters) || 0)
       }
     : null;
 
@@ -1908,6 +1912,7 @@ function normalizeContextReport(value) {
     selectedMemories: Math.max(0, Number(value.selectedMemories) || 0),
     selectedDocuments: Math.max(0, Number(value.selectedDocuments) || 0),
     selectedTasks: Math.max(0, Number(value.selectedTasks) || 0),
+    selectedLifeContext: Math.max(0, Number(value.selectedLifeContext) || 0),
     budget,
     items
   };

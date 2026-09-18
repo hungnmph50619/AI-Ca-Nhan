@@ -181,7 +181,10 @@ public sealed class LifeContextService : ILifeContextService
         await _gate.WaitAsync(cancellationToken);
         try
         {
-            CleanupExpiredLocked();
+            if (CleanupExpiredLocked() > 0)
+            {
+                await PersistLockedAsync(cancellationToken);
+            }
 
             var workspaceId =
                 _workspaceContext.CurrentWorkspaceId;
@@ -232,7 +235,7 @@ public sealed class LifeContextService : ILifeContextService
         await _gate.WaitAsync(cancellationToken);
         try
         {
-            CleanupExpiredLocked();
+            _ = CleanupExpiredLocked();
 
             var currentCount = _state.Sources.Count(item =>
                 SameWorkspace(
@@ -400,7 +403,7 @@ public sealed class LifeContextService : ILifeContextService
         await _gate.WaitAsync(cancellationToken);
         try
         {
-            CleanupExpiredLocked();
+            _ = CleanupExpiredLocked();
 
             var source = FindSourceLocked(
                 sourceId,
@@ -481,7 +484,10 @@ public sealed class LifeContextService : ILifeContextService
         await _gate.WaitAsync(cancellationToken);
         try
         {
-            CleanupExpiredLocked();
+            if (CleanupExpiredLocked() > 0)
+            {
+                await PersistLockedAsync(cancellationToken);
+            }
 
             var sourceMap = _state.Sources
                 .Where(item =>
@@ -626,7 +632,10 @@ public sealed class LifeContextService : ILifeContextService
         await _gate.WaitAsync(cancellationToken);
         try
         {
-            CleanupExpiredLocked();
+            if (CleanupExpiredLocked() > 0)
+            {
+                await PersistLockedAsync(cancellationToken);
+            }
 
             var activeSources = _state.Sources
                 .Where(item =>
@@ -765,10 +774,10 @@ public sealed class LifeContextService : ILifeContextService
             true);
     }
 
-    private void CleanupExpiredLocked()
+    private int CleanupExpiredLocked()
     {
         var now = DateTimeOffset.UtcNow;
-        _state.Entries.RemoveAll(item =>
+        return _state.Entries.RemoveAll(item =>
             item.ExpiresAt <= now);
     }
 

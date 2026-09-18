@@ -1,5 +1,5 @@
 (() => {
-  const VERSION = "0.8.8";
+  const VERSION = "0.8.9";
   let loading = false;
 
   if (document.readyState === "loading") {
@@ -80,7 +80,7 @@
 
     const intro = document.createElement("div");
     intro.className = "v080-framework-intro";
-    intro.innerHTML = "<strong>Hoàn tất câu trả lời từ kết quả công cụ v0.8.8</strong><p>Sau khi một đề xuất gọi hàm gốc được bạn cho phép chạy, PersonalAI có thể gửi kết quả trở lại đúng nhà cung cấp và mô hình để tạo câu trả lời cuối. Lượt tiếp tục không cấp thêm công cụ.</p>";
+    intro.innerHTML = "<strong>Nhật ký công cụ v0.8.9</strong><p>Mỗi lần công cụ được gọi, PersonalAI ghi lại dấu vết thực thi trên máy gồm thời điểm, trạng thái, quyền, xác nhận và dấu băm của dữ liệu vào/ra. Nhật ký không lưu toàn bộ nội dung tệp hoặc kết quả nhạy cảm.</p>";
 
     const permissionLegend = document.createElement("div");
     permissionLegend.className = "v080-permission-legend";
@@ -96,11 +96,26 @@
     list.className = "v080-tool-list";
     list.setAttribute("role", "list");
 
+    const auditHeading = document.createElement("div");
+    auditHeading.className = "v080-audit-heading";
+    const auditTitle = document.createElement("strong");
+    auditTitle.textContent = "Nhật ký thực thi gần đây";
+    const auditRefresh = document.createElement("button");
+    auditRefresh.type = "button";
+    auditRefresh.className = "secondary-button";
+    auditRefresh.textContent = "Tải lại nhật ký";
+    auditRefresh.addEventListener("click", () => loadAudit());
+    auditHeading.append(auditTitle, auditRefresh);
+
+    const auditList = document.createElement("div");
+    auditList.id = "toolsAuditList";
+    auditList.className = "v080-audit-list";
+
     const note = document.createElement("p");
     note.className = "security-copy";
-    note.textContent = "v0.8.8 giữ quy trình đề xuất → quyền → xác nhận → thực thi. Kết quả công cụ được tóm tắt trên máy trước; chỉ khi bạn xác nhận thì kết quả mới được gửi về đúng nhà cung cấp và mô hình, đồng thời lượt tiếp tục không được phép gọi thêm công cụ." ;
+    note.textContent = "v0.8.9 lưu nhật ký công cụ bền vững trên máy và không cung cấp chức năng xóa nhật ký cho AI. Nội dung đầu vào/đầu ra không được lưu nguyên văn; chỉ lưu dấu băm và kích thước để kiểm tra dấu vết." ;
 
-    card.append(header, intro, permissionLegend, status, list, note);
+    card.append(header, intro, permissionLegend, status, list, auditHeading, auditList, note);
     dialog.appendChild(card);
     dialog.addEventListener("click", event => {
       if (event.target === dialog) dialog.close();
@@ -112,7 +127,7 @@
   async function openToolsDialog() {
     const dialog = ensureToolsDialog();
     dialog.showModal();
-    await loadCatalog();
+    await Promise.all([loadCatalog(), loadAudit()]);
   }
 
   async function refreshCount() {
@@ -167,6 +182,124 @@
     }
 
     tools.forEach(tool => list.appendChild(createToolCard(tool)));
+  }
+
+  async function loadAudit() {
+    const list = document.querySelector("#toolsAuditList");
+    if (!list) return;
+    list.replaceChildren(documentElement("p", "field-hint", "Đang đọc nhật ký công cụ…"));
+
+    try {
+      const response = await fetch("/api/tools/audit?limit=30", { cache: "no-store" });
+      const payload = await response.json().catch(() => ({}));
+      if (!response.ok) throw new Error(payload.error || "Không đọc được nhật ký công cụ.");
+      renderAudit(Array.isArray(payload.entries) ? payload.entries : []);
+    } catch (error) {
+      list.replaceChildren(documentElement("p", "field-hint", error.message || "Không đọc được nhật ký công cụ."));
+    }
+  }
+
+  function renderAudit(entries) {
+    const list = document.querySelector("#toolsAuditList");
+    if (!list) return;
+    list.replaceChildren();
+
+    if (!entries.length) {
+      list.appendChild(documentElement("p", "field-hint", "Chưa có lần thực thi công cụ nào được ghi nhận."));
+      return;
+    }
+
+    entries.forEach(entry => {
+      const item = document.createElement("article");
+      item.className = "v080-audit-item";
+
+      const heading = document.createElement("div");
+      heading.className = "v080-audit-item-heading";
+      const name = document.createElement("strong");
+      name.textContent = toolDisplayName(entry.toolName);
+      const time = document.createElement("span");
+      time.textContent = formatAuditTime(entry.startedAt);
+      heading.append(name, time);
+
+      const summary = document.createElement("p");
+      summary.textContent = [
+        localizeExecutionStatus(entry.status),
+        entry.durationMs == null ? null : entry.durationMs + " mili giây",
+        entry.confirmed ? "đã xác nhận" : "không cần xác nhận",
+        localizeReversibility(entry.reversibility)
+      ].filter(Boolean).join(" · ");
+
+      const meta = document.createElement("div");
+      meta.className = "v080-tool-meta";
+      (entry.requiredPermissions || []).forEach(permission => {
+        const badge = document.createElement("span");
+        badge.className = "v080-permission-badge";
+        badge.textContent = localizePermission(permission);
+        meta.appendChild(badge);
+      });
+
+      const actor = document.createElement("span");
+      actor.textContent = "Người dùng qua PersonalAI";
+      meta.appendChild(actor);
+
+      const details = document.createElement("details");
+      const detailsTitle = document.createElement("summary");
+      detailsTitle.textContent = "Xem dấu vết kỹ thuật";
+      const detailsBody = document.createElement("p");
+      detailsBody.textContent =
+        "Dữ liệu vào: " + (entry.inputBytes ?? 0) + " byte · SHA-256 " + shortenHash(entry.inputSha256)
+        + (entry.outputSha256
+          ? " · Dữ liệu ra: " + (entry.outputBytes ?? 0) + " byte · SHA-256 " + shortenHash(entry.outputSha256)
+          : "");
+      details.append(detailsTitle, detailsBody);
+
+      item.append(heading, summary, meta, details);
+      list.appendChild(item);
+    });
+  }
+
+  function formatAuditTime(value) {
+    try {
+      return new Intl.DateTimeFormat("vi-VN", {
+        dateStyle: "short",
+        timeStyle: "medium"
+      }).format(new Date(value));
+    } catch {
+      return "Không rõ thời điểm";
+    }
+  }
+
+  function localizeExecutionStatus(status) {
+    return {
+      succeeded: "Đã chạy",
+      denied: "Bị từ chối",
+      "invalid-input": "Dữ liệu không hợp lệ",
+      "not-found": "Không tìm thấy",
+      "timed-out": "Quá thời gian",
+      failed: "Thất bại"
+    }[status] || "Không xác định";
+  }
+
+  function localizeReversibility(value) {
+    return {
+      "not-applicable": "không có thay đổi cần hoàn tác",
+      "not-guaranteed": "không bảo đảm hoàn tác tự động",
+      "not-automatically-reversible": "không thể hoàn tác tự động",
+      "external-dependent": "khả năng hoàn tác phụ thuộc hệ thống ngoài",
+      unknown: "chưa xác định khả năng hoàn tác"
+    }[value] || "chưa xác định khả năng hoàn tác";
+  }
+
+  function shortenHash(value) {
+    const text = String(value || "");
+    return text.length > 16 ? text.slice(0, 16) + "…" : text || "không có";
+  }
+
+  function documentElement(tagName, className, text) {
+    const node = document.createElement(tagName);
+    if (className) node.className = className;
+    node.textContent = text || "";
+    return node;
   }
 
   function toolDisplayName(toolName) {

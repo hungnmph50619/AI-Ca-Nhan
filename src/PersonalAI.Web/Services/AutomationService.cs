@@ -188,22 +188,26 @@ public sealed class AutomationService(
             return null;
         }
 
-        if (request.Enabled
-            && current.State
-                is AutomationStates.AwaitingConfirmation
-                    or AutomationStates.Interrupted)
+        if (current.State
+            is AutomationStates.Completed
+                or AutomationStates.Failed)
+        {
+            throw new AutomationValidationException(
+                "Automation đã kết thúc; không thể thay đổi enabled state.");
+        }
+
+        if (current.State
+            is AutomationStates.AwaitingConfirmation
+                or AutomationStates.Interrupted)
         {
             throw new AutomationValidationException(
                 "Automation cần review; hãy dùng endpoint resume sau khi đã kiểm tra task.");
         }
 
-        if (request.Enabled
-            && current.State
-                is AutomationStates.Completed
-                    or AutomationStates.Failed)
+        if (current.State == AutomationStates.Running)
         {
             throw new AutomationValidationException(
-                "Automation đã kết thúc; không thể bật lại cùng automation.");
+                "Automation đang chạy; không thể đổi enabled state giữa một invocation.");
         }
 
         var now = DateTimeOffset.UtcNow;
@@ -290,6 +294,12 @@ public sealed class AutomationService(
         {
             throw new AutomationValidationException(
                 "Task đã kết thúc nên automation không thể tiếp tục.");
+        }
+
+        if (task.Status == PersonalTaskStatuses.Interrupted)
+        {
+            throw new AutomationValidationException(
+                "Task vẫn đang interrupted; hãy resume task trước rồi mới resume automation.");
         }
 
         var now = DateTimeOffset.UtcNow;
@@ -509,12 +519,10 @@ public sealed class AutomationCoordinator(
             }
 
             if (manualTrigger
-                && current.State
-                    is AutomationStates.AwaitingConfirmation
-                        or AutomationStates.Interrupted)
+                && current.State != AutomationStates.Scheduled)
             {
                 throw new AutomationValidationException(
-                    "Automation cần review; hãy dùng resume trước khi kích hoạt lại.");
+                    "Run-now chỉ dùng cho automation đang scheduled. Automation paused phải bật lại; automation cần review phải resume trước.");
             }
 
             if (!manualTrigger

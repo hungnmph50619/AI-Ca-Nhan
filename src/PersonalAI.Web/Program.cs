@@ -30,6 +30,7 @@ builder.Services.AddSingleton<IKnowledgeGroundingService, KnowledgeGroundingServ
 builder.Services.AddSingleton<KnowledgeSourceReader>();
 builder.Services.AddSingleton<IPersonalMemoryStore, PersonalMemoryStore>();
 builder.Services.AddSingleton<IPersonalMemoryGroundingService, PersonalMemoryGroundingService>();
+builder.Services.AddScoped<IContextManagerService, ContextManagerService>();
 builder.Services.AddHttpClient<GeminiChatService>(client =>
 {
     client.BaseAddress = new Uri("https://generativelanguage.googleapis.com/v1beta/");
@@ -77,7 +78,7 @@ app.MapGet("/api/status", (
         teamProfile = teamProfiles.DefaultProfileId,
         workspaceId = workspaceContext.CurrentWorkspaceId,
         workspaceName = workspaceContext.CurrentWorkspace.Name,
-        version = "0.9.4"
+        version = "0.9.5"
     });
 });
 
@@ -334,7 +335,59 @@ app.MapPost("/api/settings/ai/test", async (IAiProviderResolver providerResolver
 app.MapGet("/api/team-profiles", (ITeamProfileCatalog teamProfiles) =>
     Results.Ok(new { active = teamProfiles.DefaultProfileId, profiles = teamProfiles.GetAll() }));
 
-app.MapPost("/api/chat", async (ChatRequest request, IAiProviderResolver providerResolver, IKnowledgeGroundingService groundingService, IPersonalMemoryGroundingService memoryGroundingService, IToolOrchestrationService toolOrchestration, CancellationToken cancellationToken) =>
+app.MapPost("/api/context/preview", async (
+    ContextPreviewRequest request,
+    IContextManagerService contextManager,
+    CancellationToken cancellationToken) =>
+{
+    if (request.Messages is null || request.Messages.Count == 0)
+        return Results.BadRequest(new ApiError("Hãy nhập ít nhất một tin nhắn để xem trước ngữ cảnh."));
+
+    if (request.Messages.Count > 40)
+        return Results.BadRequest(new ApiError("Cuộc trò chuyện quá dài. Hãy tạo cuộc trò chuyện mới."));
+
+    var allowedRoles = new HashSet<string>(StringComparer.OrdinalIgnoreCase)
+    {
+        "user",
+        "assistant"
+    };
+    if (request.Messages.Any(message =>
+        !allowedRoles.Contains(message.Role)
+        || string.IsNullOrWhiteSpace(message.Content)
+        || message.Content.Length > 12_000))
+    {
+        return Results.BadRequest(new ApiError("Nội dung hội thoại không hợp lệ."));
+    }
+
+    var knowledgeMode = string.IsNullOrWhiteSpace(request.KnowledgeMode)
+        ? "normal"
+        : request.KnowledgeMode.Trim().ToLowerInvariant();
+    if (knowledgeMode is not ("normal" or "documents-only"))
+        return Results.BadRequest(new ApiError("Chế độ trả lời theo dữ liệu không hợp lệ."));
+
+    if (!request.UseKnowledge && knowledgeMode == "documents-only")
+        return Results.BadRequest(new ApiError("Hãy bật dữ liệu riêng để sử dụng chế độ chỉ trả lời theo tài liệu."));
+
+    try
+    {
+        var managed = await contextManager.BuildAsync(
+            request.Messages,
+            request.UseKnowledge,
+            knowledgeMode,
+            request.UseMemory,
+            request.UseTaskContext,
+            cancellationToken);
+        return Results.Ok(new ContextPreviewResponse(
+            managed.Report,
+            managed.Sources));
+    }
+    catch (KnowledgeDocumentValidationException exception)
+    {
+        return Results.BadRequest(new ApiError(exception.Message));
+    }
+});
+
+app.MapPost("/api/chat", async (ChatRequest request, IAiProviderResolver providerResolver, IContextManagerService contextManager, IToolOrchestrationService toolOrchestration, CancellationToken cancellationToken) =>
 {
     if (request.Messages is null || request.Messages.Count == 0)
         return Results.BadRequest(new ApiError("Hãy nhập một câu hỏi."));
@@ -373,24 +426,36 @@ app.MapPost("/api/chat", async (ChatRequest request, IAiProviderResolver provide
             }
         }
 
-        var grounded = request.UseKnowledge
-            ? await groundingService.GroundAsync(request.Messages, knowledgeMode, cancellationToken)
-            : new KnowledgeGroundingResult(request.Messages, []);
+        var managedContext = await contextManager.BuildAsync(
+            request.Messages,
+            request.UseKnowledge,
+            knowledgeMode,
+            request.UseMemory,
+            request.UseTaskContext,
+            cancellationToken);
 
-        if (knowledgeMode == "documents-only" && grounded.Sources.Count == 0)
+        if (knowledgeMode == "documents-only"
+            && managedContext.Sources.Count == 0)
         {
-            return Results.Ok(new ChatResponse("Tôi chưa tìm thấy thông tin này trong kho dữ liệu.", aiProvider.Model, aiProvider.Name, []));
+            return Results.Ok(new ChatResponse(
+                "Tôi chưa tìm thấy thông tin này trong kho dữ liệu.",
+                aiProvider.Model,
+                aiProvider.Name,
+                [],
+                null,
+                managedContext.Report));
         }
 
-        var chatMessages = grounded.Messages;
-        if (request.UseMemory && knowledgeMode == "normal")
-        {
-            var memoryGrounded = await memoryGroundingService.GroundAsync(request.Messages, chatMessages, cancellationToken);
-            chatMessages = memoryGrounded.Messages;
-        }
-
-        var answer = await aiProvider.ReplyAsync(chatMessages, cancellationToken);
-        return Results.Ok(new ChatResponse(answer, aiProvider.Model, aiProvider.Name, grounded.Sources));
+        var answer = await aiProvider.ReplyAsync(
+            managedContext.Messages,
+            cancellationToken);
+        return Results.Ok(new ChatResponse(
+            answer,
+            aiProvider.Model,
+            aiProvider.Name,
+            managedContext.Sources,
+            null,
+            managedContext.Report));
     }
     catch (KnowledgeDocumentValidationException exception)
     {

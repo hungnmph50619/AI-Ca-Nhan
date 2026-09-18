@@ -1,5 +1,7 @@
 const LEGACY_MESSAGES_STORAGE_KEY = "personal-ai-v0.1-messages";
-const WORKSPACE_STORAGE_KEY = "personal-ai-v0.4-workspace";
+const LEGACY_WORKSPACE_STORAGE_KEY = "personal-ai-v0.4-workspace";
+const ACTIVE_WORKSPACE_ID = window.PersonalAiWorkspace?.currentId || "personal";
+const WORKSPACE_STORAGE_KEY = `personal-ai-v0.9.4-workspace-${ACTIVE_WORKSPACE_ID}`;
 const MAX_STORED_MESSAGES = 40;
 const MAX_TITLE_LENGTH = 42;
 const CUSTOM_MODEL_VALUE = "__custom__";
@@ -1738,24 +1740,32 @@ function persistWorkspace() {
 }
 
 function loadWorkspace() {
-  try {
-    const savedWorkspace = JSON.parse(localStorage.getItem(WORKSPACE_STORAGE_KEY) || "null");
-    const conversations = Array.isArray(savedWorkspace?.conversations)
-      ? savedWorkspace.conversations.map(normalizeConversation).filter(Boolean)
-      : [];
-
-    if (conversations.length > 0) {
-      const activeConversationId = conversations.some(
-        conversation => conversation.id === savedWorkspace.activeConversationId)
-        ? savedWorkspace.activeConversationId
-        : conversations[0].id;
-      return { conversations, activeConversationId };
-    }
-  } catch {
-    // Ignore damaged browser storage and import the previous format below.
+  const storageKeys = [WORKSPACE_STORAGE_KEY];
+  if (ACTIVE_WORKSPACE_ID === "personal") {
+    storageKeys.push(LEGACY_WORKSPACE_STORAGE_KEY);
   }
 
-  const migratedConversation = createConversation(loadLegacyMessages());
+  for (const storageKey of storageKeys) {
+    try {
+      const savedWorkspace = JSON.parse(localStorage.getItem(storageKey) || "null");
+      const conversations = Array.isArray(savedWorkspace?.conversations)
+        ? savedWorkspace.conversations.map(normalizeConversation).filter(Boolean)
+        : [];
+
+      if (conversations.length > 0) {
+        const activeConversationId = conversations.some(
+          conversation => conversation.id === savedWorkspace.activeConversationId)
+          ? savedWorkspace.activeConversationId
+          : conversations[0].id;
+        return { conversations, activeConversationId };
+      }
+    } catch {
+      // Ignore damaged browser storage and continue with the next migration source.
+    }
+  }
+
+  const migratedConversation = createConversation(
+    ACTIVE_WORKSPACE_ID === "personal" ? loadLegacyMessages() : []);
   return {
     conversations: [migratedConversation],
     activeConversationId: migratedConversation.id

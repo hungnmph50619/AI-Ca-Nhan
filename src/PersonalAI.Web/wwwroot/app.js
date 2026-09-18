@@ -149,7 +149,7 @@ function bindEvents() {
     const selectedProvider = elements.provider.value;
     populateModelOptions(selectedProvider, DEFAULT_MODELS[selectedProvider]);
     elements.apiKey.value = "";
-    elements.apiKeyHint.textContent = "Để trống để giữ API key đã lưu cho nhà cung cấp này.";
+    elements.apiKeyHint.textContent = "Để trống để giữ khóa API đã lưu cho nhà cung cấp này.";
     resetApiKeyVisibility();
   });
   elements.modelSelect.addEventListener("change", updateCustomModelVisibility);
@@ -293,14 +293,14 @@ function toggleApiKeyVisibility() {
   const shouldShow = elements.apiKey.type === "password";
   elements.apiKey.type = shouldShow ? "text" : "password";
   elements.toggleApiKey.textContent = shouldShow ? "Ẩn" : "Hiện";
-  elements.toggleApiKey.setAttribute("aria-label", shouldShow ? "Ẩn API key" : "Hiện API key");
+  elements.toggleApiKey.setAttribute("aria-label", shouldShow ? "Ẩn khóa API" : "Hiện khóa API");
   elements.toggleApiKey.setAttribute("aria-pressed", String(shouldShow));
 }
 
 function resetApiKeyVisibility() {
   elements.apiKey.type = "password";
   elements.toggleApiKey.textContent = "Hiện";
-  elements.toggleApiKey.setAttribute("aria-label", "Hiện API key");
+  elements.toggleApiKey.setAttribute("aria-label", "Hiện khóa API");
   elements.toggleApiKey.setAttribute("aria-pressed", "false");
 }
 

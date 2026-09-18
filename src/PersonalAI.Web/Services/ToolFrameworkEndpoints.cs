@@ -4,7 +4,7 @@ namespace PersonalAI.Web.Services;
 
 public static class ToolFrameworkEndpoints
 {
-    public const string FrameworkVersion = "0.8.7";
+    public const string FrameworkVersion = "0.8.8";
 
     private static readonly string[] PermissionTypes =
     [
@@ -158,6 +158,52 @@ public static class ToolFrameworkEndpoints
             {
                 return Results.Json(
                     new ApiError("Diễn giải kết quả bằng AI mất quá nhiều thời gian. Hãy thử lại."),
+                    statusCode: StatusCodes.Status504GatewayTimeout);
+            }
+        });
+
+        app.MapPost("/api/tools/orchestrate/continue-native", async (
+            ToolNativeContinuationRequest request,
+            IToolOrchestrationService orchestration,
+            CancellationToken cancellationToken) =>
+        {
+            try
+            {
+                var response = await orchestration.ContinueNativeAsync(
+                    request.InvocationId,
+                    request.ConfirmedExternal,
+                    cancellationToken);
+                return response is null
+                    ? Results.NotFound(new ApiError(
+                        "Kết quả công cụ không tồn tại hoặc native continuation đã hết hạn."))
+                    : Results.Ok(response);
+            }
+            catch (ToolExternalConfirmationRequiredException exception)
+            {
+                return Results.Json(
+                    new ApiError(exception.Message),
+                    statusCode: StatusCodes.Status403Forbidden);
+            }
+            catch (ToolProposalValidationException exception)
+            {
+                return Results.BadRequest(new ApiError(exception.Message));
+            }
+            catch (InvalidOperationException exception)
+            {
+                return Results.Json(
+                    new ApiError(exception.Message),
+                    statusCode: StatusCodes.Status503ServiceUnavailable);
+            }
+            catch (HttpRequestException exception)
+            {
+                return Results.Json(
+                    new ApiError(exception.Message),
+                    statusCode: StatusCodes.Status502BadGateway);
+            }
+            catch (TaskCanceledException) when (!cancellationToken.IsCancellationRequested)
+            {
+                return Results.Json(
+                    new ApiError("Hoàn tất câu trả lời native mất quá nhiều thời gian. Hãy thử lại."),
                     statusCode: StatusCodes.Status504GatewayTimeout);
             }
         });

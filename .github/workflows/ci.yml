@@ -140,7 +140,7 @@ jobs:
             -H 'Content-Type: application/json' \
             -d '{"invocationId":"'"$read_invocation_id"'","confirmedExternal":false}')
           test "$manual_native_code" = "400"
-          jq -e '(.error | contains("native function context"))' /tmp/tool-native-manual.json >/dev/null
+          jq -e '(.error | contains("ngữ cảnh gọi hàm gốc"))' /tmp/tool-native-manual.json >/dev/null
 
           unknown_native_code=$(curl -sS -o /tmp/tool-native-missing.json -w '%{http_code}' -X POST http://127.0.0.1:5077/api/tools/orchestrate/continue-native \
             -H 'Content-Type: application/json' \

@@ -100,7 +100,7 @@ public sealed class ChatTurnService(
                     auditAgent,
                     "tool.proposed",
                     $"tool-proposal:{proposal.ProposalId:D}",
-                    auditReason,
+                    "chat-tool-selection",
                     AuditResults.Proposed,
                     proposal.ToolName);
 
@@ -128,7 +128,11 @@ public sealed class ChatTurnService(
                 auditAgent,
                 "chat.completed",
                 "chat:turn",
-                $"{auditReason}-documents-only-no-source",
+                auditReason.Equals(
+                    "context-managed-chat",
+                    StringComparison.Ordinal)
+                    ? "documents-only-no-source"
+                    : $"{auditReason}-documents-only-no-source",
                 AuditResults.Succeeded);
 
             return new ChatResponse(

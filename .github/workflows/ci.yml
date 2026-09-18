@@ -675,6 +675,10 @@ jobs:
           ! grep -Fq 'Chat thông thường' src/PersonalAI.Web/wwwroot/v054.js
           ! grep -Fq 'API key' src/PersonalAI.Web/wwwroot/index.html
           ! grep -Fq 'API key' src/PersonalAI.Web/wwwroot/app.js
+          ! grep -R -F 'reportValidity' src/PersonalAI.Web/wwwroot/*.js
+          grep -Fq '<form id="settingsForm" novalidate>' src/PersonalAI.Web/wwwroot/index.html
+          grep -Fq 'id="knowledgeSearchForm" role="search" novalidate' src/PersonalAI.Web/wwwroot/index.html
+          grep -Fq '<form id="memoryForm" class="memory-form" novalidate>' src/PersonalAI.Web/wwwroot/v060.js
           ! grep -Fq 'Mô hình véc-tơ:' src/PersonalAI.Web/wwwroot/v072.js
           ! grep -Fq 'personal-ai-memory-' src/PersonalAI.Web/wwwroot/v064.js
           ! grep -Fq 'personal-ai-knowledge-metadata-' src/PersonalAI.Web/wwwroot/v075.js

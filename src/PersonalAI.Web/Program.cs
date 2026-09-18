@@ -138,7 +138,7 @@ app.MapGet("/api/knowledge/documents/{documentId:guid}/chunks/{chunkIndex:int}",
     return source is null ? Results.NotFound() : Results.Ok(source);
 });
 
-app.MapPost("/api/knowledge/documents", async (HttpRequest request, IKnowledgeDocumentStore knowledgeStore, IKnowledgeEmbeddingIndex embeddingIndex, CancellationToken cancellationToken) =>
+app.MapPost("/api/knowledge/documents", async (HttpRequest request, IKnowledgeDocumentStore knowledgeStore, IKnowledgeEmbeddingIndex embeddingIndex, IAuditRecorder audit, CancellationToken cancellationToken) =>
 {
     if (!request.HasFormContentType)
         return Results.BadRequest(new ApiError("Yêu cầu tải tệp không hợp lệ."));
@@ -161,6 +161,12 @@ app.MapPost("/api/knowledge/documents", async (HttpRequest request, IKnowledgeDo
             throw;
         }
 
+        audit.Record(
+            AuditAgents.User,
+            "document.upload",
+            $"document:{document.Id:D}",
+            "user-request",
+            AuditResults.Succeeded);
         return Results.Created($"/api/knowledge/documents/{document.Id}", document);
     }
     catch (InvalidDataException)
@@ -177,11 +183,20 @@ app.MapPost("/api/knowledge/documents", async (HttpRequest request, IKnowledgeDo
     }
 });
 
-app.MapPatch("/api/knowledge/documents/{documentId:guid}", async (Guid documentId, RenameKnowledgeDocumentRequest request, IKnowledgeDocumentManagementService managementService, CancellationToken cancellationToken) =>
+app.MapPatch("/api/knowledge/documents/{documentId:guid}", async (Guid documentId, RenameKnowledgeDocumentRequest request, IKnowledgeDocumentManagementService managementService, IAuditRecorder audit, CancellationToken cancellationToken) =>
 {
     try
     {
         var document = await managementService.RenameAsync(documentId, request.FileName, cancellationToken);
+        if (document is not null)
+        {
+            audit.Record(
+                AuditAgents.User,
+                "document.rename",
+                $"document:{documentId:D}",
+                "user-request",
+                AuditResults.Succeeded);
+        }
         return document is null ? Results.NotFound() : Results.Ok(document);
     }
     catch (KnowledgeDocumentValidationException exception)
@@ -190,11 +205,20 @@ app.MapPatch("/api/knowledge/documents/{documentId:guid}", async (Guid documentI
     }
 });
 
-app.MapPost("/api/knowledge/documents/{documentId:guid}/reindex", async (Guid documentId, IKnowledgeDocumentManagementService managementService, CancellationToken cancellationToken) =>
+app.MapPost("/api/knowledge/documents/{documentId:guid}/reindex", async (Guid documentId, IKnowledgeDocumentManagementService managementService, IAuditRecorder audit, CancellationToken cancellationToken) =>
 {
     try
     {
         var document = await managementService.ReindexAsync(documentId, cancellationToken);
+        if (document is not null)
+        {
+            audit.Record(
+                AuditAgents.User,
+                "document.reindex",
+                $"document:{documentId:D}",
+                "user-request",
+                AuditResults.Succeeded);
+        }
         return document is null ? Results.NotFound() : Results.Ok(document);
     }
     catch (KnowledgeDocumentValidationException exception)
@@ -203,11 +227,20 @@ app.MapPost("/api/knowledge/documents/{documentId:guid}/reindex", async (Guid do
     }
 });
 
-app.MapPost("/api/knowledge/documents/bulk-delete", async (BulkDeleteKnowledgeDocumentsRequest request, IKnowledgeDocumentManagementService managementService, CancellationToken cancellationToken) =>
+app.MapPost("/api/knowledge/documents/bulk-delete", async (BulkDeleteKnowledgeDocumentsRequest request, IKnowledgeDocumentManagementService managementService, IAuditRecorder audit, CancellationToken cancellationToken) =>
 {
     try
     {
-        return Results.Ok(await managementService.DeleteManyAsync(request.DocumentIds, cancellationToken));
+        var response = await managementService.DeleteManyAsync(
+            request.DocumentIds,
+            cancellationToken);
+        audit.Record(
+            AuditAgents.User,
+            "document.bulk-delete",
+            "documents:bulk",
+            "user-request",
+            AuditResults.Succeeded);
+        return Results.Ok(response);
     }
     catch (KnowledgeDocumentValidationException exception)
     {
@@ -215,9 +248,18 @@ app.MapPost("/api/knowledge/documents/bulk-delete", async (BulkDeleteKnowledgeDo
     }
 });
 
-app.MapDelete("/api/knowledge/documents/{documentId:guid}", async (Guid documentId, IKnowledgeDocumentStore knowledgeStore, CancellationToken cancellationToken) =>
+app.MapDelete("/api/knowledge/documents/{documentId:guid}", async (Guid documentId, IKnowledgeDocumentStore knowledgeStore, IAuditRecorder audit, CancellationToken cancellationToken) =>
 {
     var deleted = await knowledgeStore.DeleteAsync(documentId, cancellationToken);
+    if (deleted)
+    {
+        audit.Record(
+            AuditAgents.User,
+            "document.delete",
+            $"document:{documentId:D}",
+            "user-request",
+            AuditResults.Succeeded);
+    }
     return deleted ? Results.NoContent() : Results.NotFound();
 });
 
@@ -237,11 +279,20 @@ app.MapGet("/api/memory/export", async (IPersonalMemoryStore memoryStore, Cancel
         DateTimeOffset.UtcNow,
         await memoryStore.GetAllAsync(cancellationToken))));
 
-app.MapPost("/api/memory/import", async (ImportPersonalMemoriesRequest request, IPersonalMemoryStore memoryStore, CancellationToken cancellationToken) =>
+app.MapPost("/api/memory/import", async (ImportPersonalMemoriesRequest request, IPersonalMemoryStore memoryStore, IAuditRecorder audit, CancellationToken cancellationToken) =>
 {
     try
     {
-        return Results.Ok(await memoryStore.ImportAsync(request, cancellationToken));
+        var imported = await memoryStore.ImportAsync(
+            request,
+            cancellationToken);
+        audit.Record(
+            AuditAgents.User,
+            "memory.import",
+            "memory:import",
+            "user-request",
+            AuditResults.Succeeded);
+        return Results.Ok(imported);
     }
     catch (ArgumentException exception)
     {
@@ -249,11 +300,17 @@ app.MapPost("/api/memory/import", async (ImportPersonalMemoriesRequest request, 
     }
 });
 
-app.MapPost("/api/memory", async (CreatePersonalMemoryRequest request, IPersonalMemoryStore memoryStore, CancellationToken cancellationToken) =>
+app.MapPost("/api/memory", async (CreatePersonalMemoryRequest request, IPersonalMemoryStore memoryStore, IAuditRecorder audit, CancellationToken cancellationToken) =>
 {
     try
     {
         var memory = await memoryStore.AddAsync(request, cancellationToken);
+        audit.Record(
+            AuditAgents.User,
+            "memory.create",
+            $"memory:{memory.Id:D}",
+            "user-request",
+            AuditResults.Succeeded);
         return Results.Created($"/api/memory/{memory.Id}", memory);
     }
     catch (MemoryUpdateSuggestionException exception)
@@ -272,11 +329,20 @@ app.MapPost("/api/memory", async (CreatePersonalMemoryRequest request, IPersonal
     }
 });
 
-app.MapPut("/api/memory/{memoryId:guid}", async (Guid memoryId, UpdatePersonalMemoryRequest request, IPersonalMemoryStore memoryStore, CancellationToken cancellationToken) =>
+app.MapPut("/api/memory/{memoryId:guid}", async (Guid memoryId, UpdatePersonalMemoryRequest request, IPersonalMemoryStore memoryStore, IAuditRecorder audit, CancellationToken cancellationToken) =>
 {
     try
     {
         var memory = await memoryStore.UpdateAsync(memoryId, request, cancellationToken);
+        if (memory is not null)
+        {
+            audit.Record(
+                AuditAgents.User,
+                "memory.update",
+                $"memory:{memoryId:D}",
+                "user-request",
+                AuditResults.Succeeded);
+        }
         return memory is null ? Results.NotFound() : Results.Ok(memory);
     }
     catch (MemoryOverwriteConfirmationException exception)
@@ -289,20 +355,47 @@ app.MapPut("/api/memory/{memoryId:guid}", async (Guid memoryId, UpdatePersonalMe
     }
 });
 
-app.MapPatch("/api/memory/{memoryId:guid}/enabled", async (Guid memoryId, SetPersonalMemoryEnabledRequest request, IPersonalMemoryStore memoryStore, CancellationToken cancellationToken) =>
+app.MapPatch("/api/memory/{memoryId:guid}/enabled", async (Guid memoryId, SetPersonalMemoryEnabledRequest request, IPersonalMemoryStore memoryStore, IAuditRecorder audit, CancellationToken cancellationToken) =>
 {
     var memory = await memoryStore.SetEnabledAsync(memoryId, request.IsEnabled, cancellationToken);
+    if (memory is not null)
+    {
+        audit.Record(
+            AuditAgents.User,
+            request.IsEnabled ? "memory.enable" : "memory.disable",
+            $"memory:{memoryId:D}",
+            "user-request",
+            AuditResults.Succeeded);
+    }
     return memory is null ? Results.NotFound() : Results.Ok(memory);
 });
 
-app.MapDelete("/api/memory/{memoryId:guid}", async (Guid memoryId, IPersonalMemoryStore memoryStore, CancellationToken cancellationToken) =>
+app.MapDelete("/api/memory/{memoryId:guid}", async (Guid memoryId, IPersonalMemoryStore memoryStore, IAuditRecorder audit, CancellationToken cancellationToken) =>
 {
     var deleted = await memoryStore.DeleteAsync(memoryId, cancellationToken);
+    if (deleted)
+    {
+        audit.Record(
+            AuditAgents.User,
+            "memory.delete",
+            $"memory:{memoryId:D}",
+            "user-request",
+            AuditResults.Succeeded);
+    }
     return deleted ? Results.NoContent() : Results.NotFound();
 });
 
-app.MapDelete("/api/memory", async (IPersonalMemoryStore memoryStore, CancellationToken cancellationToken) =>
-    Results.Ok(new { deleted = await memoryStore.DeleteAllAsync(cancellationToken) }));
+app.MapDelete("/api/memory", async (IPersonalMemoryStore memoryStore, IAuditRecorder audit, CancellationToken cancellationToken) =>
+{
+    var deleted = await memoryStore.DeleteAllAsync(cancellationToken);
+    audit.Record(
+        AuditAgents.User,
+        "memory.delete-all",
+        "memory:all",
+        "user-request",
+        AuditResults.Succeeded);
+    return Results.Ok(new { deleted });
+});
 
 app.MapGet("/api/settings/ai", (IAiSettingsStore settingsStore) =>
     Results.Ok(settingsStore.GetPublicSettings()));
@@ -340,6 +433,7 @@ app.MapGet("/api/team-profiles", (ITeamProfileCatalog teamProfiles) =>
 app.MapPost("/api/context/preview", async (
     ContextPreviewRequest request,
     IContextManagerService contextManager,
+    IAuditRecorder audit,
     CancellationToken cancellationToken) =>
 {
     if (request.Messages is null || request.Messages.Count == 0)
@@ -379,6 +473,12 @@ app.MapPost("/api/context/preview", async (
             request.UseMemory,
             request.UseTaskContext,
             cancellationToken);
+        audit.Record(
+            AuditAgents.PersonalAi,
+            "context.preview",
+            $"context:{managed.Report.WorkspaceId}",
+            "user-request",
+            AuditResults.Succeeded);
         return Results.Ok(new ContextPreviewResponse(
             managed.Report,
             managed.Sources));
@@ -389,7 +489,7 @@ app.MapPost("/api/context/preview", async (
     }
 });
 
-app.MapPost("/api/chat", async (ChatRequest request, IAiProviderResolver providerResolver, IContextManagerService contextManager, IToolOrchestrationService toolOrchestration, CancellationToken cancellationToken) =>
+app.MapPost("/api/chat", async (ChatRequest request, IAiProviderResolver providerResolver, IContextManagerService contextManager, IToolOrchestrationService toolOrchestration, IAuditRecorder audit, CancellationToken cancellationToken) =>
 {
     if (request.Messages is null || request.Messages.Count == 0)
         return Results.BadRequest(new ApiError("Hãy nhập một câu hỏi."));
@@ -419,6 +519,13 @@ app.MapPost("/api/chat", async (ChatRequest request, IAiProviderResolver provide
                 cancellationToken);
             if (proposal is not null)
             {
+                audit.Record(
+                    AuditAgents.PersonalAi,
+                    "tool.proposed",
+                    $"tool-proposal:{proposal.ProposalId:D}",
+                    "chat-tool-selection",
+                    AuditResults.Proposed,
+                    proposal.ToolName);
                 return Results.Ok(new ChatResponse(
                     proposal.AssistantMessage,
                     aiProvider.Model,
@@ -439,6 +546,12 @@ app.MapPost("/api/chat", async (ChatRequest request, IAiProviderResolver provide
         if (knowledgeMode == "documents-only"
             && managedContext.Sources.Count == 0)
         {
+            audit.Record(
+                AuditAgents.PersonalAi,
+                "chat.completed",
+                "chat:turn",
+                "documents-only-no-source",
+                AuditResults.Succeeded);
             return Results.Ok(new ChatResponse(
                 "Tôi chưa tìm thấy thông tin này trong kho dữ liệu.",
                 aiProvider.Model,
@@ -451,6 +564,12 @@ app.MapPost("/api/chat", async (ChatRequest request, IAiProviderResolver provide
         var answer = await aiProvider.ReplyAsync(
             managedContext.Messages,
             cancellationToken);
+        audit.Record(
+            AuditAgents.PersonalAi,
+            "chat.completed",
+            "chat:turn",
+            "context-managed-chat",
+            AuditResults.Succeeded);
         return Results.Ok(new ChatResponse(
             answer,
             aiProvider.Model,

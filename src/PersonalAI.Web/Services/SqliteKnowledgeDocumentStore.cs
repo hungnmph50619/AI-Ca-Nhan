@@ -37,7 +37,6 @@ public sealed class SqliteKnowledgeDocumentStore(
     public async Task InitializeAsync(CancellationToken cancellationToken = default)
     {
         var workspaceId = storagePaths.CurrentWorkspaceId;
-        if (_initializedWorkspaces.Contains(workspaceId)) return;
 
         await _initializationLock.WaitAsync(cancellationToken);
         try

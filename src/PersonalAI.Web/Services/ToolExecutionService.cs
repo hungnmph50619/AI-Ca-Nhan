@@ -75,6 +75,7 @@ public sealed class ToolPolicy : IToolPolicy
             "DELETE" => "XÓA",
             "EXTERNAL" => "BÊN NGOÀI",
             "SENSITIVE" => "NHẠY CẢM",
+            "COMPUTER" => "ĐIỀU KHIỂN MÁY",
             _ => permission
         };
 }
@@ -282,6 +283,7 @@ public sealed class ToolExecutionService(
             "DELETE" => "XÓA",
             "EXTERNAL" => "BÊN NGOÀI",
             "SENSITIVE" => "NHẠY CẢM",
+            "COMPUTER" => "ĐIỀU KHIỂN MÁY",
             _ => permission
         };
 

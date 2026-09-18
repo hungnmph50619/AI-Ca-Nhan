@@ -212,7 +212,7 @@
       const button = event.target.closest?.("[data-memory-delete]");
       if (!button) return;
       const memoryId = button.dataset.memoryDelete;
-      if (!memoryId || !window.confirm("Xóa trí nhớ này?")) return;
+      if (!memoryId || !(await window.PersonalAiUi.confirm("Xóa trí nhớ này?", { title: "Xác nhận xóa trí nhớ", confirmText: "Xóa", danger: true }))) return;
       await deleteMemory(memoryId);
     });
   }

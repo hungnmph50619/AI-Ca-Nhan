@@ -96,18 +96,35 @@ public sealed class UndoService(
                     ReadBoolean(output, "created")
                     && TryReadString(output, "sha256", out postSha256),
                 UndoOperations.RestoreFile =>
-                    TryReadString(output, "sha256", out postSha256),
+                    HashMatchesOutput(
+                        output,
+                        "previousSha256",
+                        preparation.BeforeSha256,
+                        out _)
+                    && TryReadString(
+                        output,
+                        "sha256",
+                        out postSha256),
                 UndoOperations.DeleteCreatedDirectory =>
                     ReadBoolean(output, "created"),
                 UndoOperations.RestoreDeletedFile =>
                     ReadBoolean(output, "deleted")
-                    && ReadString(output, "type") == "file",
+                    && ReadString(output, "type") == "file"
+                    && HashMatchesOutput(
+                        output,
+                        "sha256",
+                        preparation.BeforeSha256,
+                        out _),
                 UndoOperations.RestoreEmptyDirectory =>
                     ReadBoolean(output, "deleted")
                     && ReadString(output, "type") == "directory",
                 UndoOperations.MoveFileBack =>
                     ReadString(output, "type") == "file"
-                    && TryReadString(output, "sha256", out postSha256),
+                    && HashMatchesOutput(
+                        output,
+                        "sha256",
+                        preparation.BeforeSha256,
+                        out postSha256),
                 _ => false
             };
 
@@ -362,6 +379,24 @@ public sealed class UndoService(
 
         value = default;
         return false;
+    }
+
+    private static bool HashMatchesOutput(
+        JsonElement element,
+        string property,
+        string? expected,
+        out string? actual)
+    {
+        actual = null;
+        return !string.IsNullOrWhiteSpace(expected)
+            && TryReadString(
+                element,
+                property,
+                out actual)
+            && string.Equals(
+                actual,
+                expected,
+                StringComparison.OrdinalIgnoreCase);
     }
 
     private static bool TryReadString(

@@ -24,6 +24,7 @@ builder.Services.AddSingleton<IKnowledgeEmbeddingIndex, KnowledgeEmbeddingIndex>
 builder.Services.AddSingleton<IKnowledgeDocumentManagementService, KnowledgeDocumentManagementService>();
 builder.Services.AddSingleton<IKnowledgeHybridSearchService, KnowledgeHybridSearchService>();
 builder.Services.AddKnowledgeQuality();
+builder.Services.AddAuditFoundation();
 builder.Services.AddToolFramework();
 builder.Services.AddTaskEngine();
 builder.Services.AddSingleton<IKnowledgeGroundingService, KnowledgeGroundingService>();
@@ -63,6 +64,7 @@ app.UseDefaultFiles();
 app.UseStaticFiles();
 
 app.MapWorkspaceFoundation();
+app.MapAuditFoundation();
 
 app.MapGet("/api/status", (
     IAiProviderResolver providerResolver,
@@ -78,7 +80,7 @@ app.MapGet("/api/status", (
         teamProfile = teamProfiles.DefaultProfileId,
         workspaceId = workspaceContext.CurrentWorkspaceId,
         workspaceName = workspaceContext.CurrentWorkspace.Name,
-        version = "0.9.5"
+        version = "0.9.6"
     });
 });
 

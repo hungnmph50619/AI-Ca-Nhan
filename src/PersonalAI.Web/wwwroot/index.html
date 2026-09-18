@@ -3,7 +3,7 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <meta name="description" content="Trợ lý AI cá nhân phiên bản 0.8.4">
+  <meta name="description" content="Trợ lý AI cá nhân phiên bản 0.8.5">
   <title>AI Cá Nhân</title>
   <link rel="stylesheet" href="styles.css">
   <link rel="stylesheet" href="v0631.css">
@@ -15,6 +15,7 @@
   <link rel="stylesheet" href="v075.css">
   <link rel="stylesheet" href="v076.css">
   <link rel="stylesheet" href="v080.css">
+  <link rel="stylesheet" href="v085.css">
 </head>
 <body>
   <div class="app-shell">
@@ -23,7 +24,7 @@
         <div class="brand-mark" aria-hidden="true">A</div>
         <div>
           <strong>AI Cá Nhân</strong>
-          <span>Phiên bản 0.8.4</span>
+          <span>Phiên bản 0.8.5</span>
         </div>
       </div>
 
@@ -55,7 +56,17 @@
           </div>
         </div>
       </section>
-      <footer class="composer-wrap"><form class="composer" id="chatForm"><textarea id="messageInput" rows="1" maxlength="12000" placeholder="Nhắn tin cho AI của bạn…" aria-label="Tin nhắn"></textarea><button class="send-button" id="sendButton" type="submit" aria-label="Gửi tin nhắn">↑</button></form><p class="disclaimer">AI có thể mắc lỗi. Hãy kiểm tra thông tin quan trọng.</p></footer>
+      <footer class="composer-wrap">
+        <form class="composer" id="chatForm"><textarea id="messageInput" rows="1" maxlength="12000" placeholder="Nhắn tin cho AI của bạn…" aria-label="Tin nhắn"></textarea><button class="send-button" id="sendButton" type="submit" aria-label="Gửi tin nhắn">↑</button></form>
+        <div class="tool-orchestration-toggle-row">
+          <label class="tool-orchestration-toggle" title="Cho phép AI đề xuất một công cụ phù hợp; công cụ chưa chạy cho tới khi bạn bấm chạy">
+            <input id="useToolsToggle" type="checkbox">
+            <span>Đề xuất công cụ</span>
+          </label>
+          <small>AI chỉ lập đề xuất có cấu trúc; WRITE/DELETE vẫn cần xác nhận rõ ràng.</small>
+        </div>
+        <p class="disclaimer">AI có thể mắc lỗi. Hãy kiểm tra thông tin quan trọng.</p>
+      </footer>
     </main>
   </div>
 

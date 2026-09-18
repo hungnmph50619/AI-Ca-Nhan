@@ -703,12 +703,13 @@ public sealed class TaskEngineService : ITaskEngineService
                 permission.Equals(ToolPermissions.External, StringComparison.OrdinalIgnoreCase)
                 || permission.Equals(ToolPermissions.Sensitive, StringComparison.OrdinalIgnoreCase)
                 || permission.Equals(ToolPermissions.Computer, StringComparison.OrdinalIgnoreCase)
-                || permission.Equals(ToolPermissions.Browser, StringComparison.OrdinalIgnoreCase)))
+                || permission.Equals(ToolPermissions.Browser, StringComparison.OrdinalIgnoreCase)
+                || permission.Equals(ToolPermissions.Connector, StringComparison.OrdinalIgnoreCase)))
         {
             return BlockedRetry(
                 task,
                 position,
-                "Bước dùng quyền BÊN NGOÀI, NHẠY CẢM, ĐIỀU KHIỂN MÁY hoặc TRÌNH DUYỆT nên phiên bản này không cho chuẩn bị thử lại.");
+                "Bước dùng quyền BÊN NGOÀI, NHẠY CẢM, ĐIỀU KHIỂN MÁY, TRÌNH DUYỆT hoặc KẾT NỐI nên phiên bản này không cho chuẩn bị thử lại.");
         }
 
         var readOnly = permissions.Count > 0

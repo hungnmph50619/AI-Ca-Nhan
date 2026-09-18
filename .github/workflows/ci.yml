@@ -606,6 +606,16 @@ jobs:
           ! grep -Fq 'API key' src/PersonalAI.Web/wwwroot/index.html
           ! grep -Fq 'API key' src/PersonalAI.Web/wwwroot/app.js
           ! grep -R -E 'window\.(confirm|alert|prompt)\(' src/PersonalAI.Web/wwwroot/*.js
+          ! grep -Fq 'XOA TAT CA' src/PersonalAI.Web/wwwroot/v064.js
+          ! grep -Fq 'đã rerank' src/PersonalAI.Web/wwwroot/v073.js
+          ! grep -Fq 'từ khóa + vector' src/PersonalAI.Web/wwwroot/v073.js
+          ! grep -Fq ' Mô hình véc-tơ:' src/PersonalAI.Web/wwwroot/v072.js
+          ! grep -Fq ' vector hiện hành' src/PersonalAI.Web/wwwroot/v075.js
+          grep -Fq 'formatToolArgumentsForDisplay' src/PersonalAI.Web/wwwroot/app.js
+          grep -Fq 'formatToolOutputForDisplay' src/PersonalAI.Web/wwwroot/app.js
+          grep -Fq 'Xác nhận và chạy' src/PersonalAI.Web/wwwroot/app.js
+          grep -Fq 'XÓA TẤT CẢ' src/PersonalAI.Web/wwwroot/v064.js
+          grep -Fq '.app-message-dialog' src/PersonalAI.Web/wwwroot/v088.css
           ! grep -Fq 'Planner:' src/PersonalAI.Web/wwwroot/app.js
           ! grep -Fq 'Permission:' src/PersonalAI.Web/wwwroot/app.js
           ! grep -Fq 'Arguments' src/PersonalAI.Web/wwwroot/app.js
@@ -642,6 +652,11 @@ jobs:
       - name: Check UI JavaScript syntax
         run: |
           node --check src/PersonalAI.Web/wwwroot/app.js
+          node --check src/PersonalAI.Web/wwwroot/v054.js
+          node --check src/PersonalAI.Web/wwwroot/v060.js
+          node --check src/PersonalAI.Web/wwwroot/v061.js
+          node --check src/PersonalAI.Web/wwwroot/v0611.js
+          node --check src/PersonalAI.Web/wwwroot/v0631.js
           node --check src/PersonalAI.Web/wwwroot/v062.js
           node --check src/PersonalAI.Web/wwwroot/v064.js
           node --check src/PersonalAI.Web/wwwroot/v065.js

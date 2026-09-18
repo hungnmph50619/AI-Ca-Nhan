@@ -8,6 +8,7 @@ namespace PersonalAI.Web.Services;
 public static class ToolActivityEventTypes
 {
     public const string ProposalCreated = "proposal-created";
+    public const string DirectExecutionCompleted = "direct-execution-completed";
     public const string ExecutionDenied = "execution-denied";
     public const string ExecutionCompleted = "execution-completed";
     public const string AiSynthesisDenied = "ai-synthesis-denied";

@@ -1,5 +1,5 @@
 (() => {
-  const VERSION = "0.9.1";
+  const VERSION = "0.9.2";
   let busy = false;
 
   if (document.readyState === "loading") {
@@ -86,9 +86,9 @@
     const intro = document.createElement("div");
     intro.className = "v090-task-intro";
     const introTitle = document.createElement("strong");
-    introTitle.textContent = "Tác vụ bền vững v0.9.1";
+    introTitle.textContent = "Tác vụ bền vững và thử lại an toàn v0.9.2";
     const introText = document.createElement("p");
-    introText.textContent = "Tác vụ được lưu trên máy và vẫn còn sau khi khởi động lại ứng dụng. AI chỉ lập kế hoạch; mỗi bước vẫn phải được bạn chủ động chạy và thao tác GHI hoặc XÓA vẫn cần xác nhận riêng.";
+    introText.textContent = "Tác vụ được lưu trên máy và vẫn còn sau khi khởi động lại ứng dụng. Nếu một bước có lỗi, PersonalAI sẽ đánh giá mức an toàn trước khi cho chuẩn bị thử lại; bước thử lại vẫn không tự chạy." ;
     intro.append(introTitle, introText);
 
     const form = document.createElement("form");
@@ -148,7 +148,7 @@
 
     const note = document.createElement("p");
     note.className = "security-copy";
-    note.textContent = "v0.9.1 lưu tối đa 50 tác vụ trên máy. Sau khi khởi động lại, không có bước nào tự chạy; nếu ứng dụng dừng giữa lúc một bước đang thực thi, tác vụ được đánh dấu bị gián đoạn để bạn kiểm tra thực tế trước khi khôi phục.";
+    note.textContent = "v0.9.2 lưu tối đa 50 tác vụ trên máy. Không có bước nào tự chạy hoặc tự thử lại. Bước chỉ đọc có thể được chuẩn bị thử lại trực tiếp; thao tác có tác động phải được kiểm tra theo chính sách an toàn và một số trường hợp như nối thêm văn bản sẽ bị chặn thử lại để tránh lặp dữ liệu." ;
 
     card.append(header, intro, form, feedback, listHeader, list, note);
     dialog.appendChild(card);
@@ -318,6 +318,74 @@
     }
   }
 
+  async function retryFailedStep(task) {
+    if (busy) return;
+
+    const step = currentStep(task);
+    if (!step || step.status !== "failed") {
+      setFeedback("Không tìm thấy bước có lỗi để thử lại.", true);
+      return;
+    }
+
+    setBusy(true);
+    setFeedback("Đang đánh giá mức an toàn của lần thử lại…");
+
+    try {
+      const assessmentResponse = await fetch(
+        `/api/tasks/${encodeURIComponent(task.id)}/retry-assessment`,
+        { cache: "no-store" });
+      const assessment = await assessmentResponse.json().catch(() => ({}));
+      if (!assessmentResponse.ok) {
+        throw new Error(assessment.error || "Không đánh giá được khả năng thử lại.");
+      }
+
+      if (!assessment.canRetry) {
+        setFeedback(
+          assessment.message || "Bước này không được phép thử lại tự động.",
+          true);
+        return;
+      }
+
+      let confirmedReview = false;
+      if (assessment.requiresReviewConfirmation) {
+        const ask = window.PersonalAiUi?.confirm;
+        if (typeof ask !== "function") {
+          setFeedback("Không mở được hộp xác nhận an toàn.", true);
+          return;
+        }
+
+        confirmedReview = await ask(
+          `${assessment.message}\n\nNếu tiếp tục, PersonalAI chỉ đưa bước về trạng thái Chưa chạy. Bạn vẫn phải bấm Chạy bước này sau đó và xác nhận lại nếu công cụ có tác động.`,
+          {
+            title: "Kiểm tra trước khi thử lại",
+            confirmText: "Chuẩn bị thử lại",
+            danger: hasDeletePermission(step.requiredPermissions)
+          });
+        if (!confirmedReview) return;
+      }
+
+      const response = await fetch(
+        `/api/tasks/${encodeURIComponent(task.id)}/retry`,
+        {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ confirmedReview })
+        });
+      const payload = await response.json().catch(() => ({}));
+      if (!response.ok) {
+        throw new Error(payload.error || "Không chuẩn bị được lần thử lại.");
+      }
+
+      setFeedback(
+        "Đã chuẩn bị thử lại. Bước đã về trạng thái Chưa chạy và chưa có công cụ nào được tự động thực thi.");
+      await loadTasksAfterMutation();
+    } catch (error) {
+      setFeedback(error.message || "Không chuẩn bị được lần thử lại.", true);
+    } finally {
+      setBusy(false);
+    }
+  }
+
   async function cancelTask(task) {
     if (busy) return;
 
@@ -437,6 +505,15 @@
       cancel.disabled = busy;
       cancel.addEventListener("click", () => cancelTask(task));
       actions.appendChild(cancel);
+    } else if (task.status === "failed" && step?.status === "failed") {
+      const retry = document.createElement("button");
+      retry.type = "button";
+      retry.className = "secondary-button";
+      retry.textContent = "Đánh giá & thử lại bước này";
+      retry.title = "PersonalAI sẽ kiểm tra mức an toàn trước khi cho chuẩn bị thử lại.";
+      retry.disabled = busy;
+      retry.addEventListener("click", () => retryFailedStep(task));
+      actions.appendChild(retry);
     } else if (task.status === "interrupted") {
       const warning = document.createElement("p");
       warning.className = "v090-task-interrupted";
@@ -500,6 +577,9 @@
     appendMeta(meta, "Công cụ: " + toolDisplayName(step.toolName));
     appendMeta(meta, "Quyền: " + formatPermissions(step.requiredPermissions));
     if (step.requiresConfirmation) appendMeta(meta, "Cần xác nhận trước khi chạy");
+    if (Number(step.attemptCount || 0) > 0) {
+      appendMeta(meta, `Đã chạy ${Number(step.attemptCount)} lần`);
+    }
 
     const details = document.createElement("details");
     details.className = "v090-task-step-arguments";

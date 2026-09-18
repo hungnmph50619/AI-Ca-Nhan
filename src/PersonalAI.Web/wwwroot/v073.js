@@ -40,7 +40,7 @@
     const vectorStatus = document.querySelector("#knowledgeEmbeddingStatus");
     if (vectorStatus && !vectorStatus.dataset.v073) {
       vectorStatus.dataset.v073 = "1";
-      vectorStatus.insertAdjacentText("beforeend", " · hybrid rerank sẵn sàng");
+      vectorStatus.insertAdjacentText("beforeend", " · tìm kiếm kết hợp và xếp hạng lại đã sẵn sàng");
     }
   }
 

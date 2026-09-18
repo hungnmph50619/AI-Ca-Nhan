@@ -201,6 +201,23 @@ public sealed class ToolExecutionService(
                 definition.RequiredPermissions,
                 policyDecision.ApprovedPermissions);
         }
+        catch (ToolExecutionFailedException exception)
+        {
+            undo.Abandon(undoPreparation);
+            return Complete(
+                invocationId,
+                definition.Name,
+                ToolExecutionStatuses.Failed,
+                false,
+                exception.Output is JsonElement output
+                    ? NormalizeOutput(output)
+                    : null,
+                exception.Message,
+                stopwatch,
+                startedAt,
+                definition.RequiredPermissions,
+                policyDecision.ApprovedPermissions);
+        }
         catch (OperationCanceledException) when (
             timeoutCts.IsCancellationRequested
             && !cancellationToken.IsCancellationRequested)
@@ -342,3 +359,16 @@ public sealed class ToolExecutionService(
 }
 
 public sealed class ToolExecutionInputException(string message) : Exception(message);
+
+public sealed class ToolExecutionFailedException : Exception
+{
+    public ToolExecutionFailedException(
+        string message,
+        JsonElement? output = null)
+        : base(message)
+    {
+        Output = output?.Clone();
+    }
+
+    public JsonElement? Output { get; }
+}

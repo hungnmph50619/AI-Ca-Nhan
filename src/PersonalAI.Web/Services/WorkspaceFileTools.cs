@@ -825,12 +825,12 @@ public sealed class WorkspaceFileService : IWorkspaceFileService
         catch (UnauthorizedAccessException)
         {
             throw new ToolExecutionInputException(
-                "Không có quyền đọc tệp để kiểm tra checksum trước mutation.");
+                "Không có quyền đọc tệp để kiểm tra mã kiểm tra trước khi thay đổi.");
         }
         catch (IOException)
         {
             throw new ToolExecutionInputException(
-                "Không thể đọc tệp để kiểm tra checksum trước mutation.");
+                "Không thể đọc tệp để kiểm tra mã kiểm tra trước khi thay đổi.");
         }
     }
 

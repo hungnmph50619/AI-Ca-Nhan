@@ -578,10 +578,16 @@ jobs:
           grep -Fq 'ContinueFunctionCallAsync' src/PersonalAI.Web/Services/IAiProvider.cs
           grep -Fq 'GetByName' src/PersonalAI.Web/Services/AiProviderResolver.cs
           grep -Fq 'function_call_output' src/PersonalAI.Web/Services/OpenAiChatService.cs
+          grep -Fq 'reasoning.encrypted_content' src/PersonalAI.Web/Services/OpenAiChatService.cs
+          grep -Fq 'nativeOutput.EnumerateArray()' src/PersonalAI.Web/Services/OpenAiChatService.cs
           grep -Fq 'FunctionContinuationInstructions' src/PersonalAI.Web/Services/OpenAiChatService.cs
           grep -Fq 'mode = "NONE"' src/PersonalAI.Web/Services/GeminiChatService.cs
           grep -Fq 'functionResponse' src/PersonalAI.Web/Services/GeminiChatService.cs
+          grep -Fq 'functionCallId' src/PersonalAI.Web/Services/GeminiChatService.cs
+          grep -Fq 'content.Clone()' src/PersonalAI.Web/Services/GeminiChatService.cs
           grep -Fq 'NativeProposalContexts' src/PersonalAI.Web/Services/ToolOrchestrationService.cs
+          grep -Fq 'NativeOutput' src/PersonalAI.Web/Models/ToolOrchestrationModels.cs
+          grep -Fq 'char.IsHighSurrogate' src/PersonalAI.Web/Services/ToolOrchestrationService.cs
           grep -Fq 'MaximumNativeResultCharacters = 16_000' src/PersonalAI.Web/Services/ToolOrchestrationService.cs
           grep -Fq 'v088.css' src/PersonalAI.Web/wwwroot/index.html
           grep -Fq 'ToolResultSynthesisService' src/PersonalAI.Web/Services/ToolResultSynthesisService.cs

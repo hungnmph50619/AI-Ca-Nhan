@@ -293,6 +293,18 @@ public sealed class UndoService(
             RecordDenied(item, "undo-precondition-failed");
             throw;
         }
+        catch (Exception exception) when (
+            exception is IOException
+                or UnauthorizedAccessException)
+        {
+            logger.LogWarning(
+                exception,
+                "Không thể áp dụng undo {UndoId} do trạng thái filesystem.",
+                item.UndoId);
+            RecordDenied(item, "undo-filesystem-conflict");
+            throw new UndoConflictException(
+                "Không thể hoàn tác vì trạng thái hoặc quyền truy cập của tệp đã thay đổi.");
+        }
     }
 
     private void RecordDenied(

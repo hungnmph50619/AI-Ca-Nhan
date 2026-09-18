@@ -1,4 +1,6 @@
 using System.Collections.Concurrent;
+using System.Security.Cryptography;
+using System.Text;
 using System.Text.Json;
 using PersonalAI.Web.Models;
 
@@ -69,59 +71,91 @@ public sealed class ToolOrchestrationService : IToolOrchestrationService
 
         CleanupExpired();
         var provider = _providerResolver.GetActive();
-        var plannerPrompt = BuildPlannerPrompt(messages);
-        var rawDecision = await provider.ReplyAsync(
-            [new ChatMessage("user", plannerPrompt)],
+        var definitions = _registry.GetAll();
+
+        var mapped = definitions
+            .Select(definition => new
+            {
+                Definition = definition,
+                ProviderName = CreateProviderFunctionName(definition.Name)
+            })
+            .ToArray();
+
+        var duplicateProviderName = mapped
+            .GroupBy(item => item.ProviderName, StringComparer.Ordinal)
+            .FirstOrDefault(group => group.Count() > 1);
+        if (duplicateProviderName is not null)
+        {
+            throw new InvalidOperationException(
+                "Không thể ánh xạ catalog sang function name an toàn vì có tên bị trùng.");
+        }
+
+        var byProviderName = mapped.ToDictionary(
+            item => item.ProviderName,
+            item => item.Definition,
+            StringComparer.Ordinal);
+
+        var providerFunctions = mapped
+            .Select(item => new ProviderFunctionDefinition(
+                item.ProviderName,
+                BuildProviderFunctionDescription(item.Definition),
+                item.Definition.InputSchema))
+            .ToArray();
+
+        var decision = await provider.ProposeFunctionCallAsync(
+            LimitConversation(messages),
+            providerFunctions,
             cancellationToken);
 
-        if (!TryParsePlannerDecision(rawDecision, out var decision)
-            || decision is null)
-        {
-            _logger.LogWarning(
-                "Tool planner returned output that could not be parsed as a safe structured decision.");
-            return null;
-        }
-
-        if (decision.Action.Equals("none", StringComparison.OrdinalIgnoreCase))
+        if (decision is null)
         {
             return null;
         }
 
-        if (!decision.Action.Equals("tool", StringComparison.OrdinalIgnoreCase)
-            && !decision.Action.Equals("tool_call", StringComparison.OrdinalIgnoreCase))
+        if (!byProviderName.TryGetValue(decision.Name, out var definition))
         {
             _logger.LogWarning(
-                "Tool planner returned unsupported action {Action}.",
-                decision.Action);
-            return null;
-        }
-
-        if (string.IsNullOrWhiteSpace(decision.ToolName)
-            || decision.Arguments is null)
-        {
-            _logger.LogWarning(
-                "Tool planner returned an incomplete tool proposal.");
+                "{Provider} returned unknown native function {FunctionName}.",
+                provider.Name,
+                decision.Name);
             return null;
         }
 
         try
         {
-            return Prepare(new ToolProposalDraft(
-                decision.ToolName,
-                decision.Arguments.Value,
-                decision.Reason,
-                decision.Message));
+            return PrepareCore(
+                new ToolProposalDraft(
+                    definition.Name,
+                    decision.Arguments,
+                    Reason: $"Đề xuất native từ {provider.Name} cho yêu cầu hiện tại.",
+                    AssistantMessage: null),
+                planningMode: "provider-native",
+                planningProvider: provider.Name,
+                planningModel: provider.Model);
         }
         catch (ToolProposalValidationException exception)
         {
             _logger.LogWarning(
-                "Tool planner proposal was rejected by server validation: {Reason}",
+                "{Provider} native function proposal for {ToolName} was rejected by server validation: {Reason}",
+                provider.Name,
+                definition.Name,
                 exception.Message);
             return null;
         }
     }
 
-    public ToolCallProposal Prepare(ToolProposalDraft draft)
+    public ToolCallProposal Prepare(ToolProposalDraft draft) =>
+        PrepareCore(
+            draft,
+            planningMode: "manual",
+            planningProvider: null,
+            planningModel: null);
+
+    private ToolCallProposal PrepareCore(
+        ToolProposalDraft draft,
+        string planningMode,
+        string? planningProvider,
+        string? planningModel)
     {
         CleanupExpired();
 
@@ -168,7 +202,10 @@ public sealed class ToolOrchestrationService : IToolOrchestrationService
             assistantMessage,
             tool.Definition.RequiredPermissions.ToArray(),
             requiresConfirmation,
-            DateTimeOffset.UtcNow.Add(ProposalLifetime));
+            DateTimeOffset.UtcNow.Add(ProposalLifetime),
+            planningMode,
+            planningProvider,
+            planningModel);
 
         Proposals[proposal.ProposalId] = proposal;
         return proposal;
@@ -297,6 +334,44 @@ public sealed class ToolOrchestrationService : IToolOrchestrationService
         {
             SynthesisGate.Release();
         }
+    }
+
+    private static string CreateProviderFunctionName(string internalName)
+    {
+        var normalized = new StringBuilder();
+        foreach (var character in internalName)
+        {
+            normalized.Append(char.IsAsciiLetterOrDigit(character) ? character : '_');
+        }
+
+        var readable = normalized.ToString().Trim('_');
+        if (readable.Length == 0)
+        {
+            readable = "tool";
+        }
+        if (readable.Length > 42)
+        {
+            readable = readable[..42];
+        }
+
+        var hash = Convert.ToHexString(
+                SHA256.HashData(Encoding.UTF8.GetBytes(internalName)))
+            .ToLowerInvariant()[..10];
+
+        return $"pai_{readable}_{hash}";
+    }
+
+    private static string BuildProviderFunctionDescription(ToolDefinition definition)
+    {
+        var permissions = string.Join(", ", definition.RequiredPermissions);
+        var confirmation = definition.RequiresConfirmation
+            || definition.RequiredPermissions.Any(ToolPermissions.RequiresExplicitConfirmation);
+
+        return $"{definition.Description} Internal tool: {definition.Name}. "
+            + $"Permissions: {permissions}. "
+            + (confirmation
+                ? "Đây chỉ là đề xuất; ứng dụng sẽ yêu cầu xác nhận riêng trước khi thực thi."
+                : "Đây chỉ là đề xuất; ứng dụng sẽ chỉ thực thi sau thao tác riêng của người dùng.");
     }
 
     private string BuildPlannerPrompt(IReadOnlyList<ChatMessage> messages)

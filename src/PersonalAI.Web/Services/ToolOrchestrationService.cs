@@ -174,13 +174,13 @@ public sealed class ToolOrchestrationService : IToolOrchestrationService
         if (!_registry.TryGet(toolName, out var tool) || tool is null)
         {
             throw new ToolProposalValidationException(
-                "Công cụ được đề xuất không tồn tại trong registry.");
+                "Công cụ được đề xuất không tồn tại trong danh mục công cụ.");
         }
 
         if (draft.Arguments.ValueKind != JsonValueKind.Object)
         {
             throw new ToolProposalValidationException(
-                "Arguments của đề xuất phải là JSON object.");
+                "Tham số của đề xuất phải là một đối tượng JSON.");
         }
 
         var validation = _validator.Validate(

@@ -1897,6 +1897,7 @@ jobs:
           grep -Fq 'android.permission.INTERNET' android/PersonalAI.Companion/app/src/main/AndroidManifest.xml
           grep -Fq 'AndroidKeyStore' android/PersonalAI.Companion/app/src/main/java/com/personalai/companion/SecureTokenStore.java
           grep -Fq 'AES/GCM/NoPadding' android/PersonalAI.Companion/app/src/main/java/com/personalai/companion/SecureTokenStore.java
+          grep -Fq 'body.put("useLifeContext", true)' android/PersonalAI.Companion/app/src/main/java/com/personalai/companion/ApiClient.java
           ! grep -Fq 'android.permission.CAMERA' android/PersonalAI.Companion/app/src/main/AndroidManifest.xml
           ! grep -Fq 'android.permission.RECORD_AUDIO' android/PersonalAI.Companion/app/src/main/AndroidManifest.xml
           ! grep -Fq 'android.permission.ACCESS_FINE_LOCATION' android/PersonalAI.Companion/app/src/main/AndroidManifest.xml

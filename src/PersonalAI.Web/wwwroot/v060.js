@@ -133,7 +133,7 @@
         <label class="memory-dialog-toggle">
           <input id="memoryDialogToggle" type="checkbox">
           <span>
-            <strong>Dùng trí nhớ trong chat</strong>
+            <strong>Dùng trí nhớ khi trò chuyện</strong>
             <small>Có thể tắt bất kỳ lúc nào mà không xóa dữ liệu đã lưu.</small>
           </span>
         </label>

@@ -48,12 +48,12 @@
     try {
       const response = await fetch("/api/knowledge/embeddings/status", { cache: "no-store" });
       const payload = await response.json().catch(() => ({}));
-      if (!response.ok) throw new Error(payload.error || "Không đọc được trạng thái vector.");
+      if (!response.ok) throw new Error(payload.error || "Không đọc được trạng thái véc-tơ.");
 
       const indexed = Number(payload.indexedChunks || 0).toLocaleString("vi-VN");
       const total = Number(payload.totalChunks || 0).toLocaleString("vi-VN");
       const dimensions = Number(payload.dimensions || 0).toLocaleString("vi-VN");
-      node.textContent = `Vector local · ${indexed}/${total} đoạn · ${dimensions} chiều · ${payload.embeddingModel || "mô hình trên máy"}`;
+      node.textContent = `Véc-tơ trên máy · ${indexed}/${total} đoạn · ${dimensions} chiều · ${payload.embeddingModel || "mô hình trên máy"}`;
     } catch {
       node.textContent = "Véc-tơ trên máy · sẽ tự lập chỉ mục khi tìm kiếm ngữ nghĩa.";
     }

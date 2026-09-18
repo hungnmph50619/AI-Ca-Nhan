@@ -76,6 +76,7 @@ public sealed class ToolPolicy : IToolPolicy
             "EXTERNAL" => "BÊN NGOÀI",
             "SENSITIVE" => "NHẠY CẢM",
             "COMPUTER" => "ĐIỀU KHIỂN MÁY",
+            "BROWSER" => "TRÌNH DUYỆT",
             _ => permission
         };
 }
@@ -284,6 +285,7 @@ public sealed class ToolExecutionService(
             "EXTERNAL" => "BÊN NGOÀI",
             "SENSITIVE" => "NHẠY CẢM",
             "COMPUTER" => "ĐIỀU KHIỂN MÁY",
+            "BROWSER" => "TRÌNH DUYỆT",
             _ => permission
         };
 

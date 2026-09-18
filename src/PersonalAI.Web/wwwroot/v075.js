@@ -204,7 +204,7 @@
       item.fileType,
       formatBytes(item.fileSize),
       `${item.chunkCount} đoạn`,
-      `${item.indexedChunkCount}/${item.chunkCount} vector`,
+      `${item.indexedChunkCount}/${item.chunkCount} véc-tơ`,
       item.pageCount ? `${item.pageCount} trang` : null,
       formatDate(item.createdAt)
     ].filter(Boolean).join(" · ");
@@ -213,7 +213,7 @@
     status.className = `v075-index-status status-${item.indexStatus || "unknown"}`;
     status.textContent = statusLabel(item.indexStatus);
     status.title = item.missingEmbeddingCount > 0
-      ? `Còn ${item.missingEmbeddingCount} đoạn chưa có vector hiện hành.`
+      ? `Còn ${item.missingEmbeddingCount} đoạn chưa có véc-tơ hiện hành.`
       : "Chỉ mục hiện hành đã đầy đủ.";
 
     content.append(title, meta, status);

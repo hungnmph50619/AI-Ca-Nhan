@@ -134,7 +134,7 @@
     if (summary) {
       const chunkCount = managementState.documents.reduce((sum, item) => sum + Number(item.chunkCount || 0), 0);
       const indexedCount = managementState.documents.reduce((sum, item) => sum + Number(item.indexedChunkCount || 0), 0);
-      summary.textContent = `${payload.total ?? managementState.documents.length} tài liệu · ${chunkCount} đoạn · ${indexedCount} véc-tơ · ${payload.embeddingModel || "mô hình trên máy"}`;
+      summary.textContent = `${payload.total ?? managementState.documents.length} tài liệu · ${chunkCount} đoạn · ${indexedCount} véc-tơ · xử lý trên máy`;
     }
 
     showFeedback("");

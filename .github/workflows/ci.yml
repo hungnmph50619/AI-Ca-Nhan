@@ -796,7 +796,7 @@ jobs:
           con.close()
           PY
 
-          Workspace__Root=/tmp/personalai-workspace Tasks__Root=/tmp/personalai-tasks dotnet run --project src/PersonalAI.Web/PersonalAI.Web.csproj --configuration Release --no-build --urls http://127.0.0.1:5077 >/tmp/personalai-restart.log 2>&1 &
+          Workspace__Root=/tmp/personalai-workspace Tasks__Root=/tmp/personalai-tasks Audit__Root=/tmp/personalai-audit dotnet run --project src/PersonalAI.Web/PersonalAI.Web.csproj --configuration Release --no-build --urls http://127.0.0.1:5077 >/tmp/personalai-restart.log 2>&1 &
           APP_PID=$!
 
           ready=0

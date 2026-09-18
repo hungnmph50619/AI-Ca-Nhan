@@ -263,15 +263,13 @@ public sealed class SystemCoreService(
             },
             CoreHealthStatuses.Degraded));
 
-        modules.Add(Check(
+        modules.Add(await CheckAsync(
             "life-context",
-            () =>
+            async () =>
             {
                 var status = lifeContext.GetStatus();
-                var sources = lifeContext
-                    .GetSourcesAsync(cancellationToken)
-                    .GetAwaiter()
-                    .GetResult();
+                var sources = await lifeContext.GetSourcesAsync(
+                    cancellationToken);
 
                 return status.Supported
                     ? new CoreModuleHealth(
@@ -285,8 +283,7 @@ public sealed class SystemCoreService(
                         "life-context",
                         CoreHealthStatuses.Unconfigured,
                         "Life Context chưa khả dụng.");
-            },
-            CoreHealthStatuses.Degraded));
+            }));
 
         modules.Add(Check(
             "ai-provider",

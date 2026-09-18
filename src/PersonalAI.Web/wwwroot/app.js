@@ -190,7 +190,20 @@ async function openSettings() {
 
 async function saveAiSettings(testAfterSave) {
   if (state.settingsBusy) return;
-  if (!elements.settingsForm.reportValidity()) return;
+
+  const provider = elements.provider.value.trim();
+  const model = getSelectedModel();
+  if (!provider) {
+    setSettingsFeedback("Hãy chọn nhà cung cấp AI.", "error");
+    elements.provider.focus();
+    return;
+  }
+  if (model.length < 2 || model.length > 120) {
+    setSettingsFeedback("Hãy chọn hoặc nhập tên mô hình hợp lệ, từ 2 đến 120 ký tự.", "error");
+    (elements.modelSelect.value === CUSTOM_MODEL_VALUE ? elements.customModel : elements.modelSelect).focus();
+    return;
+  }
+
   setSettingsBusy(true);
   setSettingsFeedback(testAfterSave ? "Đang lưu và kiểm tra kết nối…" : "Đang lưu cài đặt…");
 
@@ -199,8 +212,8 @@ async function saveAiSettings(testAfterSave) {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
-        provider: elements.provider.value,
-        model: getSelectedModel(),
+        provider,
+        model,
         apiKey: elements.apiKey.value.trim()
       })
     });
@@ -622,10 +635,15 @@ function setKnowledgeFeedback(message, type = "") {
 async function searchKnowledge(event) {
   event.preventDefault();
   if (state.knowledgeBusy || state.knowledgeSearchBusy) return;
-  if (!elements.knowledgeSearchForm.reportValidity()) return;
 
   const query = elements.knowledgeSearchInput.value.trim();
-  if (query.length < 2) return;
+  if (query.length < 2) {
+    elements.knowledgeSearchResults.hidden = false;
+    elements.knowledgeSearchSummary.textContent = "Hãy nhập ít nhất 2 ký tự để tìm kiếm.";
+    elements.knowledgeSearchList.replaceChildren();
+    elements.knowledgeSearchInput.focus();
+    return;
+  }
 
   setKnowledgeSearchBusy(true);
   elements.knowledgeSearchResults.hidden = false;

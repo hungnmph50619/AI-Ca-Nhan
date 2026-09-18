@@ -70,8 +70,10 @@
 
     const query = input.value.trim();
     if (query.length < 2) {
+      resultsNode.hidden = false;
+      summaryNode.textContent = "Hãy nhập ít nhất 2 ký tự để tìm kiếm ngữ nghĩa.";
+      listNode.replaceChildren();
       input.focus();
-      input.reportValidity();
       return;
     }
 
@@ -108,9 +110,8 @@
 
   function renderSemanticResults(payload, summaryNode, listNode) {
     const results = Array.isArray(payload.results) ? payload.results : [];
-    const model = payload.embeddingModel || "mô hình véc-tơ trên máy";
     summaryNode.textContent = results.length > 0
-      ? `${results.length} đoạn gần nhất · Mô hình véc-tơ: ${model}`
+      ? `${results.length} đoạn gần nhất · tìm kiếm ngữ nghĩa trên máy`
       : "Không có đoạn đủ tương đồng";
     listNode.replaceChildren();
 

@@ -138,7 +138,7 @@
           </span>
         </label>
 
-        <form id="memoryForm" class="memory-form">
+        <form id="memoryForm" class="memory-form" novalidate>
           <label class="field-label" for="memoryKind">Loại trí nhớ</label>
           <select id="memoryKind">
             <option value="fact">Thông tin</option>

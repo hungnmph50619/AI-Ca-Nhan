@@ -142,7 +142,7 @@ public sealed class WorkspaceFileService : IWorkspaceFileService
         if (!Directory.Exists(fullPath))
         {
             throw new ToolExecutionInputException(
-                "Không tìm thấy thư mục trong workspace.");
+                "Không tìm thấy thư mục trong thư mục làm việc.");
         }
 
         string[] candidates;
@@ -156,12 +156,12 @@ public sealed class WorkspaceFileService : IWorkspaceFileService
         catch (UnauthorizedAccessException)
         {
             throw new ToolExecutionInputException(
-                "Không có quyền đọc thư mục này trong workspace.");
+                "Không có quyền đọc thư mục này trong thư mục làm việc.");
         }
         catch (IOException)
         {
             throw new ToolExecutionInputException(
-                "Không thể đọc thư mục này trong workspace.");
+                "Không thể đọc thư mục này trong thư mục làm việc.");
         }
 
         var truncated = candidates.Length > maxEntries;
@@ -222,20 +222,20 @@ public sealed class WorkspaceFileService : IWorkspaceFileService
         if (!File.Exists(fullPath))
         {
             throw new ToolExecutionInputException(
-                "Không tìm thấy tệp trong workspace.");
+                "Không tìm thấy tệp trong thư mục làm việc.");
         }
 
         var info = new FileInfo(fullPath);
         if (IsSymlink(info))
         {
             throw new ToolExecutionInputException(
-                "Không đọc symbolic link hoặc reparse point trong workspace.");
+                "Không đọc liên kết tượng trưng hoặc điểm tái phân tích trong thư mục làm việc.");
         }
 
         if (info.Length > MaximumFileBytes)
         {
             throw new ToolExecutionInputException(
-                $"Tệp vượt giới hạn đọc {MaximumFileBytes / 1024} KB của workspace tool.");
+                $"Tệp vượt giới hạn đọc {MaximumFileBytes / 1024} KB của công cụ thư mục làm việc.");
         }
 
         byte[] bytes;
@@ -246,12 +246,12 @@ public sealed class WorkspaceFileService : IWorkspaceFileService
         catch (UnauthorizedAccessException)
         {
             throw new ToolExecutionInputException(
-                "Không có quyền đọc tệp này trong workspace.");
+                "Không có quyền đọc tệp này trong thư mục làm việc.");
         }
         catch (IOException)
         {
             throw new ToolExecutionInputException(
-                "Không thể đọc tệp này trong workspace.");
+                "Không thể đọc tệp này trong thư mục làm việc.");
         }
 
         string content;
@@ -262,7 +262,7 @@ public sealed class WorkspaceFileService : IWorkspaceFileService
         catch (DecoderFallbackException)
         {
             throw new ToolExecutionInputException(
-                "workspace.read_text chỉ đọc tệp văn bản UTF-8 hợp lệ.");
+                "Công cụ đọc tệp chỉ hỗ trợ văn bản UTF-8 hợp lệ.");
         }
 
         if (content.Length > 0 && content[0] == '\uFEFF')
@@ -273,7 +273,7 @@ public sealed class WorkspaceFileService : IWorkspaceFileService
         if (content.IndexOf('\0') >= 0)
         {
             throw new ToolExecutionInputException(
-                "Tệp có dấu hiệu là dữ liệu nhị phân; workspace.read_text chỉ đọc văn bản.");
+                "Tệp có dấu hiệu là dữ liệu nhị phân; công cụ đọc tệp chỉ hỗ trợ văn bản.");
         }
 
         var characterCount = content.Length;
@@ -307,7 +307,7 @@ public sealed class WorkspaceFileService : IWorkspaceFileService
         if (normalizedMode is not ("create" or "overwrite" or "append"))
         {
             throw new ToolExecutionInputException(
-                "mode phải là create, overwrite hoặc append.");
+                "Cách ghi phải là tạo mới, ghi đè hoặc nối thêm.");
         }
 
         if (content.Length > MaximumReturnedCharacters)
@@ -323,7 +323,7 @@ public sealed class WorkspaceFileService : IWorkspaceFileService
                 || expectedSha256.Any(character => !Uri.IsHexDigit(character)))
             {
                 throw new ToolExecutionInputException(
-                    "expectedSha256 phải là SHA-256 hex gồm 64 ký tự.");
+                    "Mã băm SHA-256 kỳ vọng phải gồm đúng 64 ký tự hệ mười sáu.");
             }
         }
         else
@@ -368,13 +368,13 @@ public sealed class WorkspaceFileService : IWorkspaceFileService
         if (normalizedMode == "create" && existed)
         {
             throw new ToolExecutionInputException(
-                "Tệp đã tồn tại. Dùng mode overwrite hoặc append nếu muốn thay đổi tệp.");
+                "Tệp đã tồn tại. Hãy chọn ghi đè hoặc nối thêm nếu muốn thay đổi tệp.");
         }
 
         if (normalizedMode is "overwrite" or "append" && !existed)
         {
             throw new ToolExecutionInputException(
-                $"Tệp chưa tồn tại nên không thể dùng mode {normalizedMode}.");
+                $"Tệp chưa tồn tại nên không thể dùng cách ghi {LocalizeWriteMode(normalizedMode)}.");
         }
 
         byte[] existingBytes = [];
@@ -385,13 +385,13 @@ public sealed class WorkspaceFileService : IWorkspaceFileService
             if (IsSymlink(info))
             {
                 throw new ToolExecutionInputException(
-                    "Không ghi vào symbolic link hoặc reparse point trong workspace.");
+                    "Không ghi vào liên kết tượng trưng hoặc điểm tái phân tích trong thư mục làm việc.");
             }
 
             if (info.Length > MaximumFileBytes)
             {
                 throw new ToolExecutionInputException(
-                    $"Tệp hiện tại vượt giới hạn {MaximumFileBytes / 1024} KB của workspace tool.");
+                    $"Tệp hiện tại vượt giới hạn {MaximumFileBytes / 1024} KB của công cụ thư mục làm việc.");
             }
 
             try
@@ -415,13 +415,13 @@ public sealed class WorkspaceFileService : IWorkspaceFileService
                 && !string.Equals(previousSha256, expectedSha256, StringComparison.OrdinalIgnoreCase))
             {
                 throw new ToolExecutionInputException(
-                    "Tệp đã thay đổi so với expectedSha256; từ chối ghi để tránh ghi đè dữ liệu mới hơn.");
+                    "Tệp đã thay đổi so với mã băm SHA-256 kỳ vọng; từ chối ghi để tránh ghi đè dữ liệu mới hơn.");
             }
         }
         else if (expectedSha256 is not null)
         {
             throw new ToolExecutionInputException(
-                "expectedSha256 chỉ dùng khi tệp đã tồn tại.");
+                "Mã băm SHA-256 kỳ vọng chỉ dùng khi tệp đã tồn tại.");
         }
 
         byte[] finalBytes;
@@ -478,12 +478,12 @@ public sealed class WorkspaceFileService : IWorkspaceFileService
         catch (UnauthorizedAccessException)
         {
             throw new ToolExecutionInputException(
-                "Không có quyền ghi tệp này trong workspace.");
+                "Không có quyền ghi tệp này trong thư mục làm việc.");
         }
         catch (IOException)
         {
             throw new ToolExecutionInputException(
-                "Không thể ghi tệp này trong workspace.");
+                "Không thể ghi tệp này trong thư mục làm việc.");
         }
 
         var writtenInfo = new FileInfo(fullPath);
@@ -517,12 +517,12 @@ public sealed class WorkspaceFileService : IWorkspaceFileService
         catch (UnauthorizedAccessException)
         {
             throw new ToolExecutionInputException(
-                "Không có quyền tạo thư mục này trong workspace.");
+                "Không có quyền tạo thư mục này trong thư mục làm việc.");
         }
         catch (IOException)
         {
             throw new ToolExecutionInputException(
-                "Không thể tạo thư mục này trong workspace.");
+                "Không thể tạo thư mục này trong thư mục làm việc.");
         }
 
         EnsureNoSymlinkTraversal(fullPath);
@@ -556,7 +556,7 @@ public sealed class WorkspaceFileService : IWorkspaceFileService
         if (File.Exists(destinationFullPath) || Directory.Exists(destinationFullPath))
         {
             throw new ToolExecutionInputException(
-                "Đường dẫn đích đã tồn tại; workspace.move không ghi đè.");
+                "Đường dẫn đích đã tồn tại; công cụ di chuyển không ghi đè.");
         }
 
         var destinationParent = Path.GetDirectoryName(destinationFullPath);
@@ -574,7 +574,7 @@ public sealed class WorkspaceFileService : IWorkspaceFileService
             if (IsSymlink(sourceInfo))
             {
                 throw new ToolExecutionInputException(
-                    "Không di chuyển symbolic link hoặc reparse point trong workspace.");
+                    "Không di chuyển liên kết tượng trưng hoặc điểm tái phân tích trong thư mục làm việc.");
             }
 
             var sha256 = await ComputeSha256FileAsync(sourceFullPath, cancellationToken);
@@ -587,12 +587,12 @@ public sealed class WorkspaceFileService : IWorkspaceFileService
             catch (UnauthorizedAccessException)
             {
                 throw new ToolExecutionInputException(
-                    "Không có quyền di chuyển tệp này trong workspace.");
+                    "Không có quyền di chuyển tệp này trong thư mục làm việc.");
             }
             catch (IOException)
             {
                 throw new ToolExecutionInputException(
-                    "Không thể di chuyển tệp này trong workspace.");
+                    "Không thể di chuyển tệp này trong thư mục làm việc.");
             }
 
             var movedInfo = new FileInfo(destinationFullPath);
@@ -611,13 +611,13 @@ public sealed class WorkspaceFileService : IWorkspaceFileService
             if (IsSymlink(sourceInfo))
             {
                 throw new ToolExecutionInputException(
-                    "Không di chuyển symbolic link hoặc reparse point trong workspace.");
+                    "Không di chuyển liên kết tượng trưng hoặc điểm tái phân tích trong thư mục làm việc.");
             }
 
             if (expectedSha256 is not null)
             {
                 throw new ToolExecutionInputException(
-                    "expectedSha256 chỉ áp dụng khi di chuyển tệp.");
+                    "Mã băm SHA-256 kỳ vọng chỉ áp dụng khi di chuyển tệp.");
             }
 
             var sourcePrefix = sourceFullPath.EndsWith(Path.DirectorySeparatorChar)
@@ -636,12 +636,12 @@ public sealed class WorkspaceFileService : IWorkspaceFileService
             catch (UnauthorizedAccessException)
             {
                 throw new ToolExecutionInputException(
-                    "Không có quyền di chuyển thư mục này trong workspace.");
+                    "Không có quyền di chuyển thư mục này trong thư mục làm việc.");
             }
             catch (IOException)
             {
                 throw new ToolExecutionInputException(
-                    "Không thể di chuyển thư mục này trong workspace.");
+                    "Không thể di chuyển thư mục này trong thư mục làm việc.");
             }
 
             var movedInfo = new DirectoryInfo(destinationFullPath);
@@ -655,7 +655,7 @@ public sealed class WorkspaceFileService : IWorkspaceFileService
         }
 
         throw new ToolExecutionInputException(
-            "Không tìm thấy tệp hoặc thư mục nguồn trong workspace.");
+            "Không tìm thấy tệp hoặc thư mục nguồn trong thư mục làm việc.");
     }
 
     public async Task<WorkspaceDeleteResult> DeleteAsync(
@@ -675,7 +675,7 @@ public sealed class WorkspaceFileService : IWorkspaceFileService
             if (IsSymlink(info))
             {
                 throw new ToolExecutionInputException(
-                    "Không xóa symbolic link hoặc reparse point trong workspace.");
+                    "Không xóa liên kết tượng trưng hoặc điểm tái phân tích trong thư mục làm việc.");
             }
 
             var sizeBytes = info.Length;
@@ -689,12 +689,12 @@ public sealed class WorkspaceFileService : IWorkspaceFileService
             catch (UnauthorizedAccessException)
             {
                 throw new ToolExecutionInputException(
-                    "Không có quyền xóa tệp này trong workspace.");
+                    "Không có quyền xóa tệp này trong thư mục làm việc.");
             }
             catch (IOException)
             {
                 throw new ToolExecutionInputException(
-                    "Không thể xóa tệp này trong workspace.");
+                    "Không thể xóa tệp này trong thư mục làm việc.");
             }
 
             return new WorkspaceDeleteResult(
@@ -711,13 +711,13 @@ public sealed class WorkspaceFileService : IWorkspaceFileService
             if (IsSymlink(info))
             {
                 throw new ToolExecutionInputException(
-                    "Không xóa symbolic link hoặc reparse point trong workspace.");
+                    "Không xóa liên kết tượng trưng hoặc điểm tái phân tích trong thư mục làm việc.");
             }
 
             if (expectedSha256 is not null)
             {
                 throw new ToolExecutionInputException(
-                    "expectedSha256 chỉ áp dụng khi xóa tệp.");
+                    "Mã băm SHA-256 kỳ vọng chỉ áp dụng khi xóa tệp.");
             }
 
             bool hasEntries;
@@ -739,7 +739,7 @@ public sealed class WorkspaceFileService : IWorkspaceFileService
             if (hasEntries)
             {
                 throw new ToolExecutionInputException(
-                    "workspace.delete chỉ xóa thư mục rỗng; không hỗ trợ xóa đệ quy.");
+                    "Công cụ xóa chỉ xóa thư mục rỗng; không hỗ trợ xóa đệ quy.");
             }
 
             try
@@ -749,12 +749,12 @@ public sealed class WorkspaceFileService : IWorkspaceFileService
             catch (UnauthorizedAccessException)
             {
                 throw new ToolExecutionInputException(
-                    "Không có quyền xóa thư mục này trong workspace.");
+                    "Không có quyền xóa thư mục này trong thư mục làm việc.");
             }
             catch (IOException)
             {
                 throw new ToolExecutionInputException(
-                    "Không thể xóa thư mục này trong workspace.");
+                    "Không thể xóa thư mục này trong thư mục làm việc.");
             }
 
             return new WorkspaceDeleteResult(
@@ -766,8 +766,17 @@ public sealed class WorkspaceFileService : IWorkspaceFileService
         }
 
         throw new ToolExecutionInputException(
-            "Không tìm thấy tệp hoặc thư mục cần xóa trong workspace.");
+            "Không tìm thấy tệp hoặc thư mục cần xóa trong thư mục làm việc.");
     }
+
+    private static string LocalizeWriteMode(string mode) =>
+        mode switch
+        {
+            "create" => "tạo mới",
+            "overwrite" => "ghi đè",
+            "append" => "nối thêm",
+            _ => mode
+        };
 
     private static string? NormalizeExpectedSha256(string? expectedSha256)
     {
@@ -780,7 +789,7 @@ public sealed class WorkspaceFileService : IWorkspaceFileService
         if (normalized.Length != 64 || normalized.Any(character => !Uri.IsHexDigit(character)))
         {
             throw new ToolExecutionInputException(
-                "expectedSha256 phải là SHA-256 hex gồm 64 ký tự.");
+                "Mã băm SHA-256 kỳ vọng phải gồm đúng 64 ký tự hệ mười sáu.");
         }
 
         return normalized;
@@ -792,7 +801,7 @@ public sealed class WorkspaceFileService : IWorkspaceFileService
             && !string.Equals(expectedSha256, actualSha256, StringComparison.OrdinalIgnoreCase))
         {
             throw new ToolExecutionInputException(
-                "Tệp đã thay đổi so với expectedSha256; từ chối mutation để tránh tác động nhầm phiên bản.");
+                "Tệp đã thay đổi so với mã băm SHA-256 kỳ vọng; từ chối thay đổi để tránh tác động nhầm phiên bản.");
         }
     }
 
@@ -835,13 +844,13 @@ public sealed class WorkspaceFileService : IWorkspaceFileService
         catch (DecoderFallbackException)
         {
             throw new ToolExecutionInputException(
-                "Tệp hiện tại không phải UTF-8 hợp lệ; workspace.write_text chỉ sửa tệp văn bản.");
+                "Tệp hiện tại không phải UTF-8 hợp lệ; công cụ ghi tệp chỉ sửa tệp văn bản.");
         }
 
         if (text.IndexOf('\0') >= 0)
         {
             throw new ToolExecutionInputException(
-                "Tệp hiện tại có dấu hiệu là dữ liệu nhị phân; workspace.write_text từ chối sửa.");
+                "Tệp hiện tại có dấu hiệu là dữ liệu nhị phân; công cụ ghi tệp từ chối sửa.");
         }
     }
 
@@ -853,7 +862,7 @@ public sealed class WorkspaceFileService : IWorkspaceFileService
         if (!Directory.Exists(_root))
         {
             throw new ToolExecutionInputException(
-                "Workspace chưa tồn tại. Hãy tạo thư mục đã cấu hình trước khi dùng file tool.");
+                "Thư mục làm việc chưa tồn tại. Hãy tạo thư mục đã cấu hình trước khi dùng công cụ tệp.");
         }
 
         var value = string.IsNullOrWhiteSpace(relativePath)
@@ -863,7 +872,7 @@ public sealed class WorkspaceFileService : IWorkspaceFileService
         if (value.IndexOf('\0') >= 0 || Path.IsPathRooted(value))
         {
             throw new ToolExecutionInputException(
-                "Đường dẫn workspace phải là đường dẫn tương đối.");
+                "Đường dẫn trong thư mục làm việc phải là đường dẫn tương đối.");
         }
 
         var segments = value
@@ -872,7 +881,7 @@ public sealed class WorkspaceFileService : IWorkspaceFileService
         if (segments.Any(segment => segment == ".."))
         {
             throw new ToolExecutionInputException(
-                "Không cho phép '..' trong đường dẫn workspace.");
+                "Không cho phép '..' trong đường dẫn của thư mục làm việc.");
         }
 
         string fullPath;
@@ -886,7 +895,7 @@ public sealed class WorkspaceFileService : IWorkspaceFileService
                 or PathTooLongException)
         {
             throw new ToolExecutionInputException(
-                "Đường dẫn workspace không hợp lệ.");
+                "Đường dẫn trong thư mục làm việc không hợp lệ.");
         }
 
         var withinRoot = fullPath.Equals(_root, _pathComparison)
@@ -894,13 +903,13 @@ public sealed class WorkspaceFileService : IWorkspaceFileService
         if (!withinRoot)
         {
             throw new ToolExecutionInputException(
-                "Đường dẫn nằm ngoài workspace đã cấp quyền.");
+                "Đường dẫn nằm ngoài thư mục làm việc đã cấp quyền.");
         }
 
         if (!allowRoot && fullPath.Equals(_root, _pathComparison))
         {
             throw new ToolExecutionInputException(
-                "Cần chỉ định một tệp bên trong workspace.");
+                "Cần chỉ định một tệp bên trong thư mục làm việc.");
         }
 
         return fullPath;
@@ -929,7 +938,7 @@ public sealed class WorkspaceFileService : IWorkspaceFileService
             if (info is not null && IsSymlink(info))
             {
                 throw new ToolExecutionInputException(
-                    "Không cho phép đi qua symbolic link hoặc reparse point trong workspace.");
+                    "Không cho phép đi qua liên kết tượng trưng hoặc điểm tái phân tích trong thư mục làm việc.");
             }
         }
     }
@@ -963,7 +972,7 @@ public sealed class WorkspaceListTool(IWorkspaceFileService workspace) : IPerson
 
     public ToolDefinition Definition { get; } = new(
         "workspace.list",
-        "Liệt kê trực tiếp tệp và thư mục trong workspace local đã cấp quyền; chỉ trả đường dẫn tương đối và không đi qua symlink.",
+        "Liệt kê trực tiếp tệp và thư mục trong thư mục làm việc trên máy đã cấp quyền; chỉ trả đường dẫn tương đối và không đi qua liên kết tượng trưng.",
         "1.0.0",
         [ToolPermissions.Read],
         3_000,
@@ -1005,7 +1014,7 @@ public sealed class WorkspaceReadTextTool(IWorkspaceFileService workspace) : IPe
 
     public ToolDefinition Definition { get; } = new(
         "workspace.read_text",
-        "Đọc tệp văn bản UTF-8 trong workspace local đã cấp quyền, có giới hạn kích thước, giới hạn nội dung và chặn path traversal/symlink.",
+        "Đọc tệp văn bản UTF-8 trong thư mục làm việc trên máy đã cấp quyền, có giới hạn kích thước, giới hạn nội dung và chặn đường dẫn vượt phạm vi hoặc liên kết tượng trưng.",
         "1.0.0",
         [ToolPermissions.Read],
         5_000,
@@ -1047,7 +1056,7 @@ public sealed class WorkspaceWriteTextTool(IWorkspaceFileService workspace) : IP
 
     public ToolDefinition Definition { get; } = new(
         "workspace.write_text",
-        "Tạo, ghi đè hoặc nối thêm vào tệp văn bản UTF-8 trong workspace local đã cấp quyền. Chặn path traversal/symlink, giới hạn kích thước và hỗ trợ expectedSha256 để tránh ghi đè phiên bản mới hơn.",
+        "Tạo, ghi đè hoặc nối thêm vào tệp văn bản UTF-8 trong thư mục làm việc trên máy đã cấp quyền. Chặn đường dẫn vượt phạm vi và liên kết tượng trưng, giới hạn kích thước và hỗ trợ mã băm SHA-256 kỳ vọng để tránh ghi đè phiên bản mới hơn.",
         "1.0.0",
         [ToolPermissions.Write],
         5_000,
@@ -1092,7 +1101,7 @@ public sealed class WorkspaceCreateDirectoryTool(IWorkspaceFileService workspace
 
     public ToolDefinition Definition { get; } = new(
         "workspace.create_directory",
-        "Tạo thư mục bên trong workspace local đã cấp quyền. Chỉ nhận đường dẫn tương đối và chặn traversal/symlink.",
+        "Tạo thư mục bên trong thư mục làm việc trên máy đã cấp quyền. Chỉ nhận đường dẫn tương đối và chặn đường dẫn vượt phạm vi hoặc liên kết tượng trưng.",
         "1.0.0",
         [ToolPermissions.Write],
         3_000,
@@ -1130,7 +1139,7 @@ public sealed class WorkspaceMoveTool(IWorkspaceFileService workspace) : IPerson
 
     public ToolDefinition Definition { get; } = new(
         "workspace.move",
-        "Đổi tên hoặc di chuyển tệp/thư mục bên trong workspace. Không ghi đè đích, không đi qua symlink và có thể kiểm tra expectedSha256 cho tệp.",
+        "Đổi tên hoặc di chuyển tệp/thư mục bên trong thư mục làm việc. Không ghi đè đích, không đi qua liên kết tượng trưng và có thể kiểm tra mã băm SHA-256 kỳ vọng cho tệp.",
         "1.0.0",
         [ToolPermissions.Write],
         5_000,
@@ -1174,7 +1183,7 @@ public sealed class WorkspaceDeleteTool(IWorkspaceFileService workspace) : IPers
 
     public ToolDefinition Definition { get; } = new(
         "workspace.delete",
-        "Xóa tệp hoặc thư mục rỗng bên trong workspace. Không xóa đệ quy, chặn symlink/path escape và có thể kiểm tra expectedSha256 trước khi xóa tệp.",
+        "Xóa tệp hoặc thư mục rỗng bên trong thư mục làm việc. Không xóa đệ quy, chặn liên kết tượng trưng hoặc đường dẫn vượt phạm vi và có thể kiểm tra mã băm SHA-256 kỳ vọng trước khi xóa tệp.",
         "1.0.0",
         [ToolPermissions.Delete],
         5_000,

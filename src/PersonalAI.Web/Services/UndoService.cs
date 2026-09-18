@@ -93,7 +93,8 @@ public sealed class UndoService(
             var applicable = preparation.Operation switch
             {
                 UndoOperations.DeleteCreatedFile =>
-                    ReadBoolean(output, "created"),
+                    ReadBoolean(output, "created")
+                    && TryReadString(output, "sha256", out postSha256),
                 UndoOperations.RestoreFile =>
                     TryReadString(output, "sha256", out postSha256),
                 UndoOperations.DeleteCreatedDirectory =>

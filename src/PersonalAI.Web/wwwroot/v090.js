@@ -1,5 +1,5 @@
 (() => {
-  const VERSION = "1.5.0";
+  const VERSION = "1.6.0";
   let busy = false;
   let knownTasks = [];
 
@@ -87,7 +87,7 @@
     const intro = document.createElement("div");
     intro.className = "v090-task-intro";
     const introTitle = document.createElement("strong");
-    introTitle.textContent = "Tác vụ có Undo Foundation v1.5.0";
+    introTitle.textContent = "Tác vụ có Undo Foundation v1.6.0";
     const introText = document.createElement("p");
     introText.textContent = "Tác vụ có thể phụ thuộc vào tác vụ khác và từng bước có thể khai báo phụ thuộc vào các bước trước. PersonalAI chỉ cho chạy khi các phụ thuộc đã hoàn tất; không có chuỗi nào tự chạy." ;
     intro.append(introTitle, introText);
@@ -172,7 +172,7 @@
 
     const note = document.createElement("p");
     note.className = "security-copy";
-    note.textContent = "v1.5.0 giữ tối đa 50 tác vụ trong mỗi không gian trên máy, hỗ trợ phụ thuộc giữa tác vụ và giữa các bước. Phụ thuộc không làm tăng quyền tự động: mỗi bước vẫn phải được người dùng chủ động chạy và các thao tác có tác động vẫn cần xác nhận." ;
+    note.textContent = "v1.6.0 giữ tối đa 50 tác vụ trong mỗi không gian trên máy, hỗ trợ phụ thuộc giữa tác vụ và giữa các bước. Phụ thuộc không làm tăng quyền tự động: mỗi bước vẫn phải được người dùng chủ động chạy và các thao tác có tác động vẫn cần xác nhận." ;
 
     card.append(header, intro, form, feedback, listHeader, list, note);
     dialog.appendChild(card);

@@ -96,7 +96,7 @@ public sealed class ToolOrchestrationService : IToolOrchestrationService
         if (duplicateProviderName is not null)
         {
             throw new InvalidOperationException(
-                "Không thể ánh xạ catalog sang function name an toàn vì có tên bị trùng.");
+                "Không thể ánh xạ danh mục công cụ sang tên hàm an toàn vì có tên bị trùng.");
         }
 
         var byProviderName = mapped.ToDictionary(
@@ -136,7 +136,7 @@ public sealed class ToolOrchestrationService : IToolOrchestrationService
                 new ToolProposalDraft(
                     definition.Name,
                     decision.Arguments,
-                    Reason: $"Đề xuất native từ {provider.Name} cho yêu cầu hiện tại.",
+                    Reason: $"Đề xuất gọi hàm gốc do {provider.Name} tạo cho yêu cầu hiện tại.",
                     AssistantMessage: null),
                 planningMode: "provider-native",
                 planningProvider: provider.Name,
@@ -384,13 +384,13 @@ public sealed class ToolOrchestrationService : IToolOrchestrationService
         if (completed.NativeContext is null)
         {
             throw new ToolProposalValidationException(
-                "Kết quả này không có native function context để tiếp tục.");
+                "Kết quả này không có ngữ cảnh gọi hàm gốc để tiếp tục.");
         }
 
         if (!confirmedExternal)
         {
             throw new ToolExternalConfirmationRequiredException(
-                "Hoàn tất native function call sẽ gửi kết quả công cụ tới đúng nhà cung cấp AI đã tạo proposal và cần xác nhận rõ ràng.");
+                "Hoàn tất lời gọi hàm gốc sẽ gửi kết quả công cụ tới đúng nhà cung cấp AI đã tạo đề xuất và cần xác nhận rõ ràng.");
         }
 
         await NativeContinuationGate.WaitAsync(cancellationToken);
@@ -409,7 +409,7 @@ public sealed class ToolOrchestrationService : IToolOrchestrationService
             if (completed.NativeContext is null)
             {
                 throw new ToolProposalValidationException(
-                    "Native function context không còn khả dụng.");
+                    "Ngữ cảnh gọi hàm gốc không còn khả dụng.");
             }
 
             var (payload, outputTruncated) = BuildNativeToolResultPayload(completed);
@@ -423,7 +423,7 @@ public sealed class ToolOrchestrationService : IToolOrchestrationService
             if (answer.Length == 0)
             {
                 throw new InvalidOperationException(
-                    "Nhà cung cấp AI không trả về câu trả lời cuối từ native function result.");
+                    "Nhà cung cấp AI không trả về câu trả lời cuối từ kết quả gọi hàm gốc.");
             }
 
             if (answer.Length > MaximumNativeAnswerCharacters)

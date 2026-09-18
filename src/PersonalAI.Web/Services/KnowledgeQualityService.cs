@@ -160,7 +160,7 @@ public sealed class KnowledgeQualityService(
             if (!string.Equals(document.Status, "ready", StringComparison.OrdinalIgnoreCase))
             {
                 issues.Add(Issue(document, "document-status", "warning",
-                    $"Trạng thái tài liệu hiện là '{document.Status}'."));
+                    $"Trạng thái tài liệu hiện là '{LocalizeDocumentStatus(document.Status)}'."));
             }
 
             if (duplicateIds.Contains(document.Id))
@@ -208,6 +208,17 @@ public sealed class KnowledgeQualityService(
             DateTimeOffset.UtcNow,
             issues);
     }
+
+    private static string LocalizeDocumentStatus(string? status) =>
+        status?.ToLowerInvariant() switch
+        {
+            "ready" => "sẵn sàng",
+            "indexing" => "đang lập chỉ mục",
+            "needs-indexing" => "cần lập chỉ mục",
+            "index-error" => "lỗi chỉ mục",
+            "error" => "lỗi đọc tài liệu",
+            _ => "chưa xác định"
+        };
 
     public async Task<KnowledgeEvaluationResponse> EvaluateAsync(
         KnowledgeEvaluationRequest request,
@@ -301,7 +312,7 @@ public sealed class KnowledgeQualityService(
             if (!before.DatabaseHealthy)
             {
                 throw new KnowledgeDocumentValidationException(
-                    "Cơ sở dữ liệu SQLite không vượt qua kiểm tra tính toàn vẹn. Không chạy sửa tự động để tránh làm hỏng dữ liệu thêm.");
+                    "Cơ sở dữ liệu nội bộ không vượt qua kiểm tra tính toàn vẹn. Không chạy sửa tự động để tránh làm hỏng dữ liệu thêm.");
             }
 
             var grouped = before.Issues

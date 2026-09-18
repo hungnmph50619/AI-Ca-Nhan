@@ -60,6 +60,7 @@ public sealed class TaskEngineService : ITaskEngineService
     private readonly IAiProviderResolver _providerResolver;
     private readonly IToolActivityStore _activityStore;
     private readonly IPersonalTaskStore _taskStore;
+    private readonly IWorkspaceContextAccessor _workspaceContext;
     private readonly ILogger<TaskEngineService> _logger;
 
     public TaskEngineService(
@@ -70,6 +71,7 @@ public sealed class TaskEngineService : ITaskEngineService
         IAiProviderResolver providerResolver,
         IToolActivityStore activityStore,
         IPersonalTaskStore taskStore,
+        IWorkspaceContextAccessor workspaceContext,
         ILogger<TaskEngineService> logger)
     {
         _registry = registry;
@@ -79,6 +81,7 @@ public sealed class TaskEngineService : ITaskEngineService
         _providerResolver = providerResolver;
         _activityStore = activityStore;
         _taskStore = taskStore;
+        _workspaceContext = workspaceContext;
         _logger = logger;
     }
 
@@ -131,7 +134,8 @@ public sealed class TaskEngineService : ITaskEngineService
             null,
             provider.Name,
             provider.Model,
-            taskDependencies);
+            taskDependencies,
+            _workspaceContext.CurrentWorkspaceId);
 
         return _taskStore.Save(task);
     }
@@ -257,7 +261,8 @@ public sealed class TaskEngineService : ITaskEngineService
             null,
             "Máy chủ",
             "Kế hoạch cấu trúc",
-            taskDependencies);
+            taskDependencies,
+            _workspaceContext.CurrentWorkspaceId);
 
         return _taskStore.Save(task);
     }

@@ -80,7 +80,8 @@ public sealed record PersonalTask(
     string? Result,
     string PlanningProvider,
     string PlanningModel,
-    IReadOnlyList<Guid>? DependsOnTaskIds = null);
+    IReadOnlyList<Guid>? DependsOnTaskIds = null,
+    string WorkspaceId = PersonalWorkspaceIds.Personal);
 
 public sealed record PersonalTaskListResponse(
     bool Persistent,

@@ -24,13 +24,16 @@ public sealed class SqlitePersonalTaskStore : IPersonalTaskStore
     private readonly object _gate = new();
     private readonly string _databasePath;
     private readonly ILogger<SqlitePersonalTaskStore> _logger;
+    private readonly IWorkspaceContextAccessor _workspaceContext;
     private bool _initialized;
 
     public SqlitePersonalTaskStore(
         IConfiguration configuration,
-        ILogger<SqlitePersonalTaskStore> logger)
+        ILogger<SqlitePersonalTaskStore> logger,
+        IWorkspaceContextAccessor workspaceContext)
     {
         _logger = logger;
+        _workspaceContext = workspaceContext;
 
         var configuredRoot = configuration["Tasks:Root"]?.Trim();
         var directory = string.IsNullOrWhiteSpace(configuredRoot)
@@ -52,9 +55,10 @@ public sealed class SqlitePersonalTaskStore : IPersonalTaskStore
         {
             EnsureInitialized();
             using var connection = OpenConnection();
-            Upsert(connection, task);
-            Cleanup(connection);
-            return task;
+            var normalized = NormalizeWorkspace(task);
+            Upsert(connection, normalized);
+            Cleanup(connection, normalized.WorkspaceId);
+            return normalized;
         }
     }
 
@@ -70,9 +74,13 @@ public sealed class SqlitePersonalTaskStore : IPersonalTaskStore
                 SELECT payload_json
                 FROM personal_tasks
                 WHERE task_id = $taskId
+                  AND workspace_id = $workspaceId
                 LIMIT 1;
                 """;
             command.Parameters.AddWithValue("$taskId", taskId.ToString("D"));
+            command.Parameters.AddWithValue(
+                "$workspaceId",
+                _workspaceContext.CurrentWorkspaceId);
 
             var payload = command.ExecuteScalar() as string;
             return payload is null ? null : DeserializeTask(payload, taskId);
@@ -85,16 +93,19 @@ public sealed class SqlitePersonalTaskStore : IPersonalTaskStore
         {
             EnsureInitialized();
             using var connection = OpenConnection();
-            Cleanup(connection);
+            var workspaceId = _workspaceContext.CurrentWorkspaceId;
+            Cleanup(connection, workspaceId);
 
             using var command = connection.CreateCommand();
             command.CommandText =
                 """
                 SELECT task_id, payload_json
                 FROM personal_tasks
+                WHERE workspace_id = $workspaceId
                 ORDER BY created_at DESC, rowid DESC
                 LIMIT $maximumTasks;
                 """;
+            command.Parameters.AddWithValue("$workspaceId", workspaceId);
             command.Parameters.AddWithValue("$maximumTasks", MaximumTasks);
 
             using var reader = command.ExecuteReader();
@@ -132,6 +143,7 @@ public sealed class SqlitePersonalTaskStore : IPersonalTaskStore
                     created_at TEXT NOT NULL,
                     updated_at TEXT NOT NULL,
                     status TEXT NOT NULL,
+                    workspace_id TEXT NOT NULL DEFAULT 'personal',
                     payload_json TEXT NOT NULL
                 );
 
@@ -141,8 +153,9 @@ public sealed class SqlitePersonalTaskStore : IPersonalTaskStore
             command.ExecuteNonQuery();
         }
 
+        EnsureWorkspaceColumn(connection);
         RecoverInterruptedTasks(connection);
-        Cleanup(connection);
+        Cleanup(connection, _workspaceContext.CurrentWorkspaceId);
         _initialized = true;
     }
 
@@ -171,6 +184,7 @@ public sealed class SqlitePersonalTaskStore : IPersonalTaskStore
                 created_at,
                 updated_at,
                 status,
+                workspace_id,
                 payload_json
             )
             VALUES (
@@ -178,17 +192,20 @@ public sealed class SqlitePersonalTaskStore : IPersonalTaskStore
                 $createdAt,
                 $updatedAt,
                 $status,
+                $workspaceId,
                 $payload
             )
             ON CONFLICT(task_id) DO UPDATE SET
                 updated_at = excluded.updated_at,
                 status = excluded.status,
+                workspace_id = excluded.workspace_id,
                 payload_json = excluded.payload_json;
             """;
         command.Parameters.AddWithValue("$taskId", task.Id.ToString("D"));
         command.Parameters.AddWithValue("$createdAt", task.CreatedAt.ToString("O"));
         command.Parameters.AddWithValue("$updatedAt", DateTimeOffset.UtcNow.ToString("O"));
         command.Parameters.AddWithValue("$status", task.Status);
+        command.Parameters.AddWithValue("$workspaceId", task.WorkspaceId);
         command.Parameters.AddWithValue("$payload", payload);
         command.ExecuteNonQuery();
     }
@@ -274,7 +291,9 @@ public sealed class SqlitePersonalTaskStore : IPersonalTaskStore
         }
     }
 
-    private static void Cleanup(SqliteConnection connection)
+    private static void Cleanup(
+        SqliteConnection connection,
+        string workspaceId)
     {
         using var command = connection.CreateCommand();
         command.CommandText =
@@ -283,11 +302,77 @@ public sealed class SqlitePersonalTaskStore : IPersonalTaskStore
             WHERE rowid IN (
                 SELECT rowid
                 FROM personal_tasks
+                WHERE workspace_id = $workspaceId
                 ORDER BY created_at DESC, rowid DESC
                 LIMIT -1 OFFSET $maximumTasks
             );
             """;
+        command.Parameters.AddWithValue("$workspaceId", workspaceId);
         command.Parameters.AddWithValue("$maximumTasks", MaximumTasks);
         command.ExecuteNonQuery();
+    }
+
+    private static void EnsureWorkspaceColumn(SqliteConnection connection)
+    {
+        var exists = false;
+        using (var command = connection.CreateCommand())
+        {
+            command.CommandText = "PRAGMA table_info(personal_tasks);";
+            using var reader = command.ExecuteReader();
+            while (reader.Read())
+            {
+                if (string.Equals(
+                    reader.GetString(1),
+                    "workspace_id",
+                    StringComparison.OrdinalIgnoreCase))
+                {
+                    exists = true;
+                    break;
+                }
+            }
+        }
+
+        if (!exists)
+        {
+            using var alter = connection.CreateCommand();
+            alter.CommandText =
+                "ALTER TABLE personal_tasks ADD COLUMN workspace_id TEXT NOT NULL DEFAULT 'personal';";
+            alter.ExecuteNonQuery();
+        }
+
+        using var backfill = connection.CreateCommand();
+        backfill.CommandText =
+            """
+            UPDATE personal_tasks
+            SET workspace_id = 'personal'
+            WHERE workspace_id IS NULL OR TRIM(workspace_id) = '';
+            """;
+        backfill.ExecuteNonQuery();
+
+        using var index = connection.CreateCommand();
+        index.CommandText =
+            """
+            CREATE INDEX IF NOT EXISTS ix_personal_tasks_workspace_created_at
+            ON personal_tasks(workspace_id, created_at DESC);
+            """;
+        index.ExecuteNonQuery();
+    }
+
+    private PersonalTask NormalizeWorkspace(PersonalTask task)
+    {
+        var workspaceId = string.IsNullOrWhiteSpace(task.WorkspaceId)
+            ? _workspaceContext.CurrentWorkspaceId
+            : task.WorkspaceId.Trim().ToLowerInvariant();
+
+        if (!string.Equals(
+            workspaceId,
+            _workspaceContext.CurrentWorkspaceId,
+            StringComparison.OrdinalIgnoreCase))
+        {
+            throw new InvalidOperationException(
+                "Không thể lưu tác vụ vào không gian làm việc khác với ngữ cảnh hiện tại.");
+        }
+
+        return task with { WorkspaceId = workspaceId };
     }
 }

@@ -605,6 +605,15 @@ jobs:
           ! grep -Fq 'Chat thông thường' src/PersonalAI.Web/wwwroot/v054.js
           ! grep -Fq 'API key' src/PersonalAI.Web/wwwroot/index.html
           ! grep -Fq 'API key' src/PersonalAI.Web/wwwroot/app.js
+          ! grep -Fq 'Mô hình véc-tơ:' src/PersonalAI.Web/wwwroot/v072.js
+          ! grep -Fq 'personal-ai-memory-' src/PersonalAI.Web/wwwroot/v064.js
+          ! grep -Fq 'personal-ai-knowledge-metadata-' src/PersonalAI.Web/wwwroot/v075.js
+          ! grep -Fq 'native tool call' src/PersonalAI.Web/Services/AiProviderResolver.cs
+          ! grep -Fq 'Công cụ {execution.ToolName}' src/PersonalAI.Web/Services/ToolResultSynthesisService.cs
+          ! grep -Fq 'Cơ sở dữ liệu SQLite' src/PersonalAI.Web/Services/KnowledgeQualityService.cs
+          grep -Fq 'personal-ai-tri-nho-' src/PersonalAI.Web/wwwroot/v064.js
+          grep -Fq 'personal-ai-thong-tin-tai-lieu-' src/PersonalAI.Web/wwwroot/v075.js
+          grep -Fq 'tìm kiếm ngữ nghĩa trên máy' src/PersonalAI.Web/wwwroot/v072.js
           ! grep -R -E 'window\.(confirm|alert|prompt)\(' src/PersonalAI.Web/wwwroot/*.js
           ! grep -Fq 'Planner:' src/PersonalAI.Web/wwwroot/app.js
           ! grep -Fq 'Permission:' src/PersonalAI.Web/wwwroot/app.js

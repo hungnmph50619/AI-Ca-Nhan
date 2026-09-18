@@ -4,7 +4,7 @@ namespace PersonalAI.Web.Services;
 
 public static class ToolFrameworkEndpoints
 {
-    public const string FrameworkVersion = "0.8.5";
+    public const string FrameworkVersion = "0.8.6";
 
     private static readonly string[] PermissionTypes =
     [
@@ -35,6 +35,7 @@ public static class ToolFrameworkEndpoints
         services.AddSingleton<IToolInputValidator, ToolInputValidator>();
         services.AddSingleton<IToolPolicy, ToolPolicy>();
         services.AddSingleton<IToolExecutionService, ToolExecutionService>();
+        services.AddScoped<IToolResultSynthesisService, ToolResultSynthesisService>();
         services.AddScoped<IToolOrchestrationService, ToolOrchestrationService>();
         return services;
     }
@@ -113,6 +114,52 @@ public static class ToolFrameworkEndpoints
             };
 
             return Results.Json(response, statusCode: statusCode);
+        });
+
+        app.MapPost("/api/tools/orchestrate/synthesize", async (
+            ToolResultSynthesisRequest request,
+            IToolOrchestrationService orchestration,
+            CancellationToken cancellationToken) =>
+        {
+            try
+            {
+                var response = await orchestration.SynthesizeAsync(
+                    request.InvocationId,
+                    request.ConfirmedExternal,
+                    cancellationToken);
+                return response is null
+                    ? Results.NotFound(new ApiError(
+                        "Kết quả công cụ không tồn tại hoặc đã hết thời gian diễn giải."))
+                    : Results.Ok(response);
+            }
+            catch (ToolExternalConfirmationRequiredException exception)
+            {
+                return Results.Json(
+                    new ApiError(exception.Message),
+                    statusCode: StatusCodes.Status403Forbidden);
+            }
+            catch (ToolProposalValidationException exception)
+            {
+                return Results.BadRequest(new ApiError(exception.Message));
+            }
+            catch (InvalidOperationException exception)
+            {
+                return Results.Json(
+                    new ApiError(exception.Message),
+                    statusCode: StatusCodes.Status503ServiceUnavailable);
+            }
+            catch (HttpRequestException exception)
+            {
+                return Results.Json(
+                    new ApiError(exception.Message),
+                    statusCode: StatusCodes.Status502BadGateway);
+            }
+            catch (TaskCanceledException) when (!cancellationToken.IsCancellationRequested)
+            {
+                return Results.Json(
+                    new ApiError("Diễn giải kết quả bằng AI mất quá nhiều thời gian. Hãy thử lại."),
+                    statusCode: StatusCodes.Status504GatewayTimeout);
+            }
         });
 
         return app;

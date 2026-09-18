@@ -637,13 +637,18 @@ function renderConversation() {
 
   conversation.messages.forEach(message => {
     elements.messages.appendChild(
-      createMessageNode(message.role, message.content, message.sources, message.toolProposal));
+      createMessageNode(
+        message.role,
+        message.content,
+        message.sources,
+        message.toolProposal,
+        message.toolExecution));
   });
 
   scrollToBottom();
 }
 
-function createMessageNode(role, content, sources = [], toolProposal = null) {
+function createMessageNode(role, content, sources = [], toolProposal = null, toolExecution = null) {
   const row = document.createElement("article");
   row.className = `message-row ${role}`;
 
@@ -662,6 +667,10 @@ function createMessageNode(role, content, sources = [], toolProposal = null) {
 
   if (role === "assistant" && toolProposal) {
     bubble.appendChild(createToolProposalNode(toolProposal));
+  }
+
+  if (role === "assistant" && toolExecution) {
+    bubble.appendChild(createToolExecutionNode(toolExecution));
   }
 
   row.append(avatar, bubble);
@@ -778,7 +787,18 @@ async function executeToolProposal(proposal, button) {
     const conversation = getActiveConversation();
     conversation.messages.push({
       role: "assistant",
-      content: formatToolExecutionMessage(payload)
+      content: typeof payload.localSummary === "string" && payload.localSummary.trim()
+        ? payload.localSummary.trim()
+        : "Công cụ đã chạy thành công.",
+      toolExecution: normalizeToolExecution({
+        invocationId: payload.execution?.invocationId,
+        toolName: payload.execution?.toolName || payload.proposal?.toolName,
+        status: payload.execution?.status,
+        outputPreview: createToolOutputPreview(payload.execution?.output),
+        canAiSynthesize: payload.canAiSynthesize === true,
+        synthesisExpiresAt: payload.synthesisExpiresAt,
+        aiSynthesized: false
+      })
     });
     touchConversation(conversation);
     trimMessages(conversation);
@@ -792,15 +812,122 @@ async function executeToolProposal(proposal, button) {
   }
 }
 
-function formatToolExecutionMessage(payload) {
-  const toolName = payload?.execution?.toolName || payload?.proposal?.toolName || "công cụ";
-  const output = payload?.execution?.output;
-  let serialized = safeJsonStringify(output);
-  if (serialized.length > 6000) {
-    serialized = serialized.slice(0, 6000) + "\n… (kết quả hiển thị đã được rút gọn)";
+function createToolExecutionNode(execution) {
+  const section = documentElement("section", "tool-execution");
+  section.dataset.invocationId = execution.invocationId;
+
+  const header = documentElement("div", "tool-execution-header");
+  const title = documentElement("strong", "tool-execution-title", execution.toolName);
+  const status = documentElement(
+    "span",
+    "tool-execution-status",
+    execution.status === "succeeded" ? "Đã chạy" : execution.status);
+  header.append(title, status);
+
+  const privacy = documentElement(
+    "p",
+    "tool-execution-privacy",
+    execution.aiSynthesized
+      ? "Tóm tắt ban đầu được tạo local. Output đã được gửi sang nhà cung cấp AI theo xác nhận của bạn để diễn giải."
+      : "Tóm tắt phía trên được tạo local. Output chưa được gửi sang nhà cung cấp AI.");
+
+  const details = document.createElement("details");
+  details.className = "tool-execution-details";
+  const summary = documentElement("summary", "", "Xem output đã rút gọn");
+  const preview = documentElement("pre", "tool-execution-output");
+  preview.textContent = execution.outputPreview || "{}";
+  details.append(summary, preview);
+
+  const actions = documentElement("div", "tool-execution-actions");
+  const expiresAt = new Date(execution.synthesisExpiresAt);
+  const synthesisExpired = !execution.synthesisExpiresAt
+    || Number.isNaN(expiresAt.getTime())
+    || expiresAt.getTime() <= Date.now();
+
+  if (execution.canAiSynthesize) {
+    const synthesizeButton = documentElement(
+      "button",
+      "secondary-button",
+      execution.aiSynthesized ? "Đã diễn giải bằng AI" : "Diễn giải bằng AI");
+    synthesizeButton.type = "button";
+
+    if (execution.aiSynthesized) {
+      synthesizeButton.disabled = true;
+    } else if (synthesisExpired) {
+      synthesizeButton.disabled = true;
+      synthesizeButton.textContent = "Đã hết thời gian diễn giải";
+    } else {
+      synthesizeButton.addEventListener(
+        "click",
+        () => synthesizeToolExecution(execution, synthesizeButton));
+    }
+    actions.appendChild(synthesizeButton);
   }
 
-  return "**Công cụ đã chạy:** " + toolName + "\n\nKết quả:\n\n" + serialized;
+  section.append(header, privacy, details);
+  if (actions.childElementCount > 0) {
+    section.appendChild(actions);
+  }
+  return section;
+}
+
+async function synthesizeToolExecution(execution, button) {
+  if (execution.aiSynthesized || state.busy) return;
+
+  const confirmed = window.confirm(
+    "Để AI diễn giải, output của công cụ sẽ được gửi tới nhà cung cấp AI đang cấu hình.\n\n"
+    + "Chỉ tiếp tục nếu bạn đồng ý gửi phần kết quả này ra ngoài ứng dụng local.");
+  if (!confirmed) return;
+
+  const originalText = button.textContent;
+  button.disabled = true;
+  button.textContent = "Đang diễn giải…";
+
+  try {
+    const response = await fetch("/api/tools/orchestrate/synthesize", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        invocationId: execution.invocationId,
+        confirmedExternal: true
+      })
+    });
+    const payload = await response.json().catch(() => ({}));
+    if (!response.ok) {
+      throw new Error(payload.error || "Không thể diễn giải kết quả công cụ bằng AI.");
+    }
+
+    execution.aiSynthesized = true;
+
+    const conversation = getActiveConversation();
+    const storedMessage = conversation.messages.find(message =>
+      message?.toolExecution?.invocationId === execution.invocationId);
+    if (storedMessage?.toolExecution) {
+      storedMessage.toolExecution.aiSynthesized = true;
+    }
+
+    conversation.messages.push({
+      role: "assistant",
+      content: payload.message || "AI đã diễn giải kết quả công cụ."
+    });
+    touchConversation(conversation);
+    trimMessages(conversation);
+    persistWorkspace();
+    renderConversationList();
+    renderConversation();
+  } catch (error) {
+    button.disabled = false;
+    button.textContent = originalText;
+    appendSystemError(error.message);
+  }
+}
+
+function createToolOutputPreview(output) {
+  let serialized = safeJsonStringify(output);
+  if (serialized.length > 6000) {
+    serialized = serialized.slice(0, 6000) + "\n… (output hiển thị đã được rút gọn)";
+  }
+  return serialized;
 }
 
 function safeJsonStringify(value) {
@@ -809,6 +936,29 @@ function safeJsonStringify(value) {
   } catch {
     return "{}";
   }
+}
+
+function normalizeToolExecution(value) {
+  if (!value || typeof value !== "object") return null;
+  if (typeof value.invocationId !== "string" || !value.invocationId) return null;
+  if (typeof value.toolName !== "string" || !value.toolName) return null;
+
+  let outputPreview = typeof value.outputPreview === "string" ? value.outputPreview : "{}";
+  if (outputPreview.length > 6200) {
+    outputPreview = outputPreview.slice(0, 6200) + "\n…";
+  }
+
+  return {
+    invocationId: value.invocationId,
+    toolName: value.toolName,
+    status: typeof value.status === "string" ? value.status : "succeeded",
+    outputPreview,
+    canAiSynthesize: value.canAiSynthesize === true,
+    synthesisExpiresAt: typeof value.synthesisExpiresAt === "string"
+      ? value.synthesisExpiresAt
+      : "",
+    aiSynthesized: value.aiSynthesized === true
+  };
 }
 
 function normalizeToolProposal(value) {
@@ -1137,7 +1287,8 @@ function normalizeMessages(value) {
         role: item.role,
         content: item.content,
         sources: item.role === "assistant" ? normalizeSources(item.sources) : [],
-        toolProposal: item.role === "assistant" ? normalizeToolProposal(item.toolProposal) : null
+        toolProposal: item.role === "assistant" ? normalizeToolProposal(item.toolProposal) : null,
+        toolExecution: item.role === "assistant" ? normalizeToolExecution(item.toolExecution) : null
       }))
     : [];
 }

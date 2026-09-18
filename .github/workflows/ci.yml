@@ -370,9 +370,9 @@ jobs:
           test -n "$life_entry_id"
           echo "$life_entry" | jq -e '.workspaceId == "'"$custom_workspace_id"'" and .sourceId == "'"$life_source_id"'" and .sourceKind == "calendar" and (.content | contains("life-context-secret-160"))' >/dev/null
 
-          test -f /tmp/personalai-life-context /tmp/personalai-automation/life-context.json
-          ! grep -Fq 'life-context-secret-160' /tmp/personalai-life-context /tmp/personalai-automation/life-context.json
-          grep -Fq '"encryptedContent"' /tmp/personalai-life-context /tmp/personalai-automation/life-context.json
+          test -f /tmp/personalai-life-context/life-context.json
+          ! grep -Fq 'life-context-secret-160' /tmp/personalai-life-context/life-context.json
+          grep -Fq '"encryptedContent"' /tmp/personalai-life-context/life-context.json
 
           custom_life_sources=$(curl -fsS -H "X-PersonalAI-Workspace: $custom_workspace_id" http://127.0.0.1:5077/api/life-context/sources)
           echo "$custom_life_sources" | jq -e 'any(.sources[]; .id == "'"$life_source_id"'" and .entryCount == 1)' >/dev/null
@@ -501,7 +501,7 @@ jobs:
             -d '{"content":"life-persist-secret-160 calendar ngày mai ở thư viện","confirmed":true}')
           life_persist_entry_id=$(echo "$life_persist_entry" | jq -r '.id')
           test -n "$life_persist_entry_id"
-          ! grep -Fq 'life-persist-secret-160' /tmp/personalai-life-context /tmp/personalai-automation/life-context.json
+          ! grep -Fq 'life-persist-secret-160' /tmp/personalai-life-context/life-context.json
 
           life_audit=$(curl -fsS -H "X-PersonalAI-Workspace: $custom_workspace_id" 'http://127.0.0.1:5077/api/audit?limit=200')
           echo "$life_audit" | jq -e 'any(.items[]; .action == "life-context.source.create" and .result == "succeeded") and any(.items[]; .action == "life-context.entry.create" and .result == "succeeded") and any(.items[]; .action == "life-context.consent.revoke" and .result == "succeeded") and any(.items[]; .action == "life-context.consent.grant" and .result == "succeeded")' >/dev/null
@@ -1565,7 +1565,7 @@ jobs:
           echo "$life_sources_after_restart" | jq -e 'any(.sources[]; .id == "'"$life_source_id"'" and .consentGranted == true and .enabled == true and .entryCount == 1)' >/dev/null
           life_entries_after_restart=$(curl -fsS -H "X-PersonalAI-Workspace: $custom_workspace_id" "http://127.0.0.1:5077/api/life-context/entries?sourceId=$life_source_id&limit=20")
           echo "$life_entries_after_restart" | jq -e 'any(.entries[]; .id == "'"$life_persist_entry_id"'" and (.content | contains("life-persist-secret-160")) and .sourceKind == "calendar")' >/dev/null
-          ! grep -Fq 'life-persist-secret-160' /tmp/personalai-life-context /tmp/personalai-automation/life-context.json
+          ! grep -Fq 'life-persist-secret-160' /tmp/personalai-life-context/life-context.json
 
           connectors_after_restart=$(curl -fsS http://127.0.0.1:5077/api/connectors)
           echo "$connectors_after_restart" | jq -e 'any(.connections[]; .id == "'"$connector_id"'" and .hasCredential == true)' >/dev/null

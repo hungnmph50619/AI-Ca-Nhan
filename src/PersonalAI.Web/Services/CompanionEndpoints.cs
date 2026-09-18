@@ -417,8 +417,12 @@ public static class CompanionEndpoints
             NormalizeIp(
                 context.Connection.LocalIpAddress);
 
-        if (remote is null
-            || IPAddress.IsLoopback(remote))
+        if (remote is null)
+        {
+            return false;
+        }
+
+        if (IPAddress.IsLoopback(remote))
         {
             return true;
         }

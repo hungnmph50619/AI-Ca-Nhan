@@ -2,7 +2,7 @@ namespace PersonalAI.Web.Models;
 
 public static class PersonalAiRelease
 {
-    public const string Version = "1.1.0";
+    public const string Version = "1.2.0";
     public const string ApiContractVersion = "1";
     public const string Channel = "controlled";
 }
@@ -39,6 +39,9 @@ public sealed record CoreSafetyContract(
     bool UndoRequiresConfirmation,
     bool ComputerControlRequiresConfirmation,
     bool SensitiveComputerObservationRequiresConfirmation,
+    bool BrowserUseRequiresConfirmation,
+    bool BrowserPrivateNetworkAccess,
+    bool BrowserSideEffectsEnabled,
     bool AutomaticMultiStepExecution,
     bool BackgroundScheduler,
     bool AutonomousAgentLoop,
@@ -53,7 +56,11 @@ public sealed record CoreLimitsContract(
     int MaximumAuditEntries,
     int UndoAvailabilityDays,
     int MaximumUndoEntries,
-    int MaximumUndoSnapshotBytes);
+    int MaximumUndoSnapshotBytes,
+    int BrowserMaximumResponseBytes,
+    int BrowserMaximumPageTextCharacters,
+    int BrowserMaximumLinks,
+    int BrowserMaximumRedirects);
 
 public sealed record SystemCapabilitiesResponse(
     string Version,

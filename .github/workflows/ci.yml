@@ -65,14 +65,17 @@ jobs:
 
           capabilities=$(curl -fsS http://127.0.0.1:5077/api/system/capabilities)
           echo "$capabilities" | jq -e '
-            .version == "1.0.0"
+            . as $caps
+            | .version == "1.0.0"
             and .apiContractVersion == "1"
             and .channel == "stable"
             and .workspaceHeader == "X-PersonalAI-Workspace"
             and .requestIdHeader == "X-PersonalAI-Request-Id"
-            and all(["workspace","memory","documents","rag","tasks","files","context","tools","audit","undo","conversations"][]; . as $module | any($ARGS.positional[]; . == $module))
-          ' --args \
-            "$(echo "$capabilities" | jq -r '.stableModules[]')" >/dev/null
+            and all(
+              ["workspace","memory","documents","rag","tasks","files","context","tools","audit","undo","conversations"][];
+              . as $module | ($caps.stableModules | index($module)) != null
+            )
+          ' >/dev/null
           echo "$capabilities" | jq -e '
             any(.reservedModules[]; . == "agents")
             and any(.reservedModules[]; . == "policies")

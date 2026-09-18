@@ -701,12 +701,13 @@ public sealed class TaskEngineService : ITaskEngineService
         var permissions = tool.Definition.RequiredPermissions;
         if (permissions.Any(permission =>
                 permission.Equals(ToolPermissions.External, StringComparison.OrdinalIgnoreCase)
-                || permission.Equals(ToolPermissions.Sensitive, StringComparison.OrdinalIgnoreCase)))
+                || permission.Equals(ToolPermissions.Sensitive, StringComparison.OrdinalIgnoreCase)
+                || permission.Equals(ToolPermissions.Computer, StringComparison.OrdinalIgnoreCase)))
         {
             return BlockedRetry(
                 task,
                 position,
-                "Bước dùng quyền BÊN NGOÀI hoặc NHẠY CẢM nên phiên bản này không cho thử lại tự động.");
+                "Bước dùng quyền BÊN NGOÀI, NHẠY CẢM hoặc ĐIỀU KHIỂN MÁY nên phiên bản này không cho chuẩn bị thử lại.");
         }
 
         var readOnly = permissions.Count > 0

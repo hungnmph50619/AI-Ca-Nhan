@@ -33,6 +33,19 @@ public interface IWorkspaceFileService
         string relativePath,
         string? expectedSha256,
         CancellationToken cancellationToken = default);
+
+    Task<WorkspaceUndoCapture?> CaptureUndoAsync(
+        string toolName,
+        JsonElement arguments,
+        CancellationToken cancellationToken = default);
+
+    Task<WorkspaceUndoCheck> AssessUndoAsync(
+        StoredUndoItem item,
+        CancellationToken cancellationToken = default);
+
+    Task<WorkspaceUndoApplyResult> ApplyUndoAsync(
+        StoredUndoItem item,
+        CancellationToken cancellationToken = default);
 }
 
 public sealed record WorkspaceDirectoryEntry(
@@ -768,6 +781,507 @@ public sealed class WorkspaceFileService : IWorkspaceFileService
 
         throw new ToolExecutionInputException(
             "Không tìm thấy tệp hoặc thư mục cần xóa trong thư mục làm việc.");
+    }
+
+    public async Task<WorkspaceUndoCapture?> CaptureUndoAsync(
+        string toolName,
+        JsonElement arguments,
+        CancellationToken cancellationToken = default)
+    {
+        cancellationToken.ThrowIfCancellationRequested();
+
+        switch ((toolName ?? string.Empty).Trim())
+        {
+            case "workspace.write_text":
+            {
+                var path = arguments.GetProperty("path").GetString()?.Trim()
+                    ?? string.Empty;
+                var mode = arguments.GetProperty("mode").GetString()?.Trim()
+                    .ToLowerInvariant()
+                    ?? string.Empty;
+
+                if (mode == "create")
+                {
+                    return new WorkspaceUndoCapture(
+                        UndoOperations.DeleteCreatedFile,
+                        NormalizeRelativePath(path),
+                        null,
+                        null,
+                        null);
+                }
+
+                if (mode is not ("overwrite" or "append"))
+                {
+                    return null;
+                }
+
+                var fullPath = ResolvePath(path, allowRoot: false);
+                EnsureNoSymlinkTraversal(fullPath);
+                if (!File.Exists(fullPath))
+                {
+                    return null;
+                }
+
+                var info = new FileInfo(fullPath);
+                if (IsSymlink(info)
+                    || info.Length > SqliteUndoStore.MaximumSnapshotBytes)
+                {
+                    return null;
+                }
+
+                var bytes = await File.ReadAllBytesAsync(
+                    fullPath,
+                    cancellationToken);
+                return new WorkspaceUndoCapture(
+                    UndoOperations.RestoreFile,
+                    ToRelativePath(fullPath),
+                    null,
+                    ComputeSha256(bytes),
+                    bytes);
+            }
+
+            case "workspace.create_directory":
+            {
+                var path = arguments.GetProperty("path").GetString()?.Trim()
+                    ?? string.Empty;
+                return new WorkspaceUndoCapture(
+                    UndoOperations.DeleteCreatedDirectory,
+                    NormalizeRelativePath(path),
+                    null,
+                    null,
+                    null);
+            }
+
+            case "workspace.move":
+            {
+                var sourcePath = arguments
+                    .GetProperty("sourcePath")
+                    .GetString()?
+                    .Trim()
+                    ?? string.Empty;
+                var destinationPath = arguments
+                    .GetProperty("destinationPath")
+                    .GetString()?
+                    .Trim()
+                    ?? string.Empty;
+
+                var sourceFullPath = ResolvePath(
+                    sourcePath,
+                    allowRoot: false);
+                EnsureNoSymlinkTraversal(sourceFullPath);
+                if (!File.Exists(sourceFullPath))
+                {
+                    return null;
+                }
+
+                var info = new FileInfo(sourceFullPath);
+                if (IsSymlink(info))
+                {
+                    return null;
+                }
+
+                var sha256 = await ComputeSha256FileAsync(
+                    sourceFullPath,
+                    cancellationToken);
+                return new WorkspaceUndoCapture(
+                    UndoOperations.MoveFileBack,
+                    ToRelativePath(sourceFullPath),
+                    NormalizeRelativePath(destinationPath),
+                    sha256,
+                    null);
+            }
+
+            case "workspace.delete":
+            {
+                var path = arguments.GetProperty("path").GetString()?.Trim()
+                    ?? string.Empty;
+                var fullPath = ResolvePath(path, allowRoot: false);
+                EnsureNoSymlinkTraversal(fullPath);
+
+                if (File.Exists(fullPath))
+                {
+                    var info = new FileInfo(fullPath);
+                    if (IsSymlink(info)
+                        || info.Length > SqliteUndoStore.MaximumSnapshotBytes)
+                    {
+                        return null;
+                    }
+
+                    var bytes = await File.ReadAllBytesAsync(
+                        fullPath,
+                        cancellationToken);
+                    return new WorkspaceUndoCapture(
+                        UndoOperations.RestoreDeletedFile,
+                        ToRelativePath(fullPath),
+                        null,
+                        ComputeSha256(bytes),
+                        bytes);
+                }
+
+                if (Directory.Exists(fullPath))
+                {
+                    var info = new DirectoryInfo(fullPath);
+                    if (IsSymlink(info))
+                    {
+                        return null;
+                    }
+
+                    if (Directory.EnumerateFileSystemEntries(fullPath).Any())
+                    {
+                        return null;
+                    }
+
+                    return new WorkspaceUndoCapture(
+                        UndoOperations.RestoreEmptyDirectory,
+                        ToRelativePath(fullPath),
+                        null,
+                        null,
+                        null);
+                }
+
+                return null;
+            }
+
+            default:
+                return null;
+        }
+    }
+
+    public async Task<WorkspaceUndoCheck> AssessUndoAsync(
+        StoredUndoItem item,
+        CancellationToken cancellationToken = default)
+    {
+        cancellationToken.ThrowIfCancellationRequested();
+
+        try
+        {
+            switch (item.Operation)
+            {
+                case UndoOperations.DeleteCreatedFile:
+                {
+                    var fullPath = ResolvePath(
+                        item.PrimaryPath,
+                        allowRoot: false);
+                    EnsureNoSymlinkTraversal(fullPath);
+                    if (!File.Exists(fullPath))
+                    {
+                        return new(false, "Tệp vừa tạo không còn tồn tại.");
+                    }
+
+                    if (string.IsNullOrWhiteSpace(item.PostSha256))
+                    {
+                        return new(false, "Thiếu mã kiểm tra sau hành động.");
+                    }
+
+                    var actual = await ComputeSha256FileAsync(
+                        fullPath,
+                        cancellationToken);
+                    return string.Equals(
+                        actual,
+                        item.PostSha256,
+                        StringComparison.OrdinalIgnoreCase)
+                        ? new(true, "Tệp chưa thay đổi kể từ hành động gốc.")
+                        : new(false, "Tệp đã thay đổi sau hành động gốc; từ chối xóa để tránh mất dữ liệu mới.");
+                }
+
+                case UndoOperations.RestoreFile:
+                {
+                    if (item.SnapshotBytes is null)
+                    {
+                        return new(false, "Không còn ảnh chụp nội dung trước hành động.");
+                    }
+
+                    var fullPath = ResolvePath(
+                        item.PrimaryPath,
+                        allowRoot: false);
+                    EnsureNoSymlinkTraversal(fullPath);
+                    if (!File.Exists(fullPath))
+                    {
+                        return new(false, "Tệp hiện tại không còn tồn tại.");
+                    }
+
+                    if (string.IsNullOrWhiteSpace(item.PostSha256))
+                    {
+                        return new(false, "Thiếu mã kiểm tra sau hành động.");
+                    }
+
+                    var actual = await ComputeSha256FileAsync(
+                        fullPath,
+                        cancellationToken);
+                    return string.Equals(
+                        actual,
+                        item.PostSha256,
+                        StringComparison.OrdinalIgnoreCase)
+                        ? new(true, "Tệp chưa thay đổi kể từ lần ghi; có thể khôi phục ảnh chụp trước đó.")
+                        : new(false, "Tệp đã thay đổi sau lần ghi; không khôi phục đè lên dữ liệu mới.");
+                }
+
+                case UndoOperations.RestoreDeletedFile:
+                {
+                    if (item.SnapshotBytes is null)
+                    {
+                        return new(false, "Không còn ảnh chụp của tệp đã xóa.");
+                    }
+
+                    var fullPath = ResolvePath(
+                        item.PrimaryPath,
+                        allowRoot: false);
+                    EnsureNoSymlinkTraversal(
+                        Path.GetDirectoryName(fullPath)
+                        ?? GetActiveRoot());
+                    if (File.Exists(fullPath)
+                        || Directory.Exists(fullPath))
+                    {
+                        return new(false, "Đường dẫn đã được tạo lại sau khi xóa.");
+                    }
+
+                    var parent = Path.GetDirectoryName(fullPath);
+                    return !string.IsNullOrWhiteSpace(parent)
+                        && Directory.Exists(parent)
+                        ? new(true, "Đường dẫn vẫn trống và ảnh chụp tệp còn khả dụng.")
+                        : new(false, "Thư mục cha không còn tồn tại.");
+                }
+
+                case UndoOperations.DeleteCreatedDirectory:
+                {
+                    var fullPath = ResolvePath(
+                        item.PrimaryPath,
+                        allowRoot: false);
+                    EnsureNoSymlinkTraversal(fullPath);
+                    if (!Directory.Exists(fullPath))
+                    {
+                        return new(false, "Thư mục vừa tạo không còn tồn tại.");
+                    }
+
+                    if (Directory.EnumerateFileSystemEntries(fullPath).Any())
+                    {
+                        return new(false, "Thư mục đã có dữ liệu; không thể xóa khi hoàn tác.");
+                    }
+
+                    return new(true, "Thư mục vẫn rỗng và có thể xóa an toàn.");
+                }
+
+                case UndoOperations.RestoreEmptyDirectory:
+                {
+                    var fullPath = ResolvePath(
+                        item.PrimaryPath,
+                        allowRoot: false);
+                    if (File.Exists(fullPath)
+                        || Directory.Exists(fullPath))
+                    {
+                        return new(false, "Đường dẫn đã được sử dụng lại sau khi xóa.");
+                    }
+
+                    var parent = Path.GetDirectoryName(fullPath);
+                    return !string.IsNullOrWhiteSpace(parent)
+                        && Directory.Exists(parent)
+                        ? new(true, "Có thể tạo lại thư mục rỗng.")
+                        : new(false, "Thư mục cha không còn tồn tại.");
+                }
+
+                case UndoOperations.MoveFileBack:
+                {
+                    if (string.IsNullOrWhiteSpace(item.SecondaryPath)
+                        || string.IsNullOrWhiteSpace(item.PostSha256))
+                    {
+                        return new(false, "Thiếu metadata của thao tác di chuyển.");
+                    }
+
+                    var sourceFullPath = ResolvePath(
+                        item.PrimaryPath,
+                        allowRoot: false);
+                    var destinationFullPath = ResolvePath(
+                        item.SecondaryPath,
+                        allowRoot: false);
+                    EnsureNoSymlinkTraversal(destinationFullPath);
+
+                    if (File.Exists(sourceFullPath)
+                        || Directory.Exists(sourceFullPath))
+                    {
+                        return new(false, "Đường dẫn nguồn cũ đã được sử dụng lại.");
+                    }
+
+                    if (!File.Exists(destinationFullPath))
+                    {
+                        return new(false, "Tệp ở vị trí đích không còn tồn tại.");
+                    }
+
+                    var actual = await ComputeSha256FileAsync(
+                        destinationFullPath,
+                        cancellationToken);
+                    if (!string.Equals(
+                        actual,
+                        item.PostSha256,
+                        StringComparison.OrdinalIgnoreCase))
+                    {
+                        return new(false, "Tệp đã thay đổi sau khi di chuyển.");
+                    }
+
+                    var parent = Path.GetDirectoryName(sourceFullPath);
+                    return !string.IsNullOrWhiteSpace(parent)
+                        && Directory.Exists(parent)
+                        ? new(true, "Tệp chưa thay đổi và vị trí nguồn cũ vẫn trống.")
+                        : new(false, "Thư mục cha của vị trí nguồn cũ không còn tồn tại.");
+                }
+
+                default:
+                    return new(false, "Loại hoàn tác này chưa được hỗ trợ.");
+            }
+        }
+        catch (UnauthorizedAccessException)
+        {
+            return new(false, "Không có quyền kiểm tra trạng thái tệp để hoàn tác.");
+        }
+        catch (IOException)
+        {
+            return new(false, "Không thể kiểm tra trạng thái tệp để hoàn tác.");
+        }
+    }
+
+    public async Task<WorkspaceUndoApplyResult> ApplyUndoAsync(
+        StoredUndoItem item,
+        CancellationToken cancellationToken = default)
+    {
+        var assessment = await AssessUndoAsync(
+            item,
+            cancellationToken);
+        if (!assessment.CanUndo)
+        {
+            throw new UndoConflictException(assessment.Reason);
+        }
+
+        cancellationToken.ThrowIfCancellationRequested();
+
+        switch (item.Operation)
+        {
+            case UndoOperations.DeleteCreatedFile:
+            {
+                var fullPath = ResolvePath(
+                    item.PrimaryPath,
+                    allowRoot: false);
+                File.Delete(fullPath);
+                return new("Đã xóa tệp được tạo bởi hành động gốc.");
+            }
+
+            case UndoOperations.RestoreFile:
+            {
+                var fullPath = ResolvePath(
+                    item.PrimaryPath,
+                    allowRoot: false);
+                await WriteSnapshotAtomicallyAsync(
+                    fullPath,
+                    item.SnapshotBytes!,
+                    overwrite: true,
+                    cancellationToken);
+                return new("Đã khôi phục nội dung tệp trước lần ghi.");
+            }
+
+            case UndoOperations.RestoreDeletedFile:
+            {
+                var fullPath = ResolvePath(
+                    item.PrimaryPath,
+                    allowRoot: false);
+                await WriteSnapshotAtomicallyAsync(
+                    fullPath,
+                    item.SnapshotBytes!,
+                    overwrite: false,
+                    cancellationToken);
+                return new("Đã khôi phục tệp đã xóa.");
+            }
+
+            case UndoOperations.DeleteCreatedDirectory:
+            {
+                var fullPath = ResolvePath(
+                    item.PrimaryPath,
+                    allowRoot: false);
+                Directory.Delete(fullPath, recursive: false);
+                return new("Đã xóa thư mục rỗng được tạo bởi hành động gốc.");
+            }
+
+            case UndoOperations.RestoreEmptyDirectory:
+            {
+                var fullPath = ResolvePath(
+                    item.PrimaryPath,
+                    allowRoot: false);
+                Directory.CreateDirectory(fullPath);
+                return new("Đã tạo lại thư mục rỗng đã xóa.");
+            }
+
+            case UndoOperations.MoveFileBack:
+            {
+                var sourceFullPath = ResolvePath(
+                    item.PrimaryPath,
+                    allowRoot: false);
+                var destinationFullPath = ResolvePath(
+                    item.SecondaryPath,
+                    allowRoot: false);
+                File.Move(
+                    destinationFullPath,
+                    sourceFullPath,
+                    overwrite: false);
+                return new("Đã di chuyển tệp về vị trí trước hành động.");
+            }
+
+            default:
+                throw new UndoConflictException(
+                    "Loại hoàn tác này chưa được hỗ trợ.");
+        }
+    }
+
+    private async Task WriteSnapshotAtomicallyAsync(
+        string fullPath,
+        byte[] snapshot,
+        bool overwrite,
+        CancellationToken cancellationToken)
+    {
+        var parent = Path.GetDirectoryName(fullPath);
+        if (string.IsNullOrWhiteSpace(parent)
+            || !Directory.Exists(parent))
+        {
+            throw new UndoConflictException(
+                "Thư mục cha không còn tồn tại.");
+        }
+
+        EnsureNoSymlinkTraversal(parent);
+        var temporaryPath = Path.Combine(
+            parent,
+            $".undo-{Guid.NewGuid():N}.tmp");
+
+        try
+        {
+            await File.WriteAllBytesAsync(
+                temporaryPath,
+                snapshot,
+                cancellationToken);
+
+            if (overwrite)
+            {
+                File.Move(
+                    temporaryPath,
+                    fullPath,
+                    overwrite: true);
+            }
+            else
+            {
+                File.Move(
+                    temporaryPath,
+                    fullPath,
+                    overwrite: false);
+            }
+        }
+        finally
+        {
+            if (File.Exists(temporaryPath))
+            {
+                File.Delete(temporaryPath);
+            }
+        }
+    }
+
+    private string NormalizeRelativePath(string path)
+    {
+        var fullPath = ResolvePath(path, allowRoot: false);
+        return ToRelativePath(fullPath);
     }
 
     private static string LocalizeWriteMode(string mode) =>

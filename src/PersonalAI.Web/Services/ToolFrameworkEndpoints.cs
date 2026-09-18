@@ -29,7 +29,6 @@ public static class ToolFrameworkEndpoints
         services.AddSingleton<IPersonalAiTool, WorkspaceReadTextTool>();
         services.AddSingleton<IPersonalAiTool, WorkspaceWriteTextTool>();
         services.AddSingleton<IPersonalAiTool, WorkspaceCreateDirectoryTool>();
-        services.AddSingleton<IWorkspaceFileService, WorkspaceFileService>();
         services.AddSingleton<IToolRegistry, ToolRegistry>();
         services.AddSingleton<IToolInputValidator, ToolInputValidator>();
         services.AddSingleton<IToolPolicy, ToolPolicy>();

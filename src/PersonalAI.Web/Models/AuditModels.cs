@@ -7,6 +7,7 @@ public static class AuditAgents
     public const string TaskEngine = "task-engine";
     public const string System = "system";
     public const string Companion = "companion";
+    public const string Automation = "automation";
 }
 
 public static class AuditResults
@@ -17,6 +18,8 @@ public static class AuditResults
     public const string Cancelled = "cancelled";
     public const string Prepared = "prepared";
     public const string Proposed = "proposed";
+    public const string Blocked = "blocked";
+    public const string Interrupted = "interrupted";
 }
 
 public sealed record AuditEvent(

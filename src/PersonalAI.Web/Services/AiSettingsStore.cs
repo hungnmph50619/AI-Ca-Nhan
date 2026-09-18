@@ -128,13 +128,13 @@ public sealed class AiSettingsStore : IAiSettingsStore
 
         if (model.Length is < 2 or > 120)
         {
-            throw new ArgumentException("Tên model phải có từ 2 đến 120 ký tự.");
+            throw new ArgumentException("Tên mô hình phải có từ 2 đến 120 ký tự.");
         }
 
         var apiKey = request.ApiKey?.Trim();
         if (apiKey?.Length > 512)
         {
-            throw new ArgumentException("API key không hợp lệ.");
+            throw new ArgumentException("Khóa truy cập không hợp lệ.");
         }
 
         StoredAiSettings snapshot;

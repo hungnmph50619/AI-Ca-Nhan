@@ -55,20 +55,20 @@ jobs:
             exit 1
           fi
 
-          curl -fsS http://127.0.0.1:5077/api/status | jq -e '.version == "1.0.0"' >/dev/null
+          curl -fsS http://127.0.0.1:5077/api/status | jq -e '.version == "1.1.0"' >/dev/null
 
           curl -fsS -D /tmp/status-headers http://127.0.0.1:5077/api/status -o /tmp/status-body.json
           grep -Eiq '^X-PersonalAI-Request-Id: [a-f0-9]{32}' /tmp/status-headers
           grep -Eiq '^X-PersonalAI-Api-Version: 1' /tmp/status-headers
           grep -Eiq '^X-Content-Type-Options: nosniff' /tmp/status-headers
-          jq -e '.version == "1.0.0" and .apiContractVersion == "1" and .channel == "stable"' /tmp/status-body.json >/dev/null
+          jq -e '.version == "1.1.0" and .apiContractVersion == "1" and .channel == "controlled"' /tmp/status-body.json >/dev/null
 
           capabilities=$(curl -fsS http://127.0.0.1:5077/api/system/capabilities)
           echo "$capabilities" | jq -e '
             . as $caps
-            | .version == "1.0.0"
+            | .version == "1.1.0"
             and .apiContractVersion == "1"
-            and .channel == "stable"
+            and .channel == "controlled"
             and .workspaceHeader == "X-PersonalAI-Workspace"
             and .requestIdHeader == "X-PersonalAI-Request-Id"
             and all(
@@ -79,14 +79,17 @@ jobs:
           echo "$capabilities" | jq -e '
             any(.reservedModules[]; . == "agents")
             and any(.reservedModules[]; . == "policies")
+            and .controlledModules == ["computer-use"]
             and any(.reservedModules[]; . == "browser")
-            and any(.reservedModules[]; . == "computer-use")
+            and all(.reservedModules[]; . != "computer-use")
             and any(.reservedModules[]; . == "connectors")
             and .safety.workspaceIsolation == true
             and .safety.writeRequiresConfirmation == true
             and .safety.deleteRequiresConfirmation == true
             and .safety.externalRequiresConfirmation == true
             and .safety.undoRequiresConfirmation == true
+            and .safety.computerControlRequiresConfirmation == true
+            and .safety.sensitiveComputerObservationRequiresConfirmation == true
             and .safety.automaticMultiStepExecution == false
             and .safety.backgroundScheduler == false
             and .safety.autonomousAgentLoop == false
@@ -104,9 +107,9 @@ jobs:
 
           core_health=$(curl -fsS http://127.0.0.1:5077/api/system/health)
           echo "$core_health" | jq -e '
-            .version == "1.0.0"
+            .version == "1.1.0"
             and .apiContractVersion == "1"
-            and .channel == "stable"
+            and .channel == "controlled"
             and .ready == true
             and .workspaceId == "personal"
             and (.status == "healthy" or .status == "degraded")
@@ -118,6 +121,7 @@ jobs:
             and any(.modules[]; .module == "tools" and .status == "healthy")
             and any(.modules[]; .module == "audit" and .status == "healthy")
             and any(.modules[]; .module == "undo" and .status == "healthy")
+            and any(.modules[]; .module == "computer-use" and .status == "unconfigured")
             and any(.modules[]; .module == "ai-provider" and (.status == "healthy" or .status == "unconfigured"))
           ' >/dev/null
 
@@ -132,7 +136,7 @@ jobs:
           echo "$custom_workspace" | jq -e '.isBuiltIn == false and (.activeModules | sort) == (["memory","documents","tasks","files","conversations"] | sort) and (.reservedModules | sort) == (["agents","policies"] | sort)' >/dev/null
 
           custom_status=$(curl -fsS -H "X-PersonalAI-Workspace: $custom_workspace_id" http://127.0.0.1:5077/api/status)
-          echo "$custom_status" | jq -e '.version == "1.0.0" and .workspaceName == "CI Workspace"' >/dev/null
+          echo "$custom_status" | jq -e '.version == "1.1.0" and .workspaceName == "CI Workspace"' >/dev/null
 
           custom_core_health=$(curl -fsS -H "X-PersonalAI-Workspace: $custom_workspace_id" http://127.0.0.1:5077/api/system/health)
           echo "$custom_core_health" | jq -e '.ready == true and .workspaceId == "'"$custom_workspace_id"'" and any(.modules[]; .module == "files" and .status == "healthy")' >/dev/null
@@ -333,8 +337,48 @@ jobs:
           test -n "$persistent_undo_id"
 
           tools=$(curl -fsS http://127.0.0.1:5077/api/tools)
-          echo "$tools" | jq -e '.frameworkVersion == "1.0.0" and (.permissionTypes | sort) == (["DELETE","EXTERNAL","READ","SENSITIVE","WRITE"] | sort)' >/dev/null
-          echo "$tools" | jq -e '(.tools | length) == 13 and any(.tools[]; .name == "local.clock" and .localOnly == true and .requiredPermissions == ["READ"]) and any(.tools[]; .name == "local.text_stats" and .timeoutMs == 2000) and any(.tools[]; .name == "memory.search") and any(.tools[]; .name == "documents.search") and any(.tools[]; .name == "local.calculate") and any(.tools[]; .name == "local.date_math") and any(.tools[]; .name == "app.summary") and any(.tools[]; .name == "workspace.list" and .requiredPermissions == ["READ"]) and any(.tools[]; .name == "workspace.read_text" and .requiredPermissions == ["READ"]) and any(.tools[]; .name == "workspace.write_text" and .requiredPermissions == ["WRITE"] and .requiresConfirmation == true) and any(.tools[]; .name == "workspace.create_directory" and .requiredPermissions == ["WRITE"] and .requiresConfirmation == true) and any(.tools[]; .name == "workspace.move" and .requiredPermissions == ["WRITE"] and .requiresConfirmation == true) and any(.tools[]; .name == "workspace.delete" and .requiredPermissions == ["DELETE"] and .requiresConfirmation == true)' >/dev/null
+          echo "$tools" | jq -e '.frameworkVersion == "1.1.0" and (.permissionTypes | sort) == (["COMPUTER","DELETE","EXTERNAL","READ","SENSITIVE","WRITE"] | sort)' >/dev/null
+          echo "$tools" | jq -e '(.tools | length) == 19
+            and any(.tools[]; .name == "local.clock" and .localOnly == true and .requiredPermissions == ["READ"])
+            and any(.tools[]; .name == "local.text_stats" and .timeoutMs == 2000)
+            and any(.tools[]; .name == "memory.search")
+            and any(.tools[]; .name == "documents.search")
+            and any(.tools[]; .name == "local.calculate")
+            and any(.tools[]; .name == "local.date_math")
+            and any(.tools[]; .name == "app.summary")
+            and any(.tools[]; .name == "workspace.list" and .requiredPermissions == ["READ"])
+            and any(.tools[]; .name == "workspace.read_text" and .requiredPermissions == ["READ"])
+            and any(.tools[]; .name == "workspace.write_text" and .requiredPermissions == ["WRITE"] and .requiresConfirmation == true)
+            and any(.tools[]; .name == "workspace.create_directory" and .requiredPermissions == ["WRITE"] and .requiresConfirmation == true)
+            and any(.tools[]; .name == "workspace.move" and .requiredPermissions == ["WRITE"] and .requiresConfirmation == true)
+            and any(.tools[]; .name == "workspace.delete" and .requiredPermissions == ["DELETE"] and .requiresConfirmation == true)
+            and any(.tools[]; .name == "computer.screen.info" and .requiredPermissions == ["READ"] and .requiresConfirmation == false)
+            and any(.tools[]; .name == "computer.cursor.position" and .requiredPermissions == ["READ"] and .requiresConfirmation == false)
+            and any(.tools[]; .name == "computer.windows.list" and .requiredPermissions == ["READ","SENSITIVE"] and .requiresConfirmation == true)
+            and any(.tools[]; .name == "computer.window.active" and .requiredPermissions == ["READ","SENSITIVE"] and .requiresConfirmation == true)
+            and any(.tools[]; .name == "computer.window.focus" and .requiredPermissions == ["WRITE","COMPUTER","SENSITIVE"] and .requiresConfirmation == true)
+            and any(.tools[]; .name == "computer.cursor.move" and .requiredPermissions == ["WRITE","COMPUTER"] and .requiresConfirmation == true)' >/dev/null
+
+          computer_status=$(curl -fsS http://127.0.0.1:5077/api/computer/status)
+          echo "$computer_status" | jq -e '.version == "1.1.0" and .supported == false and .interactiveSession == false and .availableCapabilities == [] and any(.limitations[]; contains("Windows"))' >/dev/null
+
+          computer_sensitive_denied_code=$(curl -sS -o /tmp/computer-sensitive-denied.json -w '%{http_code}' -X POST http://127.0.0.1:5077/api/tools/execute \
+            -H 'Content-Type: application/json' \
+            -d '{"toolName":"computer.windows.list","arguments":{"limit":5},"approvedPermissions":["READ","SENSITIVE"],"confirmed":false}')
+          test "$computer_sensitive_denied_code" = "403"
+          jq -e '.status == "denied" and .success == false and (.error | contains("xác nhận"))' /tmp/computer-sensitive-denied.json >/dev/null
+
+          computer_missing_permission_code=$(curl -sS -o /tmp/computer-missing-permission.json -w '%{http_code}' -X POST http://127.0.0.1:5077/api/tools/execute \
+            -H 'Content-Type: application/json' \
+            -d '{"toolName":"computer.cursor.move","arguments":{"x":10,"y":10},"approvedPermissions":["WRITE"],"confirmed":true}')
+          test "$computer_missing_permission_code" = "403"
+          jq -e '.status == "denied" and (.error | contains("ĐIỀU KHIỂN MÁY"))' /tmp/computer-missing-permission.json >/dev/null
+
+          computer_unsupported_code=$(curl -sS -o /tmp/computer-unsupported.json -w '%{http_code}' -X POST http://127.0.0.1:5077/api/tools/execute \
+            -H 'Content-Type: application/json' \
+            -d '{"toolName":"computer.screen.info","arguments":{},"approvedPermissions":["READ"],"confirmed":false}')
+          test "$computer_unsupported_code" = "400"
+          jq -e '.status == "invalid-input" and (.error | contains("Windows"))' /tmp/computer-unsupported.json >/dev/null
 
           text_tool=$(curl -fsS http://127.0.0.1:5077/api/tools/local.text_stats)
           echo "$text_tool" | jq -e '.name == "local.text_stats" and .inputSchema.type == "object" and .inputSchema.additionalProperties == false and .inputSchema.required == ["text"]' >/dev/null
@@ -1083,18 +1127,18 @@ jobs:
           grep -Fq 'Task Dependencies' docs/releases/v0.9.3.md
           grep -Fq 'v090.css' src/PersonalAI.Web/wwwroot/index.html
           grep -Fq 'v090.js' src/PersonalAI.Web/wwwroot/index.html
-          grep -Fq 'Tác vụ có Undo Foundation v1.0.0' src/PersonalAI.Web/wwwroot/v090.js
+          grep -Fq 'Tác vụ có Undo Foundation v1.1.0' src/PersonalAI.Web/wwwroot/v090.js
           grep -Fq 'MỤC TIÊU → KẾ HOẠCH → TỪNG BƯỚC' src/PersonalAI.Web/wwwroot/v090.js
           grep -Fq 'arguments_sha256' src/PersonalAI.Web/Services/ToolActivityStore.cs
           grep -Fq 'output_sha256' src/PersonalAI.Web/Services/ToolActivityStore.cs
           grep -Fq 'v089.css' src/PersonalAI.Web/wwwroot/index.html
-          grep -Fq 'Nhật ký hoạt động công cụ v1.0.0' src/PersonalAI.Web/wwwroot/v080.js
+          grep -Fq 'Nhật ký hoạt động công cụ v1.1.0' src/PersonalAI.Web/wwwroot/v080.js
           grep -Fq 'Nhật ký hoạt động gần đây' src/PersonalAI.Web/wwwroot/v080.js
           grep -Fq 'v088.css' src/PersonalAI.Web/wwwroot/index.html
           grep -Fq 'Nguồn đề xuất:' src/PersonalAI.Web/wwwroot/app.js
           grep -Fq 'Tham số' src/PersonalAI.Web/wwwroot/app.js
           grep -Fq 'CÔNG CỤ NỘI BỘ TRÊN MÁY NÀY' src/PersonalAI.Web/wwwroot/v080.js
-          grep -Fq 'Nhật ký hoạt động công cụ v1.0.0' src/PersonalAI.Web/wwwroot/v080.js
+          grep -Fq 'Nhật ký hoạt động công cụ v1.1.0' src/PersonalAI.Web/wwwroot/v080.js
           grep -Fq 'Mô hình' src/PersonalAI.Web/wwwroot/index.html
           grep -Fq 'Khóa truy cập' src/PersonalAI.Web/wwwroot/index.html
           ! grep -Fq 'Planner:' src/PersonalAI.Web/wwwroot/app.js
@@ -1192,11 +1236,11 @@ jobs:
           grep -Fq 'v097.js' src/PersonalAI.Web/wwwroot/index.html
           ! grep -Fq 'MapDelete("/api/undo' src/PersonalAI.Web/Services/UndoEndpoints.cs
           grep -Fq 'Stable Personal AI Core' docs/releases/v1.0.0.md
-          grep -Fq '# AI Cá Nhân — Stable Core v1.0.0' README.md
+          grep -Fq '# AI Cá Nhân — Controlled Computer Use v1.1.0' README.md
           ! grep -Fq '# AI Cá Nhân — MVP v0.5.3' README.md
-          grep -Fq 'public const string Version = "1.0.0"' src/PersonalAI.Web/Models/SystemModels.cs
+          grep -Fq 'public const string Version = "1.1.0"' src/PersonalAI.Web/Models/SystemModels.cs
           grep -Fq 'public const string ApiContractVersion = "1"' src/PersonalAI.Web/Models/SystemModels.cs
-          grep -Fq 'public const string Channel = "stable"' src/PersonalAI.Web/Models/SystemModels.cs
+          grep -Fq 'public const string Channel = "controlled"' src/PersonalAI.Web/Models/SystemModels.cs
           grep -Fq '/api/system/health' src/PersonalAI.Web/Services/SystemEndpoints.cs
           grep -Fq '/api/system/capabilities' src/PersonalAI.Web/Services/SystemEndpoints.cs
           grep -Fq 'UseSystemHardening' src/PersonalAI.Web/Program.cs
@@ -1211,6 +1255,24 @@ jobs:
           grep -Fq 'v100.css' src/PersonalAI.Web/wwwroot/index.html
           grep -Fq 'v100.js' src/PersonalAI.Web/wwwroot/index.html
           grep -Fq 'STABLE CORE · API CONTRACT 1' src/PersonalAI.Web/wwwroot/v100.js
+          grep -Fq 'Controlled Computer Use' docs/releases/v1.1.0.md
+          grep -Fq 'public const string Computer = "COMPUTER"' src/PersonalAI.Web/Models/ToolModels.cs
+          grep -Fq 'IComputerUseService' src/PersonalAI.Web/Services/ComputerUseService.cs
+          grep -Fq '/api/computer/status' src/PersonalAI.Web/Services/ComputerUseEndpoints.cs
+          grep -Fq 'computer.windows.list' src/PersonalAI.Web/Services/ComputerUseTools.cs
+          grep -Fq 'computer.window.focus' src/PersonalAI.Web/Services/ComputerUseTools.cs
+          grep -Fq 'computer.cursor.move' src/PersonalAI.Web/Services/ComputerUseTools.cs
+          grep -Fq 'ToolPermissions.Computer' src/PersonalAI.Web/Services/ComputerUseTools.cs
+          grep -Fq 'ComputerControlRequiresConfirmation: true' src/PersonalAI.Web/Services/SystemCoreService.cs
+          grep -Fq 'SensitiveComputerObservationRequiresConfirmation: true' src/PersonalAI.Web/Services/SystemCoreService.cs
+          grep -Fq 'v110.css' src/PersonalAI.Web/wwwroot/index.html
+          grep -Fq 'v110.js' src/PersonalAI.Web/wwwroot/index.html
+          grep -Fq 'CONTROLLED CAPABILITY · WINDOWS' src/PersonalAI.Web/wwwroot/v110.js
+          ! grep -Fq '"computer.mouse.click"' src/PersonalAI.Web/Services/ComputerUseTools.cs
+          ! grep -Fq '"computer.keyboard' src/PersonalAI.Web/Services/ComputerUseTools.cs
+          ! grep -Fq 'SendInput' src/PersonalAI.Web/Services/ComputerUseService.cs
+          ! grep -Fq 'Process.Start' src/PersonalAI.Web/Services/ComputerUseService.cs
+
 
 
 
@@ -1243,3 +1305,4 @@ jobs:
           node --check src/PersonalAI.Web/wwwroot/v096.js
           node --check src/PersonalAI.Web/wwwroot/v097.js
           node --check src/PersonalAI.Web/wwwroot/v100.js
+          node --check src/PersonalAI.Web/wwwroot/v110.js

@@ -219,7 +219,7 @@ async function saveAiSettings(testAfterSave) {
         throw new Error(testResult.message || "Không kết nối được với AI.");
       }
       setSettingsFeedback(
-        `Kết nối thành công với ${settings.provider} · ${settings.model}.`,
+        `Kết nối thành công · Nhà cung cấp: ${settings.provider} · Mô hình: ${settings.model}.`,
         "success");
     } else {
       setSettingsFeedback("Đã lưu cài đặt an toàn trên máy này.", "success");
@@ -708,7 +708,7 @@ async function refreshStatus() {
     state.model = status.model;
     elements.statusDot.className = `status-dot ${status.configured ? "online" : "offline"}`;
     elements.statusText.textContent = status.configured
-      ? `Sẵn sàng · ${status.provider} · ${status.model}`
+      ? `Sẵn sàng · Nhà cung cấp: ${status.provider} · Mô hình: ${status.model}`
       : "Chưa cấu hình khóa truy cập";
   } catch {
     elements.statusDot.className = "status-dot offline";

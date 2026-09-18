@@ -262,7 +262,7 @@ function populateModelOptions(provider, selectedModel) {
 
   const customOption = document.createElement("option");
   customOption.value = CUSTOM_MODEL_VALUE;
-  customOption.textContent = "Model tùy chỉnh…";
+  customOption.textContent = "Mô hình tùy chỉnh…";
   elements.modelSelect.appendChild(customOption);
 
   if (recommendedModels.includes(selectedModel)) {
@@ -703,22 +703,22 @@ function createToolProposalNode(proposal) {
   const section = documentElement("section", "tool-proposal");
   section.dataset.proposalId = proposal.proposalId;
 
-  const heading = documentElement("strong", "tool-proposal-title", proposal.toolName);
+  const heading = documentElement("strong", "tool-proposal-title", toolDisplayName(proposal.toolName));
   const reason = documentElement("p", "tool-proposal-reason", proposal.reason || "Đề xuất công cụ");
   const planner = proposal.planningMode === "provider-native"
     ? documentElement(
         "div",
         "tool-proposal-planner",
-        "Planner: " + (proposal.planningProvider || "AI")
-          + " native function calling"
+        "Nguồn đề xuất: " + (proposal.planningProvider || "AI")
+          + " · gọi hàm gốc của nhà cung cấp"
           + (proposal.planningModel ? " · " + proposal.planningModel : ""))
-    : documentElement("div", "tool-proposal-planner", "Planner: server/manual");
+    : documentElement("div", "tool-proposal-planner", "Nguồn đề xuất: máy chủ / thủ công");
   const permissions = documentElement(
     "div",
     "tool-proposal-permissions",
-    "Permission: " + (proposal.requiredPermissions.join(", ") || "không có"));
+    "Quyền: " + formatPermissionList(proposal.requiredPermissions));
 
-  const argumentsTitle = documentElement("span", "tool-proposal-arguments-title", "Arguments");
+  const argumentsTitle = documentElement("span", "tool-proposal-arguments-title", "Tham số");
   const argumentsPre = documentElement("pre", "tool-proposal-arguments");
   argumentsPre.textContent = safeJsonStringify(proposal.arguments);
 
@@ -761,9 +761,9 @@ async function executeToolProposal(proposal, button) {
   let confirmed = false;
   if (proposal.requiresConfirmation) {
     confirmed = window.confirm(
-      "Chạy " + proposal.toolName + " với permission "
-      + proposal.requiredPermissions.join(", ")
-      + "?\n\nHãy chỉ xác nhận nếu arguments hiển thị phía trên đúng với thao tác bạn muốn.");
+      "Chạy " + toolDisplayName(proposal.toolName) + " với quyền "
+      + formatPermissionList(proposal.requiredPermissions)
+      + "?\n\nChỉ xác nhận khi các tham số hiển thị phía trên đúng với thao tác bạn muốn.");
     if (!confirmed) return;
   }
 
@@ -828,25 +828,25 @@ function createToolExecutionNode(execution) {
   section.dataset.invocationId = execution.invocationId;
 
   const header = documentElement("div", "tool-execution-header");
-  const title = documentElement("strong", "tool-execution-title", execution.toolName);
+  const title = documentElement("strong", "tool-execution-title", toolDisplayName(execution.toolName));
   const status = documentElement(
     "span",
     "tool-execution-status",
-    execution.status === "succeeded" ? "Đã chạy" : execution.status);
+    localizeExecutionStatus(execution.status));
   header.append(title, status);
 
   const privacy = documentElement(
     "p",
     "tool-execution-privacy",
     execution.nativeContinued
-      ? "Tóm tắt ban đầu được tạo local. Output đã được gửi về đúng provider native theo xác nhận của bạn để hoàn tất câu trả lời."
+      ? "Tóm tắt ban đầu được tạo trên máy. Kết quả đã được gửi về đúng nhà cung cấp AI theo xác nhận của bạn để hoàn tất câu trả lời."
       : execution.aiSynthesized
-        ? "Tóm tắt ban đầu được tạo local. Output đã được gửi sang nhà cung cấp AI theo xác nhận của bạn để diễn giải."
-        : "Tóm tắt phía trên được tạo local. Output chưa được gửi sang nhà cung cấp AI.");
+        ? "Tóm tắt ban đầu được tạo trên máy. Kết quả đã được gửi sang nhà cung cấp AI theo xác nhận của bạn để diễn giải."
+        : "Tóm tắt phía trên được tạo trên máy. Kết quả chưa được gửi sang nhà cung cấp AI.");
 
   const details = document.createElement("details");
   details.className = "tool-execution-details";
-  const summary = documentElement("summary", "", "Xem output đã rút gọn");
+  const summary = documentElement("summary", "", "Xem kết quả đã rút gọn");
   const preview = documentElement("pre", "tool-execution-output");
   preview.textContent = execution.outputPreview || "{}";
   details.append(summary, preview);
@@ -868,7 +868,7 @@ function createToolExecutionNode(execution) {
       nativeButton.disabled = true;
     } else if (nativeExpired) {
       nativeButton.disabled = true;
-      nativeButton.textContent = "Native continuation đã hết hạn";
+      nativeButton.textContent = "Lượt hoàn tất bằng AI đã hết hạn";
     } else {
       nativeButton.addEventListener(
         "click",
@@ -910,8 +910,8 @@ async function continueNativeToolExecution(execution, button) {
   if (execution.nativeContinued || state.busy) return;
 
   const confirmed = window.confirm(
-    "Để hoàn tất câu trả lời theo native function-call protocol, output của công cụ sẽ được gửi về đúng provider/model đã tạo proposal.\n\n"
-    + "PersonalAI sẽ không cấp thêm tool trong lượt tiếp tục này. Chỉ tiếp tục nếu bạn đồng ý gửi phần kết quả ra provider.");
+    "Để hoàn tất câu trả lời theo cơ chế gọi hàm gốc của nhà cung cấp, kết quả công cụ sẽ được gửi về đúng nhà cung cấp và mô hình đã tạo đề xuất.\n\n"
+    + "PersonalAI sẽ không cấp thêm công cụ trong lượt tiếp tục này. Chỉ tiếp tục nếu bạn đồng ý gửi phần kết quả ra nhà cung cấp AI.");
   if (!confirmed) return;
 
   const originalText = button.textContent;
@@ -929,7 +929,7 @@ async function continueNativeToolExecution(execution, button) {
     });
     const payload = await response.json().catch(() => ({}));
     if (!response.ok) {
-      throw new Error(payload.error || "Không thể hoàn tất native function call.");
+      throw new Error(payload.error || "Không thể hoàn tất lượt gọi hàm gốc của nhà cung cấp.");
     }
 
     execution.nativeContinued = true;
@@ -961,8 +961,8 @@ async function synthesizeToolExecution(execution, button) {
   if (execution.aiSynthesized || state.busy) return;
 
   const confirmed = window.confirm(
-    "Để AI diễn giải, output của công cụ sẽ được gửi tới nhà cung cấp AI đang cấu hình.\n\n"
-    + "Chỉ tiếp tục nếu bạn đồng ý gửi phần kết quả này ra ngoài ứng dụng local.");
+    "Để AI diễn giải, kết quả của công cụ sẽ được gửi tới nhà cung cấp AI đang cấu hình.\n\n"
+    + "Chỉ tiếp tục nếu bạn đồng ý gửi phần kết quả này ra ngoài ứng dụng chạy trên máy.");
   if (!confirmed) return;
 
   const originalText = button.textContent;
@@ -1011,9 +1011,57 @@ async function synthesizeToolExecution(execution, button) {
 function createToolOutputPreview(output) {
   let serialized = safeJsonStringify(output);
   if (serialized.length > 6000) {
-    serialized = serialized.slice(0, 6000) + "\n… (output hiển thị đã được rút gọn)";
+    serialized = serialized.slice(0, 6000) + "\n… (kết quả hiển thị đã được rút gọn)";
   }
   return serialized;
+}
+
+
+function toolDisplayName(toolName) {
+  const names = {
+    "app.summary": "Tổng quan ứng dụng",
+    "documents.search": "Tìm trong tài liệu",
+    "local.calculate": "Máy tính",
+    "local.clock": "Đồng hồ hệ thống",
+    "local.date_math": "Tính toán ngày giờ",
+    "local.text_stats": "Thống kê văn bản",
+    "memory.search": "Tìm trong trí nhớ",
+    "workspace.create_directory": "Tạo thư mục",
+    "workspace.delete": "Xóa tệp hoặc thư mục",
+    "workspace.list": "Liệt kê thư mục làm việc",
+    "workspace.move": "Di chuyển hoặc đổi tên",
+    "workspace.read_text": "Đọc tệp văn bản",
+    "workspace.write_text": "Ghi tệp văn bản"
+  };
+  return names[toolName] || "Công cụ";
+}
+
+function localizePermission(permission) {
+  const labels = {
+    READ: "Đọc",
+    WRITE: "Ghi",
+    DELETE: "Xóa",
+    EXTERNAL: "Bên ngoài",
+    SENSITIVE: "Nhạy cảm"
+  };
+  return labels[String(permission || "").toUpperCase()] || "Không xác định";
+}
+
+function formatPermissionList(permissions) {
+  if (!Array.isArray(permissions) || permissions.length === 0) return "Không có";
+  return permissions.map(localizePermission).join(", ");
+}
+
+function localizeExecutionStatus(status) {
+  const labels = {
+    succeeded: "Đã chạy",
+    denied: "Bị từ chối",
+    "invalid-input": "Dữ liệu không hợp lệ",
+    "not-found": "Không tìm thấy",
+    "timed-out": "Quá thời gian",
+    failed: "Thất bại"
+  };
+  return labels[status] || "Không xác định";
 }
 
 function safeJsonStringify(value) {

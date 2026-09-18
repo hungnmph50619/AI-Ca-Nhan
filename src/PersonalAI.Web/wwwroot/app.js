@@ -149,7 +149,7 @@ function bindEvents() {
     const selectedProvider = elements.provider.value;
     populateModelOptions(selectedProvider, DEFAULT_MODELS[selectedProvider]);
     elements.apiKey.value = "";
-    elements.apiKeyHint.textContent = "Để trống để giữ khóa API đã lưu cho nhà cung cấp này.";
+    elements.apiKeyHint.textContent = "Để trống để giữ khóa truy cập đã lưu cho nhà cung cấp này.";
     resetApiKeyVisibility();
   });
   elements.modelSelect.addEventListener("change", updateCustomModelVisibility);
@@ -179,8 +179,8 @@ async function openSettings() {
     elements.apiKey.value = "";
     resetApiKeyVisibility();
     elements.apiKeyHint.textContent = settings.hasApiKey
-      ? `Đã có khóa API: ${settings.maskedApiKey}. Để trống để giữ nguyên.`
-      : "Chưa có khóa API. Hãy nhập khóa để sử dụng nhà cung cấp này.";
+      ? `Đã có khóa truy cập: ${settings.maskedApiKey}. Để trống để giữ nguyên.`
+      : "Chưa có khóa truy cập. Hãy nhập khóa để sử dụng nhà cung cấp này.";
     setSettingsFeedback("");
     elements.provider.focus();
   } catch (error) {
@@ -209,8 +209,8 @@ async function saveAiSettings(testAfterSave) {
 
     elements.apiKey.value = "";
     elements.apiKeyHint.textContent = settings.hasApiKey
-      ? `Đã có khóa API: ${settings.maskedApiKey}. Để trống để giữ nguyên.`
-      : "Chưa có khóa API. Hãy nhập khóa để sử dụng nhà cung cấp này.";
+      ? `Đã có khóa truy cập: ${settings.maskedApiKey}. Để trống để giữ nguyên.`
+      : "Chưa có khóa truy cập. Hãy nhập khóa để sử dụng nhà cung cấp này.";
 
     if (testAfterSave) {
       const testResponse = await fetch("/api/settings/ai/test", { method: "POST" });
@@ -720,7 +720,7 @@ function createToolProposalNode(proposal) {
 
   const argumentsTitle = documentElement("span", "tool-proposal-arguments-title", "Tham số");
   const argumentsPre = documentElement("pre", "tool-proposal-arguments");
-  argumentsPre.textContent = safeJsonStringify(proposal.arguments);
+  argumentsPre.textContent = formatToolArgumentsForDisplay(proposal.toolName, proposal.arguments);
 
   const actions = documentElement("div", "tool-proposal-actions");
   const button = documentElement(
@@ -802,7 +802,7 @@ async function executeToolProposal(proposal, button) {
         invocationId: payload.execution?.invocationId,
         toolName: payload.execution?.toolName || payload.proposal?.toolName,
         status: payload.execution?.status,
-        outputPreview: createToolOutputPreview(payload.execution?.output),
+        outputPreview: createToolOutputPreview(payload.execution?.toolName || payload.proposal?.toolName, payload.execution?.output),
         canAiSynthesize: payload.canAiSynthesize === true,
         synthesisExpiresAt: payload.synthesisExpiresAt,
         aiSynthesized: false,
@@ -1008,8 +1008,8 @@ async function synthesizeToolExecution(execution, button) {
   }
 }
 
-function createToolOutputPreview(output) {
-  let serialized = safeJsonStringify(output);
+function createToolOutputPreview(toolName, output) {
+  let serialized = formatToolOutputForDisplay(toolName, output);
   if (serialized.length > 6000) {
     serialized = serialized.slice(0, 6000) + "\n… (kết quả hiển thị đã được rút gọn)";
   }
@@ -1062,6 +1062,202 @@ function localizeExecutionStatus(status) {
     failed: "Thất bại"
   };
   return labels[status] || "Không xác định";
+}
+
+
+function formatToolArgumentsForDisplay(toolName, args) {
+  const value = args && typeof args === "object" ? args : {};
+  const rows = [];
+  const add = (label, item) => {
+    if (item === undefined || item === null || item === "") return;
+    rows.push(label + ": " + formatDisplayValue(item));
+  };
+
+  switch (toolName) {
+    case "local.calculate":
+      add("Biểu thức", value.expression);
+      break;
+    case "local.text_stats":
+      add("Văn bản", value.text);
+      break;
+    case "local.date_math":
+      add("Phép tính", localizeDateOperation(value.operation));
+      add("Mốc bắt đầu", value.start);
+      add("Mốc kết thúc", value.end);
+      add("Số ngày", value.days);
+      add("Số giờ", value.hours);
+      add("Số phút", value.minutes);
+      break;
+    case "memory.search":
+    case "documents.search":
+      add("Nội dung cần tìm", value.query);
+      add("Số kết quả tối đa", value.limit);
+      break;
+    case "workspace.list":
+      add("Thư mục", value.path || ".");
+      break;
+    case "workspace.read_text":
+      add("Đường dẫn tệp", value.path);
+      break;
+    case "workspace.write_text":
+      add("Đường dẫn tệp", value.path);
+      add("Nội dung", value.content);
+      add("Cách ghi", localizeWriteMode(value.mode));
+      add("Mã băm SHA-256 kỳ vọng", value.expectedSha256);
+      break;
+    case "workspace.create_directory":
+      add("Đường dẫn thư mục", value.path);
+      break;
+    case "workspace.move":
+      add("Đường dẫn nguồn", value.sourcePath);
+      add("Đường dẫn đích", value.destinationPath);
+      add("Mã băm SHA-256 kỳ vọng", value.expectedSha256);
+      break;
+    case "workspace.delete":
+      add("Đường dẫn cần xóa", value.path);
+      add("Mã băm SHA-256 kỳ vọng", value.expectedSha256);
+      break;
+    default:
+      Object.entries(value).forEach(([key, item]) => add(localizeArgumentKey(key), item));
+      break;
+  }
+
+  return rows.length ? rows.join("\n") : "Không có tham số.";
+}
+
+function formatToolOutputForDisplay(toolName, output) {
+  if (!output || typeof output !== "object") return "Không có dữ liệu kết quả.";
+
+  const rows = [];
+  const add = (label, item) => {
+    if (item === undefined || item === null || item === "") return;
+    rows.push(label + ": " + formatDisplayValue(item));
+  };
+
+  switch (toolName) {
+    case "local.calculate":
+      add("Biểu thức", output.expression);
+      add("Kết quả", output.resultText ?? output.result);
+      break;
+    case "local.clock":
+      add("Giờ UTC", output.utcNow);
+      add("Giờ trên máy", output.localNow);
+      add("Múi giờ", output.timeZoneId);
+      break;
+    case "local.text_stats":
+      add("Số ký tự", output.characterCount);
+      add("Số từ", output.wordCount);
+      add("Số dòng", output.lineCount);
+      add("Số byte UTF-8", output.utf8Bytes);
+      break;
+    case "local.date_math":
+      add("Phép tính", localizeDateOperation(output.operation));
+      add("Kết quả", output.result ?? output.utcResult);
+      add("Tổng số giờ chênh lệch", output.totalHours);
+      break;
+    case "memory.search":
+    case "documents.search":
+      add("Số kết quả", output.resultCount ?? output.results?.length);
+      break;
+    case "app.summary":
+      add("Số trí nhớ", output.memory?.total);
+      add("Số tài liệu", output.knowledge?.total);
+      add("Số đoạn thiếu véc-tơ", output.embeddings?.missingChunks);
+      break;
+    case "workspace.list":
+      add("Thư mục", output.path);
+      add("Số mục trả về", output.returnedEntries ?? output.entryCount ?? output.entries?.length);
+      break;
+    case "workspace.read_text":
+      add("Đường dẫn tệp", output.path);
+      add("Số ký tự trả về", output.returnedCharacterCount);
+      add("Tổng số ký tự", output.characterCount);
+      add("Đã rút gọn", localizeBoolean(output.truncated));
+      break;
+    case "workspace.write_text":
+      add("Đường dẫn tệp", output.path);
+      add("Cách ghi", localizeWriteMode(output.mode));
+      add("Đã tạo mới", localizeBoolean(output.created));
+      add("Số byte đã ghi", output.bytesWritten);
+      add("Kích thước hiện tại", output.sizeBytes);
+      add("Mã băm SHA-256", output.sha256);
+      break;
+    case "workspace.create_directory":
+      add("Đường dẫn thư mục", output.path);
+      add("Đã tạo mới", localizeBoolean(output.created));
+      break;
+    case "workspace.move":
+      add("Đường dẫn nguồn", output.sourcePath);
+      add("Đường dẫn đích", output.destinationPath);
+      add("Loại", localizeEntryType(output.type));
+      add("Kích thước", output.sizeBytes);
+      add("Mã băm SHA-256", output.sha256);
+      break;
+    case "workspace.delete":
+      add("Đường dẫn", output.path);
+      add("Loại", localizeEntryType(output.type));
+      add("Đã xóa", localizeBoolean(output.deleted));
+      add("Kích thước", output.sizeBytes);
+      add("Mã băm SHA-256", output.sha256);
+      break;
+    default:
+      Object.entries(output).forEach(([key, item]) => {
+        if (typeof item !== "object") add(localizeArgumentKey(key), item);
+      });
+      break;
+  }
+
+  return rows.length ? rows.join("\n") : "Kết quả đã được xử lý thành công.";
+}
+
+function localizeArgumentKey(key) {
+  const labels = {
+    query: "Nội dung cần tìm",
+    text: "Văn bản",
+    expression: "Biểu thức",
+    path: "Đường dẫn",
+    content: "Nội dung",
+    mode: "Cách ghi",
+    sourcePath: "Đường dẫn nguồn",
+    destinationPath: "Đường dẫn đích",
+    expectedSha256: "Mã băm SHA-256 kỳ vọng",
+    limit: "Số kết quả tối đa"
+  };
+  return labels[key] || "Thông tin";
+}
+
+function localizeWriteMode(mode) {
+  return {
+    create: "Tạo mới",
+    overwrite: "Ghi đè",
+    append: "Nối thêm"
+  }[String(mode || "").toLowerCase()] || "Ghi";
+}
+
+function localizeDateOperation(operation) {
+  return {
+    add: "Cộng khoảng thời gian",
+    difference: "Tính chênh lệch"
+  }[String(operation || "").toLowerCase()] || formatDisplayValue(operation);
+}
+
+function localizeEntryType(type) {
+  return {
+    file: "Tệp",
+    directory: "Thư mục"
+  }[String(type || "").toLowerCase()] || "Mục";
+}
+
+function localizeBoolean(value) {
+  if (value === true) return "Có";
+  if (value === false) return "Không";
+  return value;
+}
+
+function formatDisplayValue(value) {
+  if (Array.isArray(value)) return value.map(formatDisplayValue).join(", ");
+  if (value && typeof value === "object") return "Dữ liệu chi tiết";
+  return String(value ?? "");
 }
 
 function safeJsonStringify(value) {

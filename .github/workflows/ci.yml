@@ -575,6 +575,7 @@ jobs:
           grep -Fq 'functionDeclarations' src/PersonalAI.Web/Services/GeminiChatService.cs
           grep -Fq 'functionCallingConfig' src/PersonalAI.Web/Services/GeminiChatService.cs
           grep -Fq 'mode = "AUTO"' src/PersonalAI.Web/Services/GeminiChatService.cs
+          grep -Fq 'SanitizeFunctionSchema' src/PersonalAI.Web/Services/GeminiChatService.cs
           grep -Fq 'planningMode: "provider-native"' src/PersonalAI.Web/Services/ToolOrchestrationService.cs
           grep -Fq 'CreateProviderFunctionName' src/PersonalAI.Web/Services/ToolOrchestrationService.cs
           ! grep -Fq 'BuildPlannerPrompt' src/PersonalAI.Web/Services/ToolOrchestrationService.cs

@@ -1509,6 +1509,12 @@ jobs:
             -H "Authorization: Bearer $custom_companion_token")
           echo "$companion_me_after_restart" | jq -e '.device.id == "'"$custom_companion_device_id"'" and .device.workspaceId == "'"$custom_workspace_id"'" and .version == "1.6.0"' >/dev/null
 
+          life_sources_after_restart=$(curl -fsS -H "X-PersonalAI-Workspace: $custom_workspace_id" http://127.0.0.1:5077/api/life-context/sources)
+          echo "$life_sources_after_restart" | jq -e 'any(.sources[]; .id == "'"$life_source_id"'" and .consentGranted == true and .enabled == true and .entryCount == 1)' >/dev/null
+          life_entries_after_restart=$(curl -fsS -H "X-PersonalAI-Workspace: $custom_workspace_id" "http://127.0.0.1:5077/api/life-context/entries?sourceId=$life_source_id&limit=20")
+          echo "$life_entries_after_restart" | jq -e 'any(.entries[]; .id == "'"$life_persist_entry_id"'" and (.content | contains("life-persist-secret-160")) and .sourceKind == "calendar")' >/dev/null
+          ! grep -Fq 'life-persist-secret-160' /tmp/personalai-life-context/life-context.json
+
           connectors_after_restart=$(curl -fsS http://127.0.0.1:5077/api/connectors)
           echo "$connectors_after_restart" | jq -e 'any(.connections[]; .id == "'"$connector_id"'" and .hasCredential == true)' >/dev/null
           connector_get_after_restart=$(curl -fsS -X POST http://127.0.0.1:5077/api/tools/execute \
@@ -1705,8 +1711,14 @@ jobs:
           grep -Fq 'Context Manager' docs/releases/v0.9.5.md
           grep -Fq 'IContextManagerService' src/PersonalAI.Web/Services/ContextManagerService.cs
           grep -Fq 'MaximumContextCharacters = 7_600' src/PersonalAI.Web/Services/ContextManagerService.cs
+          grep -Fq 'MaximumLifeContextCharacters = 1_200' src/PersonalAI.Web/Services/ContextManagerService.cs
+          grep -Fq 'MaximumLifeContextEntries = 4' src/PersonalAI.Web/Services/ContextManagerService.cs
+          grep -Fq 'workspace-scoped-budgeted-context-v2-life-context' src/PersonalAI.Web/Services/ContextManagerService.cs
           grep -Fq '/api/context/preview' src/PersonalAI.Web/Program.cs
           grep -Fq 'UseTaskContext' src/PersonalAI.Web/Models/ChatModels.cs
+          grep -Fq 'UseLifeContext' src/PersonalAI.Web/Models/ChatModels.cs
+          grep -Fq 'LifeContextCharacters' src/PersonalAI.Web/Models/ContextModels.cs
+          grep -Fq 'SelectedLifeContext' src/PersonalAI.Web/Models/ContextModels.cs
           grep -Fq 'ContextSelectionReport' src/PersonalAI.Web/Models/ContextModels.cs
           grep -Fq 'context-report' src/PersonalAI.Web/wwwroot/app.js
           grep -Fq 'v095.css' src/PersonalAI.Web/wwwroot/index.html
@@ -1733,9 +1745,9 @@ jobs:
           grep -Fq 'v097.js' src/PersonalAI.Web/wwwroot/index.html
           ! grep -Fq 'MapDelete("/api/undo' src/PersonalAI.Web/Services/UndoEndpoints.cs
           grep -Fq 'Stable Personal AI Core' docs/releases/v1.0.0.md
-          grep -Fq '# AI Cá Nhân — Android Companion v1.5.0' README.md
+          grep -Fq '# AI Cá Nhân — Life Context Foundation v1.6.0' README.md
           ! grep -Fq '# AI Cá Nhân — MVP v0.5.3' README.md
-          grep -Fq 'public const string Version = "1.5.0"' src/PersonalAI.Web/Models/SystemModels.cs
+          grep -Fq 'public const string Version = "1.6.0"' src/PersonalAI.Web/Models/SystemModels.cs
           grep -Fq 'public const string ApiContractVersion = "1"' src/PersonalAI.Web/Models/SystemModels.cs
           grep -Fq 'public const string Channel = "controlled"' src/PersonalAI.Web/Models/SystemModels.cs
           grep -Fq '/api/system/health' src/PersonalAI.Web/Services/SystemEndpoints.cs
@@ -1894,6 +1906,27 @@ jobs:
           ! grep -Fq 'MapPost("/api/companion/client/tasks' src/PersonalAI.Web/Services/CompanionEndpoints.cs
           ! grep -Fq '/api/companion/client/tools' src/PersonalAI.Web/Services/CompanionEndpoints.cs
           grep -Fq '"chat-tool-selection"' src/PersonalAI.Web/Services/ChatTurnService.cs
+          grep -Fq 'Life Context Foundation' docs/releases/v1.6.0.md
+          grep -Fq 'ILifeContextService' src/PersonalAI.Web/Services/LifeContextService.cs
+          grep -Fq '"PersonalAI.LifeContext.v1"' src/PersonalAI.Web/Services/LifeContextService.cs
+          grep -Fq 'MaximumSourcesPerWorkspace = 20' src/PersonalAI.Web/Services/LifeContextService.cs
+          grep -Fq 'MaximumEntriesPerWorkspace = 1_000' src/PersonalAI.Web/Services/LifeContextService.cs
+          grep -Fq 'MaximumContentCharacters = 2_000' src/PersonalAI.Web/Services/LifeContextService.cs
+          grep -Fq 'MaximumRetentionDays = 365' src/PersonalAI.Web/Services/LifeContextService.cs
+          grep -Fq '/api/life-context/status' src/PersonalAI.Web/Services/LifeContextEndpoints.cs
+          grep -Fq '/api/life-context/sources' src/PersonalAI.Web/Services/LifeContextEndpoints.cs
+          grep -Fq '/api/life-context/entries' src/PersonalAI.Web/Services/LifeContextEndpoints.cs
+          grep -Fq 'LifeContextExplicitConsentRequired: true' src/PersonalAI.Web/Services/SystemCoreService.cs
+          grep -Fq 'LifeContextAutomaticCollectionEnabled: false' src/PersonalAI.Web/Services/SystemCoreService.cs
+          grep -Fq 'LifeContextContentEncrypted: true' src/PersonalAI.Web/Services/SystemCoreService.cs
+          grep -Fq 'v160.css' src/PersonalAI.Web/wwwroot/index.html
+          grep -Fq 'v160.js' src/PersonalAI.Web/wwwroot/index.html
+          grep -Fq 'CONSENT · RETENTION · WORKSPACE' src/PersonalAI.Web/wwwroot/v160.js
+          grep -Fq 'selectedLifeContext' src/PersonalAI.Web/wwwroot/app.js
+          grep -Fq 'lifeContextCharacters' src/PersonalAI.Web/wwwroot/app.js
+          ! grep -Fq 'android.permission.ACCESS_FINE_LOCATION' android/PersonalAI.Companion/app/src/main/AndroidManifest.xml
+          ! grep -Fq 'android.permission.ACTIVITY_RECOGNITION' android/PersonalAI.Companion/app/src/main/AndroidManifest.xml
+
 
 
 
@@ -1960,3 +1993,4 @@ jobs:
           node --check src/PersonalAI.Web/wwwroot/v130.js
           node --check src/PersonalAI.Web/wwwroot/v140.js
           node --check src/PersonalAI.Web/wwwroot/v150.js
+          node --check src/PersonalAI.Web/wwwroot/v160.js

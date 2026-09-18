@@ -16,4 +16,9 @@ public interface IAiProvider
         IReadOnlyList<ChatMessage> messages,
         IReadOnlyList<ProviderFunctionDefinition> functions,
         CancellationToken cancellationToken);
+
+    Task<string> ContinueFunctionCallAsync(
+        ProviderFunctionCallContext context,
+        string toolResultPayload,
+        CancellationToken cancellationToken);
 }

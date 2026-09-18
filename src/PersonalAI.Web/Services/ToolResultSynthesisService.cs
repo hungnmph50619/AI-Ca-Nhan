@@ -78,7 +78,7 @@ public sealed class ToolResultSynthesisService(
                 permission.Equals(ToolPermissions.Sensitive, StringComparison.OrdinalIgnoreCase)))
         {
             throw new ToolProposalValidationException(
-                "Kết quả của công cụ SENSITIVE không được gửi ra nhà cung cấp AI để diễn giải.");
+                "Kết quả của công cụ có quyền NHẠY CẢM không được gửi ra nhà cung cấp AI để diễn giải.");
         }
 
         var rawOutput = execution.Output.Value.GetRawText();
@@ -166,12 +166,12 @@ UNTRUSTED_TOOL_RESULT:
         var zone = GetString(output, "timeZoneId");
         if (localNow is null)
         {
-            return "Đã đọc thời gian hệ thống local.";
+            return "Đã đọc thời gian hệ thống trên máy.";
         }
 
         return zone is null
-            ? $"Thời gian local của hệ thống: {localNow}."
-            : $"Thời gian local của hệ thống: {localNow} ({zone}).";
+            ? $"Thời gian trên máy của hệ thống: {localNow}."
+            : $"Thời gian trên máy của hệ thống: {localNow} ({zone}).";
     }
 
     private static string SummarizeTextStats(JsonElement output)
@@ -220,7 +220,7 @@ UNTRUSTED_TOOL_RESULT:
             return "Đã đọc tổng quan trạng thái dữ liệu PersonalAI.";
         }
 
-        return $"Trạng thái local: {FormatNumber(memoryTotal)} trí nhớ, {FormatNumber(knowledgeTotal)} tài liệu, {FormatNumber(missingChunks)} chunk thiếu vector.";
+        return $"Trạng thái trên máy: {FormatNumber(memoryTotal)} trí nhớ, {FormatNumber(knowledgeTotal)} tài liệu, {FormatNumber(missingChunks)} đoạn dữ liệu thiếu véc-tơ.";
     }
 
     private static string SummarizeWorkspaceList(JsonElement output)
@@ -230,8 +230,8 @@ UNTRUSTED_TOOL_RESULT:
             ?? GetInt64(output, "entryCount")
             ?? GetArrayLength(output, "entries");
         return count is null
-            ? $"Đã liệt kê workspace tại {path}."
-            : $"Workspace {path} có {FormatNumber(count)} mục được trả về.";
+            ? $"Đã liệt kê thư mục làm việc tại {path}."
+            : $"Thư mục làm việc {path} có {FormatNumber(count)} mục được trả về.";
     }
 
     private static string SummarizeWorkspaceRead(JsonElement output)
@@ -255,11 +255,11 @@ UNTRUSTED_TOOL_RESULT:
     private static string SummarizeWorkspaceWrite(JsonElement output)
     {
         var path = GetString(output, "path") ?? "tệp";
-        var mode = GetString(output, "mode") ?? "write";
+        var mode = LocalizeWriteMode(GetString(output, "mode"));
         var size = GetInt64(output, "sizeBytes");
         return size is null
-            ? $"Đã {mode} {path}."
-            : $"Đã {mode} {path}; kích thước hiện tại {FormatNumber(size)} byte.";
+            ? $"Đã {mode} tệp {path}."
+            : $"Đã {mode} tệp {path}; kích thước hiện tại {FormatNumber(size)} byte.";
     }
 
     private static string SummarizeCreateDirectory(JsonElement output)
@@ -275,16 +275,33 @@ UNTRUSTED_TOOL_RESULT:
     {
         var source = GetString(output, "sourcePath") ?? "nguồn";
         var destination = GetString(output, "destinationPath") ?? "đích";
-        var type = GetString(output, "type") ?? "mục";
+        var type = LocalizeEntryType(GetString(output, "type"));
         return $"Đã di chuyển {type} từ {source} sang {destination}.";
     }
 
     private static string SummarizeDelete(JsonElement output)
     {
         var path = GetString(output, "path") ?? "mục";
-        var type = GetString(output, "type") ?? "mục";
+        var type = LocalizeEntryType(GetString(output, "type"));
         return $"Đã xóa {type} {path}.";
     }
+
+    private static string LocalizeWriteMode(string? mode) =>
+        mode?.ToLowerInvariant() switch
+        {
+            "create" => "tạo mới",
+            "overwrite" => "ghi đè",
+            "append" => "nối thêm",
+            _ => "ghi"
+        };
+
+    private static string LocalizeEntryType(string? type) =>
+        type?.ToLowerInvariant() switch
+        {
+            "file" => "tệp",
+            "directory" => "thư mục",
+            _ => "mục"
+        };
 
     private static string? GetString(JsonElement element, string name)
     {

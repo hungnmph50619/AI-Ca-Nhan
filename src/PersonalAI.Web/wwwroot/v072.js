@@ -12,7 +12,7 @@
     if (brandVersion) brandVersion.textContent = `Phiên bản ${VERSION}`;
 
     const knowledgeIntro = document.querySelector(".knowledge-intro strong");
-    if (knowledgeIntro) knowledgeIntro.textContent = `Kho dữ liệu vector local v${VERSION}`;
+    if (knowledgeIntro) knowledgeIntro.textContent = `Kho dữ liệu véc-tơ trên máy v${VERSION}`;
 
     const row = document.querySelector(".knowledge-search-row");
     const keywordButton = document.querySelector("#knowledgeSearchButton");
@@ -32,7 +32,7 @@
       const status = document.createElement("p");
       status.id = "knowledgeEmbeddingStatus";
       status.className = "field-hint knowledge-vector-status";
-      status.textContent = "Vector local · chỉ mục được tạo trên máy khi cần.";
+      status.textContent = "Véc-tơ trên máy · chỉ mục được tạo khi cần.";
       hint.insertAdjacentElement("afterend", status);
     }
 
@@ -44,18 +44,18 @@
     const node = document.querySelector("#knowledgeEmbeddingStatus");
     if (!node) return;
 
-    node.textContent = "Đang kiểm tra chỉ mục vector local…";
+    node.textContent = "Đang kiểm tra chỉ mục véc-tơ trên máy…";
     try {
       const response = await fetch("/api/knowledge/embeddings/status", { cache: "no-store" });
       const payload = await response.json().catch(() => ({}));
-      if (!response.ok) throw new Error(payload.error || "Không đọc được trạng thái vector.");
+      if (!response.ok) throw new Error(payload.error || "Không đọc được trạng thái véc-tơ.");
 
       const indexed = Number(payload.indexedChunks || 0).toLocaleString("vi-VN");
       const total = Number(payload.totalChunks || 0).toLocaleString("vi-VN");
       const dimensions = Number(payload.dimensions || 0).toLocaleString("vi-VN");
-      node.textContent = `Vector local · ${indexed}/${total} đoạn · ${dimensions} chiều · ${payload.embeddingModel || "local"}`;
+      node.textContent = `Véc-tơ trên máy · ${indexed}/${total} đoạn · ${dimensions} chiều · ${payload.embeddingModel || "mô hình trên máy"}`;
     } catch {
-      node.textContent = "Vector local · sẽ tự lập chỉ mục khi tìm kiếm ngữ nghĩa.";
+      node.textContent = "Véc-tơ trên máy · sẽ tự lập chỉ mục khi tìm kiếm ngữ nghĩa.";
     }
   }
 
@@ -80,7 +80,7 @@
     if (keywordButton) keywordButton.disabled = true;
     resultsNode.hidden = false;
     resultsNode.setAttribute("aria-busy", "true");
-    summaryNode.textContent = "Đang tìm bằng vector local…";
+    summaryNode.textContent = "Đang tìm bằng véc-tơ trên máy…";
     listNode.replaceChildren();
 
     try {
@@ -108,9 +108,9 @@
 
   function renderSemanticResults(payload, summaryNode, listNode) {
     const results = Array.isArray(payload.results) ? payload.results : [];
-    const model = payload.embeddingModel || "vector local";
+    const model = payload.embeddingModel || "mô hình véc-tơ trên máy";
     summaryNode.textContent = results.length > 0
-      ? `${results.length} đoạn gần nhất · ${model}`
+      ? `${results.length} đoạn gần nhất · Mô hình véc-tơ: ${model}`
       : "Không có đoạn đủ tương đồng";
     listNode.replaceChildren();
 

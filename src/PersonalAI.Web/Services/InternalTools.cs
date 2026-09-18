@@ -32,7 +32,7 @@ public sealed class MemorySearchTool(IPersonalMemoryStore memoryStore) : IPerson
 
     public ToolDefinition Definition { get; } = new(
         "memory.search",
-        "Tìm trong trí nhớ cá nhân đang bật trên máy bằng xếp hạng từ khóa deterministic.",
+        "Tìm trong trí nhớ cá nhân đang bật trên máy bằng cách xếp hạng từ khóa có kết quả ổn định.",
         "1.0.0",
         [ToolPermissions.Read],
         3_000,
@@ -156,7 +156,7 @@ public sealed class DocumentSearchTool(IKnowledgeHybridSearchService hybridSearc
 
     public ToolDefinition Definition { get; } = new(
         "documents.search",
-        "Tìm các chunk liên quan trong kho tài liệu bằng hybrid keyword + vector + rerank local.",
+        "Tìm các đoạn liên quan trong kho tài liệu bằng cách kết hợp từ khóa, véc-tơ và xếp hạng lại trên máy.",
         "1.0.0",
         [ToolPermissions.Read],
         10_000,
@@ -201,7 +201,7 @@ public sealed class CalculatorTool : IPersonalAiTool
 
     public ToolDefinition Definition { get; } = new(
         "local.calculate",
-        "Tính biểu thức số học local với +, -, *, /, %, dấu ngoặc và số thập phân; không dùng eval hay shell.",
+        "Tính biểu thức số học ngay trên máy với +, -, *, /, %, dấu ngoặc và số thập phân; không thực thi mã hay lệnh hệ thống.",
         "1.0.0",
         [ToolPermissions.Read],
         2_000,
@@ -401,7 +401,7 @@ public sealed class DateMathTool : IPersonalAiTool
 
     public ToolDefinition Definition { get; } = new(
         "local.date_math",
-        "Cộng khoảng thời gian vào một mốc ISO-8601 hoặc tính chênh lệch giữa hai mốc thời gian local.",
+        "Cộng khoảng thời gian vào một mốc ISO-8601 hoặc tính chênh lệch giữa hai mốc thời gian trên máy.",
         "1.0.0",
         [ToolPermissions.Read],
         2_000,
@@ -506,7 +506,7 @@ public sealed class AppSummaryTool(
 
     public ToolDefinition Definition { get; } = new(
         "app.summary",
-        "Đọc tóm tắt trạng thái dữ liệu nội bộ: trí nhớ, tài liệu và vector index; không trả nội dung chi tiết.",
+        "Đọc tóm tắt trạng thái dữ liệu nội bộ gồm trí nhớ, tài liệu và chỉ mục véc-tơ; không trả nội dung chi tiết.",
         "1.0.0",
         [ToolPermissions.Read],
         10_000,

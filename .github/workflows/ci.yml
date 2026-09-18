@@ -30,6 +30,7 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
+          trap 'echo "Smoke test failed at line ${LINENO}: ${BASH_COMMAND}" >&2' ERR
           rm -rf /tmp/personalai-workspace
           mkdir -p /tmp/personalai-workspace/notes
           printf 'Workspace root file.\n' >/tmp/personalai-workspace/readme.txt
@@ -54,10 +55,10 @@ jobs:
             exit 1
           fi
 
-          curl -fsS http://127.0.0.1:5077/api/status | jq -e '.version == "0.8.7"' >/dev/null
+          curl -fsS http://127.0.0.1:5077/api/status | jq -e '.version == "0.8.8"' >/dev/null
 
           tools=$(curl -fsS http://127.0.0.1:5077/api/tools)
-          echo "$tools" | jq -e '.frameworkVersion == "0.8.7" and (.permissionTypes | sort) == (["DELETE","EXTERNAL","READ","SENSITIVE","WRITE"] | sort)' >/dev/null
+          echo "$tools" | jq -e '.frameworkVersion == "0.8.8" and (.permissionTypes | sort) == (["DELETE","EXTERNAL","READ","SENSITIVE","WRITE"] | sort)' >/dev/null
           echo "$tools" | jq -e '(.tools | length) == 13 and any(.tools[]; .name == "local.clock" and .localOnly == true and .requiredPermissions == ["READ"]) and any(.tools[]; .name == "local.text_stats" and .timeoutMs == 2000) and any(.tools[]; .name == "memory.search") and any(.tools[]; .name == "documents.search") and any(.tools[]; .name == "local.calculate") and any(.tools[]; .name == "local.date_math") and any(.tools[]; .name == "app.summary") and any(.tools[]; .name == "workspace.list" and .requiredPermissions == ["READ"]) and any(.tools[]; .name == "workspace.read_text" and .requiredPermissions == ["READ"]) and any(.tools[]; .name == "workspace.write_text" and .requiredPermissions == ["WRITE"] and .requiresConfirmation == true) and any(.tools[]; .name == "workspace.create_directory" and .requiredPermissions == ["WRITE"] and .requiresConfirmation == true) and any(.tools[]; .name == "workspace.move" and .requiredPermissions == ["WRITE"] and .requiresConfirmation == true) and any(.tools[]; .name == "workspace.delete" and .requiredPermissions == ["DELETE"] and .requiresConfirmation == true)' >/dev/null
 
           text_tool=$(curl -fsS http://127.0.0.1:5077/api/tools/local.text_stats)
@@ -67,13 +68,13 @@ jobs:
             -H 'Content-Type: application/json' \
             -d '{"toolName":"local.text_stats","arguments":{"text":"xin chao"},"approvedPermissions":[],"confirmed":false}')
           test "$denied_code" = "403"
-          jq -e '.status == "denied" and .success == false and (.error | contains("READ"))' /tmp/tool-denied.json >/dev/null
+          jq -e '.status == "denied" and .success == false and (.error | contains("ĐỌC"))' /tmp/tool-denied.json >/dev/null
 
           invalid_code=$(curl -sS -o /tmp/tool-invalid.json -w '%{http_code}' -X POST http://127.0.0.1:5077/api/tools/execute \
             -H 'Content-Type: application/json' \
             -d '{"toolName":"local.text_stats","arguments":{},"approvedPermissions":["READ"],"confirmed":false}')
           test "$invalid_code" = "400"
-          jq -e '.status == "invalid-input" and .success == false and (.error | contains("text"))' /tmp/tool-invalid.json >/dev/null
+          jq -e '.status == "invalid-input" and .success == false and (.error | contains("văn bản"))' /tmp/tool-invalid.json >/dev/null
 
           tool_result=$(curl -fsS -X POST http://127.0.0.1:5077/api/tools/execute \
             -H 'Content-Type: application/json' \
@@ -105,13 +106,13 @@ jobs:
             -H 'Content-Type: application/json' \
             -d '{"toolName":"local.not_registered","arguments":{},"reason":"invalid"}')
           test "$invalid_proposal_code" = "400"
-          jq -e '(.error | contains("registry"))' /tmp/tool-proposal-invalid.json >/dev/null
+          jq -e '(.error | contains("danh mục công cụ"))' /tmp/tool-proposal-invalid.json >/dev/null
 
           invalid_args_proposal_code=$(curl -sS -o /tmp/tool-proposal-invalid-args.json -w '%{http_code}' -X POST http://127.0.0.1:5077/api/tools/orchestrate/prepare \
             -H 'Content-Type: application/json' \
             -d '{"toolName":"local.calculate","arguments":{},"reason":"missing expression"}')
           test "$invalid_args_proposal_code" = "400"
-          jq -e '(.error | contains("expression"))' /tmp/tool-proposal-invalid-args.json >/dev/null
+          jq -e '(.error | contains("biểu thức"))' /tmp/tool-proposal-invalid-args.json >/dev/null
 
           read_proposal=$(curl -fsS -X POST http://127.0.0.1:5077/api/tools/orchestrate/prepare \
             -H 'Content-Type: application/json' \
@@ -122,7 +123,7 @@ jobs:
           read_execution=$(curl -fsS -X POST http://127.0.0.1:5077/api/tools/orchestrate/execute \
             -H 'Content-Type: application/json' \
             -d '{"proposalId":"'"$read_proposal_id"'","confirmed":false}')
-          echo "$read_execution" | jq -e '.proposal.toolName == "local.calculate" and .execution.status == "succeeded" and .execution.output.result == 42 and .execution.approvedPermissions == ["READ"] and .localSummary == "7 * 6 = 42." and .canAiSynthesize == true and (.synthesisExpiresAt | length) > 10' >/dev/null
+          echo "$read_execution" | jq -e '.proposal.toolName == "local.calculate" and .execution.status == "succeeded" and .execution.output.result == 42 and .execution.approvedPermissions == ["READ"] and .localSummary == "7 * 6 = 42." and .canAiSynthesize == true and (.synthesisExpiresAt | length) > 10 and .canNativeContinue == false and .nativeContinueExpiresAt == null' >/dev/null
           read_invocation_id=$(echo "$read_execution" | jq -r '.execution.invocationId')
 
           synth_without_confirmation_code=$(curl -sS -o /tmp/tool-synth-unconfirmed.json -w '%{http_code}' -X POST http://127.0.0.1:5077/api/tools/orchestrate/synthesize \
@@ -135,6 +136,17 @@ jobs:
             -H 'Content-Type: application/json' \
             -d '{"invocationId":"00000000-0000-0000-0000-000000000001","confirmedExternal":false}')
           test "$unknown_synth_code" = "404"
+
+          manual_native_code=$(curl -sS -o /tmp/tool-native-manual.json -w '%{http_code}' -X POST http://127.0.0.1:5077/api/tools/orchestrate/continue-native \
+            -H 'Content-Type: application/json' \
+            -d '{"invocationId":"'"$read_invocation_id"'","confirmedExternal":false}')
+          test "$manual_native_code" = "400"
+          jq -e '(.error | contains("ngữ cảnh gọi hàm gốc"))' /tmp/tool-native-manual.json >/dev/null
+
+          unknown_native_code=$(curl -sS -o /tmp/tool-native-missing.json -w '%{http_code}' -X POST http://127.0.0.1:5077/api/tools/orchestrate/continue-native \
+            -H 'Content-Type: application/json' \
+            -d '{"invocationId":"00000000-0000-0000-0000-000000000002","confirmedExternal":true}')
+          test "$unknown_native_code" = "404"
 
           read_replay_code=$(curl -sS -o /tmp/tool-proposal-replay.json -w '%{http_code}' -X POST http://127.0.0.1:5077/api/tools/orchestrate/execute \
             -H 'Content-Type: application/json' \
@@ -198,7 +210,7 @@ jobs:
             -H 'Content-Type: application/json' \
             -d '{"toolName":"workspace.write_text","arguments":{"path":"drafts/note.txt","content":"Draft","mode":"create"},"approvedPermissions":["READ"],"confirmed":true}')
           test "$write_missing_permission_code" = "403"
-          jq -e '.status == "denied" and (.error | contains("WRITE"))' /tmp/workspace-write-permission.json >/dev/null
+          jq -e '.status == "denied" and (.error | contains("GHI"))' /tmp/workspace-write-permission.json >/dev/null
 
           workspace_mkdir=$(curl -fsS -X POST http://127.0.0.1:5077/api/tools/execute \
             -H 'Content-Type: application/json' \
@@ -226,7 +238,7 @@ jobs:
           stale_code=$(curl -sS -o /tmp/workspace-stale.json -w '%{http_code}' -X POST http://127.0.0.1:5077/api/tools/execute \
             -H 'Content-Type: application/json' -d "$stale_payload")
           test "$stale_code" = "400"
-          jq -e '.status == "invalid-input" and (.error | contains("expectedSha256"))' /tmp/workspace-stale.json >/dev/null
+          jq -e '.status == "invalid-input" and (.error | contains("SHA-256"))' /tmp/workspace-stale.json >/dev/null
 
           overwrite_payload=$(jq -nc --arg hash "$append_hash" '{toolName:"workspace.write_text",arguments:{path:"drafts/note.txt",content:"Replaced safely.","mode":"overwrite",expectedSha256:$hash},approvedPermissions:["WRITE"],confirmed:true}')
           workspace_overwrite=$(curl -fsS -X POST http://127.0.0.1:5077/api/tools/execute \
@@ -250,7 +262,7 @@ jobs:
           move_stale_code=$(curl -sS -o /tmp/workspace-move-stale.json -w '%{http_code}' -X POST http://127.0.0.1:5077/api/tools/execute \
             -H 'Content-Type: application/json' -d "$move_stale_payload")
           test "$move_stale_code" = "400"
-          jq -e '.status == "invalid-input" and (.error | contains("expectedSha256"))' /tmp/workspace-move-stale.json >/dev/null
+          jq -e '.status == "invalid-input" and (.error | contains("SHA-256"))' /tmp/workspace-move-stale.json >/dev/null
 
           move_payload=$(jq -nc --arg hash "$overwrite_hash" '{toolName:"workspace.move",arguments:{sourcePath:"drafts/note.txt",destinationPath:"drafts/renamed.txt",expectedSha256:$hash},approvedPermissions:["WRITE"],confirmed:true}')
           workspace_move=$(curl -fsS -X POST http://127.0.0.1:5077/api/tools/execute \
@@ -272,13 +284,13 @@ jobs:
             -H 'Content-Type: application/json' \
             -d '{"toolName":"workspace.delete","arguments":{"path":"drafts/renamed.txt"},"approvedPermissions":["WRITE"],"confirmed":true}')
           test "$delete_permission_code" = "403"
-          jq -e '.status == "denied" and (.error | contains("DELETE"))' /tmp/workspace-delete-permission.json >/dev/null
+          jq -e '.status == "denied" and (.error | contains("XÓA"))' /tmp/workspace-delete-permission.json >/dev/null
 
           delete_stale_payload=$(jq -nc --arg hash "$append_hash" '{toolName:"workspace.delete",arguments:{path:"drafts/renamed.txt",expectedSha256:$hash},approvedPermissions:["DELETE"],confirmed:true}')
           delete_stale_code=$(curl -sS -o /tmp/workspace-delete-stale.json -w '%{http_code}' -X POST http://127.0.0.1:5077/api/tools/execute \
             -H 'Content-Type: application/json' -d "$delete_stale_payload")
           test "$delete_stale_code" = "400"
-          jq -e '.status == "invalid-input" and (.error | contains("expectedSha256"))' /tmp/workspace-delete-stale.json >/dev/null
+          jq -e '.status == "invalid-input" and (.error | contains("SHA-256"))' /tmp/workspace-delete-stale.json >/dev/null
 
           nonempty_delete_code=$(curl -sS -o /tmp/workspace-delete-nonempty.json -w '%{http_code}' -X POST http://127.0.0.1:5077/api/tools/execute \
             -H 'Content-Type: application/json' \
@@ -313,7 +325,7 @@ jobs:
             -H 'Content-Type: application/json' \
             -d '{"toolName":"workspace.delete","arguments":{"path":"escape"},"approvedPermissions":["DELETE"],"confirmed":true}')
           test "$delete_symlink_code" = "400"
-          jq -e '.status == "invalid-input" and (.error | contains("symbolic link"))' /tmp/workspace-delete-symlink.json >/dev/null
+          jq -e '.status == "invalid-input" and (.error | contains("liên kết tượng trưng"))' /tmp/workspace-delete-symlink.json >/dev/null
 
           duplicate_create_code=$(curl -sS -o /tmp/workspace-duplicate-create.json -w '%{http_code}' -X POST http://127.0.0.1:5077/api/tools/execute \
             -H 'Content-Type: application/json' \
@@ -331,7 +343,7 @@ jobs:
             -H 'Content-Type: application/json' \
             -d '{"toolName":"workspace.write_text","arguments":{"path":"escape/v083.txt","content":"blocked","mode":"create"},"approvedPermissions":["WRITE"],"confirmed":true}')
           test "$write_symlink_code" = "400"
-          jq -e '.status == "invalid-input" and (.error | contains("symbolic link"))' /tmp/workspace-write-symlink.json >/dev/null
+          jq -e '.status == "invalid-input" and (.error | contains("liên kết tượng trưng"))' /tmp/workspace-write-symlink.json >/dev/null
 
           binary_overwrite_code=$(curl -sS -o /tmp/workspace-binary-overwrite.json -w '%{http_code}' -X POST http://127.0.0.1:5077/api/tools/execute \
             -H 'Content-Type: application/json' \
@@ -349,7 +361,7 @@ jobs:
             -H 'Content-Type: application/json' \
             -d '{"toolName":"workspace.read_text","arguments":{"path":"escape/passwd"},"approvedPermissions":["READ"],"confirmed":false}')
           test "$symlink_code" = "400"
-          jq -e '.status == "invalid-input" and (.error | contains("symbolic link"))' /tmp/workspace-symlink.json >/dev/null
+          jq -e '.status == "invalid-input" and (.error | contains("liên kết tượng trưng"))' /tmp/workspace-symlink.json >/dev/null
 
           binary_code=$(curl -sS -o /tmp/workspace-binary.json -w '%{http_code}' -X POST http://127.0.0.1:5077/api/tools/execute \
             -H 'Content-Type: application/json' \
@@ -563,6 +575,47 @@ jobs:
           grep -Fq '/api/tools/orchestrate/prepare' src/PersonalAI.Web/Services/ToolFrameworkEndpoints.cs
           grep -Fq '/api/tools/orchestrate/execute' src/PersonalAI.Web/Services/ToolFrameworkEndpoints.cs
           grep -Fq '/api/tools/orchestrate/synthesize' src/PersonalAI.Web/Services/ToolFrameworkEndpoints.cs
+          grep -Fq '/api/tools/orchestrate/continue-native' src/PersonalAI.Web/Services/ToolFrameworkEndpoints.cs
+          grep -Fq 'ContinueFunctionCallAsync' src/PersonalAI.Web/Services/IAiProvider.cs
+          grep -Fq 'GetByName' src/PersonalAI.Web/Services/AiProviderResolver.cs
+          grep -Fq 'function_call_output' src/PersonalAI.Web/Services/OpenAiChatService.cs
+          grep -Fq 'reasoning.encrypted_content' src/PersonalAI.Web/Services/OpenAiChatService.cs
+          grep -Fq 'nativeOutput.EnumerateArray()' src/PersonalAI.Web/Services/OpenAiChatService.cs
+          grep -Fq 'FunctionContinuationInstructions' src/PersonalAI.Web/Services/OpenAiChatService.cs
+          grep -Fq 'mode = "NONE"' src/PersonalAI.Web/Services/GeminiChatService.cs
+          grep -Fq 'functionResponse' src/PersonalAI.Web/Services/GeminiChatService.cs
+          grep -Fq 'functionCallId' src/PersonalAI.Web/Services/GeminiChatService.cs
+          grep -Fq 'content.Clone()' src/PersonalAI.Web/Services/GeminiChatService.cs
+          grep -Fq 'NativeProposalContexts' src/PersonalAI.Web/Services/ToolOrchestrationService.cs
+          grep -Fq 'NativeOutput' src/PersonalAI.Web/Models/ToolOrchestrationModels.cs
+          grep -Fq 'char.IsHighSurrogate' src/PersonalAI.Web/Services/ToolOrchestrationService.cs
+          grep -Fq 'MaximumNativeResultCharacters = 16_000' src/PersonalAI.Web/Services/ToolOrchestrationService.cs
+          grep -Fq 'v088.css' src/PersonalAI.Web/wwwroot/index.html
+          grep -Fq 'Nguồn đề xuất:' src/PersonalAI.Web/wwwroot/app.js
+          grep -Fq 'Tham số' src/PersonalAI.Web/wwwroot/app.js
+          grep -Fq 'CÔNG CỤ NỘI BỘ TRÊN MÁY NÀY' src/PersonalAI.Web/wwwroot/v080.js
+          grep -Fq 'Hoàn tất câu trả lời từ kết quả công cụ v0.8.8' src/PersonalAI.Web/wwwroot/v080.js
+          grep -Fq 'Mô hình' src/PersonalAI.Web/wwwroot/index.html
+          grep -Fq 'Khóa truy cập' src/PersonalAI.Web/wwwroot/index.html
+          ! grep -Fq 'Planner:' src/PersonalAI.Web/wwwroot/app.js
+          ! grep -Fq 'Permission:' src/PersonalAI.Web/wwwroot/app.js
+          ! grep -Fq 'Arguments' src/PersonalAI.Web/wwwroot/app.js
+          ! grep -Fq 'Native Tool Result Round-trip' src/PersonalAI.Web/wwwroot/v080.js
+          ! grep -Fq 'INTERNAL TOOLS' src/PersonalAI.Web/wwwroot/v080.js
+          ! grep -Fq 'Chat thông thường' src/PersonalAI.Web/wwwroot/v054.js
+          ! grep -Fq 'API key' src/PersonalAI.Web/wwwroot/index.html
+          ! grep -Fq 'API key' src/PersonalAI.Web/wwwroot/app.js
+          ! grep -R -E 'window\.(confirm|alert|prompt)\(' src/PersonalAI.Web/wwwroot/*.js
+          ! grep -Fq 'Planner:' src/PersonalAI.Web/wwwroot/app.js
+          ! grep -Fq 'Permission:' src/PersonalAI.Web/wwwroot/app.js
+          ! grep -Fq 'Arguments' src/PersonalAI.Web/wwwroot/app.js
+          ! grep -Fq 'Native Tool Result Round-trip' src/PersonalAI.Web/wwwroot/v080.js
+          ! grep -Fq 'INTERNAL TOOLS' src/PersonalAI.Web/wwwroot/v080.js
+          ! grep -Fq 'API key' src/PersonalAI.Web/wwwroot/index.html
+          grep -Fq 'THÔNG BÁO TỪ ỨNG DỤNG' src/PersonalAI.Web/wwwroot/app.js
+          grep -Fq 'Xác nhận và chạy' src/PersonalAI.Web/wwwroot/app.js
+          grep -Fq 'Nhà cung cấp:' src/PersonalAI.Web/wwwroot/app.js
+          grep -Fq 'Mô hình:' src/PersonalAI.Web/wwwroot/app.js
           grep -Fq 'ToolResultSynthesisService' src/PersonalAI.Web/Services/ToolResultSynthesisService.cs
           grep -Fq 'UseTools' src/PersonalAI.Web/Models/ChatModels.cs
           grep -Fq 'v085.css' src/PersonalAI.Web/wwwroot/index.html

@@ -50,7 +50,7 @@
           <span id="v075ManagementSummary">Đang tải trạng thái chỉ mục…</span>
         </div>
         <div class="v075-management-actions">
-          <button class="secondary-button" id="v075ExportButton" type="button">Xuất metadata</button>
+          <button class="secondary-button" id="v075ExportButton" type="button">Xuất thông tin mô tả</button>
           <button class="danger-button" id="v075BulkDeleteButton" type="button" disabled>Xóa đã chọn</button>
         </div>
       </div>
@@ -66,10 +66,10 @@
         <select id="v075StatusFilter" aria-label="Lọc theo trạng thái chỉ mục">
           <option value="">Mọi trạng thái</option>
           <option value="ready">Sẵn sàng</option>
-          <option value="needs-indexing">Thiếu vector</option>
+          <option value="needs-indexing">Thiếu véc-tơ</option>
           <option value="indexing">Đang lập chỉ mục</option>
           <option value="error">Lỗi đọc tài liệu</option>
-          <option value="index-error">Lỗi vector</option>
+          <option value="index-error">Lỗi véc-tơ</option>
         </select>
         <select id="v075Sort" aria-label="Sắp xếp tài liệu">
           <option value="newest">Mới nhất</option>
@@ -134,7 +134,7 @@
     if (summary) {
       const chunkCount = managementState.documents.reduce((sum, item) => sum + Number(item.chunkCount || 0), 0);
       const indexedCount = managementState.documents.reduce((sum, item) => sum + Number(item.indexedChunkCount || 0), 0);
-      summary.textContent = `${payload.total ?? managementState.documents.length} tài liệu · ${chunkCount} đoạn · ${indexedCount} vector · ${payload.embeddingModel || "local"}`;
+      summary.textContent = `${payload.total ?? managementState.documents.length} tài liệu · ${chunkCount} đoạn · ${indexedCount} véc-tơ · ${payload.embeddingModel || "mô hình trên máy"}`;
     }
 
     showFeedback("");
@@ -204,7 +204,7 @@
       item.fileType,
       formatBytes(item.fileSize),
       `${item.chunkCount} đoạn`,
-      `${item.indexedChunkCount}/${item.chunkCount} vector`,
+      `${item.indexedChunkCount}/${item.chunkCount} véc-tơ`,
       item.pageCount ? `${item.pageCount} trang` : null,
       formatDate(item.createdAt)
     ].filter(Boolean).join(" · ");
@@ -213,7 +213,7 @@
     status.className = `v075-index-status status-${item.indexStatus || "unknown"}`;
     status.textContent = statusLabel(item.indexStatus);
     status.title = item.missingEmbeddingCount > 0
-      ? `Còn ${item.missingEmbeddingCount} đoạn chưa có vector hiện hành.`
+      ? `Còn ${item.missingEmbeddingCount} đoạn chưa có véc-tơ hiện hành.`
       : "Chỉ mục hiện hành đã đầy đủ.";
 
     content.append(title, meta, status);
@@ -222,7 +222,7 @@
     actions.className = "v075-document-actions";
     actions.append(
       actionButton("Đổi tên", () => renameDocument(item)),
-      actionButton("Re-index", () => reindexDocument(item)),
+      actionButton("Lập lại chỉ mục", () => reindexDocument(item)),
       actionButton("Xóa", () => deleteOneDocument(item), true));
 
     card.append(checkbox, content, actions);
@@ -255,9 +255,7 @@
 
   async function renameDocument(item) {
     if (managementState.busy) return;
-    const value = window.prompt(
-      "Tên mới của tài liệu. Không thể đổi định dạng tệp:",
-      item.fileName);
+    const value = await window.PersonalAiUi.prompt("Tên mới của tài liệu. Không thể đổi định dạng tệp:", item.fileName, { title: "Đổi tên tài liệu", confirmText: "Đổi tên", maxLength: 180 });
     if (value === null) return;
 
     await runMutation(`Đang đổi tên “${item.fileName}”…`, async () => {
@@ -279,14 +277,14 @@
         method: "POST"
       });
       const payload = await response.json().catch(() => ({}));
-      if (!response.ok) throw new Error(payload.error || "Không re-index được tài liệu.");
-      showFeedback(`Đã re-index “${payload.fileName}”: ${payload.chunkCount} đoạn, ${payload.indexedChunkCount} vector.`, "success");
+      if (!response.ok) throw new Error(payload.error || "Không lập lại chỉ mục cho tài liệu được.");
+      showFeedback(`Đã lập lại chỉ mục “${payload.fileName}”: ${payload.chunkCount} đoạn, ${payload.indexedChunkCount} véc-tơ.`, "success");
     });
   }
 
   async function deleteOneDocument(item) {
     if (managementState.busy) return;
-    if (!window.confirm(`Xóa vĩnh viễn “${item.fileName}” khỏi Kho dữ liệu?`)) return;
+    if (!(await window.PersonalAiUi.confirm(`Xóa vĩnh viễn “${item.fileName}” khỏi Kho dữ liệu?`, { title: "Xác nhận xóa tài liệu", confirmText: "Xóa vĩnh viễn", danger: true }))) return;
     managementState.selected = new Set([item.id]);
     await deleteSelectedDocuments(true);
   }
@@ -294,7 +292,7 @@
   async function deleteSelectedDocuments(skipConfirm = false) {
     if (managementState.busy || managementState.selected.size === 0) return;
     const ids = [...managementState.selected];
-    if (!skipConfirm && !window.confirm(`Xóa vĩnh viễn ${ids.length} tài liệu đã chọn?`)) return;
+    if (!skipConfirm && !(await window.PersonalAiUi.confirm(`Xóa vĩnh viễn ${ids.length} tài liệu đã chọn?`, { title: "Xác nhận xóa tài liệu", confirmText: "Xóa vĩnh viễn", danger: true }))) return;
 
     await runMutation(`Đang xóa ${ids.length} tài liệu…`, async () => {
       const response = await fetch("/api/knowledge/documents/bulk-delete", {
@@ -314,7 +312,7 @@
     try {
       const response = await fetch("/api/knowledge/documents/export", { cache: "no-store" });
       const payload = await response.json().catch(() => ({}));
-      if (!response.ok) throw new Error(payload.error || "Không xuất được metadata tài liệu.");
+      if (!response.ok) throw new Error(payload.error || "Không xuất được thông tin mô tả của tài liệu.");
 
       const blob = new Blob([JSON.stringify(payload, null, 2)], { type: "application/json" });
       const url = URL.createObjectURL(blob);
@@ -326,7 +324,7 @@
       anchor.click();
       anchor.remove();
       URL.revokeObjectURL(url);
-      showFeedback(`Đã xuất metadata của ${(payload.documents || []).length} tài liệu.`, "success");
+      showFeedback(`Đã xuất thông tin mô tả của ${(payload.documents || []).length} tài liệu.`, "success");
     } catch (error) {
       showFeedback(error.message, "error");
     }
@@ -377,10 +375,10 @@
   function statusLabel(status) {
     return {
       ready: "Sẵn sàng",
-      "needs-indexing": "Thiếu vector",
+      "needs-indexing": "Thiếu véc-tơ",
       indexing: "Đang lập chỉ mục",
       error: "Lỗi đọc tài liệu",
-      "index-error": "Lỗi vector"
+      "index-error": "Lỗi véc-tơ"
     }[status] || "Chưa xác định";
   }
 

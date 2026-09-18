@@ -12,7 +12,7 @@
     if (brandVersion) brandVersion.textContent = `Phiên bản ${VERSION}`;
 
     const knowledgeIntro = document.querySelector(".knowledge-intro strong");
-    if (knowledgeIntro) knowledgeIntro.textContent = `Kho dữ liệu hybrid v${VERSION}`;
+    if (knowledgeIntro) knowledgeIntro.textContent = `Kho dữ liệu tìm kiếm kết hợp v${VERSION}`;
 
     const row = document.querySelector(".knowledge-search-row");
     const keywordButton = document.querySelector("#knowledgeSearchButton");
@@ -34,13 +34,13 @@
     const searchForm = document.querySelector("#knowledgeSearchForm");
     const hint = searchForm?.querySelector(".field-hint");
     if (hint) {
-      hint.textContent = "Từ khóa = FTS; ngữ nghĩa = vector local; tìm kết hợp = hợp nhất hai nguồn và rerank. Chat dùng tìm kết hợp tự động.";
+      hint.textContent = "Từ khóa = chỉ mục toàn văn; ngữ nghĩa = véc-tơ trên máy; tìm kết hợp = hợp nhất hai nguồn rồi xếp hạng lại. Khi trò chuyện, hệ thống tự dùng tìm kiếm kết hợp.";
     }
 
     const vectorStatus = document.querySelector("#knowledgeEmbeddingStatus");
     if (vectorStatus && !vectorStatus.dataset.v073) {
       vectorStatus.dataset.v073 = "1";
-      vectorStatus.insertAdjacentText("beforeend", " · hybrid rerank sẵn sàng");
+      vectorStatus.insertAdjacentText("beforeend", " · tìm kiếm kết hợp và xếp hạng lại đã sẵn sàng");
     }
   }
 
@@ -64,7 +64,7 @@
     setSearchBusy(true, input, keywordButton, semanticButton, hybridButton);
     resultsNode.hidden = false;
     resultsNode.setAttribute("aria-busy", "true");
-    summaryNode.textContent = "Đang hợp nhất từ khóa + vector và rerank…";
+    summaryNode.textContent = "Đang hợp nhất từ khóa và véc-tơ rồi xếp hạng lại…";
     listNode.replaceChildren();
 
     try {
@@ -97,14 +97,14 @@
   function renderHybridResults(payload, summaryNode, listNode) {
     const results = Array.isArray(payload.results) ? payload.results : [];
     summaryNode.textContent = results.length > 0
-      ? `${results.length} đoạn đã rerank · ${payload.strategy || "hybrid"}`
+      ? `${results.length} đoạn đã được xếp hạng lại · tìm kiếm kết hợp`
       : "Không có đoạn đủ liên quan";
     listNode.replaceChildren();
 
     if (results.length === 0) {
       const empty = document.createElement("p");
       empty.className = "knowledge-search-empty";
-      empty.textContent = "Không tìm thấy kết quả đủ mạnh sau khi kết hợp từ khóa và vector local.";
+      empty.textContent = "Không tìm thấy kết quả đủ mạnh sau khi kết hợp từ khóa và véc-tơ trên máy.";
       listNode.appendChild(empty);
       return;
     }
@@ -125,7 +125,7 @@
           : `Đoạn ${result.chunkIndex}`;
       const hybridScore = Number(result.hybridScore);
       const scoreText = Number.isFinite(hybridScore)
-        ? ` · rerank ${hybridScore.toFixed(0)}`
+        ? ` · điểm kết hợp ${hybridScore.toFixed(0)}`
         : "";
       const sourceText = result.matchSource ? ` · ${formatMatchSource(result.matchSource)}` : "";
       meta.textContent = `${location}${scoreText}${sourceText}`;
@@ -139,8 +139,8 @@
   }
 
   function formatMatchSource(value) {
-    if (value === "keyword+semantic") return "từ khóa + vector";
-    if (value === "semantic") return "vector";
+    if (value === "keyword+semantic") return "từ khóa + véc-tơ";
+    if (value === "semantic") return "véc-tơ";
     if (value === "keyword") return "từ khóa";
     return value;
   }

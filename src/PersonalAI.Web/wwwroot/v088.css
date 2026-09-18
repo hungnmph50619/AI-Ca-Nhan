@@ -1,0 +1,13 @@
+.tool-execution-actions .primary-button {
+  min-width: 210px;
+}
+
+.tool-execution-privacy {
+  line-height: 1.5;
+}
+
+@media (max-width: 720px) {
+  .tool-execution-actions .primary-button {
+    min-width: 0;
+  }
+}

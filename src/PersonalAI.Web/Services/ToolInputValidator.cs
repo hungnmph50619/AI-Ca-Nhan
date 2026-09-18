@@ -16,12 +16,12 @@ public sealed class ToolInputValidator : IToolInputValidator
 
         if (schema.ValueKind != JsonValueKind.Object)
         {
-            return new ToolInputValidationResult(false, ["Input schema không hợp lệ."]);
+            return new ToolInputValidationResult(false, ["Lược đồ dữ liệu đầu vào không hợp lệ."]);
         }
 
         if (arguments.ValueKind != JsonValueKind.Object)
         {
-            return new ToolInputValidationResult(false, ["Arguments phải là một JSON object."]);
+            return new ToolInputValidationResult(false, ["Dữ liệu tham số phải là một đối tượng JSON."]);
         }
 
         var required = ReadRequired(schema);
@@ -29,7 +29,7 @@ public sealed class ToolInputValidator : IToolInputValidator
         {
             if (!arguments.TryGetProperty(requiredName, out _))
             {
-                errors.Add($"Thiếu trường bắt buộc: {requiredName}.");
+                errors.Add($"Thiếu trường bắt buộc: {DisplayFieldName(requiredName)}.");
             }
         }
 
@@ -44,7 +44,7 @@ public sealed class ToolInputValidator : IToolInputValidator
             {
                 if (!allowAdditional)
                 {
-                    errors.Add($"Trường không được hỗ trợ: {argument.Name}.");
+                    errors.Add($"Trường không được hỗ trợ: {DisplayFieldName(argument.Name)}.");
                 }
                 continue;
             }
@@ -84,7 +84,7 @@ public sealed class ToolInputValidator : IToolInputValidator
     {
         if (schema.ValueKind != JsonValueKind.Object)
         {
-            errors.Add($"Schema của trường {name} không hợp lệ.");
+            errors.Add($"Lược đồ của trường {DisplayFieldName(name)} không hợp lệ.");
             return;
         }
 
@@ -94,7 +94,7 @@ public sealed class ToolInputValidator : IToolInputValidator
             var expectedType = typeElement.GetString();
             if (!MatchesType(value, expectedType))
             {
-                errors.Add($"Trường {name} phải có kiểu {expectedType}.");
+                errors.Add($"Trường {DisplayFieldName(name)} phải có kiểu {DisplayType(expectedType)}.");
                 return;
             }
         }
@@ -105,13 +105,13 @@ public sealed class ToolInputValidator : IToolInputValidator
             if (TryGetInt(schema, "minLength", out var minLength)
                 && text.Length < minLength)
             {
-                errors.Add($"Trường {name} phải có ít nhất {minLength} ký tự.");
+                errors.Add($"Trường {DisplayFieldName(name)} phải có ít nhất {minLength} ký tự.");
             }
 
             if (TryGetInt(schema, "maxLength", out var maxLength)
                 && text.Length > maxLength)
             {
-                errors.Add($"Trường {name} không được dài hơn {maxLength} ký tự.");
+                errors.Add($"Trường {DisplayFieldName(name)} không được dài hơn {maxLength} ký tự.");
             }
         }
 
@@ -120,13 +120,13 @@ public sealed class ToolInputValidator : IToolInputValidator
             if (TryGetDouble(schema, "minimum", out var minimum)
                 && numericValue < minimum)
             {
-                errors.Add($"Trường {name} phải lớn hơn hoặc bằng {minimum}.");
+                errors.Add($"Trường {DisplayFieldName(name)} phải lớn hơn hoặc bằng {minimum}.");
             }
 
             if (TryGetDouble(schema, "maximum", out var maximum)
                 && numericValue > maximum)
             {
-                errors.Add($"Trường {name} phải nhỏ hơn hoặc bằng {maximum}.");
+                errors.Add($"Trường {DisplayFieldName(name)} phải nhỏ hơn hoặc bằng {maximum}.");
             }
         }
 
@@ -138,10 +138,45 @@ public sealed class ToolInputValidator : IToolInputValidator
                 .Any(item => string.Equals(item.GetRawText(), raw, StringComparison.Ordinal));
             if (!matches)
             {
-                errors.Add($"Giá trị của trường {name} không nằm trong danh sách cho phép.");
+                errors.Add($"Giá trị của trường {DisplayFieldName(name)} không nằm trong danh sách cho phép.");
             }
         }
     }
+
+    private static string DisplayFieldName(string name) =>
+        name switch
+        {
+            "query" => "nội dung cần tìm",
+            "text" => "văn bản",
+            "expression" => "biểu thức",
+            "operation" => "phép tính",
+            "start" => "mốc bắt đầu",
+            "end" => "mốc kết thúc",
+            "days" => "số ngày",
+            "hours" => "số giờ",
+            "minutes" => "số phút",
+            "path" => "đường dẫn",
+            "content" => "nội dung",
+            "mode" => "cách ghi",
+            "expectedSha256" => "mã băm SHA-256 kỳ vọng",
+            "sourcePath" => "đường dẫn nguồn",
+            "destinationPath" => "đường dẫn đích",
+            "limit" => "số kết quả tối đa",
+            _ => "dữ liệu"
+        };
+
+    private static string DisplayType(string? type) =>
+        type switch
+        {
+            "string" => "văn bản",
+            "integer" => "số nguyên",
+            "number" => "số",
+            "boolean" => "đúng/sai",
+            "array" => "danh sách",
+            "object" => "đối tượng",
+            "null" => "rỗng",
+            _ => "phù hợp"
+        };
 
     private static bool MatchesType(JsonElement value, string? expectedType) => expectedType switch
     {

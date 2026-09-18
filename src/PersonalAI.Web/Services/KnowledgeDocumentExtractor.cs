@@ -176,7 +176,7 @@ public sealed class KnowledgeDocumentExtractor
             if (string.IsNullOrWhiteSpace(text))
             {
                 throw new KnowledgeDocumentValidationException(
-                    "PDF không có lớp văn bản có thể đọc. OCR cho PDF ảnh sẽ được bổ sung ở phiên bản sau.");
+                    "PDF không có lớp văn bản có thể đọc. Chức năng nhận dạng chữ từ ảnh sẽ được bổ sung ở phiên bản sau.");
             }
 
             ValidateExtractedText(text);
@@ -192,7 +192,7 @@ public sealed class KnowledgeDocumentExtractor
         catch (Exception exception) when (exception is not OperationCanceledException)
         {
             throw new KnowledgeDocumentValidationException(
-                $"Không đọc được PDF. Tệp có thể bị hỏng, được mã hóa hoặc dùng cấu trúc chưa được hỗ trợ. ({exception.GetType().Name})");
+                "Không đọc được PDF. Tệp có thể bị hỏng, được mã hóa hoặc dùng cấu trúc chưa được hỗ trợ.");
         }
     }
 
@@ -287,7 +287,7 @@ public sealed class KnowledgeDocumentExtractor
         catch (Exception exception) when (exception is not OperationCanceledException)
         {
             throw new KnowledgeDocumentValidationException(
-                $"Không đọc được DOCX. Tệp có thể bị hỏng hoặc không phải tài liệu Word hợp lệ. ({exception.GetType().Name})");
+                "Không đọc được DOCX. Tệp có thể bị hỏng hoặc không phải tài liệu Word hợp lệ.");
         }
     }
 

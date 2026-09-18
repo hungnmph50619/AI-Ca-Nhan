@@ -78,13 +78,13 @@ public sealed class ToolRegistry : IToolRegistry
         if (definition.TimeoutMs is < 100 or > 60_000)
         {
             throw new InvalidOperationException(
-                $"Timeout của công cụ {definition.Name} phải từ 100 đến 60000 ms.");
+                $"Thời gian chờ của công cụ {definition.Name} phải từ 100 đến 60000 mili giây.");
         }
 
         if (definition.InputSchema.ValueKind != System.Text.Json.JsonValueKind.Object)
         {
             throw new InvalidOperationException(
-                $"Input schema của công cụ {definition.Name} phải là JSON object.");
+                $"Lược đồ dữ liệu đầu vào của công cụ {definition.Name} phải là một đối tượng JSON.");
         }
 
         var permissions = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
@@ -93,13 +93,13 @@ public sealed class ToolRegistry : IToolRegistry
             if (!ToolPermissions.All.Contains(permission))
             {
                 throw new InvalidOperationException(
-                    $"Công cụ {definition.Name} khai báo permission không hợp lệ: {permission}.");
+                    $"Công cụ {definition.Name} khai báo quyền không hợp lệ: {permission}.");
             }
 
             if (!permissions.Add(permission))
             {
                 throw new InvalidOperationException(
-                    $"Công cụ {definition.Name} khai báo permission trùng: {permission}.");
+                    $"Công cụ {definition.Name} khai báo quyền bị trùng: {permission}.");
             }
         }
     }

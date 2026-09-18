@@ -33,7 +33,7 @@ public sealed class ToolPolicy : IToolPolicy
                 return new ToolPolicyDecision(
                     false,
                     normalized.Order(StringComparer.Ordinal).ToArray(),
-                    $"Permission không hợp lệ: {value}.");
+                    $"Quyền không hợp lệ: {LocalizePermission(value)}.");
             }
 
             normalized.Add(value);
@@ -49,7 +49,7 @@ public sealed class ToolPolicy : IToolPolicy
             return new ToolPolicyDecision(
                 false,
                 normalized.Order(StringComparer.Ordinal).ToArray(),
-                $"Thiếu permission: {string.Join(", ", missing)}.");
+                $"Thiếu quyền: {string.Join(", ", missing.Select(LocalizePermission))}.");
         }
 
         var confirmationRequired = definition.RequiresConfirmation
@@ -66,6 +66,17 @@ public sealed class ToolPolicy : IToolPolicy
             true,
             normalized.Order(StringComparer.Ordinal).ToArray());
     }
+
+    private static string LocalizePermission(string permission) =>
+        permission.ToUpperInvariant() switch
+        {
+            "READ" => "ĐỌC",
+            "WRITE" => "GHI",
+            "DELETE" => "XÓA",
+            "EXTERNAL" => "BÊN NGOÀI",
+            "SENSITIVE" => "NHẠY CẢM",
+            _ => permission
+        };
 }
 
 public interface IToolExecutionService
@@ -188,7 +199,7 @@ public sealed class ToolExecutionService(
                 ToolExecutionStatuses.TimedOut,
                 false,
                 null,
-                $"Công cụ vượt quá timeout {definition.TimeoutMs} ms.",
+                $"Công cụ vượt quá thời gian chờ {definition.TimeoutMs} mili giây.",
                 stopwatch,
                 startedAt,
                 definition.RequiredPermissions,
@@ -246,6 +257,17 @@ public sealed class ToolExecutionService(
             requiredPermissions,
             approvedPermissions);
     }
+
+    private static string LocalizePermission(string permission) =>
+        permission.ToUpperInvariant() switch
+        {
+            "READ" => "ĐỌC",
+            "WRITE" => "GHI",
+            "DELETE" => "XÓA",
+            "EXTERNAL" => "BÊN NGOÀI",
+            "SENSITIVE" => "NHẠY CẢM",
+            _ => permission
+        };
 
     private static JsonElement NormalizeOutput(JsonElement output)
     {

@@ -1661,6 +1661,26 @@ jobs:
             -d '{"goal":"Kiểm tra phục hồi tác vụ gián đoạn","plan":"Giả lập ứng dụng dừng giữa lúc đọc giờ.","steps":[{"title":"Đọc giờ hệ thống","description":"Kiểm tra bước bị gián đoạn.","toolName":"local.clock","arguments":{}}]}')
           interrupted_task_id=$(echo "$interrupted_seed" | jq -r '.id')
 
+          automation_persist_task=$(curl -fsS -X POST http://127.0.0.1:5077/api/tasks/prepare \
+            -H 'Content-Type: application/json' \
+            -d '{"goal":"Automation persist qua restart","plan":"Giữ lịch tương lai qua khởi động lại.","steps":[{"title":"List persist","description":"READ local sau restart.","toolName":"workspace.list","arguments":{"path":".","maxEntries":10}}]}')
+          automation_persist_task_id=$(echo "$automation_persist_task" | jq -r '.id')
+          automation_restart_future=$(date -u -d '+1 day' '+%Y-%m-%dT%H:%M:%SZ')
+          automation_persist=$(curl -fsS -X POST http://127.0.0.1:5077/api/automations \
+            -H 'Content-Type: application/json' \
+            -d '{"name":"Persist automation","taskId":"'"$automation_persist_task_id"'","scheduleKind":"once","startAt":"'"$automation_restart_future"'","confirmed":true}')
+          automation_persist_id=$(echo "$automation_persist" | jq -r '.id')
+
+          automation_recovery_task=$(curl -fsS -X POST http://127.0.0.1:5077/api/tasks/prepare \
+            -H 'Content-Type: application/json' \
+            -d '{"goal":"Automation crash recovery","plan":"Giả lập scheduler dừng khi đang chạy.","steps":[{"title":"List recovery","description":"READ local nhưng không được tự retry sau crash.","toolName":"workspace.list","arguments":{"path":".","maxEntries":10}}]}')
+          automation_recovery_task_id=$(echo "$automation_recovery_task" | jq -r '.id')
+          automation_recovery=$(curl -fsS -X POST http://127.0.0.1:5077/api/automations \
+            -H 'Content-Type: application/json' \
+            -d '{"name":"Crash recovery automation","taskId":"'"$automation_recovery_task_id"'","scheduleKind":"once","startAt":"'"$automation_restart_future"'","confirmed":true}')
+          automation_recovery_id=$(echo "$automation_recovery" | jq -r '.id')
+          test -f /tmp/personalai-automation/automations.db
+
           kill "$APP_PID"
           wait "$APP_PID" 2>/dev/null || true
 
@@ -1684,6 +1704,26 @@ jobs:
           con.close()
           PY
 
+          python3 - /tmp/personalai-automation/automations.db "$automation_recovery_id" <<'PY'
+          import json, sqlite3, sys
+          db, automation_id = sys.argv[1], sys.argv[2]
+          con = sqlite3.connect(db)
+          row = con.execute(
+              "SELECT payload_json FROM automations WHERE automation_id=?",
+              (automation_id,)
+          ).fetchone()
+          assert row is not None
+          payload = json.loads(row[0])
+          payload["state"] = "running"
+          payload["enabled"] = True
+          con.execute(
+              "UPDATE automations SET state='running', enabled=1, payload_json=? WHERE automation_id=?",
+              (json.dumps(payload, ensure_ascii=False), automation_id)
+          )
+          con.commit()
+          con.close()
+          PY
+
           Workspace__Root=/tmp/personalai-workspace Tasks__Root=/tmp/personalai-tasks Audit__Root=/tmp/personalai-audit Undo__Root=/tmp/personalai-undo Connectors__Root=/tmp/personalai-connectors Companion__Root=/tmp/personalai-companion Companion__AllowInsecureHttp=true LifeContext__Root=/tmp/personalai-life-context Automation__Root=/tmp/personalai-automation dotnet run --project src/PersonalAI.Web/PersonalAI.Web.csproj --configuration Release --no-build --urls http://127.0.0.1:5077 >/tmp/personalai-restart.log 2>&1 &
           APP_PID=$!
 
@@ -1702,6 +1742,26 @@ jobs:
 
           tasks_after_restart=$(curl -fsS http://127.0.0.1:5077/api/tasks)
           echo "$tasks_after_restart" | jq -e '.persistent == true and any(.tasks[]; .id == "'"$persist_task_id"'" and .status == "planned") and any(.tasks[]; .id == "'"$interrupted_task_id"'" and .status == "interrupted" and .steps[0].status == "interrupted")' >/dev/null
+
+          automations_after_restart=$(curl -fsS http://127.0.0.1:5077/api/automations)
+          echo "$automations_after_restart" | jq -e 'any(.automations[]; .id == "'"$automation_persist_id"'" and .state == "scheduled" and .enabled == true) and any(.automations[]; .id == "'"$automation_recovery_id"'" and .state == "interrupted" and .enabled == false and .lastRunStatus == "interrupted" and .nextRunAt == null)' >/dev/null
+
+          automation_recovery_enable_code=$(curl -sS -o /tmp/automation-recovery-enable.json -w '%{http_code}' -X PATCH "http://127.0.0.1:5077/api/automations/$automation_recovery_id/enabled" \
+            -H 'Content-Type: application/json' \
+            -d '{"enabled":true,"confirmed":true}')
+          test "$automation_recovery_enable_code" = "400"
+          jq -e '(.error | contains("resume"))' /tmp/automation-recovery-enable.json >/dev/null
+
+          automation_recovery_run_code=$(curl -sS -o /tmp/automation-recovery-run.json -w '%{http_code}' -X POST "http://127.0.0.1:5077/api/automations/$automation_recovery_id/run-now" \
+            -H 'Content-Type: application/json' \
+            -d '{"confirmed":true}')
+          test "$automation_recovery_run_code" = "400"
+          jq -e '(.error | contains("resume"))' /tmp/automation-recovery-run.json >/dev/null
+
+          automation_recovery_resume=$(curl -fsS -X POST "http://127.0.0.1:5077/api/automations/$automation_recovery_id/resume" \
+            -H 'Content-Type: application/json' \
+            -d '{"confirmed":true}')
+          echo "$automation_recovery_resume" | jq -e '.state == "scheduled" and .enabled == true' >/dev/null
 
           companion_me_after_restart=$(curl -fsS http://127.0.0.1:5077/api/companion/client/me \
             -H "Authorization: Bearer $custom_companion_token")

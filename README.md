@@ -1,10 +1,10 @@
-# AI Cá Nhân — Controlled Computer Use v1.1.0
+# AI Cá Nhân — Controlled Browser Agent v1.2.0
 
-PersonalAI là trợ lý AI cá nhân chạy bằng ASP.NET Core 8, ưu tiên dữ liệu cục bộ, có thể dùng Gemini hoặc OpenAI cho phần sinh câu trả lời. v1.0.0 vẫn là **Stable Personal AI Core**; v1.1.0 là capability layer đầu tiên phía trên core đó, bổ sung **Computer Use có kiểm soát trên Windows** mà không mở autonomous agent loop.
+PersonalAI là trợ lý AI cá nhân chạy bằng ASP.NET Core 8, ưu tiên dữ liệu cục bộ, có thể dùng Gemini hoặc OpenAI cho phần sinh câu trả lời. v1.0.0 vẫn là **Stable Personal AI Core**; v1.1 thêm Controlled Computer Use và v1.2 thêm **Browser Agent có guard** mà không mở autonomous browsing hay agent loop.
 
 > Đây vẫn là ứng dụng thiết kế cho một người dùng trên máy cá nhân. Không đưa trực tiếp lên Internet hoặc dùng như hệ thống nhiều người dùng nếu chưa bổ sung authentication, authorization và hardening triển khai phù hợp.
 
-## Có gì trong v1.1.0?
+## Có gì trong v1.2.0?
 
 ### Chat và AI provider
 
@@ -119,8 +119,9 @@ Tool Framework có permission contract:
 - EXTERNAL
 - SENSITIVE
 - COMPUTER
+- BROWSER
 
-WRITE, DELETE, EXTERNAL, SENSITIVE và COMPUTER yêu cầu confirmation theo policy hiện tại. COMPUTER được dùng riêng cho các thao tác điều khiển desktop.
+WRITE, DELETE, EXTERNAL, SENSITIVE, COMPUTER và BROWSER yêu cầu confirmation theo policy hiện tại. COMPUTER dùng cho desktop control; BROWSER dùng cho browser session/navigation.
 
 Các tool local gồm nhóm đọc/tiện ích và workspace files, ví dụ:
 
@@ -162,6 +163,36 @@ GET /api/computer/status
 ```
 
 Window title/process metadata được coi là dữ liệu nhạy cảm. Tool có SENSITIVE permission không tự được gửi kết quả ra provider AI để synthesis/native continuation.
+
+### Controlled Browser Agent
+
+v1.2.0 thêm browser-specific layer, không dùng desktop click mù làm cơ chế duyệt web.
+
+Engine hiện tại là `http-html`:
+
+- HTTP/HTTPS GET;
+- redirect validation;
+- title/text extraction;
+- link extraction;
+- workspace-scoped session;
+- SSRF guard ở URL, DNS và TCP connect.
+
+Browser tools:
+
+- `browser.session.info` — metadata phiên hiện tại, READ + BROWSER;
+- `browser.navigate` — GET tới URL công khai, READ + EXTERNAL + BROWSER;
+- `browser.page.observe` — đọc snapshot text/link, READ + BROWSER;
+- `browser.link.open` — mở link theo index, READ + EXTERNAL + BROWSER.
+
+Mọi browser tool cần explicit confirmation.
+
+v1.2.0 cố ý chưa có JavaScript renderer, cookie/login, form submit, POST, download, upload, screenshot, click hoặc autonomous browsing loop.
+
+Status:
+
+```http
+GET /api/browser/status
+```
 
 ### Tasks
 
@@ -236,11 +267,11 @@ Undo khả dụng 7 ngày, tối đa 500 record, snapshot tối đa 512 KB.
 
 v1.1.0 giữ API contract của Stable Core và mở controlled capability layer:
 
-- Version: `1.1.0`
+- Version: `1.2.0`
 - API contract: `1`
 - Channel: `controlled`
 - Stable Core: v1.0 semantics
-- Controlled module: `computer-use`
+- Controlled modules: `computer-use`, `browser-agent`
 
 Capabilities:
 
@@ -267,7 +298,7 @@ Unhandled API exception được sanitize; stack trace và đường dẫn local
 
 ## Guardrails hiện tại
 
-v1.1.0 **không phải autonomous agent**.
+v1.2.0 **không phải autonomous agent**.
 
 Hiện tại:
 
@@ -278,6 +309,9 @@ Hiện tại:
 - Undo confirmation: bắt buộc
 - Computer-control confirmation: bắt buộc
 - Sensitive computer observation confirmation: bắt buộc
+- Browser confirmation: bắt buộc
+- Browser private-network access: tắt
+- Browser side effects/form submit: tắt
 - Automatic multi-step execution: tắt
 - Background scheduler: tắt
 - Autonomous agent loop: tắt
@@ -285,7 +319,9 @@ Hiện tại:
 
 Chưa có:
 
-- browser automation;
+- JavaScript browser automation;
+- browser form submit/login/cookies;
+- browser download/upload;
 - screenshot/OCR;
 - mouse click hoặc keyboard typing;
 - background scheduler;
@@ -457,14 +493,15 @@ Mốc Stable Core:
 docs/releases/v1.0.0.md
 ```
 
-Mốc capability hiện tại:
+Các mốc capability:
 
 ```text
 docs/releases/v1.1.0.md
+docs/releases/v1.2.0.md
 ```
 
-## Hướng phát triển sau v1.1
+## Hướng phát triển sau v1.2
 
-Computer Use v1.1 đã mở capability desktop đầu tiên theo mô hình permission + confirmation. Theo roadmap, bước kế tiếp là **v1.2 — Browser Agent**, với browser-specific observation/action contract, origin/URL guard, confirmation cho external side effects và audit đầy đủ.
+Computer Use và Browser Agent hiện đều nằm trong controlled capability layer. Theo roadmap, bước kế tiếp là **v1.3 — Connectors** với permission theo provider/action, explicit confirmation cho external side effects và Audit đầy đủ.
 
-Browser Agent không nên dựa vào click desktop mù làm cơ chế chính.
+Connectors không nên dùng Browser Agent để bypass authentication hoặc permission model của dịch vụ bên ngoài.

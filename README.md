@@ -1,10 +1,10 @@
-# AI Cá Nhân — Life Context Foundation v1.6.0
+# AI Cá Nhân — Decision Engine v1.7.0
 
-PersonalAI là trợ lý AI cá nhân chạy bằng ASP.NET Core 8, ưu tiên dữ liệu cục bộ, có thể dùng Gemini hoặc OpenAI cho phần sinh câu trả lời. v1.0.0 vẫn là **Stable Personal AI Core**; v1.1 thêm Controlled Computer Use, v1.2 Browser Agent, v1.3 Connector Foundation, v1.4 Software Development Agent, v1.5 Android Companion và v1.6 thêm **Life Context Foundation** với explicit consent, retention, workspace isolation và context injection có budget.
+PersonalAI là trợ lý AI cá nhân chạy bằng ASP.NET Core 8, ưu tiên dữ liệu cục bộ, có thể dùng Gemini hoặc OpenAI cho phần sinh câu trả lời. v1.0.0 vẫn là **Stable Personal AI Core**; v1.1 thêm Controlled Computer Use, v1.2 Browser Agent, v1.3 Connector Foundation, v1.4 Software Development Agent, v1.5 Android Companion, v1.6 Life Context Foundation và v1.7 thêm **Decision Engine** để phân tích lựa chọn dựa trên context mà không tự hành động thay người dùng.
 
 > Đây vẫn là ứng dụng thiết kế cho một người dùng trên máy cá nhân. Không đưa trực tiếp lên Internet hoặc dùng như hệ thống nhiều người dùng nếu chưa bổ sung authentication, authorization và hardening triển khai phù hợp.
 
-## Có gì trong v1.6.0?
+## Có gì trong v1.7.0?
 
 ### Chat và AI provider
 
@@ -363,6 +363,49 @@ Consent revoke có thể purge snapshot hiện có; UI mặc định revoke kèm
 
 v1.6 cố ý chưa có background GPS, Android location permission, calendar auto-sync, activity recognition, health data, sensor collection hoặc cloud sync.
 
+### Decision Engine
+
+v1.7.0 thêm lớp hỗ trợ ra quyết định dựa trên cùng Context Manager đang phục vụ chat.
+
+Input gồm:
+
+- câu hỏi quyết định;
+- 2–8 lựa chọn;
+- tối đa 8 tiêu chí;
+- constraints tùy chọn;
+- cờ bật/tắt Documents, Memory, Tasks và Life Context.
+
+API:
+
+```http
+GET  /api/decisions/status
+POST /api/decisions/preview
+POST /api/decisions/analyze
+```
+
+`preview` chỉ chọn context cục bộ, không gọi Gemini/OpenAI.
+
+`analyze` dùng active AI provider để tạo decision brief gồm evidence, so sánh lựa chọn, trade-off, risk và uncertainty.
+
+Decision Engine cố ý **không**:
+
+- implement `IPersonalAiTool`;
+- dùng Tool Orchestration;
+- chạy Task Engine;
+- auto-action;
+- auto-schedule;
+- lưu question/options/analysis mặc định.
+
+Mọi response đều giữ contract:
+
+```text
+requiresUserDecision = true
+autoActionEnabled = false
+toolExecutionEnabled = false
+```
+
+Recommendation không phải authorization để PersonalAI hành động.
+
 ### Tasks
 
 Task Engine hỗ trợ:
@@ -434,13 +477,13 @@ Undo khả dụng 7 ngày, tối đa 500 record, snapshot tối đa 512 KB.
 
 ## Stable Core contract
 
-v1.6.0 giữ API contract của Stable Core và mở rộng controlled capability layer:
+v1.7.0 giữ API contract của Stable Core và mở rộng controlled capability layer:
 
-- Version: `1.6.0`
+- Version: `1.7.0`
 - API contract: `1`
 - Channel: `controlled`
 - Stable Core: v1.0 semantics
-- Controlled modules: `computer-use`, `browser-agent`, `connectors`, `software-development`, `android-companion`, `life-context`
+- Controlled modules: `computer-use`, `browser-agent`, `connectors`, `software-development`, `android-companion`, `life-context`, `decision-engine`
 
 Capabilities:
 
@@ -467,7 +510,7 @@ Unhandled API exception được sanitize; stack trace và đường dẫn local
 
 ## Guardrails hiện tại
 
-v1.6.0 **không phải autonomous agent**.
+v1.7.0 **không phải autonomous agent**.
 
 Hiện tại:
 
@@ -495,6 +538,10 @@ Hiện tại:
 - Life Context explicit consent: bắt buộc
 - Life Context automatic collection: tắt
 - Life Context entry content encryption: bật
+- Decision Engine yêu cầu user quyết định: bật
+- Decision Engine auto-action: tắt
+- Decision Engine tool execution: tắt
+- Decision Engine persistent analysis: tắt
 - Automatic multi-step execution: tắt
 - Background scheduler: tắt
 - Autonomous agent loop: tắt
@@ -518,6 +565,8 @@ Chưa có:
 - Android remote tool/task mutation;
 - Android background agent/sensor collection;
 - Life Context background GPS/calendar/activity/sensor collection;
+- Decision Engine automatic action/tool execution;
+- persistent decision history;
 - cloud multi-user auth.
 
 ## Yêu cầu
@@ -623,6 +672,7 @@ ASP.NET Core
   ├── Software Development Agent
   ├── Android Companion
   ├── Life Context
+  ├── Decision Engine
   │
   ├── Context Manager
   │      ├── Memory selection
@@ -683,6 +733,7 @@ GitHub Actions hiện kiểm tra regression cho các nền chính, gồm:
 - Android debug APK build;
 - Life Context consent/encryption/retention/isolation;
 - Context Manager Life Context selection/opt-out;
+- Decision Engine validation/context preview/no-auto-action contract;
 - JavaScript syntax;
 - UI guardrails tiếng Việt.
 
@@ -709,10 +760,11 @@ docs/releases/v1.3.0.md
 docs/releases/v1.4.0.md
 docs/releases/v1.5.0.md
 docs/releases/v1.6.0.md
+docs/releases/v1.7.0.md
 ```
 
-## Hướng phát triển sau v1.6
+## Hướng phát triển sau v1.7
 
-Computer Use, Browser Agent, Connector Foundation, Software Development Agent, Android Companion và Life Context hiện nằm trong controlled capability layer.
+Computer Use, Browser Agent, Connector Foundation, Software Development Agent, Android Companion, Life Context và Decision Engine hiện nằm trong controlled capability layer.
 
-Theo roadmap gốc, mốc kế tiếp là **v1.7 — Decision Engine**, sau đó là **v1.8 Automation → v1.9 Reliability / Security → v2.0 Personal AI OS**.
+Theo roadmap gốc, mốc kế tiếp là **v1.8 — Automation**, sau đó là **v1.9 Reliability / Security → v2.0 Personal AI OS**.

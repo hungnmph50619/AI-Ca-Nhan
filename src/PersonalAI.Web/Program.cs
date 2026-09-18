@@ -15,6 +15,7 @@ builder.Services.Configure<OpenAiOptions>(builder.Configuration.GetSection(OpenA
 builder.Services.Configure<JsonOptions>(options => options.SerializerOptions.PropertyNamingPolicy = System.Text.Json.JsonNamingPolicy.CamelCase);
 builder.Services.Configure<FormOptions>(options => options.MultipartBodyLengthLimit = SqliteKnowledgeDocumentStore.MaximumFileSize + (64 * 1024));
 builder.Services.AddDataProtection().SetApplicationName("PersonalAI");
+builder.Services.AddWorkspaceFoundation();
 builder.Services.AddSingleton<IAiSettingsStore, AiSettingsStore>();
 builder.Services.AddSingleton<KnowledgeDocumentExtractor>();
 builder.Services.AddSingleton<IKnowledgeDocumentStore, SqliteKnowledgeDocumentStore>();
@@ -56,8 +57,11 @@ app.Use(async (context, next) =>
     await next();
 });
 
+app.UseWorkspaceValidation();
 app.UseDefaultFiles();
 app.UseStaticFiles();
+
+app.MapWorkspaceFoundation();
 
 app.MapGet("/api/status", (IAiProviderResolver providerResolver, ITeamProfileCatalog teamProfiles) =>
 {

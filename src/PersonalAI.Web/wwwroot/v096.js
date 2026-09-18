@@ -307,7 +307,14 @@
       "task.resume": "Tiếp tục tác vụ",
       "task.cancel": "Hủy tác vụ",
       "undo.available": "Có thể hoàn tác",
-      "undo.execute": "Thực hiện hoàn tác"
+      "undo.execute": "Thực hiện hoàn tác",
+      "automation.create": "Tạo automation",
+      "automation.enable": "Bật automation",
+      "automation.disable": "Tạm dừng automation",
+      "automation.resume": "Tiếp tục automation",
+      "automation.run-now": "Kích hoạt automation",
+      "automation.run": "Scheduler chạy automation",
+      "automation.delete": "Xóa automation"
     };
     return labels[action] || action || "Sự kiện";
   }
@@ -317,7 +324,8 @@
       user: "Người dùng",
       "personal-ai": "PersonalAI",
       "task-engine": "Task Engine",
-      system: "Hệ thống"
+      system: "Hệ thống",
+      automation: "Automation"
     }[agent] || agent || "—";
   }
 
@@ -346,7 +354,19 @@
       "user-confirmed-undo": "Người dùng xác nhận hoàn tác",
       "undo-expired": "Bản ghi hoàn tác đã hết hạn",
       "undo-not-available": "Bản ghi không còn khả dụng",
-      "undo-precondition-failed": "Trạng thái hiện tại không còn khớp"
+      "undo-precondition-failed": "Trạng thái hiện tại không còn khớp",
+      "user-confirmed-automation": "Người dùng xác nhận tạo automation",
+      "user-confirmed-automation-state": "Người dùng xác nhận trạng thái automation",
+      "user-confirmed-after-review": "Người dùng đã review trước khi tiếp tục",
+      "user-confirmed-manual-trigger": "Người dùng kích hoạt scheduler",
+      "user-confirmed-automation-delete": "Người dùng xác nhận xóa automation",
+      "confirmation-required": "Cần xác nhận",
+      "dependency-blocked": "Đang chờ dependency",
+      "safe-read-step": "Bước READ/local an toàn",
+      "one-step-completed": "One-time đã chạy một bước",
+      "task-completed": "Task đã hoàn tất",
+      "automation-failed": "Automation thất bại",
+      "task-interrupted": "Task bị gián đoạn"
     }[reason] || reason || "—";
   }
 
@@ -358,6 +378,8 @@
       denied: "Bị chặn",
       cancelled: "Đã hủy",
       failed: "Thất bại",
+      blocked: "Đang chờ",
+      interrupted: "Gián đoạn",
       "invalid-input": "Dữ liệu không hợp lệ",
       "not-found": "Không tìm thấy",
       "timed-out": "Quá thời gian"

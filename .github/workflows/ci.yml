@@ -606,6 +606,14 @@ jobs:
           echo "$dev_build" | jq -e '.status == "succeeded" and .output.tool == "dotnet-build" and .output.succeeded == true and .output.exitCode == 0 and .output.outputTruncated == false' >/dev/null
           test -f /tmp/personalai-workspace/dev-ci/bin/Debug/net8.0/DevCi.dll
 
+          printf '%s\n' 'this is intentionally invalid C#' > /tmp/personalai-workspace/dev-ci/Program.cs
+          dev_failed_build_code=$(curl -sS -o /tmp/dev-failed-build.json -w '%{http_code}' -X POST http://127.0.0.1:5077/api/tools/execute \
+            -H 'Content-Type: application/json' \
+            -d '{"toolName":"dev.dotnet.build","arguments":{"targetPath":"dev-ci/DevCi.csproj","configuration":"Debug"},"approvedPermissions":["READ","WRITE","SENSITIVE","DEVELOPMENT"],"confirmed":true}')
+          test "$dev_failed_build_code" = "500"
+          jq -e '.status == "failed" and .success == false and .output.tool == "dotnet-build" and .output.succeeded == false and .output.exitCode != 0 and (.output.output | length) > 0 and (.error | contains("exit code"))' /tmp/dev-failed-build.json >/dev/null
+          printf '%s\n' 'Console.WriteLine("development-ci-marker-140");' > /tmp/personalai-workspace/dev-ci/Program.cs
+
           dev_test_denied_code=$(curl -sS -o /tmp/dev-test-unconfirmed.json -w '%{http_code}' -X POST http://127.0.0.1:5077/api/tools/execute \
             -H 'Content-Type: application/json' \
             -d '{"toolName":"dev.dotnet.test","arguments":{"targetPath":"dev-ci/DevCi.csproj","configuration":"Debug"},"approvedPermissions":["READ","WRITE","SENSITIVE","DEVELOPMENT"],"confirmed":false}')
@@ -1598,6 +1606,9 @@ jobs:
           grep -Fq 'UseShellExecute = false' src/PersonalAI.Web/Services/DevelopmentAgentService.cs
           grep -Fq 'startInfo.ArgumentList.Add(argument)' src/PersonalAI.Web/Services/DevelopmentAgentService.cs
           grep -Fq 'GIT_TERMINAL_PROMPT' src/PersonalAI.Web/Services/DevelopmentAgentService.cs
+          grep -Fq 'startInfo.Environment.Clear()' src/PersonalAI.Web/Services/DevelopmentAgentService.cs
+          grep -Fq 'ToolExecutionFailedException' src/PersonalAI.Web/Services/ToolExecutionService.cs
+          grep -Fq 'DevelopmentToolExecutionGuard.RequireSuccess' src/PersonalAI.Web/Services/DevelopmentTools.cs
           grep -Fq -- '--no-ext-diff' src/PersonalAI.Web/Services/DevelopmentAgentService.cs
           grep -Fq -- '--no-textconv' src/PersonalAI.Web/Services/DevelopmentAgentService.cs
           grep -Fq -- '--ignore-submodules=all' src/PersonalAI.Web/Services/DevelopmentAgentService.cs

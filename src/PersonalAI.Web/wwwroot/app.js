@@ -765,7 +765,8 @@ async function sendCurrentMessage(event) {
           role: message.role,
           content: message.content
         })),
-        useTools: elements.useTools?.checked === true
+        useTools: elements.useTools?.checked === true,
+        useTaskContext: true
       })
     });
     const payload = await response.json().catch(() => ({}));
@@ -778,7 +779,8 @@ async function sendCurrentMessage(event) {
       role: "assistant",
       content: payload.message,
       sources: normalizeSources(payload.sources),
-      toolProposal: normalizeToolProposal(payload.toolProposal)
+      toolProposal: normalizeToolProposal(payload.toolProposal),
+      context: normalizeContextReport(payload.context)
     });
     touchConversation(conversation);
     trimMessages(conversation);
@@ -806,13 +808,14 @@ function renderConversation() {
         message.content,
         message.sources,
         message.toolProposal,
-        message.toolExecution));
+        message.toolExecution,
+        message.context));
   });
 
   scrollToBottom();
 }
 
-function createMessageNode(role, content, sources = [], toolProposal = null, toolExecution = null) {
+function createMessageNode(role, content, sources = [], toolProposal = null, toolExecution = null, contextReport = null) {
   const row = document.createElement("article");
   row.className = `message-row ${role}`;
 
@@ -823,6 +826,11 @@ function createMessageNode(role, content, sources = [], toolProposal = null, too
   const bubble = document.createElement("div");
   bubble.className = "bubble";
   bubble.innerHTML = role === "assistant" ? renderMarkdown(content) : escapeHtml(content).replaceAll("\n", "<br>");
+
+  const normalizedContext = normalizeContextReport(contextReport);
+  if (role === "assistant" && normalizedContext) {
+    bubble.appendChild(createContextReportNode(normalizedContext));
+  }
 
   const normalizedSources = normalizeSources(sources);
   if (role === "assistant" && normalizedSources.length > 0) {
@@ -840,6 +848,66 @@ function createMessageNode(role, content, sources = [], toolProposal = null, too
   row.append(avatar, bubble);
   return row;
 }
+
+function createContextReportNode(report) {
+  const section = documentElement("details", "context-report");
+  const summary = documentElement("summary", "context-report-summary");
+
+  const counts = [];
+  if (report.selectedMemories > 0) counts.push(`${report.selectedMemories} trí nhớ`);
+  if (report.selectedDocuments > 0) counts.push(`${report.selectedDocuments} tài liệu`);
+  if (report.selectedTasks > 0) counts.push(`${report.selectedTasks} tác vụ`);
+  const budget = report.budget || {};
+  const used = Number(budget.usedCharacters) || 0;
+  const maximum = Number(budget.maximumCharacters) || 0;
+
+  summary.textContent = counts.length > 0
+    ? `Ngữ cảnh đã chọn · ${counts.join(" · ")} · ${formatContextCharacters(used)}/${formatContextCharacters(maximum)}`
+    : "Ngữ cảnh đã chọn · không cần thêm dữ liệu";
+
+  const body = documentElement("div", "context-report-body");
+  const meta = documentElement(
+    "p",
+    "context-report-meta",
+    `Workspace: ${report.workspaceId || "personal"} · chiến lược: ${report.strategy || "context-manager"}`);
+  body.appendChild(meta);
+
+  if (Array.isArray(report.items) && report.items.length > 0) {
+    const list = documentElement("div", "context-report-items");
+    report.items.forEach(item => {
+      const row = documentElement("div", "context-report-item");
+      const label = documentElement(
+        "strong",
+        "context-report-item-label",
+        `${contextKindLabel(item.kind)} · ${item.label || "Mục ngữ cảnh"}`);
+      const reason = documentElement(
+        "span",
+        "context-report-item-reason",
+        item.reason || "Được chọn vì có liên quan đến yêu cầu hiện tại.");
+      row.append(label, reason);
+      list.appendChild(row);
+    });
+    body.appendChild(list);
+  }
+
+  section.append(summary, body);
+  return section;
+}
+
+function contextKindLabel(kind) {
+  if (kind === "memory") return "Trí nhớ";
+  if (kind === "document") return "Tài liệu";
+  if (kind === "task") return "Tác vụ";
+  return "Ngữ cảnh";
+}
+
+function formatContextCharacters(value) {
+  const number = Math.max(0, Number(value) || 0);
+  return number >= 1000
+    ? `${(number / 1000).toFixed(number >= 10_000 ? 0 : 1)}k`
+    : String(number);
+}
+
 
 function createMessageSourcesNode(sources) {
   const section = documentElement("section", "message-sources");
@@ -1801,10 +1869,50 @@ function normalizeMessages(value) {
         content: item.content,
         sources: item.role === "assistant" ? normalizeSources(item.sources) : [],
         toolProposal: item.role === "assistant" ? normalizeToolProposal(item.toolProposal) : null,
-        toolExecution: item.role === "assistant" ? normalizeToolExecution(item.toolExecution) : null
+        toolExecution: item.role === "assistant" ? normalizeToolExecution(item.toolExecution) : null,
+        context: item.role === "assistant" ? normalizeContextReport(item.context) : null
       }))
     : [];
 }
+
+function normalizeContextReport(value) {
+  if (!value || typeof value !== "object") return null;
+
+  const budget = value.budget && typeof value.budget === "object"
+    ? {
+        maximumCharacters: Math.max(0, Number(value.budget.maximumCharacters) || 0),
+        usedCharacters: Math.max(0, Number(value.budget.usedCharacters) || 0),
+        memoryCharacters: Math.max(0, Number(value.budget.memoryCharacters) || 0),
+        documentCharacters: Math.max(0, Number(value.budget.documentCharacters) || 0),
+        taskCharacters: Math.max(0, Number(value.budget.taskCharacters) || 0)
+      }
+    : null;
+
+  const items = Array.isArray(value.items)
+    ? value.items
+        .filter(item => item && typeof item === "object")
+        .slice(0, 12)
+        .map(item => ({
+          kind: typeof item.kind === "string" ? item.kind : "",
+          id: typeof item.id === "string" ? item.id : "",
+          label: typeof item.label === "string" ? item.label : "",
+          reason: typeof item.reason === "string" ? item.reason : "",
+          score: Number.isFinite(Number(item.score)) ? Number(item.score) : null,
+          characterCount: Math.max(0, Number(item.characterCount) || 0)
+        }))
+    : [];
+
+  return {
+    workspaceId: typeof value.workspaceId === "string" ? value.workspaceId : "personal",
+    strategy: typeof value.strategy === "string" ? value.strategy : "",
+    selectedMemories: Math.max(0, Number(value.selectedMemories) || 0),
+    selectedDocuments: Math.max(0, Number(value.selectedDocuments) || 0),
+    selectedTasks: Math.max(0, Number(value.selectedTasks) || 0),
+    budget,
+    items
+  };
+}
+
 
 function normalizeSources(value) {
   return Array.isArray(value)

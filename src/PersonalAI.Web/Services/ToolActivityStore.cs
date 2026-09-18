@@ -17,6 +17,7 @@ public static class ToolActivityEventTypes
     public const string NativeContinuationCompleted = "native-continuation-completed";
     public const string TaskStepExecutionDenied = "task-step-execution-denied";
     public const string TaskStepExecutionCompleted = "task-step-execution-completed";
+    public const string TaskStepRetryPrepared = "task-step-retry-prepared";
 }
 
 public sealed record ToolActivityEvent(

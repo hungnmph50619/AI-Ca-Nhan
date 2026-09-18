@@ -103,7 +103,7 @@
 
   async function repairQuality() {
     if (busy) return;
-    if (!window.confirm("Sửa các lỗi đoạn dữ liệu/véc-tơ có thể phục hồi an toàn? Tệp gốc bị mất hoặc mã kiểm tra không khớp sẽ không bị tự động thay đổi.")) return;
+    if (!(await window.PersonalAiUi.confirm("Sửa các lỗi đoạn dữ liệu/véc-tơ có thể phục hồi an toàn? Tệp gốc bị mất hoặc mã kiểm tra không khớp sẽ không bị tự động thay đổi.", { title: "Xác nhận sửa dữ liệu", confirmText: "Sửa các lỗi an toàn" }))) return;
 
     busy = true;
     setButtonsDisabled(true);

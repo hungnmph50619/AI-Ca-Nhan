@@ -332,21 +332,42 @@ Function calling is disabled in this continuation. Produce only the final user-f
             })
             .ToList();
 
-        contents.Add(new
+        if (context.NativeOutput is { } nativeOutput
+            && nativeOutput.ValueKind == JsonValueKind.Object)
         {
-            role = "model",
-            parts = new[]
+            contents.Add(nativeOutput.Clone());
+        }
+        else
+        {
+            contents.Add(new
             {
-                new
+                role = "model",
+                parts = new[]
                 {
-                    functionCall = new
+                    new
                     {
-                        name = context.FunctionName,
-                        args = context.Arguments
+                        functionCall = new
+                        {
+                            name = context.FunctionName,
+                            args = context.Arguments
+                        }
                     }
                 }
+            });
+        }
+
+        var functionResponse = new Dictionary<string, object?>
+        {
+            ["name"] = context.FunctionName,
+            ["response"] = new
+            {
+                result = toolResultPayload
             }
-        });
+        };
+        if (!string.IsNullOrWhiteSpace(context.CallId))
+        {
+            functionResponse["id"] = context.CallId;
+        }
 
         contents.Add(new
         {
@@ -355,14 +376,7 @@ Function calling is disabled in this continuation. Produce only the final user-f
             {
                 new
                 {
-                    functionResponse = new
-                    {
-                        name = context.FunctionName,
-                        response = new
-                        {
-                            result = toolResultPayload
-                        }
-                    }
+                    functionResponse
                 }
             }
         });
@@ -541,6 +555,11 @@ Function calling is disabled in this continuation. Produce only the final user-f
                     arguments = empty.RootElement.Clone();
                 }
 
+                var functionCallId = functionCall.TryGetProperty("id", out var idElement)
+                    && idElement.ValueKind == JsonValueKind.String
+                    ? idElement.GetString()
+                    : null;
+
                 var function = functions.FirstOrDefault(candidateFunction =>
                     candidateFunction.Name.Equals(name, StringComparison.Ordinal));
                 if (function is null)
@@ -556,11 +575,11 @@ Function calling is disabled in this continuation. Produce only the final user-f
                     planningModel,
                     name,
                     ResponseId: null,
-                    CallId: null,
+                    CallId: functionCallId,
                     arguments,
                     messages.ToArray(),
                     function,
-                    functionCall.Clone());
+                    content.Clone());
 
                 calls.Add(new ProviderFunctionCallDecision(
                     name,

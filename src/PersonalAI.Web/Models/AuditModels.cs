@@ -6,6 +6,7 @@ public static class AuditAgents
     public const string PersonalAi = "personal-ai";
     public const string TaskEngine = "task-engine";
     public const string System = "system";
+    public const string Companion = "companion";
 }
 
 public static class AuditResults

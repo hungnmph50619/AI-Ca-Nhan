@@ -1,10 +1,10 @@
-# AI Cá Nhân — Controlled Browser Agent v1.2.0
+# AI Cá Nhân — Connector Foundation v1.3.0
 
-PersonalAI là trợ lý AI cá nhân chạy bằng ASP.NET Core 8, ưu tiên dữ liệu cục bộ, có thể dùng Gemini hoặc OpenAI cho phần sinh câu trả lời. v1.0.0 vẫn là **Stable Personal AI Core**; v1.1 thêm Controlled Computer Use và v1.2 thêm **Browser Agent có guard** mà không mở autonomous browsing hay agent loop.
+PersonalAI là trợ lý AI cá nhân chạy bằng ASP.NET Core 8, ưu tiên dữ liệu cục bộ, có thể dùng Gemini hoặc OpenAI cho phần sinh câu trả lời. v1.0.0 vẫn là **Stable Personal AI Core**; v1.1 thêm Controlled Computer Use, v1.2 thêm Browser Agent có guard và v1.3 thêm **Connector Foundation** với credential mã hóa, workspace isolation và authenticated read-only HTTPS access.
 
 > Đây vẫn là ứng dụng thiết kế cho một người dùng trên máy cá nhân. Không đưa trực tiếp lên Internet hoặc dùng như hệ thống nhiều người dùng nếu chưa bổ sung authentication, authorization và hardening triển khai phù hợp.
 
-## Có gì trong v1.2.0?
+## Có gì trong v1.3.0?
 
 ### Chat và AI provider
 
@@ -120,8 +120,9 @@ Tool Framework có permission contract:
 - SENSITIVE
 - COMPUTER
 - BROWSER
+- CONNECTOR
 
-WRITE, DELETE, EXTERNAL, SENSITIVE, COMPUTER và BROWSER yêu cầu confirmation theo policy hiện tại. COMPUTER dùng cho desktop control; BROWSER dùng cho browser session/navigation.
+WRITE, DELETE, EXTERNAL, SENSITIVE, COMPUTER, BROWSER và CONNECTOR yêu cầu confirmation theo policy hiện tại. COMPUTER dùng cho desktop control; BROWSER dùng cho browser session/navigation; CONNECTOR dùng cho authenticated external integrations.
 
 Các tool local gồm nhóm đọc/tiện ích và workspace files, ví dụ:
 
@@ -192,6 +193,50 @@ Status:
 
 ```http
 GET /api/browser/status
+```
+
+### Connector Foundation
+
+v1.3.0 thêm connector layer riêng thay vì dùng Browser Agent để lách authentication.
+
+Kind hiện tại:
+
+`http-bearer`
+
+Mỗi connection gồm:
+
+- name;
+- public HTTPS base origin;
+- encrypted Bearer credential;
+- workspace ownership;
+- created/updated metadata.
+
+Bearer token được mã hóa local bằng ASP.NET Core Data Protection và **không được trả lại qua API/UI**.
+
+Connector tools:
+
+- `connectors.list` — READ + SENSITIVE + CONNECTOR;
+- `connector.http.get` — READ + EXTERNAL + SENSITIVE + CONNECTOR.
+
+Mọi connector tool cần explicit confirmation.
+
+Authenticated read hiện chỉ dùng HTTPS GET cùng origin. Cross-origin redirect không được phép mang Authorization header.
+
+v1.3.0 chưa có POST/PUT/PATCH/DELETE qua connector, webhook send, email send, calendar write, upload hoặc provider-specific OAuth.
+
+API quản lý local:
+
+```http
+GET    /api/connectors/status
+GET    /api/connectors
+POST   /api/connectors
+DELETE /api/connectors/{id}?confirmed=true
+```
+
+Storage mặc định:
+
+```text
+%LOCALAPPDATA%\PersonalAI\Connectors\connections.json
 ```
 
 ### Tasks
@@ -265,13 +310,13 @@ Undo khả dụng 7 ngày, tối đa 500 record, snapshot tối đa 512 KB.
 
 ## Stable Core contract
 
-v1.1.0 giữ API contract của Stable Core và mở controlled capability layer:
+v1.3.0 giữ API contract của Stable Core và mở rộng controlled capability layer:
 
-- Version: `1.2.0`
+- Version: `1.3.0`
 - API contract: `1`
 - Channel: `controlled`
 - Stable Core: v1.0 semantics
-- Controlled modules: `computer-use`, `browser-agent`
+- Controlled modules: `computer-use`, `browser-agent`, `connectors`
 
 Capabilities:
 
@@ -298,7 +343,7 @@ Unhandled API exception được sanitize; stack trace và đường dẫn local
 
 ## Guardrails hiện tại
 
-v1.2.0 **không phải autonomous agent**.
+v1.3.0 **không phải autonomous agent**.
 
 Hiện tại:
 
@@ -312,6 +357,9 @@ Hiện tại:
 - Browser confirmation: bắt buộc
 - Browser private-network access: tắt
 - Browser side effects/form submit: tắt
+- Connector confirmation: bắt buộc
+- Connector credential encryption: bật
+- Connector write actions: tắt
 - Automatic multi-step execution: tắt
 - Background scheduler: tắt
 - Autonomous agent loop: tắt
@@ -327,7 +375,8 @@ Chưa có:
 - background scheduler;
 - autonomous agent loop;
 - automatic confirmation;
-- connectors Gmail/Calendar;
+- Gmail/Calendar/Microsoft provider-specific OAuth;
+- connector write actions;
 - cloud multi-user auth.
 
 ## Yêu cầu
@@ -392,6 +441,7 @@ Knowledge\files\
 Tasks\personal-tasks.db
 Audit\audit.db
 Undo\undo.db
+Connectors\connections.json
 Workspace\
 ```
 
@@ -404,6 +454,7 @@ Workspace:Root / Workspace__Root
 Tasks:Root     / Tasks__Root
 Audit:Root     / Audit__Root
 Undo:Root      / Undo__Root
+Connectors:Root / Connectors__Root
 ```
 
 ## Kiến trúc mức cao
@@ -423,6 +474,7 @@ ASP.NET Core
   ├── Files
   ├── Audit
   ├── Undo
+  ├── Connectors
   │
   ├── Context Manager
   │      ├── Memory selection
@@ -498,10 +550,11 @@ Các mốc capability:
 ```text
 docs/releases/v1.1.0.md
 docs/releases/v1.2.0.md
+docs/releases/v1.3.0.md
 ```
 
-## Hướng phát triển sau v1.2
+## Hướng phát triển sau v1.3
 
-Computer Use và Browser Agent hiện đều nằm trong controlled capability layer. Theo roadmap, bước kế tiếp là **v1.3 — Connectors** với permission theo provider/action, explicit confirmation cho external side effects và Audit đầy đủ.
+Computer Use, Browser Agent và Connector Foundation hiện nằm trong controlled capability layer. Theo roadmap, bước kế tiếp là **v1.4 — Software Development Agent**.
 
-Connectors không nên dùng Browser Agent để bypass authentication hoặc permission model của dịch vụ bên ngoài.
+Software Development Agent phải tiếp tục dùng Workspace/Files/Tools/Audit/Undo và không được biến shell/process execution thành quyền mặc định không kiểm soát.

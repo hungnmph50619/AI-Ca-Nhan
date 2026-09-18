@@ -1,5 +1,5 @@
 (() => {
-  const VERSION = "0.8.5";
+  const VERSION = "0.8.6";
   let loading = false;
 
   if (document.readyState === "loading") {
@@ -80,7 +80,7 @@
 
     const intro = document.createElement("div");
     intro.className = "v080-framework-intro";
-    intro.innerHTML = "<strong>Tool Calling Orchestration v0.8.5</strong><p>Framework có 13 công cụ và chat có thể đề xuất một tool call có cấu trúc khi bạn bật “Đề xuất công cụ”. Đề xuất được server kiểm tra trước khi hiển thị và chưa tự chạy.</p>";
+    intro.innerHTML = "<strong>Tool Result Synthesis v0.8.6</strong><p>Framework có 13 công cụ, proposal vẫn tách khỏi execution và kết quả tool giờ có tóm tắt local. Người dùng có thể chủ động gửi kết quả sang provider để AI diễn giải.</p>";
 
     const permissionLegend = document.createElement("div");
     permissionLegend.className = "v080-permission-legend";
@@ -98,7 +98,7 @@
 
     const note = document.createElement("p");
     note.className = "security-copy";
-    note.textContent = "v0.8.5 tách rõ bước đề xuất và bước thực thi. Server không tin permission do model tự khai báo; permission lấy từ registry. WRITE/DELETE vẫn bắt buộc xác nhận, proposal có hạn sử dụng và chỉ được thực thi một lần.";
+    note.textContent = "v0.8.6 không tự gửi output tool ra ngoài. Tóm tắt local luôn chạy trên máy; “Diễn giải bằng AI” cần xác nhận riêng vì output sẽ được gửi tới provider đang cấu hình. Kết quả SENSITIVE bị chặn khỏi AI synthesis.";
 
     card.append(header, intro, permissionLegend, status, list, note);
     dialog.appendChild(card);

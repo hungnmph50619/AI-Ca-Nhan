@@ -198,12 +198,12 @@ public sealed class ToolOrchestrationService : IToolOrchestrationService
 
         var reason = NormalizeText(
             draft.Reason,
-            $"Đề xuất dùng {tool.Definition.Name} cho yêu cầu hiện tại.");
+            $"Đề xuất dùng {GetToolDisplayName(tool.Definition.Name)} cho yêu cầu hiện tại.");
         var assistantMessage = NormalizeText(
             draft.AssistantMessage,
             requiresConfirmation
-                ? $"Tôi có thể dùng {tool.Definition.Name}. Hãy xem chi tiết và xác nhận trước khi chạy."
-                : $"Tôi có thể dùng {tool.Definition.Name}. Hãy xem chi tiết trước khi chạy.");
+                ? $"Tôi có thể dùng {GetToolDisplayName(tool.Definition.Name)}. Hãy xem chi tiết và xác nhận trước khi chạy."
+                : $"Tôi có thể dùng {GetToolDisplayName(tool.Definition.Name)}. Hãy xem chi tiết trước khi chạy.");
 
         var proposal = new ToolCallProposal(
             Guid.NewGuid(),
@@ -490,6 +490,25 @@ public sealed class ToolOrchestrationService : IToolOrchestrationService
 
         return (payload, outputTruncated);
     }
+
+    private static string GetToolDisplayName(string toolName) =>
+        toolName switch
+        {
+            "app.summary" => "Tổng quan ứng dụng",
+            "documents.search" => "Tìm trong tài liệu",
+            "local.calculate" => "Máy tính",
+            "local.clock" => "Đồng hồ hệ thống",
+            "local.date_math" => "Tính toán ngày giờ",
+            "local.text_stats" => "Thống kê văn bản",
+            "memory.search" => "Tìm trong trí nhớ",
+            "workspace.create_directory" => "Tạo thư mục",
+            "workspace.delete" => "Xóa tệp hoặc thư mục",
+            "workspace.list" => "Liệt kê thư mục làm việc",
+            "workspace.move" => "Di chuyển hoặc đổi tên",
+            "workspace.read_text" => "Đọc tệp văn bản",
+            "workspace.write_text" => "Ghi tệp văn bản",
+            _ => "công cụ"
+        };
 
     private static string CreateProviderFunctionName(string internalName)
     {

@@ -216,6 +216,101 @@ jobs:
           personal_tasks=$(curl -fsS http://127.0.0.1:5077/api/tasks)
           echo "$personal_tasks" | jq -e 'all(.tasks[]; .id != "'"$custom_task_id"'")' >/dev/null
 
+          companion_status=$(curl -fsS http://127.0.0.1:5077/api/companion/status)
+          echo "$companion_status" | jq -e '.version == "1.5.0" and .enabled == true and .secureTransportRequired == false and .maximumDevicesPerWorkspace == 10 and .pairingLifetimeMinutes == 5 and any(.capabilities[]; . == "chat") and any(.capabilities[]; . == "tasks-read")' >/dev/null
+
+          companion_no_token_code=$(curl -sS -o /tmp/companion-no-token.json -w '%{http_code}' http://127.0.0.1:5077/api/companion/client/me)
+          test "$companion_no_token_code" = "401"
+          jq -e '(.error | contains("token"))' /tmp/companion-no-token.json >/dev/null
+
+          companion_pair_unconfirmed_code=$(curl -sS -o /tmp/companion-pair-unconfirmed.json -w '%{http_code}' -X POST http://127.0.0.1:5077/api/companion/admin/pairing/start \
+            -H 'Content-Type: application/json' \
+            -d '{"confirmed":false}')
+          test "$companion_pair_unconfirmed_code" = "403"
+
+          personal_pairing=$(curl -fsS -X POST http://127.0.0.1:5077/api/companion/admin/pairing/start \
+            -H 'Content-Type: application/json' \
+            -d '{"confirmed":true}')
+          personal_pairing_code=$(echo "$personal_pairing" | jq -r '.code')
+          test "${#personal_pairing_code}" = "12"
+          echo "$personal_pairing" | jq -e '.workspaceId == "personal" and (.expiresAt | type) == "string"' >/dev/null
+
+          personal_claim=$(curl -fsS -X POST http://127.0.0.1:5077/api/companion/pairing/claim \
+            -H 'Content-Type: application/json' \
+            -d '{"code":"'"$personal_pairing_code"'","deviceName":"CI Android Personal"}')
+          personal_companion_token=$(echo "$personal_claim" | jq -r '.token')
+          personal_companion_device_id=$(echo "$personal_claim" | jq -r '.device.id')
+          test -n "$personal_companion_token"
+          test -n "$personal_companion_device_id"
+          echo "$personal_claim" | jq -e '.device.workspaceId == "personal" and .device.name == "CI Android Personal"' >/dev/null
+          test -f /tmp/personalai-companion/devices.json
+          ! grep -Fq "$personal_companion_token" /tmp/personalai-companion/devices.json
+          ! grep -Fq "$personal_pairing_code" /tmp/personalai-companion/devices.json
+          grep -Eq '"tokenSha256"[[:space:]]*:[[:space:]]*"[A-F0-9]{64}"' /tmp/personalai-companion/devices.json
+
+          personal_me=$(curl -fsS http://127.0.0.1:5077/api/companion/client/me \
+            -H "Authorization: Bearer $personal_companion_token")
+          echo "$personal_me" | jq -e '.device.id == "'"$personal_companion_device_id"'" and .device.workspaceId == "personal" and .version == "1.5.0" and any(.capabilities[]; . == "chat")' >/dev/null
+
+          personal_core_override=$(curl -fsS http://127.0.0.1:5077/api/companion/client/core \
+            -H "Authorization: Bearer $personal_companion_token" \
+            -H "X-PersonalAI-Workspace: $custom_workspace_id")
+          echo "$personal_core_override" | jq -e '.workspaceId == "personal" and .version == "1.5.0"' >/dev/null
+
+          personal_companion_tasks=$(curl -fsS http://127.0.0.1:5077/api/companion/client/tasks \
+            -H "Authorization: Bearer $personal_companion_token")
+          echo "$personal_companion_tasks" | jq -e 'all(.tasks[]; .id != "'"$custom_task_id"'")' >/dev/null
+
+          companion_chat_invalid_code=$(curl -sS -o /tmp/companion-chat-invalid.json -w '%{http_code}' -X POST http://127.0.0.1:5077/api/companion/client/chat \
+            -H "Authorization: Bearer $personal_companion_token" \
+            -H 'Content-Type: application/json' \
+            -d '{"messages":[],"useTools":true}')
+          test "$companion_chat_invalid_code" = "400"
+          jq -e '(.error | contains("câu hỏi"))' /tmp/companion-chat-invalid.json >/dev/null
+
+          custom_pairing=$(curl -fsS -X POST http://127.0.0.1:5077/api/companion/admin/pairing/start \
+            -H "X-PersonalAI-Workspace: $custom_workspace_id" \
+            -H 'Content-Type: application/json' \
+            -d '{"confirmed":true}')
+          custom_pairing_code=$(echo "$custom_pairing" | jq -r '.code')
+          echo "$custom_pairing" | jq -e '.workspaceId == "'"$custom_workspace_id"'"' >/dev/null
+
+          custom_claim=$(curl -fsS -X POST http://127.0.0.1:5077/api/companion/pairing/claim \
+            -H 'Content-Type: application/json' \
+            -d '{"code":"'"$custom_pairing_code"'","deviceName":"CI Android Workspace"}')
+          custom_companion_token=$(echo "$custom_claim" | jq -r '.token')
+          custom_companion_device_id=$(echo "$custom_claim" | jq -r '.device.id')
+          test -n "$custom_companion_token"
+          echo "$custom_claim" | jq -e '.device.workspaceId == "'"$custom_workspace_id"'"' >/dev/null
+          ! grep -Fq "$custom_companion_token" /tmp/personalai-companion/devices.json
+
+          custom_companion_core=$(curl -fsS http://127.0.0.1:5077/api/companion/client/core \
+            -H "Authorization: Bearer $custom_companion_token")
+          echo "$custom_companion_core" | jq -e '.workspaceId == "'"$custom_workspace_id"'" and .workspaceName == "CI Workspace"' >/dev/null
+
+          custom_companion_tasks=$(curl -fsS http://127.0.0.1:5077/api/companion/client/tasks \
+            -H "Authorization: Bearer $custom_companion_token")
+          echo "$custom_companion_tasks" | jq -e 'any(.tasks[]; .id == "'"$custom_task_id"'")' >/dev/null
+
+          personal_companion_devices=$(curl -fsS http://127.0.0.1:5077/api/companion/admin/devices)
+          echo "$personal_companion_devices" | jq -e '.workspaceId == "personal" and any(.devices[]; .id == "'"$personal_companion_device_id"'") and all(.devices[]; .id != "'"$custom_companion_device_id"'")' >/dev/null
+          custom_companion_devices=$(curl -fsS -H "X-PersonalAI-Workspace: $custom_workspace_id" http://127.0.0.1:5077/api/companion/admin/devices)
+          echo "$custom_companion_devices" | jq -e '.workspaceId == "'"$custom_workspace_id"'" and any(.devices[]; .id == "'"$custom_companion_device_id"'") and all(.devices[]; .id != "'"$personal_companion_device_id"'")' >/dev/null
+
+          companion_revoke_unconfirmed_code=$(curl -sS -o /tmp/companion-revoke-unconfirmed.json -w '%{http_code}' -X DELETE "http://127.0.0.1:5077/api/companion/admin/devices/$personal_companion_device_id")
+          test "$companion_revoke_unconfirmed_code" = "403"
+          companion_revoke_code=$(curl -sS -o /tmp/companion-revoke.json -w '%{http_code}' -X DELETE "http://127.0.0.1:5077/api/companion/admin/devices/$personal_companion_device_id?confirmed=true")
+          test "$companion_revoke_code" = "204"
+
+          revoked_token_code=$(curl -sS -o /tmp/companion-revoked-token.json -w '%{http_code}' http://127.0.0.1:5077/api/companion/client/me \
+            -H "Authorization: Bearer $personal_companion_token")
+          test "$revoked_token_code" = "401"
+
+          companion_audit=$(curl -fsS 'http://127.0.0.1:5077/api/audit?limit=200')
+          echo "$companion_audit" | jq -e 'any(.items[]; .action == "companion.pairing.prepare" and .result == "prepared") and any(.items[]; .action == "companion.pairing.claim" and .agent == "companion" and .result == "succeeded") and any(.items[]; .action == "companion.device.revoke" and .result == "succeeded")' >/dev/null
+          ! echo "$companion_audit" | grep -Fq "$custom_companion_token"
+          ! echo "$companion_audit" | grep -Fq "$custom_pairing_code"
+
           context_preview_payload=$(jq -nc '{messages:[{role:"user",content:"workspace-ci-secret-094 workspace scoped document 094 task theo workspace"}],useKnowledge:true,knowledgeMode:"normal",useMemory:true,useTaskContext:true}')
           context_preview=$(curl -fsS -X POST http://127.0.0.1:5077/api/context/preview \
             -H "X-PersonalAI-Workspace: $custom_workspace_id" \

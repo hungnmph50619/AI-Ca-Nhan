@@ -4,7 +4,7 @@ namespace PersonalAI.Web.Services;
 
 public static class ToolFrameworkEndpoints
 {
-    public const string FrameworkVersion = "0.9.0";
+    public const string FrameworkVersion = "0.9.1";
 
     private static readonly string[] PermissionTypes =
     [

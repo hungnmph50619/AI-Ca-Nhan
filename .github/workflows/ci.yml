@@ -31,14 +31,14 @@ jobs:
         run: |
           set -euo pipefail
           trap 'echo "Smoke test failed at line ${LINENO}: ${BASH_COMMAND}" >&2' ERR
-          rm -rf /tmp/personalai-workspace
+          rm -rf /tmp/personalai-workspace /tmp/personalai-tasks
           mkdir -p /tmp/personalai-workspace/notes
           printf 'Workspace root file.\n' >/tmp/personalai-workspace/readme.txt
           printf 'Workspace alpha secure file tool content.\nSecond line.\n' >/tmp/personalai-workspace/notes/plan.md
           printf '\0binary payload' >/tmp/personalai-workspace/binary.bin
           ln -s /tmp /tmp/personalai-workspace/escape
 
-          Workspace__Root=/tmp/personalai-workspace dotnet run --project src/PersonalAI.Web/PersonalAI.Web.csproj --configuration Release --no-build --urls http://127.0.0.1:5077 >/tmp/personalai.log 2>&1 &
+          Workspace__Root=/tmp/personalai-workspace Tasks__Root=/tmp/personalai-tasks dotnet run --project src/PersonalAI.Web/PersonalAI.Web.csproj --configuration Release --no-build --urls http://127.0.0.1:5077 >/tmp/personalai.log 2>&1 &
           APP_PID=$!
           trap 'kill "$APP_PID" 2>/dev/null || true' EXIT
 
@@ -55,10 +55,10 @@ jobs:
             exit 1
           fi
 
-          curl -fsS http://127.0.0.1:5077/api/status | jq -e '.version == "0.9.0"' >/dev/null
+          curl -fsS http://127.0.0.1:5077/api/status | jq -e '.version == "0.9.1"' >/dev/null
 
           tools=$(curl -fsS http://127.0.0.1:5077/api/tools)
-          echo "$tools" | jq -e '.frameworkVersion == "0.9.0" and (.permissionTypes | sort) == (["DELETE","EXTERNAL","READ","SENSITIVE","WRITE"] | sort)' >/dev/null
+          echo "$tools" | jq -e '.frameworkVersion == "0.9.1" and (.permissionTypes | sort) == (["DELETE","EXTERNAL","READ","SENSITIVE","WRITE"] | sort)' >/dev/null
           echo "$tools" | jq -e '(.tools | length) == 13 and any(.tools[]; .name == "local.clock" and .localOnly == true and .requiredPermissions == ["READ"]) and any(.tools[]; .name == "local.text_stats" and .timeoutMs == 2000) and any(.tools[]; .name == "memory.search") and any(.tools[]; .name == "documents.search") and any(.tools[]; .name == "local.calculate") and any(.tools[]; .name == "local.date_math") and any(.tools[]; .name == "app.summary") and any(.tools[]; .name == "workspace.list" and .requiredPermissions == ["READ"]) and any(.tools[]; .name == "workspace.read_text" and .requiredPermissions == ["READ"]) and any(.tools[]; .name == "workspace.write_text" and .requiredPermissions == ["WRITE"] and .requiresConfirmation == true) and any(.tools[]; .name == "workspace.create_directory" and .requiredPermissions == ["WRITE"] and .requiresConfirmation == true) and any(.tools[]; .name == "workspace.move" and .requiredPermissions == ["WRITE"] and .requiresConfirmation == true) and any(.tools[]; .name == "workspace.delete" and .requiredPermissions == ["DELETE"] and .requiresConfirmation == true)' >/dev/null
 
           text_tool=$(curl -fsS http://127.0.0.1:5077/api/tools/local.text_stats)
@@ -107,7 +107,7 @@ jobs:
           echo "$date_result" | jq -e '.status == "succeeded" and (.output.result | startswith("2026-09-19T02:00:00"))' >/dev/null
 
           tasks_initial=$(curl -fsS http://127.0.0.1:5077/api/tasks)
-          echo "$tasks_initial" | jq -e '.persistent == false and .maximumTasks == 50 and (.tasks | type) == "array"' >/dev/null
+          echo "$tasks_initial" | jq -e '.persistent == true and .maximumTasks == 50 and (.tasks | type) == "array"' >/dev/null
 
           bad_task_code=$(curl -sS -o /tmp/task-invalid.json -w '%{http_code}' -X POST http://127.0.0.1:5077/api/tasks/prepare \
             -H 'Content-Type: application/json' \
@@ -610,6 +610,71 @@ jobs:
           quality_after=$(curl -fsS http://127.0.0.1:5077/api/knowledge/quality/status)
           echo "$quality_after" | jq -e '.status == "healthy" and .totalDocuments == 0 and (.issues | length) == 0' >/dev/null
 
+          persist_task=$(curl -fsS -X POST http://127.0.0.1:5077/api/tasks/prepare \
+            -H 'Content-Type: application/json' \
+            -d '{"goal":"Kiểm tra lưu tác vụ qua khởi động lại","plan":"Giữ tác vụ trên máy rồi chạy sau khi khởi động lại.","steps":[{"title":"Tính 8 nhân 7","description":"Dùng máy tính sau khi khởi động lại.","toolName":"local.calculate","arguments":{"expression":"8 * 7"}}]}')
+          persist_task_id=$(echo "$persist_task" | jq -r '.id')
+
+          interrupted_seed=$(curl -fsS -X POST http://127.0.0.1:5077/api/tasks/prepare \
+            -H 'Content-Type: application/json' \
+            -d '{"goal":"Kiểm tra phục hồi tác vụ gián đoạn","plan":"Giả lập ứng dụng dừng giữa lúc đọc giờ.","steps":[{"title":"Đọc giờ hệ thống","description":"Kiểm tra bước bị gián đoạn.","toolName":"local.clock","arguments":{}}]}')
+          interrupted_task_id=$(echo "$interrupted_seed" | jq -r '.id')
+
+          kill "$APP_PID"
+          wait "$APP_PID" 2>/dev/null || true
+
+          python3 - /tmp/personalai-tasks/personal-tasks.db "$interrupted_task_id" <<'PY'
+          import json, sqlite3, sys
+          db, task_id = sys.argv[1], sys.argv[2]
+          con = sqlite3.connect(db)
+          row = con.execute(
+              "SELECT payload_json FROM personal_tasks WHERE task_id=?",
+              (task_id,)
+          ).fetchone()
+          assert row is not None
+          payload = json.loads(row[0])
+          payload["status"] = "running"
+          payload["steps"][0]["status"] = "running"
+          con.execute(
+              "UPDATE personal_tasks SET status='running', payload_json=? WHERE task_id=?",
+              (json.dumps(payload, ensure_ascii=False), task_id)
+          )
+          con.commit()
+          con.close()
+          PY
+
+          Workspace__Root=/tmp/personalai-workspace Tasks__Root=/tmp/personalai-tasks dotnet run --project src/PersonalAI.Web/PersonalAI.Web.csproj --configuration Release --no-build --urls http://127.0.0.1:5077 >/tmp/personalai-restart.log 2>&1 &
+          APP_PID=$!
+
+          ready=0
+          for i in {1..30}; do
+            if curl -fsS http://127.0.0.1:5077/api/tasks >/dev/null; then
+              ready=1
+              break
+            fi
+            sleep 1
+          done
+          if [ "$ready" -ne 1 ]; then
+            cat /tmp/personalai-restart.log
+            exit 1
+          fi
+
+          tasks_after_restart=$(curl -fsS http://127.0.0.1:5077/api/tasks)
+          echo "$tasks_after_restart" | jq -e '.persistent == true and any(.tasks[]; .id == "'"$persist_task_id"'" and .status == "planned") and any(.tasks[]; .id == "'"$interrupted_task_id"'" and .status == "interrupted" and .steps[0].status == "interrupted")' >/dev/null
+
+          resumed_task=$(curl -fsS -X POST "http://127.0.0.1:5077/api/tasks/$interrupted_task_id/resume")
+          echo "$resumed_task" | jq -e '.status == "planned" and .steps[0].status == "pending"' >/dev/null
+
+          resumed_execution=$(curl -fsS -X POST "http://127.0.0.1:5077/api/tasks/$interrupted_task_id/execute-next" \
+            -H 'Content-Type: application/json' \
+            -d '{"confirmed":false}')
+          echo "$resumed_execution" | jq -e '.execution.status == "succeeded" and .task.status == "completed" and .task.steps[0].status == "completed"' >/dev/null
+
+          persisted_execution=$(curl -fsS -X POST "http://127.0.0.1:5077/api/tasks/$persist_task_id/execute-next" \
+            -H 'Content-Type: application/json' \
+            -d '{"confirmed":false}')
+          echo "$persisted_execution" | jq -e '.execution.status == "succeeded" and .execution.output.result == 56 and .task.status == "completed"' >/dev/null
+
           grep -Fq 'chèn ký hiệu [1], [2]' src/PersonalAI.Web/Services/KnowledgeGroundingService.cs
           grep -Fq 'v076.js' src/PersonalAI.Web/wwwroot/index.html
           grep -Fq 'v076.css' src/PersonalAI.Web/wwwroot/index.html
@@ -649,22 +714,26 @@ jobs:
           grep -Fq 'RetentionDays = 30' src/PersonalAI.Web/Services/ToolActivityStore.cs
           grep -Fq '/api/tasks/prepare' src/PersonalAI.Web/Services/TaskEngineEndpoints.cs
           grep -Fq '/api/tasks/{taskId:guid}/execute-next' src/PersonalAI.Web/Services/TaskEngineEndpoints.cs
+          grep -Fq '/api/tasks/{taskId:guid}/resume' src/PersonalAI.Web/Services/TaskEngineEndpoints.cs
+          grep -Fq 'SqlitePersonalTaskStore' src/PersonalAI.Web/Services/PersonalTaskStore.cs
+          grep -Fq 'personal-tasks.db' src/PersonalAI.Web/Services/PersonalTaskStore.cs
+          grep -Fq 'PersonalTaskStatuses.Interrupted' src/PersonalAI.Web/Services/PersonalTaskStore.cs
           grep -Fq 'MaximumSteps = 8' src/PersonalAI.Web/Services/TaskEngineService.cs
-          grep -Fq 'Persistent: false' src/PersonalAI.Web/Services/TaskEngineService.cs
+          grep -Fq 'Persistent: true' src/PersonalAI.Web/Services/TaskEngineService.cs
           grep -Fq 'v090.css' src/PersonalAI.Web/wwwroot/index.html
           grep -Fq 'v090.js' src/PersonalAI.Web/wwwroot/index.html
-          grep -Fq 'Bộ máy tác vụ v0.9.0' src/PersonalAI.Web/wwwroot/v090.js
+          grep -Fq 'Tác vụ bền vững v0.9.1' src/PersonalAI.Web/wwwroot/v090.js
           grep -Fq 'MỤC TIÊU → KẾ HOẠCH → TỪNG BƯỚC' src/PersonalAI.Web/wwwroot/v090.js
           grep -Fq 'arguments_sha256' src/PersonalAI.Web/Services/ToolActivityStore.cs
           grep -Fq 'output_sha256' src/PersonalAI.Web/Services/ToolActivityStore.cs
           grep -Fq 'v089.css' src/PersonalAI.Web/wwwroot/index.html
-          grep -Fq 'Nhật ký hoạt động công cụ v0.9.0' src/PersonalAI.Web/wwwroot/v080.js
+          grep -Fq 'Nhật ký hoạt động công cụ v0.9.1' src/PersonalAI.Web/wwwroot/v080.js
           grep -Fq 'Nhật ký hoạt động gần đây' src/PersonalAI.Web/wwwroot/v080.js
           grep -Fq 'v088.css' src/PersonalAI.Web/wwwroot/index.html
           grep -Fq 'Nguồn đề xuất:' src/PersonalAI.Web/wwwroot/app.js
           grep -Fq 'Tham số' src/PersonalAI.Web/wwwroot/app.js
           grep -Fq 'CÔNG CỤ NỘI BỘ TRÊN MÁY NÀY' src/PersonalAI.Web/wwwroot/v080.js
-          grep -Fq 'Nhật ký hoạt động công cụ v0.9.0' src/PersonalAI.Web/wwwroot/v080.js
+          grep -Fq 'Nhật ký hoạt động công cụ v0.9.1' src/PersonalAI.Web/wwwroot/v080.js
           grep -Fq 'Mô hình' src/PersonalAI.Web/wwwroot/index.html
           grep -Fq 'Khóa truy cập' src/PersonalAI.Web/wwwroot/index.html
           ! grep -Fq 'Planner:' src/PersonalAI.Web/wwwroot/app.js

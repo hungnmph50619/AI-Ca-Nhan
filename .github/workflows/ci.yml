@@ -596,7 +596,7 @@ jobs:
           grep -Fq 'CÔNG CỤ NỘI BỘ TRÊN MÁY NÀY' src/PersonalAI.Web/wwwroot/v080.js
           grep -Fq 'Hoàn tất câu trả lời từ kết quả công cụ v0.8.8' src/PersonalAI.Web/wwwroot/v080.js
           grep -Fq 'Mô hình' src/PersonalAI.Web/wwwroot/index.html
-          grep -Fq 'Khóa API' src/PersonalAI.Web/wwwroot/index.html
+          grep -Fq 'Khóa truy cập' src/PersonalAI.Web/wwwroot/index.html
           ! grep -Fq 'Planner:' src/PersonalAI.Web/wwwroot/app.js
           ! grep -Fq 'Permission:' src/PersonalAI.Web/wwwroot/app.js
           ! grep -Fq 'Arguments' src/PersonalAI.Web/wwwroot/app.js

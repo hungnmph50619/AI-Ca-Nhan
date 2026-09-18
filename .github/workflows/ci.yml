@@ -430,6 +430,152 @@ jobs:
             jq -e '(.error | contains("chưa được cấu hình"))' /tmp/decision-analyze-unconfigured.json >/dev/null
           fi
 
+          automation_status=$(curl -fsS http://127.0.0.1:5077/api/automations/status)
+          echo "$automation_status" | jq -e '.version == "1.8.0" and .supported == true and .backgroundSchedulerEnabled == true and .autoConfirmationEnabled == false and .decisionRecommendationAutoExecutionEnabled == false and .maximumAutomationsPerWorkspace == 50 and .minimumIntervalMinutes == 5 and .maximumIntervalMinutes == 10080 and .schedulerPollSeconds == 30 and .maximumDueBatchSize == 20' >/dev/null
+
+          automation_future=$(date -u -d '+30 minutes' '+%Y-%m-%dT%H:%M:%SZ')
+
+          automation_safe_task=$(curl -fsS -X POST http://127.0.0.1:5077/api/tasks/prepare \
+            -H 'Content-Type: application/json' \
+            -d '{"goal":"Automation safe read một bước","plan":"Chỉ liệt kê workspace bằng READ local.","steps":[{"title":"Liệt kê workspace","description":"READ local không cần xác nhận.","toolName":"workspace.list","arguments":{"path":".","maxEntries":20}}]}')
+          automation_safe_task_id=$(echo "$automation_safe_task" | jq -r '.id')
+          test -n "$automation_safe_task_id"
+
+          automation_create_unconfirmed_code=$(curl -sS -o /tmp/automation-create-unconfirmed.json -w '%{http_code}' -X POST http://127.0.0.1:5077/api/automations \
+            -H 'Content-Type: application/json' \
+            -d '{"name":"Safe read unconfirmed","taskId":"'"$automation_safe_task_id"'","scheduleKind":"once","startAt":"'"$automation_future"'","confirmed":false}')
+          test "$automation_create_unconfirmed_code" = "403"
+
+          automation_safe=$(curl -fsS -X POST http://127.0.0.1:5077/api/automations \
+            -H 'Content-Type: application/json' \
+            -d '{"name":"Safe read once","taskId":"'"$automation_safe_task_id"'","scheduleKind":"once","startAt":"'"$automation_future"'","confirmed":true}')
+          automation_safe_id=$(echo "$automation_safe" | jq -r '.id')
+          echo "$automation_safe" | jq -e '.workspaceId == "personal" and .state == "scheduled" and .enabled == true and .scheduleKind == "once" and .runCount == 0' >/dev/null
+
+          automation_run_unconfirmed_code=$(curl -sS -o /tmp/automation-run-unconfirmed.json -w '%{http_code}' -X POST "http://127.0.0.1:5077/api/automations/$automation_safe_id/run-now" \
+            -H 'Content-Type: application/json' \
+            -d '{"confirmed":false}')
+          test "$automation_run_unconfirmed_code" = "403"
+
+          automation_safe_run=$(curl -fsS -X POST "http://127.0.0.1:5077/api/automations/$automation_safe_id/run-now" \
+            -H 'Content-Type: application/json' \
+            -d '{"confirmed":true}')
+          echo "$automation_safe_run" | jq -e '.executedStep == true and .requiresConfirmation == false and .automation.state == "completed" and .automation.enabled == false and .automation.runCount == 1 and .task.status == "completed" and .execution.execution.success == true' >/dev/null
+          automation_safe_task_after=$(curl -fsS "http://127.0.0.1:5077/api/tasks/$automation_safe_task_id")
+          echo "$automation_safe_task_after" | jq -e '.status == "completed" and .steps[0].status == "completed"' >/dev/null
+
+          automation_terminal_run_code=$(curl -sS -o /tmp/automation-terminal-run.json -w '%{http_code}' -X POST "http://127.0.0.1:5077/api/automations/$automation_safe_id/run-now" \
+            -H 'Content-Type: application/json' \
+            -d '{"confirmed":true}')
+          test "$automation_terminal_run_code" = "400"
+          jq -e '(.error | contains("kết thúc"))' /tmp/automation-terminal-run.json >/dev/null
+
+          automation_unsafe_task=$(curl -fsS -X POST http://127.0.0.1:5077/api/tasks/prepare \
+            -H 'Content-Type: application/json' \
+            -d '{"goal":"Automation phải dừng trước WRITE","plan":"WRITE cần người dùng xác nhận, sau đó mới READ.","steps":[{"title":"Tạo file","description":"WRITE phải được xác nhận thủ công.","toolName":"workspace.write_text","arguments":{"path":"automation-unsafe-180.txt","content":"manual-confirmation-only","mode":"create"}},{"title":"Liệt kê sau WRITE","description":"READ local sau khi người dùng xử lý bước 1.","toolName":"workspace.list","arguments":{"path":".","maxEntries":20},"dependsOn":[1]}]}')
+          automation_unsafe_task_id=$(echo "$automation_unsafe_task" | jq -r '.id')
+
+          automation_unsafe=$(curl -fsS -X POST http://127.0.0.1:5077/api/automations \
+            -H 'Content-Type: application/json' \
+            -d '{"name":"Unsafe write guard","taskId":"'"$automation_unsafe_task_id"'","scheduleKind":"once","startAt":"'"$automation_future"'","confirmed":true}')
+          automation_unsafe_id=$(echo "$automation_unsafe" | jq -r '.id')
+
+          automation_unsafe_run=$(curl -fsS -X POST "http://127.0.0.1:5077/api/automations/$automation_unsafe_id/run-now" \
+            -H 'Content-Type: application/json' \
+            -d '{"confirmed":true}')
+          echo "$automation_unsafe_run" | jq -e '.executedStep == false and .requiresConfirmation == true and .automation.state == "awaiting-confirmation" and .automation.enabled == false and .automation.runCount == 0 and .task.steps[0].status == "pending"' >/dev/null
+          test ! -e /tmp/personalai-workspace/automation-unsafe-180.txt
+
+          automation_bypass_enable_code=$(curl -sS -o /tmp/automation-bypass-enable.json -w '%{http_code}' -X PATCH "http://127.0.0.1:5077/api/automations/$automation_unsafe_id/enabled" \
+            -H 'Content-Type: application/json' \
+            -d '{"enabled":true,"confirmed":true}')
+          test "$automation_bypass_enable_code" = "400"
+          jq -e '(.error | contains("resume"))' /tmp/automation-bypass-enable.json >/dev/null
+
+          automation_bypass_run_code=$(curl -sS -o /tmp/automation-bypass-run.json -w '%{http_code}' -X POST "http://127.0.0.1:5077/api/automations/$automation_unsafe_id/run-now" \
+            -H 'Content-Type: application/json' \
+            -d '{"confirmed":true}')
+          test "$automation_bypass_run_code" = "400"
+          jq -e '(.error | contains("resume"))' /tmp/automation-bypass-run.json >/dev/null
+
+          automation_manual_write=$(curl -fsS -X POST "http://127.0.0.1:5077/api/tasks/$automation_unsafe_task_id/execute-next" \
+            -H 'Content-Type: application/json' \
+            -d '{"confirmed":true}')
+          echo "$automation_manual_write" | jq -e '.execution.success == true and .task.status == "running" and .task.currentStep == 2 and .task.steps[0].status == "completed" and .task.steps[1].status == "pending"' >/dev/null
+          test -f /tmp/personalai-workspace/automation-unsafe-180.txt
+
+          automation_resumed=$(curl -fsS -X POST "http://127.0.0.1:5077/api/automations/$automation_unsafe_id/resume" \
+            -H 'Content-Type: application/json' \
+            -d '{"confirmed":true}')
+          echo "$automation_resumed" | jq -e '.state == "scheduled" and .enabled == true' >/dev/null
+
+          automation_after_review=$(curl -fsS -X POST "http://127.0.0.1:5077/api/automations/$automation_unsafe_id/run-now" \
+            -H 'Content-Type: application/json' \
+            -d '{"confirmed":true}')
+          echo "$automation_after_review" | jq -e '.executedStep == true and .requiresConfirmation == false and .automation.state == "completed" and .task.status == "completed" and .execution.execution.success == true' >/dev/null
+
+          automation_interval_task=$(curl -fsS -X POST http://127.0.0.1:5077/api/tasks/prepare \
+            -H 'Content-Type: application/json' \
+            -d '{"goal":"Automation interval chỉ một step mỗi run","plan":"Hai READ step để kiểm tra không chạy dây chuyền.","steps":[{"title":"List một","description":"READ 1.","toolName":"workspace.list","arguments":{"path":".","maxEntries":10}},{"title":"List hai","description":"READ 2.","toolName":"workspace.list","arguments":{"path":".","maxEntries":10},"dependsOn":[1]}]}')
+          automation_interval_task_id=$(echo "$automation_interval_task" | jq -r '.id')
+
+          automation_interval=$(curl -fsS -X POST http://127.0.0.1:5077/api/automations \
+            -H 'Content-Type: application/json' \
+            -d '{"name":"One step interval","taskId":"'"$automation_interval_task_id"'","scheduleKind":"interval","startAt":"'"$automation_future"'","intervalMinutes":5,"confirmed":true}')
+          automation_interval_id=$(echo "$automation_interval" | jq -r '.id')
+
+          automation_interval_run=$(curl -fsS -X POST "http://127.0.0.1:5077/api/automations/$automation_interval_id/run-now" \
+            -H 'Content-Type: application/json' \
+            -d '{"confirmed":true}')
+          echo "$automation_interval_run" | jq -e '.executedStep == true and .automation.state == "scheduled" and .automation.enabled == true and .automation.runCount == 1 and .task.status == "running" and .task.currentStep == 2 and .task.steps[0].status == "completed" and .task.steps[1].status == "pending"' >/dev/null
+
+          automation_custom_task=$(curl -fsS -X POST http://127.0.0.1:5077/api/tasks/prepare \
+            -H "X-PersonalAI-Workspace: $custom_workspace_id" \
+            -H 'Content-Type: application/json' \
+            -d '{"goal":"Automation workspace isolation","plan":"READ local trong custom workspace.","steps":[{"title":"List custom","description":"READ custom workspace.","toolName":"workspace.list","arguments":{"path":".","maxEntries":10}}]}')
+          automation_custom_task_id=$(echo "$automation_custom_task" | jq -r '.id')
+
+          automation_custom=$(curl -fsS -X POST http://127.0.0.1:5077/api/automations \
+            -H "X-PersonalAI-Workspace: $custom_workspace_id" \
+            -H 'Content-Type: application/json' \
+            -d '{"name":"Custom workspace automation","taskId":"'"$automation_custom_task_id"'","scheduleKind":"once","startAt":"'"$automation_future"'","confirmed":true}')
+          automation_custom_id=$(echo "$automation_custom" | jq -r '.id')
+          echo "$automation_custom" | jq -e '.workspaceId == "'"$custom_workspace_id"'"' >/dev/null
+
+          automation_personal_list=$(curl -fsS http://127.0.0.1:5077/api/automations)
+          echo "$automation_personal_list" | jq -e 'all(.automations[]; .id != "'"$automation_custom_id"'")' >/dev/null
+          automation_custom_list=$(curl -fsS -H "X-PersonalAI-Workspace: $custom_workspace_id" http://127.0.0.1:5077/api/automations)
+          echo "$automation_custom_list" | jq -e 'any(.automations[]; .id == "'"$automation_custom_id"'") and all(.automations[]; .id != "'"$automation_safe_id"'")' >/dev/null
+
+          automation_cross_workspace_code=$(curl -sS -o /tmp/automation-cross-workspace.json -w '%{http_code}' -H "X-PersonalAI-Workspace: $custom_workspace_id" "http://127.0.0.1:5077/api/automations/$automation_safe_id")
+          test "$automation_cross_workspace_code" = "404"
+
+          automation_background_task=$(curl -fsS -X POST http://127.0.0.1:5077/api/tasks/prepare \
+            -H 'Content-Type: application/json' \
+            -d '{"goal":"Automation background scheduler thật","plan":"Scheduler tự chạy một READ local.","steps":[{"title":"List nền","description":"READ local chạy bởi hosted scheduler.","toolName":"workspace.list","arguments":{"path":".","maxEntries":10}}]}')
+          automation_background_task_id=$(echo "$automation_background_task" | jq -r '.id')
+
+          automation_background=$(curl -fsS -X POST http://127.0.0.1:5077/api/automations \
+            -H 'Content-Type: application/json' \
+            -d '{"name":"Background scheduler proof","taskId":"'"$automation_background_task_id"'","scheduleKind":"once","confirmed":true}')
+          automation_background_id=$(echo "$automation_background" | jq -r '.id')
+
+          automation_background_done=0
+          for i in {1..25}; do
+            automation_background_state=$(curl -fsS "http://127.0.0.1:5077/api/automations/$automation_background_id")
+            if echo "$automation_background_state" | jq -e '.state == "completed" and .runCount == 1 and .lastRunStatus == "succeeded"' >/dev/null; then
+              automation_background_done=1
+              break
+            fi
+            sleep 2
+          done
+          test "$automation_background_done" = "1"
+          automation_background_task_after=$(curl -fsS "http://127.0.0.1:5077/api/tasks/$automation_background_task_id")
+          echo "$automation_background_task_after" | jq -e '.status == "completed" and .steps[0].status == "completed"' >/dev/null
+
+          automation_audit=$(curl -fsS 'http://127.0.0.1:5077/api/audit?limit=200')
+          echo "$automation_audit" | jq -e 'any(.items[]; .action == "automation.create" and .result == "succeeded") and any(.items[]; .action == "automation.run" and .agent == "automation" and .result == "succeeded") and any(.items[]; .action == "automation.run" and .agent == "automation" and .result == "denied" and .reason == "confirmation-required")' >/dev/null
+
           context_without_tasks=$(curl -fsS -X POST http://127.0.0.1:5077/api/context/preview \
             -H "X-PersonalAI-Workspace: $custom_workspace_id" \
             -H 'Content-Type: application/json' \

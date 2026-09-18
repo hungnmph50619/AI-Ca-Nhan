@@ -34,6 +34,7 @@ builder.Services.AddDevelopmentAgent();
 builder.Services.AddAndroidCompanion();
 builder.Services.AddLifeContext();
 builder.Services.AddDecisionEngine();
+builder.Services.AddAutomationFoundation();
 builder.Services.AddToolFramework();
 builder.Services.AddTaskEngine();
 builder.Services.AddSingleton<IKnowledgeGroundingService, KnowledgeGroundingService>();
@@ -84,6 +85,7 @@ app.MapDevelopmentAgent();
 app.MapAndroidCompanion();
 app.MapLifeContext();
 app.MapDecisionEngine();
+app.MapAutomationFoundation();
 app.MapStableCore();
 
 app.MapGet("/api/status", (

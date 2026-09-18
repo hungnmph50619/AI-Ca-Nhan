@@ -1,5 +1,5 @@
 (() => {
-  const VERSION = "0.9.0";
+  const VERSION = "0.9.1";
   let busy = false;
 
   if (document.readyState === "loading") {
@@ -86,14 +86,15 @@
     const intro = document.createElement("div");
     intro.className = "v090-task-intro";
     const introTitle = document.createElement("strong");
-    introTitle.textContent = "Bộ máy tác vụ v0.9.0";
+    introTitle.textContent = "Tác vụ bền vững v0.9.1";
     const introText = document.createElement("p");
-    introText.textContent = "AI lập kế hoạch từ mục tiêu của bạn, nhưng không tự chạy các bước. Mỗi bước phải được bạn chủ động chạy; thao tác GHI hoặc XÓA vẫn cần xác nhận riêng.";
+    introText.textContent = "Tác vụ được lưu trên máy và vẫn còn sau khi khởi động lại ứng dụng. AI chỉ lập kế hoạch; mỗi bước vẫn phải được bạn chủ động chạy và thao tác GHI hoặc XÓA vẫn cần xác nhận riêng.";
     intro.append(introTitle, introText);
 
     const form = document.createElement("form");
     form.id = "taskCreateForm";
     form.className = "v090-task-form";
+    form.noValidate = true;
 
     const label = document.createElement("label");
     label.className = "field-label";
@@ -132,7 +133,7 @@
     const listHeader = document.createElement("div");
     listHeader.className = "v090-task-list-header";
     const listTitle = document.createElement("strong");
-    listTitle.textContent = "Tác vụ trong phiên chạy hiện tại";
+    listTitle.textContent = "Tác vụ đã lưu trên máy";
     const refresh = document.createElement("button");
     refresh.type = "button";
     refresh.className = "secondary-button";
@@ -147,7 +148,7 @@
 
     const note = document.createElement("p");
     note.className = "security-copy";
-    note.textContent = "v0.9.0 giữ tác vụ trong bộ nhớ của ứng dụng và sẽ mất khi ứng dụng khởi động lại. Không có bước nào tự chạy nối tiếp; sau mỗi bước hệ thống dừng để bạn kiểm tra trước khi tiếp tục.";
+    note.textContent = "v0.9.1 lưu tối đa 50 tác vụ trên máy. Sau khi khởi động lại, không có bước nào tự chạy; nếu ứng dụng dừng giữa lúc một bước đang thực thi, tác vụ được đánh dấu bị gián đoạn để bạn kiểm tra thực tế trước khi khôi phục.";
 
     card.append(header, intro, form, feedback, listHeader, list, note);
     dialog.appendChild(card);
@@ -195,7 +196,7 @@
     if (busy) return;
 
     const input = document.querySelector("#taskGoalInput");
-    if (!input || !input.reportValidity()) return;
+    if (!input) return;
     const goal = input.value.trim();
     if (goal.length < 3) {
       setFeedback("Mục tiêu cần có ít nhất 3 ký tự.", true);
@@ -274,6 +275,44 @@
     } catch (error) {
       setFeedback(error.message || "Không chạy được bước tác vụ.", true);
       await loadTasksAfterMutation();
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function resumeTask(task) {
+    if (busy) return;
+
+    const ask = window.PersonalAiUi?.confirm;
+    if (typeof ask !== "function") {
+      setFeedback("Không mở được hộp xác nhận.", true);
+      return;
+    }
+
+    const confirmed = await ask(
+      "Khôi phục tác vụ bị gián đoạn?\n\nMột thao tác có thể đã chạy một phần hoặc đã hoàn tất trước khi ứng dụng dừng. Hãy kiểm tra trạng thái thực tế trước khi tiếp tục. Khôi phục chỉ đưa bước về trạng thái chờ; hệ thống sẽ không tự chạy lại.",
+      {
+        title: "Khôi phục tác vụ",
+        confirmText: "Khôi phục",
+        danger: false
+      });
+    if (!confirmed) return;
+
+    setBusy(true);
+    setFeedback("Đang khôi phục tác vụ…");
+    try {
+      const response = await fetch(
+        `/api/tasks/${encodeURIComponent(task.id)}/resume`,
+        { method: "POST" });
+      const payload = await response.json().catch(() => ({}));
+      if (!response.ok) {
+        throw new Error(payload.error || "Không khôi phục được tác vụ.");
+      }
+
+      setFeedback("Đã khôi phục. Chưa có bước nào được tự động chạy lại.");
+      await loadTasksAfterMutation();
+    } catch (error) {
+      setFeedback(error.message || "Không khôi phục được tác vụ.", true);
     } finally {
       setBusy(false);
     }
@@ -398,6 +437,27 @@
       cancel.disabled = busy;
       cancel.addEventListener("click", () => cancelTask(task));
       actions.appendChild(cancel);
+    } else if (task.status === "interrupted") {
+      const warning = document.createElement("p");
+      warning.className = "v090-task-interrupted";
+      warning.textContent = "Ứng dụng đã dừng khi bước hiện tại đang chạy. Trạng thái thực tế của thao tác có thể chưa xác định; hãy kiểm tra dữ liệu hoặc thư mục làm việc trước khi khôi phục.";
+      article.appendChild(warning);
+
+      const resume = document.createElement("button");
+      resume.type = "button";
+      resume.className = "primary-button";
+      resume.textContent = "Khôi phục tác vụ";
+      resume.disabled = busy;
+      resume.addEventListener("click", () => resumeTask(task));
+      actions.appendChild(resume);
+
+      const cancel = document.createElement("button");
+      cancel.type = "button";
+      cancel.className = "secondary-button";
+      cancel.textContent = "Hủy tác vụ";
+      cancel.disabled = busy;
+      cancel.addEventListener("click", () => cancelTask(task));
+      actions.appendChild(cancel);
     }
 
     if (task.result) {
@@ -458,7 +518,7 @@
       section.appendChild(result);
     }
 
-    const isCurrent = (task.status === "planned" || task.status === "running")
+    const isCurrent = (task.status === "planned" || task.status === "running" || task.status === "interrupted")
       && Number(task.currentStep) === Number(step.index);
     section.classList.toggle("current", isCurrent);
     return section;
@@ -505,6 +565,7 @@
       running: "Đang thực hiện",
       completed: "Đã hoàn tất",
       failed: "Có lỗi",
+      interrupted: "Bị gián đoạn",
       cancelled: "Đã hủy"
     }[status] || "Không rõ";
   }
@@ -514,7 +575,8 @@
       pending: "Chưa chạy",
       running: "Đang chạy",
       completed: "Đã xong",
-      failed: "Có lỗi"
+      failed: "Có lỗi",
+      interrupted: "Bị gián đoạn"
     }[status] || "Không rõ";
   }
 

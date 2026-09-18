@@ -2,7 +2,7 @@ namespace PersonalAI.Web.Models;
 
 public static class PersonalAiRelease
 {
-    public const string Version = "1.7.0";
+    public const string Version = "1.8.0";
     public const string ApiContractVersion = "1";
     public const string Channel = "controlled";
 }
@@ -60,6 +60,10 @@ public sealed record CoreSafetyContract(
     bool DecisionEngineAutoActionEnabled,
     bool DecisionEngineToolExecutionEnabled,
     bool DecisionEnginePersistsAnalyses,
+    bool AutomationRequiresExplicitCreation,
+    bool AutomationAutoConfirmationEnabled,
+    bool AutomationDecisionRecommendationAutoExecutionEnabled,
+    bool AutomationRunsAtMostOneTaskStepPerTick,
     bool AutomaticMultiStepExecution,
     bool BackgroundScheduler,
     bool AutonomousAgentLoop,
@@ -94,7 +98,11 @@ public sealed record CoreLimitsContract(
     int LifeContextMaximumRetentionDays,
     int DecisionMaximumQuestionCharacters,
     int DecisionMaximumOptions,
-    int DecisionMaximumCriteria);
+    int DecisionMaximumCriteria,
+    int MaximumAutomationsPerWorkspace,
+    int AutomationMinimumIntervalMinutes,
+    int AutomationMaximumIntervalMinutes,
+    int AutomationSchedulerPollSeconds);
 
 public sealed record SystemCapabilitiesResponse(
     string Version,

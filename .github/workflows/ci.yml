@@ -1386,6 +1386,10 @@ jobs:
           tasks_after_restart=$(curl -fsS http://127.0.0.1:5077/api/tasks)
           echo "$tasks_after_restart" | jq -e '.persistent == true and any(.tasks[]; .id == "'"$persist_task_id"'" and .status == "planned") and any(.tasks[]; .id == "'"$interrupted_task_id"'" and .status == "interrupted" and .steps[0].status == "interrupted")' >/dev/null
 
+          companion_me_after_restart=$(curl -fsS http://127.0.0.1:5077/api/companion/client/me \
+            -H "Authorization: Bearer $custom_companion_token")
+          echo "$companion_me_after_restart" | jq -e '.device.id == "'"$custom_companion_device_id"'" and .device.workspaceId == "'"$custom_workspace_id"'" and .version == "1.5.0"' >/dev/null
+
           connectors_after_restart=$(curl -fsS http://127.0.0.1:5077/api/connectors)
           echo "$connectors_after_restart" | jq -e 'any(.connections[]; .id == "'"$connector_id"'" and .hasCredential == true)' >/dev/null
           connector_get_after_restart=$(curl -fsS -X POST http://127.0.0.1:5077/api/tools/execute \
@@ -1610,7 +1614,7 @@ jobs:
           grep -Fq 'v097.js' src/PersonalAI.Web/wwwroot/index.html
           ! grep -Fq 'MapDelete("/api/undo' src/PersonalAI.Web/Services/UndoEndpoints.cs
           grep -Fq 'Stable Personal AI Core' docs/releases/v1.0.0.md
-          grep -Fq '# AI Cá Nhân — Software Development Agent v1.5.0' README.md
+          grep -Fq '# AI Cá Nhân — Android Companion v1.5.0' README.md
           ! grep -Fq '# AI Cá Nhân — MVP v0.5.3' README.md
           grep -Fq 'public const string Version = "1.5.0"' src/PersonalAI.Web/Models/SystemModels.cs
           grep -Fq 'public const string ApiContractVersion = "1"' src/PersonalAI.Web/Models/SystemModels.cs
@@ -1696,7 +1700,7 @@ jobs:
           ! grep -Fq 'HttpMethod.Patch' src/PersonalAI.Web/Services/ConnectorService.cs
           ! grep -Fq 'CookieContainer' src/PersonalAI.Web/Services/ConnectorService.cs
           ! grep -Fq 'EncryptedBearerToken' src/PersonalAI.Web/Models/ConnectorModels.cs
-          grep -Fq 'Controlled Software Development Agent' docs/releases/v1.5.0.md
+          grep -Fq 'Controlled Software Development Agent' docs/releases/v1.4.0.md
           grep -Fq 'public const string Development = "DEVELOPMENT"' src/PersonalAI.Web/Models/ToolModels.cs
           grep -Fq 'IDevelopmentAgentService' src/PersonalAI.Web/Services/DevelopmentAgentService.cs
           grep -Fq '/api/development/status' src/PersonalAI.Web/Services/DevelopmentEndpoints.cs
@@ -1740,12 +1744,66 @@ jobs:
           ! grep -Fq '"push"' src/PersonalAI.Web/Services/DevelopmentAgentService.cs
           ! grep -Fq '"checkout"' src/PersonalAI.Web/Services/DevelopmentAgentService.cs
           ! grep -Fq '"reset"' src/PersonalAI.Web/Services/DevelopmentAgentService.cs
+          grep -Fq 'Android Companion' docs/releases/v1.5.0.md
+          grep -Fq 'ICompanionService' src/PersonalAI.Web/Services/CompanionService.cs
+          grep -Fq 'UseCompanionAuthentication' src/PersonalAI.Web/Program.cs
+          grep -Fq '/api/companion/admin/pairing/start' src/PersonalAI.Web/Services/CompanionEndpoints.cs
+          grep -Fq '/api/companion/pairing/claim' src/PersonalAI.Web/Services/CompanionEndpoints.cs
+          grep -Fq '/api/companion/client/chat' src/PersonalAI.Web/Services/CompanionEndpoints.cs
+          grep -Fq '/api/companion/client/tasks' src/PersonalAI.Web/Services/CompanionEndpoints.cs
+          grep -Fq 'UseTools = false' src/PersonalAI.Web/Services/CompanionEndpoints.cs
+          grep -Fq 'HashToken(token)' src/PersonalAI.Web/Services/CompanionService.cs
+          grep -Fq 'CryptographicOperations.FixedTimeEquals' src/PersonalAI.Web/Services/CompanionService.cs
+          grep -Fq 'RandomNumberGenerator.Fill' src/PersonalAI.Web/Services/CompanionService.cs
+          grep -Fq 'CompanionPairingRequired: true' src/PersonalAI.Web/Services/SystemCoreService.cs
+          grep -Fq 'CompanionDeviceTokensHashed: true' src/PersonalAI.Web/Services/SystemCoreService.cs
+          grep -Fq 'CompanionRemoteToolExecutionEnabled: false' src/PersonalAI.Web/Services/SystemCoreService.cs
+          grep -Fq 'CompanionRemoteTaskMutationEnabled: false' src/PersonalAI.Web/Services/SystemCoreService.cs
+          grep -Fq 'v150.css' src/PersonalAI.Web/wwwroot/index.html
+          grep -Fq 'v150.js' src/PersonalAI.Web/wwwroot/index.html
+          grep -Fq 'ANDROID COMPANION · PAIRED DEVICE' src/PersonalAI.Web/wwwroot/v150.js
+          grep -Fq 'versionName "1.5.0"' android/PersonalAI.Companion/app/build.gradle
+          grep -Fq 'android.permission.INTERNET' android/PersonalAI.Companion/app/src/main/AndroidManifest.xml
+          grep -Fq 'AndroidKeyStore' android/PersonalAI.Companion/app/src/main/java/com/personalai/companion/SecureTokenStore.java
+          grep -Fq 'AES/GCM/NoPadding' android/PersonalAI.Companion/app/src/main/java/com/personalai/companion/SecureTokenStore.java
+          ! grep -Fq 'android.permission.CAMERA' android/PersonalAI.Companion/app/src/main/AndroidManifest.xml
+          ! grep -Fq 'android.permission.RECORD_AUDIO' android/PersonalAI.Companion/app/src/main/AndroidManifest.xml
+          ! grep -Fq 'android.permission.ACCESS_FINE_LOCATION' android/PersonalAI.Companion/app/src/main/AndroidManifest.xml
+          ! grep -Fq 'TokenSha256' src/PersonalAI.Web/Models/CompanionModels.cs
+          ! grep -Fq 'HostnameVerifier' android/PersonalAI.Companion/app/src/main/java/com/personalai/companion/ApiClient.java
+          ! grep -Fq 'TrustManager' android/PersonalAI.Companion/app/src/main/java/com/personalai/companion/ApiClient.java
+          ! grep -Fq 'MapPost("/api/companion/client/tasks' src/PersonalAI.Web/Services/CompanionEndpoints.cs
+          ! grep -Fq '/api/companion/client/tools' src/PersonalAI.Web/Services/CompanionEndpoints.cs
+          grep -Fq '"chat-tool-selection"' src/PersonalAI.Web/Services/ChatTurnService.cs
 
 
 
 
 
 
+
+
+      - name: Setup Java for Android
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+
+      - name: Setup Android SDK
+        uses: android-actions/setup-android@v3
+
+      - name: Install Android SDK packages
+        run: sdkmanager "platforms;android-35" "build-tools;35.0.0"
+
+      - name: Setup Gradle
+        uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: '8.9'
+
+      - name: Build Android Companion
+        run: |
+          gradle -p android/PersonalAI.Companion :app:assembleDebug --no-daemon
+          test -f android/PersonalAI.Companion/app/build/outputs/apk/debug/app-debug.apk
 
       - name: Setup Node.js
         uses: actions/setup-node@v4
@@ -1780,3 +1838,4 @@ jobs:
           node --check src/PersonalAI.Web/wwwroot/v120.js
           node --check src/PersonalAI.Web/wwwroot/v130.js
           node --check src/PersonalAI.Web/wwwroot/v140.js
+          node --check src/PersonalAI.Web/wwwroot/v150.js

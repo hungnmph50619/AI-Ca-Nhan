@@ -27,11 +27,20 @@ public interface ITaskEngineService
     Task<PersonalTask?> ResumeAsync(
         Guid taskId,
         CancellationToken cancellationToken = default);
+
+    PersonalTaskRetryAssessment? GetRetryAssessment(Guid taskId);
+
+    Task<PersonalTaskRetryResponse?> RetryFailedStepAsync(
+        Guid taskId,
+        bool confirmedReview,
+        CancellationToken cancellationToken = default);
 }
 
 public sealed class PersonalTaskValidationException(string message) : Exception(message);
 
 public sealed class PersonalTaskConfirmationRequiredException(string message) : Exception(message);
+
+public sealed class PersonalTaskRetryBlockedException(string message) : Exception(message);
 
 public sealed class TaskEngineService : ITaskEngineService
 {
@@ -327,7 +336,8 @@ public sealed class TaskEngineService : ITaskEngineService
             var runningStep = step with
             {
                 Status = PersonalTaskStepStatuses.Running,
-                StartedAt = startedAt
+                StartedAt = startedAt,
+                AttemptCount = step.AttemptCount + 1
             };
             var runningSteps = ReplaceStep(task.Steps, position, runningStep);
             var runningTask = task with
@@ -545,6 +555,274 @@ public sealed class TaskEngineService : ITaskEngineService
         {
             MutationGate.Release();
         }
+    }
+
+    public PersonalTaskRetryAssessment? GetRetryAssessment(Guid taskId)
+    {
+        var task = _taskStore.Get(taskId);
+        return task is null ? null : AssessRetry(task);
+    }
+
+    public async Task<PersonalTaskRetryResponse?> RetryFailedStepAsync(
+        Guid taskId,
+        bool confirmedReview,
+        CancellationToken cancellationToken = default)
+    {
+        await MutationGate.WaitAsync(cancellationToken);
+        try
+        {
+            var task = _taskStore.Get(taskId);
+            if (task is null)
+            {
+                return null;
+            }
+
+            var assessment = AssessRetry(task);
+            if (!assessment.CanRetry)
+            {
+                throw new PersonalTaskRetryBlockedException(assessment.Message);
+            }
+
+            if (assessment.RequiresReviewConfirmation && !confirmedReview)
+            {
+                throw new PersonalTaskConfirmationRequiredException(
+                    assessment.Message + " Hãy xác nhận sau khi bạn đã kiểm tra trạng thái thực tế.");
+            }
+
+            var position = task.CurrentStep - 1;
+            var step = task.Steps[position];
+            var retriedStep = step with
+            {
+                Status = PersonalTaskStepStatuses.Pending,
+                InvocationId = null,
+                LocalSummary = null,
+                StartedAt = null,
+                CompletedAt = null
+            };
+            var retriedSteps = ReplaceStep(task.Steps, position, retriedStep);
+            var retriedTask = task with
+            {
+                Status = task.StartedAt is null
+                    ? PersonalTaskStatuses.Planned
+                    : PersonalTaskStatuses.Running,
+                Steps = retriedSteps,
+                CompletedAt = null,
+                Result = null
+            };
+
+            var saved = _taskStore.Save(retriedTask);
+
+            TryRecordActivity(new ToolActivityEvent(
+                ToolActivityEventTypes.TaskStepRetryPrepared,
+                step.ToolName,
+                null,
+                step.InvocationId,
+                "task-engine",
+                task.PlanningProvider,
+                task.PlanningModel,
+                step.RequiredPermissions,
+                confirmedReview,
+                null,
+                "retry-prepared",
+                step.Arguments));
+
+            return new PersonalTaskRetryResponse(saved, assessment);
+        }
+        finally
+        {
+            MutationGate.Release();
+        }
+    }
+
+    private PersonalTaskRetryAssessment AssessRetry(PersonalTask task)
+    {
+        var position = task.CurrentStep - 1;
+        if (task.Status != PersonalTaskStatuses.Failed
+            || position < 0
+            || position >= task.Steps.Count)
+        {
+            return BlockedRetry(
+                task,
+                position,
+                "Chỉ có thể chuẩn bị thử lại khi tác vụ đang ở trạng thái có lỗi tại một bước cụ thể.");
+        }
+
+        var step = task.Steps[position];
+        if (step.Status != PersonalTaskStepStatuses.Failed)
+        {
+            return BlockedRetry(
+                task,
+                position,
+                "Bước hiện tại không ở trạng thái có lỗi nên không thể chuẩn bị thử lại.");
+        }
+
+        if (!_registry.TryGet(step.ToolName, out var tool) || tool is null)
+        {
+            return BlockedRetry(
+                task,
+                position,
+                "Công cụ của bước này không còn tồn tại trong danh mục hiện tại.");
+        }
+
+        var validation = _validator.Validate(
+            tool.Definition.InputSchema,
+            step.Arguments);
+        if (!validation.IsValid)
+        {
+            return BlockedRetry(
+                task,
+                position,
+                "Tham số của bước không còn hợp lệ với công cụ hiện tại nên không thể thử lại.");
+        }
+
+        var permissions = tool.Definition.RequiredPermissions;
+        if (permissions.Any(permission =>
+                permission.Equals(ToolPermissions.External, StringComparison.OrdinalIgnoreCase)
+                || permission.Equals(ToolPermissions.Sensitive, StringComparison.OrdinalIgnoreCase)))
+        {
+            return BlockedRetry(
+                task,
+                position,
+                "Bước dùng quyền BÊN NGOÀI hoặc NHẠY CẢM nên phiên bản này không cho thử lại tự động.");
+        }
+
+        var readOnly = permissions.Count > 0
+            && permissions.All(permission =>
+                permission.Equals(ToolPermissions.Read, StringComparison.OrdinalIgnoreCase))
+            && !tool.Definition.RequiresConfirmation;
+        if (readOnly)
+        {
+            return new PersonalTaskRetryAssessment(
+                task.Id,
+                step.Index,
+                step.ToolName,
+                PersonalTaskRetrySafety.Safe,
+                true,
+                false,
+                "Bước chỉ đọc có thể được đưa về trạng thái chờ để bạn chạy lại. Thao tác thử lại không tự thực thi công cụ.");
+        }
+
+        if (step.ToolName.Equals("workspace.create_directory", StringComparison.OrdinalIgnoreCase))
+        {
+            return ReviewRetry(
+                task,
+                step,
+                "Bước tạo thư mục có thể thử lại sau khi kiểm tra trạng thái thực tế. Nếu thư mục đã được tạo ở lần trước, lần chạy sau sẽ không tạo thêm một bản sao.");
+        }
+
+        if (step.ToolName.Equals("workspace.write_text", StringComparison.OrdinalIgnoreCase))
+        {
+            var mode = ReadArgumentText(step.Arguments, "mode").ToLowerInvariant();
+            var expectedSha256 = ReadArgumentText(step.Arguments, "expectedSha256");
+
+            if (mode == "append")
+            {
+                return BlockedRetry(
+                    task,
+                    position,
+                    "Không cho thử lại bước nối thêm văn bản vì lần chạy trước có thể đã ghi dữ liệu; chạy lại có thể làm nội dung bị lặp.");
+            }
+
+            if (mode == "create")
+            {
+                return ReviewRetry(
+                    task,
+                    step,
+                    "Bước tạo tệp có thể thử lại sau khi kiểm tra tệp đích. Nếu lần trước đã tạo tệp, công cụ sẽ từ chối tạo trùng.");
+            }
+
+            if (mode == "overwrite" && expectedSha256.Length == 64)
+            {
+                return ReviewRetry(
+                    task,
+                    step,
+                    "Bước ghi đè có mã băm SHA-256 kỳ vọng nên có thể chuẩn bị thử lại sau khi kiểm tra tệp hiện tại. Mã băm sẽ giúp chặn ghi đè nhầm phiên bản đã thay đổi.");
+            }
+
+            return BlockedRetry(
+                task,
+                position,
+                "Không cho thử lại bước ghi đè khi không có mã băm SHA-256 kỳ vọng vì có thể ghi đè dữ liệu mới hơn.");
+        }
+
+        if (step.ToolName.Equals("workspace.move", StringComparison.OrdinalIgnoreCase))
+        {
+            var expectedSha256 = ReadArgumentText(step.Arguments, "expectedSha256");
+            return expectedSha256.Length == 64
+                ? ReviewRetry(
+                    task,
+                    step,
+                    "Bước di chuyển tệp có mã băm SHA-256 kỳ vọng nên có thể chuẩn bị thử lại sau khi kiểm tra cả đường dẫn nguồn và đích.")
+                : BlockedRetry(
+                    task,
+                    position,
+                    "Không cho thử lại bước di chuyển khi không có mã băm SHA-256 kỳ vọng vì trạng thái nguồn và đích có thể đã thay đổi.");
+        }
+
+        if (step.ToolName.Equals("workspace.delete", StringComparison.OrdinalIgnoreCase))
+        {
+            var expectedSha256 = ReadArgumentText(step.Arguments, "expectedSha256");
+            return expectedSha256.Length == 64
+                ? ReviewRetry(
+                    task,
+                    step,
+                    "Bước xóa tệp có mã băm SHA-256 kỳ vọng nên chỉ được chuẩn bị thử lại sau khi bạn kiểm tra tệp hiện tại và xác nhận lại.")
+                : BlockedRetry(
+                    task,
+                    position,
+                    "Không cho thử lại bước xóa khi không có mã băm SHA-256 kỳ vọng. Hãy kiểm tra trạng thái thực tế và tạo tác vụ mới nếu vẫn muốn xóa.");
+        }
+
+        return BlockedRetry(
+            task,
+            position,
+            "Công cụ của bước này chưa có chính sách thử lại an toàn trong phiên bản hiện tại.");
+    }
+
+    private static PersonalTaskRetryAssessment ReviewRetry(
+        PersonalTask task,
+        PersonalTaskStep step,
+        string message) =>
+        new(
+            task.Id,
+            step.Index,
+            step.ToolName,
+            PersonalTaskRetrySafety.ReviewRequired,
+            true,
+            true,
+            message + " Chuẩn bị thử lại chỉ đưa bước về trạng thái chờ; công cụ chưa được chạy.");
+
+    private static PersonalTaskRetryAssessment BlockedRetry(
+        PersonalTask task,
+        int position,
+        string message)
+    {
+        var step = position >= 0 && position < task.Steps.Count
+            ? task.Steps[position]
+            : null;
+
+        return new PersonalTaskRetryAssessment(
+            task.Id,
+            step?.Index ?? task.CurrentStep,
+            step?.ToolName ?? string.Empty,
+            PersonalTaskRetrySafety.Blocked,
+            false,
+            false,
+            message);
+    }
+
+    private static string ReadArgumentText(
+        JsonElement arguments,
+        string propertyName)
+    {
+        if (arguments.ValueKind != JsonValueKind.Object
+            || !arguments.TryGetProperty(propertyName, out var property)
+            || property.ValueKind != JsonValueKind.String)
+        {
+            return string.Empty;
+        }
+
+        return property.GetString()?.Trim() ?? string.Empty;
     }
 
     private ParsedTaskPlan ParsePlan(string rawAnswer)

@@ -300,10 +300,13 @@ No tools are available in this continuation. Produce only the final user-facing 
             })
             .ToList();
 
-        if (context.NativeCall is { } nativeCall
-            && nativeCall.ValueKind == JsonValueKind.Object)
+        if (context.NativeOutput is { } nativeOutput
+            && nativeOutput.ValueKind == JsonValueKind.Array)
         {
-            input.Add(nativeCall);
+            foreach (var item in nativeOutput.EnumerateArray())
+            {
+                input.Add(item.Clone());
+            }
         }
         else
         {
@@ -495,7 +498,7 @@ No tools are available in this continuation. Produce only the final user-facing 
                 arguments,
                 messages.ToArray(),
                 function,
-                item.Clone());
+                output.Clone());
 
             calls.Add(new ProviderFunctionCallDecision(
                 name,

@@ -250,6 +250,13 @@ jobs:
           guard_assessment=$(curl -fsS "http://127.0.0.1:5077/api/undo/$guard_original_undo_id/assessment")
           echo "$guard_assessment" | jq -e '.canUndo == false and (.reason | contains("thay đổi"))' >/dev/null
 
+          guard_execute_code=$(curl -sS -o /tmp/undo-guard-blocked.json -w '%{http_code}' -X POST \
+            -H 'Content-Type: application/json' \
+            -d '{"confirmed":true}' \
+            "http://127.0.0.1:5077/api/undo/$guard_original_undo_id/execute")
+          test "$guard_execute_code" = "409"
+          test "$(cat /tmp/personalai-workspace/undo-guard.txt)" = "one two"
+
           persistent_undo=$(curl -fsS -X POST http://127.0.0.1:5077/api/tools/execute \
             -H 'Content-Type: application/json' \
             -d '{"toolName":"workspace.write_text","arguments":{"path":"undo-persist.txt","content":"persist me","mode":"create"},"approvedPermissions":["WRITE"],"confirmed":true}')

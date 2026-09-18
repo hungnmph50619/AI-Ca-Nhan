@@ -28,11 +28,19 @@ public static class TaskEngineEndpoints
 
         app.MapPost("/api/tasks/prepare", (
             PreparePersonalTaskRequest request,
-            ITaskEngineService taskEngine) =>
+            ITaskEngineService taskEngine,
+            IAuditRecorder audit) =>
         {
             try
             {
-                return Results.Ok(taskEngine.Prepare(request));
+                var task = taskEngine.Prepare(request);
+                audit.Record(
+                    AuditAgents.User,
+                    "task.prepare",
+                    $"task:{task.Id:D}",
+                    "structured-plan",
+                    AuditResults.Prepared);
+                return Results.Ok(task);
             }
             catch (PersonalTaskValidationException exception)
             {
@@ -43,6 +51,7 @@ public static class TaskEngineEndpoints
         app.MapPost("/api/tasks", async (
             CreatePersonalTaskRequest request,
             ITaskEngineService taskEngine,
+            IAuditRecorder audit,
             CancellationToken cancellationToken) =>
         {
             try
@@ -51,6 +60,12 @@ public static class TaskEngineEndpoints
                     request.Goal,
                     request.DependsOnTaskIds,
                     cancellationToken);
+                audit.Record(
+                    AuditAgents.PersonalAi,
+                    "task.plan",
+                    $"task:{task.Id:D}",
+                    "user-goal",
+                    AuditResults.Prepared);
                 return Results.Created($"/api/tasks/{task.Id}", task);
             }
             catch (PersonalTaskValidationException exception)
@@ -81,6 +96,7 @@ public static class TaskEngineEndpoints
             Guid taskId,
             ExecutePersonalTaskStepRequest request,
             ITaskEngineService taskEngine,
+            IAuditRecorder audit,
             CancellationToken cancellationToken) =>
         {
             try
@@ -105,10 +121,26 @@ public static class TaskEngineEndpoints
                     _ => StatusCodes.Status500InternalServerError
                 };
 
+                audit.Record(
+                    AuditAgents.TaskEngine,
+                    "task.step.execute",
+                    $"task:{taskId:D}",
+                    request.Confirmed
+                        ? "user-confirmed-step"
+                        : "user-requested-step",
+                    result.Execution.Status,
+                    result.Execution.ToolName);
+
                 return Results.Json(result, statusCode: statusCode);
             }
             catch (PersonalTaskConfirmationRequiredException exception)
             {
+                audit.Record(
+                    AuditAgents.TaskEngine,
+                    "task.step.execute",
+                    $"task:{taskId:D}",
+                    "confirmation-required",
+                    AuditResults.Denied);
                 return Results.Json(
                     new ApiError(exception.Message),
                     statusCode: StatusCodes.Status403Forbidden);
@@ -133,6 +165,7 @@ public static class TaskEngineEndpoints
             Guid taskId,
             RetryPersonalTaskStepRequest request,
             ITaskEngineService taskEngine,
+            IAuditRecorder audit,
             CancellationToken cancellationToken) =>
         {
             try
@@ -141,6 +174,18 @@ public static class TaskEngineEndpoints
                     taskId,
                     request.ConfirmedReview,
                     cancellationToken);
+                if (result is not null)
+                {
+                    audit.Record(
+                        AuditAgents.TaskEngine,
+                        "task.retry.prepare",
+                        $"task:{taskId:D}",
+                        request.ConfirmedReview
+                            ? "user-reviewed-retry"
+                            : "safe-retry",
+                        AuditResults.Prepared,
+                        result.Assessment.ToolName);
+                }
                 return result is null
                     ? Results.NotFound(new ApiError("Không tìm thấy tác vụ."))
                     : Results.Ok(result);
@@ -153,6 +198,12 @@ public static class TaskEngineEndpoints
             }
             catch (PersonalTaskRetryBlockedException exception)
             {
+                audit.Record(
+                    AuditAgents.TaskEngine,
+                    "task.retry.prepare",
+                    $"task:{taskId:D}",
+                    "retry-policy-blocked",
+                    AuditResults.Denied);
                 return Results.Json(
                     new ApiError(exception.Message),
                     statusCode: StatusCodes.Status409Conflict);
@@ -166,6 +217,7 @@ public static class TaskEngineEndpoints
         app.MapPost("/api/tasks/{taskId:guid}/resume", async (
             Guid taskId,
             ITaskEngineService taskEngine,
+            IAuditRecorder audit,
             CancellationToken cancellationToken) =>
         {
             try
@@ -173,6 +225,15 @@ public static class TaskEngineEndpoints
                 var task = await taskEngine.ResumeAsync(
                     taskId,
                     cancellationToken);
+                if (task is not null)
+                {
+                    audit.Record(
+                        AuditAgents.User,
+                        "task.resume",
+                        $"task:{taskId:D}",
+                        "user-request",
+                        AuditResults.Succeeded);
+                }
                 return task is null
                     ? Results.NotFound(new ApiError("Không tìm thấy tác vụ."))
                     : Results.Ok(task);
@@ -186,11 +247,21 @@ public static class TaskEngineEndpoints
         app.MapPost("/api/tasks/{taskId:guid}/cancel", async (
             Guid taskId,
             ITaskEngineService taskEngine,
+            IAuditRecorder audit,
             CancellationToken cancellationToken) =>
         {
             var task = await taskEngine.CancelAsync(
                 taskId,
                 cancellationToken);
+            if (task is not null)
+            {
+                audit.Record(
+                    AuditAgents.User,
+                    "task.cancel",
+                    $"task:{taskId:D}",
+                    "user-request",
+                    AuditResults.Cancelled);
+            }
             return task is null
                 ? Results.NotFound(new ApiError("Không tìm thấy tác vụ."))
                 : Results.Ok(task);

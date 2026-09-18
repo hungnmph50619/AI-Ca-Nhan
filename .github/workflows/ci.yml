@@ -31,14 +31,14 @@ jobs:
         run: |
           set -euo pipefail
           trap 'echo "Smoke test failed at line ${LINENO}: ${BASH_COMMAND}" >&2' ERR
-          rm -rf /tmp/personalai-workspace /tmp/personalai-tasks /tmp/personalai-audit /tmp/personalai-undo
+          rm -rf /tmp/personalai-workspace /tmp/personalai-tasks /tmp/personalai-audit /tmp/personalai-undo /tmp/personalai-connectors
           mkdir -p /tmp/personalai-workspace/notes
           printf 'Workspace root file.\n' >/tmp/personalai-workspace/readme.txt
           printf 'Workspace alpha secure file tool content.\nSecond line.\n' >/tmp/personalai-workspace/notes/plan.md
           printf '\0binary payload' >/tmp/personalai-workspace/binary.bin
           ln -s /tmp /tmp/personalai-workspace/escape
 
-          Workspace__Root=/tmp/personalai-workspace Tasks__Root=/tmp/personalai-tasks Audit__Root=/tmp/personalai-audit Undo__Root=/tmp/personalai-undo dotnet run --project src/PersonalAI.Web/PersonalAI.Web.csproj --configuration Release --no-build --urls http://127.0.0.1:5077 >/tmp/personalai.log 2>&1 &
+          Workspace__Root=/tmp/personalai-workspace Tasks__Root=/tmp/personalai-tasks Audit__Root=/tmp/personalai-audit Undo__Root=/tmp/personalai-undo Connectors__Root=/tmp/personalai-connectors dotnet run --project src/PersonalAI.Web/PersonalAI.Web.csproj --configuration Release --no-build --urls http://127.0.0.1:5077 >/tmp/personalai.log 2>&1 &
           APP_PID=$!
           trap 'kill "$APP_PID" 2>/dev/null || true' EXIT
 
@@ -55,18 +55,18 @@ jobs:
             exit 1
           fi
 
-          curl -fsS http://127.0.0.1:5077/api/status | jq -e '.version == "1.2.0"' >/dev/null
+          curl -fsS http://127.0.0.1:5077/api/status | jq -e '.version == "1.3.0"' >/dev/null
 
           curl -fsS -D /tmp/status-headers http://127.0.0.1:5077/api/status -o /tmp/status-body.json
           grep -Eiq '^X-PersonalAI-Request-Id: [a-f0-9]{32}' /tmp/status-headers
           grep -Eiq '^X-PersonalAI-Api-Version: 1' /tmp/status-headers
           grep -Eiq '^X-Content-Type-Options: nosniff' /tmp/status-headers
-          jq -e '.version == "1.2.0" and .apiContractVersion == "1" and .channel == "controlled"' /tmp/status-body.json >/dev/null
+          jq -e '.version == "1.3.0" and .apiContractVersion == "1" and .channel == "controlled"' /tmp/status-body.json >/dev/null
 
           capabilities=$(curl -fsS http://127.0.0.1:5077/api/system/capabilities)
           echo "$capabilities" | jq -e '
             . as $caps
-            | .version == "1.2.0"
+            | .version == "1.3.0"
             and .apiContractVersion == "1"
             and .channel == "controlled"
             and .workspaceHeader == "X-PersonalAI-Workspace"
@@ -79,11 +79,11 @@ jobs:
           echo "$capabilities" | jq -e '
             any(.reservedModules[]; . == "agents")
             and any(.reservedModules[]; . == "policies")
-            and .controlledModules == ["computer-use","browser-agent"]
+            and .controlledModules == ["computer-use","browser-agent","connectors"]
             and all(.reservedModules[]; . != "browser")
             and all(.reservedModules[]; . != "browser-agent")
             and all(.reservedModules[]; . != "computer-use")
-            and any(.reservedModules[]; . == "connectors")
+            and all(.reservedModules[]; . != "connectors")
             and .safety.workspaceIsolation == true
             and .safety.writeRequiresConfirmation == true
             and .safety.deleteRequiresConfirmation == true
@@ -94,6 +94,9 @@ jobs:
             and .safety.browserUseRequiresConfirmation == true
             and .safety.browserPrivateNetworkAccess == false
             and .safety.browserSideEffectsEnabled == false
+            and .safety.connectorUseRequiresConfirmation == true
+            and .safety.connectorSecretsEncrypted == true
+            and .safety.connectorWriteActionsEnabled == false
             and .safety.automaticMultiStepExecution == false
             and .safety.backgroundScheduler == false
             and .safety.autonomousAgentLoop == false
@@ -111,11 +114,15 @@ jobs:
             and .limits.browserMaximumPageTextCharacters == 24000
             and .limits.browserMaximumLinks == 100
             and .limits.browserMaximumRedirects == 5
+            and .limits.maximumConnectorConnections == 20
+            and .limits.connectorMaximumResponseBytes == 524288
+            and .limits.connectorMaximumReturnedCharacters == 32000
+            and .limits.connectorMaximumRedirects == 3
           ' >/dev/null
 
           core_health=$(curl -fsS http://127.0.0.1:5077/api/system/health)
           echo "$core_health" | jq -e '
-            .version == "1.2.0"
+            .version == "1.3.0"
             and .apiContractVersion == "1"
             and .channel == "controlled"
             and .ready == true
@@ -131,6 +138,7 @@ jobs:
             and any(.modules[]; .module == "undo" and .status == "healthy")
             and any(.modules[]; .module == "computer-use" and .status == "unconfigured")
             and any(.modules[]; .module == "browser-agent" and .status == "healthy")
+            and any(.modules[]; .module == "connectors" and .status == "healthy")
             and any(.modules[]; .module == "ai-provider" and (.status == "healthy" or .status == "unconfigured"))
           ' >/dev/null
 
@@ -145,7 +153,7 @@ jobs:
           echo "$custom_workspace" | jq -e '.isBuiltIn == false and (.activeModules | sort) == (["memory","documents","tasks","files","conversations"] | sort) and (.reservedModules | sort) == (["agents","policies"] | sort)' >/dev/null
 
           custom_status=$(curl -fsS -H "X-PersonalAI-Workspace: $custom_workspace_id" http://127.0.0.1:5077/api/status)
-          echo "$custom_status" | jq -e '.version == "1.2.0" and .workspaceName == "CI Workspace"' >/dev/null
+          echo "$custom_status" | jq -e '.version == "1.3.0" and .workspaceName == "CI Workspace"' >/dev/null
 
           custom_core_health=$(curl -fsS -H "X-PersonalAI-Workspace: $custom_workspace_id" http://127.0.0.1:5077/api/system/health)
           echo "$custom_core_health" | jq -e '.ready == true and .workspaceId == "'"$custom_workspace_id"'" and any(.modules[]; .module == "files" and .status == "healthy")' >/dev/null
@@ -346,8 +354,8 @@ jobs:
           test -n "$persistent_undo_id"
 
           tools=$(curl -fsS http://127.0.0.1:5077/api/tools)
-          echo "$tools" | jq -e '.frameworkVersion == "1.2.0" and (.permissionTypes | sort) == (["BROWSER","COMPUTER","DELETE","EXTERNAL","READ","SENSITIVE","WRITE"] | sort)' >/dev/null
-          echo "$tools" | jq -e '(.tools | length) == 23
+          echo "$tools" | jq -e '.frameworkVersion == "1.3.0" and (.permissionTypes | sort) == (["BROWSER","COMPUTER","CONNECTOR","DELETE","EXTERNAL","READ","SENSITIVE","WRITE"] | sort)' >/dev/null
+          echo "$tools" | jq -e '(.tools | length) == 25
             and any(.tools[]; .name == "local.clock" and .localOnly == true and .requiredPermissions == ["READ"])
             and any(.tools[]; .name == "local.text_stats" and .timeoutMs == 2000)
             and any(.tools[]; .name == "memory.search")
@@ -370,10 +378,12 @@ jobs:
             and any(.tools[]; .name == "browser.session.info" and .requiredPermissions == ["READ","BROWSER"] and .requiresConfirmation == true)
             and any(.tools[]; .name == "browser.navigate" and .requiredPermissions == ["READ","EXTERNAL","BROWSER"] and .requiresConfirmation == true)
             and any(.tools[]; .name == "browser.page.observe" and .requiredPermissions == ["READ","BROWSER"] and .requiresConfirmation == true)
-            and any(.tools[]; .name == "browser.link.open" and .requiredPermissions == ["READ","EXTERNAL","BROWSER"] and .requiresConfirmation == true)' >/dev/null
+            and any(.tools[]; .name == "browser.link.open" and .requiredPermissions == ["READ","EXTERNAL","BROWSER"] and .requiresConfirmation == true)
+            and any(.tools[]; .name == "connectors.list" and .requiredPermissions == ["READ","SENSITIVE","CONNECTOR"] and .requiresConfirmation == true)
+            and any(.tools[]; .name == "connector.http.get" and .requiredPermissions == ["READ","EXTERNAL","SENSITIVE","CONNECTOR"] and .requiresConfirmation == true)' >/dev/null
 
           computer_status=$(curl -fsS http://127.0.0.1:5077/api/computer/status)
-          echo "$computer_status" | jq -e '.version == "1.2.0" and .supported == false and .interactiveSession == false and .availableCapabilities == [] and any(.limitations[]; contains("Windows"))' >/dev/null
+          echo "$computer_status" | jq -e '.version == "1.3.0" and .supported == false and .interactiveSession == false and .availableCapabilities == [] and any(.limitations[]; contains("Windows"))' >/dev/null
 
           computer_sensitive_denied_code=$(curl -sS -o /tmp/computer-sensitive-denied.json -w '%{http_code}' -X POST http://127.0.0.1:5077/api/tools/execute \
             -H 'Content-Type: application/json' \
@@ -394,7 +404,7 @@ jobs:
           jq -e '.status == "invalid-input" and (.error | contains("Windows"))' /tmp/computer-unsupported.json >/dev/null
 
           browser_status=$(curl -fsS http://127.0.0.1:5077/api/browser/status)
-          echo "$browser_status" | jq -e '.version == "1.2.0" and .engine == "http-html" and .supported == true and .javaScriptEnabled == false and .cookiesEnabled == false and .downloadsEnabled == false and .formSubmissionEnabled == false and .maximumResponseBytes == 1048576 and .maximumPageTextCharacters == 24000 and .maximumLinks == 100 and .maximumRedirects == 5' >/dev/null
+          echo "$browser_status" | jq -e '.version == "1.3.0" and .engine == "http-html" and .supported == true and .javaScriptEnabled == false and .cookiesEnabled == false and .downloadsEnabled == false and .formSubmissionEnabled == false and .maximumResponseBytes == 1048576 and .maximumPageTextCharacters == 24000 and .maximumLinks == 100 and .maximumRedirects == 5' >/dev/null
 
           browser_unconfirmed_code=$(curl -sS -o /tmp/browser-unconfirmed.json -w '%{http_code}' -X POST http://127.0.0.1:5077/api/tools/execute \
             -H 'Content-Type: application/json' \
@@ -434,6 +444,74 @@ jobs:
             -H 'Content-Type: application/json' \
             -d '{"toolName":"browser.session.info","arguments":{},"approvedPermissions":["READ","BROWSER"],"confirmed":true}')
           echo "$browser_personal_session" | jq -e '.status == "succeeded" and .output.workspaceId == "personal" and .output.hasPage == true and (.output.url | startswith("https://example.com"))' >/dev/null
+
+          connector_status=$(curl -fsS http://127.0.0.1:5077/api/connectors/status)
+          echo "$connector_status" | jq -e '.version == "1.3.0" and .supported == true and .availableKinds == ["http-bearer"] and .maximumConnectionsPerWorkspace == 20 and .maximumResponseBytes == 524288 and .maximumReturnedCharacters == 32000 and .maximumRedirects == 3 and .secretsEncrypted == true and .writeActionsEnabled == false' >/dev/null
+
+          connector_unconfirmed_code=$(curl -sS -o /tmp/connector-unconfirmed.json -w '%{http_code}' -X POST http://127.0.0.1:5077/api/connectors \
+            -H 'Content-Type: application/json' \
+            -d '{"name":"CI Connector","kind":"http-bearer","baseUrl":"https://jsonplaceholder.typicode.com/","bearerToken":"ci-connector-secret-130","confirmed":false}')
+          test "$connector_unconfirmed_code" = "403"
+
+          connector_private_code=$(curl -sS -o /tmp/connector-private.json -w '%{http_code}' -X POST http://127.0.0.1:5077/api/connectors \
+            -H 'Content-Type: application/json' \
+            -d '{"name":"Private Connector","kind":"http-bearer","baseUrl":"https://127.0.0.1/","bearerToken":"private-secret","confirmed":true}')
+          test "$connector_private_code" = "400"
+          jq -e '(.error | contains("private/reserved"))' /tmp/connector-private.json >/dev/null
+
+          connector_created=$(curl -fsS -X POST http://127.0.0.1:5077/api/connectors \
+            -H 'Content-Type: application/json' \
+            -d '{"name":"CI Connector","kind":"http-bearer","baseUrl":"https://jsonplaceholder.typicode.com/","bearerToken":"ci-connector-secret-130","confirmed":true}')
+          connector_id=$(echo "$connector_created" | jq -r '.id')
+          test -n "$connector_id"
+          echo "$connector_created" | jq -e '.workspaceId == "personal" and .kind == "http-bearer" and .hasCredential == true and .baseUrl == "https://jsonplaceholder.typicode.com/"' >/dev/null
+          test -f /tmp/personalai-connectors/connections.json
+          ! grep -Fq 'ci-connector-secret-130' /tmp/personalai-connectors/connections.json
+
+          connector_list=$(curl -fsS http://127.0.0.1:5077/api/connectors)
+          echo "$connector_list" | jq -e '.workspaceId == "personal" and any(.connections[]; .id == "'"$connector_id"'" and .hasCredential == true)' >/dev/null
+          ! echo "$connector_list" | grep -Fq 'ci-connector-secret-130'
+
+          custom_connector_list=$(curl -fsS -H "X-PersonalAI-Workspace: $custom_workspace_id" http://127.0.0.1:5077/api/connectors)
+          echo "$custom_connector_list" | jq -e 'all(.connections[]; .id != "'"$connector_id"'")' >/dev/null
+
+          custom_connector=$(curl -fsS -X POST http://127.0.0.1:5077/api/connectors \
+            -H "X-PersonalAI-Workspace: $custom_workspace_id" \
+            -H 'Content-Type: application/json' \
+            -d '{"name":"Custom Connector","kind":"http-bearer","baseUrl":"https://jsonplaceholder.typicode.com/","bearerToken":"custom-connector-secret-130","confirmed":true}')
+          custom_connector_id=$(echo "$custom_connector" | jq -r '.id')
+          test -n "$custom_connector_id"
+          personal_after_custom=$(curl -fsS http://127.0.0.1:5077/api/connectors)
+          echo "$personal_after_custom" | jq -e 'all(.connections[]; .id != "'"$custom_connector_id"'")' >/dev/null
+          ! grep -Fq 'custom-connector-secret-130' /tmp/personalai-connectors/connections.json
+
+          connector_list_tool_denied_code=$(curl -sS -o /tmp/connector-list-denied.json -w '%{http_code}' -X POST http://127.0.0.1:5077/api/tools/execute \
+            -H 'Content-Type: application/json' \
+            -d '{"toolName":"connectors.list","arguments":{},"approvedPermissions":["READ","SENSITIVE","CONNECTOR"],"confirmed":false}')
+          test "$connector_list_tool_denied_code" = "403"
+
+          connector_missing_permission_code=$(curl -sS -o /tmp/connector-missing-permission.json -w '%{http_code}' -X POST http://127.0.0.1:5077/api/tools/execute \
+            -H 'Content-Type: application/json' \
+            -d '{"toolName":"connector.http.get","arguments":{"connectorId":"'"$connector_id"'","path":"/todos/1"},"approvedPermissions":["READ","EXTERNAL","SENSITIVE"],"confirmed":true}')
+          test "$connector_missing_permission_code" = "403"
+          jq -e '.status == "denied" and (.error | contains("KẾT NỐI"))' /tmp/connector-missing-permission.json >/dev/null
+
+          connector_get=$(curl -fsS -X POST http://127.0.0.1:5077/api/tools/execute \
+            -H 'Content-Type: application/json' \
+            -d '{"toolName":"connector.http.get","arguments":{"connectorId":"'"$connector_id"'","path":"/todos/1"},"approvedPermissions":["READ","EXTERNAL","SENSITIVE","CONNECTOR"],"confirmed":true}')
+          echo "$connector_get" | jq -e '.status == "succeeded" and .success == true and .output.connectionId == "'"$connector_id"'" and .output.statusCode == 200 and .output.contentType == "application/json" and (.output.content | contains("\"userId\""))' >/dev/null
+          ! echo "$connector_get" | grep -Fq 'ci-connector-secret-130'
+
+          connector_cross_workspace_code=$(curl -sS -o /tmp/connector-cross-workspace.json -w '%{http_code}' -X POST http://127.0.0.1:5077/api/tools/execute \
+            -H "X-PersonalAI-Workspace: $custom_workspace_id" \
+            -H 'Content-Type: application/json' \
+            -d '{"toolName":"connector.http.get","arguments":{"connectorId":"'"$connector_id"'","path":"/todos/1"},"approvedPermissions":["READ","EXTERNAL","SENSITIVE","CONNECTOR"],"confirmed":true}')
+          test "$connector_cross_workspace_code" = "400"
+          jq -e '.status == "invalid-input" and (.error | contains("workspace"))' /tmp/connector-cross-workspace.json >/dev/null
+
+          connector_audit=$(curl -fsS 'http://127.0.0.1:5077/api/audit?limit=200')
+          echo "$connector_audit" | jq -e 'any(.items[]; .action == "connector.create" and .target == "connector:'"$connector_id"'" and .result == "succeeded")' >/dev/null
+          ! echo "$connector_audit" | grep -Fq 'ci-connector-secret-130'
 
           text_tool=$(curl -fsS http://127.0.0.1:5077/api/tools/local.text_stats)
           echo "$text_tool" | jq -e '.name == "local.text_stats" and .inputSchema.type == "object" and .inputSchema.additionalProperties == false and .inputSchema.required == ["text"]' >/dev/null
@@ -1064,7 +1142,7 @@ jobs:
           con.close()
           PY
 
-          Workspace__Root=/tmp/personalai-workspace Tasks__Root=/tmp/personalai-tasks Audit__Root=/tmp/personalai-audit Undo__Root=/tmp/personalai-undo dotnet run --project src/PersonalAI.Web/PersonalAI.Web.csproj --configuration Release --no-build --urls http://127.0.0.1:5077 >/tmp/personalai-restart.log 2>&1 &
+          Workspace__Root=/tmp/personalai-workspace Tasks__Root=/tmp/personalai-tasks Audit__Root=/tmp/personalai-audit Undo__Root=/tmp/personalai-undo Connectors__Root=/tmp/personalai-connectors dotnet run --project src/PersonalAI.Web/PersonalAI.Web.csproj --configuration Release --no-build --urls http://127.0.0.1:5077 >/tmp/personalai-restart.log 2>&1 &
           APP_PID=$!
 
           ready=0
@@ -1082,6 +1160,19 @@ jobs:
 
           tasks_after_restart=$(curl -fsS http://127.0.0.1:5077/api/tasks)
           echo "$tasks_after_restart" | jq -e '.persistent == true and any(.tasks[]; .id == "'"$persist_task_id"'" and .status == "planned") and any(.tasks[]; .id == "'"$interrupted_task_id"'" and .status == "interrupted" and .steps[0].status == "interrupted")' >/dev/null
+
+          connectors_after_restart=$(curl -fsS http://127.0.0.1:5077/api/connectors)
+          echo "$connectors_after_restart" | jq -e 'any(.connections[]; .id == "'"$connector_id"'" and .hasCredential == true)' >/dev/null
+          connector_get_after_restart=$(curl -fsS -X POST http://127.0.0.1:5077/api/tools/execute \
+            -H 'Content-Type: application/json' \
+            -d '{"toolName":"connector.http.get","arguments":{"connectorId":"'"$connector_id"'","path":"/todos/1"},"approvedPermissions":["READ","EXTERNAL","SENSITIVE","CONNECTOR"],"confirmed":true}')
+          echo "$connector_get_after_restart" | jq -e '.status == "succeeded" and .output.statusCode == 200' >/dev/null
+
+          connector_delete_code=$(curl -sS -o /tmp/connector-delete-unconfirmed.json -w '%{http_code}' -X DELETE "http://127.0.0.1:5077/api/connectors/$connector_id")
+          test "$connector_delete_code" = "403"
+          curl -fsS -X DELETE "http://127.0.0.1:5077/api/connectors/$connector_id?confirmed=true" -o /dev/null
+          connectors_after_delete=$(curl -fsS http://127.0.0.1:5077/api/connectors)
+          echo "$connectors_after_delete" | jq -e 'all(.connections[]; .id != "'"$connector_id"'")' >/dev/null
 
           persisted_undo_list=$(curl -fsS 'http://127.0.0.1:5077/api/undo?limit=100')
           echo "$persisted_undo_list" | jq -e 'any(.items[]; .undoId == "'"$persistent_undo_id"'" and .status == "available")' >/dev/null
@@ -1182,18 +1273,18 @@ jobs:
           grep -Fq 'Task Dependencies' docs/releases/v0.9.3.md
           grep -Fq 'v090.css' src/PersonalAI.Web/wwwroot/index.html
           grep -Fq 'v090.js' src/PersonalAI.Web/wwwroot/index.html
-          grep -Fq 'Tác vụ có Undo Foundation v1.2.0' src/PersonalAI.Web/wwwroot/v090.js
+          grep -Fq 'Tác vụ có Undo Foundation v1.3.0' src/PersonalAI.Web/wwwroot/v090.js
           grep -Fq 'MỤC TIÊU → KẾ HOẠCH → TỪNG BƯỚC' src/PersonalAI.Web/wwwroot/v090.js
           grep -Fq 'arguments_sha256' src/PersonalAI.Web/Services/ToolActivityStore.cs
           grep -Fq 'output_sha256' src/PersonalAI.Web/Services/ToolActivityStore.cs
           grep -Fq 'v089.css' src/PersonalAI.Web/wwwroot/index.html
-          grep -Fq 'Nhật ký hoạt động công cụ v1.2.0' src/PersonalAI.Web/wwwroot/v080.js
+          grep -Fq 'Nhật ký hoạt động công cụ v1.3.0' src/PersonalAI.Web/wwwroot/v080.js
           grep -Fq 'Nhật ký hoạt động gần đây' src/PersonalAI.Web/wwwroot/v080.js
           grep -Fq 'v088.css' src/PersonalAI.Web/wwwroot/index.html
           grep -Fq 'Nguồn đề xuất:' src/PersonalAI.Web/wwwroot/app.js
           grep -Fq 'Tham số' src/PersonalAI.Web/wwwroot/app.js
           grep -Fq 'CÔNG CỤ NỘI BỘ TRÊN MÁY NÀY' src/PersonalAI.Web/wwwroot/v080.js
-          grep -Fq 'Nhật ký hoạt động công cụ v1.2.0' src/PersonalAI.Web/wwwroot/v080.js
+          grep -Fq 'Nhật ký hoạt động công cụ v1.3.0' src/PersonalAI.Web/wwwroot/v080.js
           grep -Fq 'Mô hình' src/PersonalAI.Web/wwwroot/index.html
           grep -Fq 'Khóa truy cập' src/PersonalAI.Web/wwwroot/index.html
           ! grep -Fq 'Planner:' src/PersonalAI.Web/wwwroot/app.js
@@ -1291,9 +1382,9 @@ jobs:
           grep -Fq 'v097.js' src/PersonalAI.Web/wwwroot/index.html
           ! grep -Fq 'MapDelete("/api/undo' src/PersonalAI.Web/Services/UndoEndpoints.cs
           grep -Fq 'Stable Personal AI Core' docs/releases/v1.0.0.md
-          grep -Fq '# AI Cá Nhân — Controlled Browser Agent v1.2.0' README.md
+          grep -Fq '# AI Cá Nhân — Connector Foundation v1.3.0' README.md
           ! grep -Fq '# AI Cá Nhân — MVP v0.5.3' README.md
-          grep -Fq 'public const string Version = "1.2.0"' src/PersonalAI.Web/Models/SystemModels.cs
+          grep -Fq 'public const string Version = "1.3.0"' src/PersonalAI.Web/Models/SystemModels.cs
           grep -Fq 'public const string ApiContractVersion = "1"' src/PersonalAI.Web/Models/SystemModels.cs
           grep -Fq 'public const string Channel = "controlled"' src/PersonalAI.Web/Models/SystemModels.cs
           grep -Fq '/api/system/health' src/PersonalAI.Web/Services/SystemEndpoints.cs
@@ -1349,6 +1440,31 @@ jobs:
           ! grep -Fq 'UseCookies = true' src/PersonalAI.Web/Services/BrowserAgentService.cs
           ! grep -Fq 'CookieContainer' src/PersonalAI.Web/Services/BrowserAgentService.cs
           ! grep -Fq 'Process.Start' src/PersonalAI.Web/Services/BrowserAgentService.cs
+          grep -Fq 'Connector Foundation' docs/releases/v1.3.0.md
+          grep -Fq 'public const string Connector = "CONNECTOR"' src/PersonalAI.Web/Models/ToolModels.cs
+          grep -Fq 'IConnectorService' src/PersonalAI.Web/Services/ConnectorService.cs
+          grep -Fq '/api/connectors/status' src/PersonalAI.Web/Services/ConnectorEndpoints.cs
+          grep -Fq 'connector.http.get' src/PersonalAI.Web/Services/ConnectorTools.cs
+          grep -Fq 'connectors.list' src/PersonalAI.Web/Services/ConnectorTools.cs
+          grep -Fq 'ToolPermissions.Connector' src/PersonalAI.Web/Services/ConnectorTools.cs
+          grep -Fq 'ConnectorUseRequiresConfirmation: true' src/PersonalAI.Web/Services/SystemCoreService.cs
+          grep -Fq 'ConnectorSecretsEncrypted: true' src/PersonalAI.Web/Services/SystemCoreService.cs
+          grep -Fq 'ConnectorWriteActionsEnabled: false' src/PersonalAI.Web/Services/SystemCoreService.cs
+          grep -Fq 'CreateProtector(' src/PersonalAI.Web/Services/ConnectorService.cs
+          grep -Fq '"PersonalAI.Connectors.v1"' src/PersonalAI.Web/Services/ConnectorService.cs
+          grep -Fq 'AllowAutoRedirect = false' src/PersonalAI.Web/Services/ConnectorService.cs
+          grep -Fq 'UseCookies = false' src/PersonalAI.Web/Services/ConnectorService.cs
+          grep -Fq 'ConnectCallback = ConnectPublicAsync' src/PersonalAI.Web/Services/ConnectorService.cs
+          grep -Fq 'MaximumResponseBytes = 512 * 1024' src/PersonalAI.Web/Services/ConnectorService.cs
+          grep -Fq 'v130.css' src/PersonalAI.Web/wwwroot/index.html
+          grep -Fq 'v130.js' src/PersonalAI.Web/wwwroot/index.html
+          grep -Fq 'CONTROLLED CAPABILITY · ENCRYPTED CREDENTIAL' src/PersonalAI.Web/wwwroot/v130.js
+          ! grep -Fq 'HttpMethod.Post' src/PersonalAI.Web/Services/ConnectorService.cs
+          ! grep -Fq 'HttpMethod.Put' src/PersonalAI.Web/Services/ConnectorService.cs
+          ! grep -Fq 'HttpMethod.Patch' src/PersonalAI.Web/Services/ConnectorService.cs
+          ! grep -Fq 'CookieContainer' src/PersonalAI.Web/Services/ConnectorService.cs
+          ! grep -Fq 'EncryptedBearerToken' src/PersonalAI.Web/Models/ConnectorModels.cs
+
 
 
 
@@ -1385,3 +1501,4 @@ jobs:
           node --check src/PersonalAI.Web/wwwroot/v100.js
           node --check src/PersonalAI.Web/wwwroot/v110.js
           node --check src/PersonalAI.Web/wwwroot/v120.js
+          node --check src/PersonalAI.Web/wwwroot/v130.js

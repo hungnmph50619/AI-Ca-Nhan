@@ -467,7 +467,16 @@ public sealed class ToolOrchestrationService : IToolOrchestrationService
         var outputTruncated = rawOutput.Length > MaximumNativeResultCharacters;
         if (outputTruncated)
         {
-            rawOutput = rawOutput[..MaximumNativeResultCharacters];
+            var length = MaximumNativeResultCharacters;
+            if (length > 0
+                && length < rawOutput.Length
+                && char.IsHighSurrogate(rawOutput[length - 1])
+                && char.IsLowSurrogate(rawOutput[length]))
+            {
+                length--;
+            }
+
+            rawOutput = rawOutput[..length];
         }
 
         var payload = JsonSerializer.Serialize(new

@@ -908,6 +908,11 @@ jobs:
           tasks_after_restart=$(curl -fsS http://127.0.0.1:5077/api/tasks)
           echo "$tasks_after_restart" | jq -e '.persistent == true and any(.tasks[]; .id == "'"$persist_task_id"'" and .status == "planned") and any(.tasks[]; .id == "'"$interrupted_task_id"'" and .status == "interrupted" and .steps[0].status == "interrupted")' >/dev/null
 
+          persisted_undo_list=$(curl -fsS 'http://127.0.0.1:5077/api/undo?limit=100')
+          echo "$persisted_undo_list" | jq -e 'any(.items[]; .undoId == "'"$persistent_undo_id"'" and .status == "available")' >/dev/null
+          persisted_undo_assessment=$(curl -fsS "http://127.0.0.1:5077/api/undo/$persistent_undo_id/assessment")
+          echo "$persisted_undo_assessment" | jq -e '.canUndo == true' >/dev/null
+
           resumed_task=$(curl -fsS -X POST "http://127.0.0.1:5077/api/tasks/$interrupted_task_id/resume")
           echo "$resumed_task" | jq -e '.status == "planned" and .steps[0].status == "pending"' >/dev/null
 
@@ -1100,6 +1105,16 @@ jobs:
           grep -Fq 'v096.css' src/PersonalAI.Web/wwwroot/index.html
           grep -Fq 'v096.js' src/PersonalAI.Web/wwwroot/index.html
           ! grep -Fq 'MapDelete("/api/audit' src/PersonalAI.Web/Services/AuditEndpoints.cs
+          grep -Fq 'Undo Foundation' docs/releases/v0.9.7.md
+          grep -Fq 'IUndoStore' src/PersonalAI.Web/Services/UndoStore.cs
+          grep -Fq 'IUndoService' src/PersonalAI.Web/Services/UndoService.cs
+          grep -Fq '/api/undo' src/PersonalAI.Web/Services/UndoEndpoints.cs
+          grep -Fq 'MaximumSnapshotBytes = 512 * 1024' src/PersonalAI.Web/Services/UndoStore.cs
+          grep -Fq 'undo.available' src/PersonalAI.Web/Services/UndoService.cs
+          grep -Fq 'undo.execute' src/PersonalAI.Web/Services/UndoService.cs
+          grep -Fq 'v097.css' src/PersonalAI.Web/wwwroot/index.html
+          grep -Fq 'v097.js' src/PersonalAI.Web/wwwroot/index.html
+          ! grep -Fq 'MapDelete("/api/undo' src/PersonalAI.Web/Services/UndoEndpoints.cs
 
 
       - name: Setup Node.js
@@ -1129,3 +1144,4 @@ jobs:
           node --check src/PersonalAI.Web/wwwroot/v094.js
           node --check src/PersonalAI.Web/wwwroot/v095.js
           node --check src/PersonalAI.Web/wwwroot/v096.js
+          node --check src/PersonalAI.Web/wwwroot/v097.js

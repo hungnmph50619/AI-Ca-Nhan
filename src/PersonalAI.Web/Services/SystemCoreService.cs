@@ -25,6 +25,7 @@ public sealed class SystemCoreService(
     IConnectorService connectors,
     IDevelopmentAgentService development,
     ICompanionService companion,
+    ILifeContextService lifeContext,
     IAiProviderResolver providerResolver,
     ILogger<SystemCoreService> logger) : ISystemCoreService
 {
@@ -49,7 +50,8 @@ public sealed class SystemCoreService(
         "browser-agent",
         "connectors",
         "software-development",
-        "android-companion"
+        "android-companion",
+        "life-context"
     ];
 
     private static readonly string[] ReservedModules =
@@ -262,6 +264,31 @@ public sealed class SystemCoreService(
             CoreHealthStatuses.Degraded));
 
         modules.Add(Check(
+            "life-context",
+            () =>
+            {
+                var status = lifeContext.GetStatus();
+                var sources = lifeContext
+                    .GetSourcesAsync(cancellationToken)
+                    .GetAwaiter()
+                    .GetResult();
+
+                return status.Supported
+                    ? new CoreModuleHealth(
+                        "life-context",
+                        CoreHealthStatuses.Healthy,
+                        status.AutomaticCollectionEnabled
+                            ? "Life Context khả dụng; automatic collection đang bật."
+                            : "Life Context khả dụng; explicit consent bắt buộc và automatic collection đang tắt.",
+                        sources.Sources.Count)
+                    : new CoreModuleHealth(
+                        "life-context",
+                        CoreHealthStatuses.Unconfigured,
+                        "Life Context chưa khả dụng.");
+            },
+            CoreHealthStatuses.Degraded));
+
+        modules.Add(Check(
             "ai-provider",
             () =>
             {
@@ -285,7 +312,8 @@ public sealed class SystemCoreService(
                 && module.Module != "browser-agent"
                 && module.Module != "connectors"
                 && module.Module != "software-development"
-                && module.Module != "android-companion")
+                && module.Module != "android-companion"
+                && module.Module != "life-context")
             .ToArray();
         var ready = localModules.All(
             module => module.Status != CoreHealthStatuses.Unavailable);
@@ -339,6 +367,9 @@ public sealed class SystemCoreService(
                 CompanionDeviceTokensHashed: true,
                 CompanionRemoteToolExecutionEnabled: false,
                 CompanionRemoteTaskMutationEnabled: false,
+                LifeContextExplicitConsentRequired: true,
+                LifeContextAutomaticCollectionEnabled: false,
+                LifeContextContentEncrypted: true,
                 AutomaticMultiStepExecution: false,
                 BackgroundScheduler: false,
                 AutonomousAgentLoop: false,
@@ -365,7 +396,11 @@ public sealed class SystemCoreService(
                 DevelopmentAgentService.MaximumSearchHits,
                 DevelopmentAgentService.MaximumProcessOutputCharacters,
                 CompanionService.MaximumDevicesPerWorkspace,
-                CompanionService.PairingLifetimeMinutes),
+                CompanionService.PairingLifetimeMinutes,
+                LifeContextService.MaximumSourcesPerWorkspace,
+                LifeContextService.MaximumEntriesPerWorkspace,
+                LifeContextService.MaximumContentCharacters,
+                LifeContextService.MaximumRetentionDays),
             WorkspaceEndpoints.WorkspaceHeaderName,
             SystemHardeningMiddleware.RequestIdHeaderName);
 

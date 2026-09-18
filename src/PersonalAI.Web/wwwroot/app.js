@@ -179,8 +179,8 @@ async function openSettings() {
     elements.apiKey.value = "";
     resetApiKeyVisibility();
     elements.apiKeyHint.textContent = settings.hasApiKey
-      ? `Đã có API key: ${settings.maskedApiKey}. Để trống để giữ nguyên.`
-      : "Chưa có API key. Hãy nhập key để sử dụng nhà cung cấp này.";
+      ? `Đã có khóa API: ${settings.maskedApiKey}. Để trống để giữ nguyên.`
+      : "Chưa có khóa API. Hãy nhập khóa để sử dụng nhà cung cấp này.";
     setSettingsFeedback("");
     elements.provider.focus();
   } catch (error) {
@@ -209,8 +209,8 @@ async function saveAiSettings(testAfterSave) {
 
     elements.apiKey.value = "";
     elements.apiKeyHint.textContent = settings.hasApiKey
-      ? `Đã có API key: ${settings.maskedApiKey}. Để trống để giữ nguyên.`
-      : "Chưa có API key. Hãy nhập key để sử dụng nhà cung cấp này.";
+      ? `Đã có khóa API: ${settings.maskedApiKey}. Để trống để giữ nguyên.`
+      : "Chưa có khóa API. Hãy nhập khóa để sử dụng nhà cung cấp này.";
 
     if (testAfterSave) {
       const testResponse = await fetch("/api/settings/ai/test", { method: "POST" });
@@ -564,7 +564,7 @@ async function refreshStatus() {
     elements.statusDot.className = `status-dot ${status.configured ? "online" : "offline"}`;
     elements.statusText.textContent = status.configured
       ? `Sẵn sàng · ${status.provider} · ${status.model}`
-      : "Chưa cấu hình API key";
+      : "Chưa cấu hình khóa API";
   } catch {
     elements.statusDot.className = "status-dot offline";
     elements.statusText.textContent = "Không kết nối được máy chủ";

@@ -30,6 +30,7 @@ builder.Services.AddUndoFoundation();
 builder.Services.AddComputerUse();
 builder.Services.AddBrowserAgent();
 builder.Services.AddConnectorFoundation();
+builder.Services.AddDevelopmentAgent();
 builder.Services.AddToolFramework();
 builder.Services.AddTaskEngine();
 builder.Services.AddSingleton<IKnowledgeGroundingService, KnowledgeGroundingService>();
@@ -75,6 +76,7 @@ app.MapUndoFoundation();
 app.MapComputerUse();
 app.MapBrowserAgent();
 app.MapConnectorFoundation();
+app.MapDevelopmentAgent();
 app.MapStableCore();
 
 app.MapGet("/api/status", (

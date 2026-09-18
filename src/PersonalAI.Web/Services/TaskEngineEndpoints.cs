@@ -49,6 +49,7 @@ public static class TaskEngineEndpoints
             {
                 var task = await taskEngine.CreateAsync(
                     request.Goal,
+                    request.DependsOnTaskIds,
                     cancellationToken);
                 return Results.Created($"/api/tasks/{task.Id}", task);
             }

@@ -28,7 +28,9 @@ public static class PersonalTaskRetrySafety
     public const string Blocked = "blocked";
 }
 
-public sealed record CreatePersonalTaskRequest(string Goal);
+public sealed record CreatePersonalTaskRequest(
+    string Goal,
+    IReadOnlyList<Guid>? DependsOnTaskIds = null);
 
 public sealed record ExecutePersonalTaskStepRequest(bool Confirmed = false);
 
@@ -37,7 +39,8 @@ public sealed record RetryPersonalTaskStepRequest(bool ConfirmedReview = false);
 public sealed record PreparePersonalTaskRequest(
     string Goal,
     string Plan,
-    IReadOnlyList<PersonalTaskStepDraft> Steps);
+    IReadOnlyList<PersonalTaskStepDraft> Steps,
+    IReadOnlyList<Guid>? DependsOnTaskIds = null);
 
 public sealed record PersonalTaskStepDraft(
     string Title,
@@ -76,7 +79,8 @@ public sealed record PersonalTask(
     DateTimeOffset? CompletedAt,
     string? Result,
     string PlanningProvider,
-    string PlanningModel);
+    string PlanningModel,
+    IReadOnlyList<Guid>? DependsOnTaskIds = null);
 
 public sealed record PersonalTaskListResponse(
     bool Persistent,

@@ -7,6 +7,7 @@ public interface ITaskEngineService
 {
     Task<PersonalTask> CreateAsync(
         string goal,
+        IReadOnlyList<Guid>? dependsOnTaskIds = null,
         CancellationToken cancellationToken = default);
 
     PersonalTask Prepare(PreparePersonalTaskRequest request);
@@ -46,6 +47,7 @@ public sealed class TaskEngineService : ITaskEngineService
 {
     public const int MaximumTasks = 50;
     public const int MaximumSteps = 8;
+    public const int MaximumTaskDependencies = 8;
     public const int MaximumGoalCharacters = 2_000;
     public const int MaximumPlanCharacters = 2_000;
 
@@ -82,6 +84,7 @@ public sealed class TaskEngineService : ITaskEngineService
 
     public async Task<PersonalTask> CreateAsync(
         string goal,
+        IReadOnlyList<Guid>? dependsOnTaskIds = null,
         CancellationToken cancellationToken = default)
     {
         goal = (goal ?? string.Empty).Trim();
@@ -96,6 +99,8 @@ public sealed class TaskEngineService : ITaskEngineService
             throw new PersonalTaskValidationException(
                 $"Mục tiêu không được dài hơn {MaximumGoalCharacters:N0} ký tự.");
         }
+
+        var taskDependencies = NormalizeTaskDependencies(dependsOnTaskIds);
 
         var provider = _providerResolver.GetActive();
         var definitions = _registry.GetAll();
@@ -125,7 +130,8 @@ public sealed class TaskEngineService : ITaskEngineService
             null,
             null,
             provider.Name,
-            provider.Model);
+            provider.Model,
+            taskDependencies);
 
         return _taskStore.Save(task);
     }
@@ -158,6 +164,9 @@ public sealed class TaskEngineService : ITaskEngineService
         {
             plan = plan[..MaximumPlanCharacters];
         }
+
+        var taskDependencies = NormalizeTaskDependencies(
+            request.DependsOnTaskIds);
 
         var drafts = request.Steps ?? [];
         if (drafts.Count == 0)
@@ -247,7 +256,8 @@ public sealed class TaskEngineService : ITaskEngineService
             null,
             null,
             "Máy chủ",
-            "Kế hoạch cấu trúc");
+            "Kế hoạch cấu trúc",
+            taskDependencies);
 
         return _taskStore.Save(task);
     }
@@ -292,6 +302,8 @@ public sealed class TaskEngineService : ITaskEngineService
                 throw new PersonalTaskValidationException(
                     "Tác vụ này đã kết thúc nên không thể chạy thêm bước.");
             }
+
+            EnsureTaskDependenciesSatisfied(task);
 
             var position = task.CurrentStep - 1;
             if (position < 0 || position >= task.Steps.Count)
@@ -1023,6 +1035,87 @@ Quy tắc bắt buộc:
         var value = property.GetString()?.Trim();
         return string.IsNullOrWhiteSpace(value) ? fallback : value;
     }
+
+    private IReadOnlyList<Guid> NormalizeTaskDependencies(
+        IReadOnlyList<Guid>? dependencies)
+    {
+        var normalized = (dependencies ?? [])
+            .Where(id => id != Guid.Empty)
+            .Distinct()
+            .ToArray();
+
+        if (normalized.Length > MaximumTaskDependencies)
+        {
+            throw new PersonalTaskValidationException(
+                $"Mỗi tác vụ chỉ được phụ thuộc tối đa {MaximumTaskDependencies} tác vụ khác.");
+        }
+
+        foreach (var dependencyId in normalized)
+        {
+            var dependency = _taskStore.Get(dependencyId);
+            if (dependency is null)
+            {
+                throw new PersonalTaskValidationException(
+                    $"Không tìm thấy tác vụ phụ thuộc {dependencyId:D}.");
+            }
+
+            if (dependency.Status == PersonalTaskStatuses.Cancelled)
+            {
+                throw new PersonalTaskValidationException(
+                    $"Không thể phụ thuộc vào tác vụ đã hủy: {dependency.Goal}");
+            }
+        }
+
+        return normalized;
+    }
+
+    private void EnsureTaskDependenciesSatisfied(PersonalTask task)
+    {
+        var dependencies = task.DependsOnTaskIds ?? [];
+        if (dependencies.Count == 0)
+        {
+            return;
+        }
+
+        var blocked = new List<string>();
+        foreach (var dependencyId in dependencies)
+        {
+            var dependency = _taskStore.Get(dependencyId);
+            if (dependency is null)
+            {
+                blocked.Add($"{dependencyId:D} (không còn tồn tại)");
+                continue;
+            }
+
+            if (dependency.Status != PersonalTaskStatuses.Completed)
+            {
+                blocked.Add(
+                    $"{dependency.Goal} ({TaskStatusLabel(dependency.Status)})");
+            }
+        }
+
+        if (blocked.Count == 0)
+        {
+            return;
+        }
+
+        throw new PersonalTaskValidationException(
+            "Tác vụ đang chờ các tác vụ phụ thuộc hoàn tất: "
+            + string.Join("; ", blocked)
+            + ". PersonalAI sẽ không chạy bước tiếp theo trước khi các phụ thuộc hoàn thành.");
+    }
+
+    private static string TaskStatusLabel(string status) =>
+        status switch
+        {
+            PersonalTaskStatuses.Planned => "đã lập kế hoạch",
+            PersonalTaskStatuses.Running => "đang thực hiện",
+            PersonalTaskStatuses.Failed => "có lỗi",
+            PersonalTaskStatuses.Interrupted => "bị gián đoạn",
+            PersonalTaskStatuses.Cancelled => "đã hủy",
+            PersonalTaskStatuses.Completed => "đã hoàn tất",
+            _ => "không rõ trạng thái"
+        };
 
     private static IReadOnlyList<int> ReadDependencies(
         JsonElement element,

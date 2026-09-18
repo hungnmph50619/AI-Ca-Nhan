@@ -376,7 +376,7 @@
     const actions = document.createElement("div");
     actions.className = "v180-item-actions";
 
-    if (!["completed", "failed"].includes(item.state)) {
+    if (item.state === "scheduled") {
       const run = button("Chạy ngay", () => runNow(item));
       actions.appendChild(run);
     }

@@ -31,6 +31,7 @@ jobs:
         run: |
           set -euo pipefail
           trap 'echo "Smoke test failed at line ${LINENO}: ${BASH_COMMAND}" >&2' ERR
+          export PERSONALAI_DEV_SECRET="ci-parent-secret-140"
           rm -rf /tmp/personalai-workspace /tmp/personalai-tasks /tmp/personalai-audit /tmp/personalai-undo /tmp/personalai-connectors
           mkdir -p /tmp/personalai-workspace/notes
           printf 'Workspace root file.\n' >/tmp/personalai-workspace/readme.txt
@@ -539,7 +540,7 @@ jobs:
           echo "$development_status" | jq -e '.version == "1.4.0" and .workspaceId == "personal" and .gitAvailable == true and .dotnetAvailable == true and .arbitraryShellEnabled == false and .arbitraryProcessEnabled == false and .gitWriteActionsEnabled == false and .maximumScannedFiles == 2000 and .maximumSearchHits == 100 and .maximumProcessOutputCharacters == 48000' >/dev/null
 
           mkdir -p /tmp/personalai-workspace/dev-ci
-          printf '%s\n' '<Project Sdk="Microsoft.NET.Sdk">' '  <PropertyGroup>' '    <OutputType>Exe</OutputType>' '    <TargetFramework>net8.0</TargetFramework>' '    <ImplicitUsings>enable</ImplicitUsings>' '    <Nullable>enable</Nullable>' '  </PropertyGroup>' '</Project>' > /tmp/personalai-workspace/dev-ci/DevCi.csproj
+          printf '%s\n' '<Project Sdk="Microsoft.NET.Sdk">' '  <PropertyGroup>' '    <OutputType>Exe</OutputType>' '    <TargetFramework>net8.0</TargetFramework>' '    <ImplicitUsings>enable</ImplicitUsings>' '    <Nullable>enable</Nullable>' '  </PropertyGroup>' '  <Target Name="RejectInheritedPersonalAiSecret" BeforeTargets="Build">' '    <Error Condition="\047$(PERSONALAI_DEV_SECRET)\047 != \047\047" Text="PersonalAI parent secret leaked into development process." />' '  </Target>' '</Project>' > /tmp/personalai-workspace/dev-ci/DevCi.csproj
           printf '%s\n' 'Console.WriteLine("development-ci-marker-140");' > /tmp/personalai-workspace/dev-ci/Program.cs
 
           mkdir -p /tmp/personalai-workspace/dev-git
@@ -588,6 +589,15 @@ jobs:
             -H 'Content-Type: application/json' \
             -d '{"toolName":"dev.git.diff","arguments":{"repositoryPath":"dev-git","staged":false},"approvedPermissions":["READ","SENSITIVE","DEVELOPMENT"],"confirmed":true}')
           echo "$dev_git_diff" | jq -e '.status == "succeeded" and .output.succeeded == true and (.output.output | contains("-before")) and (.output.output | contains("+after"))' >/dev/null
+
+          mkdir -p /tmp/personalai-workspace/dev-git/.git/objects/info
+          printf '%s\n' '/tmp' > /tmp/personalai-workspace/dev-git/.git/objects/info/alternates
+          dev_git_alternates_code=$(curl -sS -o /tmp/dev-git-alternates.json -w '%{http_code}' -X POST http://127.0.0.1:5077/api/tools/execute \
+            -H 'Content-Type: application/json' \
+            -d '{"toolName":"dev.git.status","arguments":{"repositoryPath":"dev-git"},"approvedPermissions":["READ","SENSITIVE","DEVELOPMENT"],"confirmed":true}')
+          test "$dev_git_alternates_code" = "400"
+          jq -e '.status == "invalid-input" and (.error | contains("alternates"))' /tmp/dev-git-alternates.json >/dev/null
+          rm -f /tmp/personalai-workspace/dev-git/.git/objects/info/alternates
 
           dev_escape_code=$(curl -sS -o /tmp/dev-escape.json -w '%{http_code}' -X POST http://127.0.0.1:5077/api/tools/execute \
             -H 'Content-Type: application/json' \
@@ -1607,6 +1617,10 @@ jobs:
           grep -Fq 'startInfo.ArgumentList.Add(argument)' src/PersonalAI.Web/Services/DevelopmentAgentService.cs
           grep -Fq 'GIT_TERMINAL_PROMPT' src/PersonalAI.Web/Services/DevelopmentAgentService.cs
           grep -Fq 'startInfo.Environment.Clear()' src/PersonalAI.Web/Services/DevelopmentAgentService.cs
+          grep -Fq -- '--git-dir=' src/PersonalAI.Web/Services/DevelopmentAgentService.cs
+          grep -Fq -- '--work-tree=' src/PersonalAI.Web/Services/DevelopmentAgentService.cs
+          grep -Fq 'objects", "info", "alternates' src/PersonalAI.Web/Services/DevelopmentAgentService.cs
+          grep -Fq 'commondir' src/PersonalAI.Web/Services/DevelopmentAgentService.cs
           grep -Fq 'ToolExecutionFailedException' src/PersonalAI.Web/Services/ToolExecutionService.cs
           grep -Fq 'DevelopmentToolExecutionGuard.RequireSuccess' src/PersonalAI.Web/Services/DevelopmentTools.cs
           grep -Fq -- '--no-ext-diff' src/PersonalAI.Web/Services/DevelopmentAgentService.cs

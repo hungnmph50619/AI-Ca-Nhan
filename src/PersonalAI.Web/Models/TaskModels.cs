@@ -21,9 +21,18 @@ public static class PersonalTaskStepStatuses
     public const string Interrupted = "interrupted";
 }
 
+public static class PersonalTaskRetrySafety
+{
+    public const string Safe = "safe";
+    public const string ReviewRequired = "review-required";
+    public const string Blocked = "blocked";
+}
+
 public sealed record CreatePersonalTaskRequest(string Goal);
 
 public sealed record ExecutePersonalTaskStepRequest(bool Confirmed = false);
+
+public sealed record RetryPersonalTaskStepRequest(bool ConfirmedReview = false);
 
 public sealed record PreparePersonalTaskRequest(
     string Goal,
@@ -50,7 +59,8 @@ public sealed record PersonalTaskStep(
     Guid? InvocationId = null,
     string? LocalSummary = null,
     DateTimeOffset? StartedAt = null,
-    DateTimeOffset? CompletedAt = null);
+    DateTimeOffset? CompletedAt = null,
+    int AttemptCount = 0);
 
 public sealed record PersonalTask(
     Guid Id,
@@ -75,3 +85,17 @@ public sealed record PersonalTaskStepExecutionResponse(
     PersonalTask Task,
     ToolExecutionResponse Execution,
     string LocalSummary);
+
+
+public sealed record PersonalTaskRetryAssessment(
+    Guid TaskId,
+    int StepIndex,
+    string ToolName,
+    string Safety,
+    bool CanRetry,
+    bool RequiresReviewConfirmation,
+    string Message);
+
+public sealed record PersonalTaskRetryResponse(
+    PersonalTask Task,
+    PersonalTaskRetryAssessment Assessment);

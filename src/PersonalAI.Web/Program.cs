@@ -31,6 +31,7 @@ builder.Services.AddComputerUse();
 builder.Services.AddBrowserAgent();
 builder.Services.AddConnectorFoundation();
 builder.Services.AddDevelopmentAgent();
+builder.Services.AddAndroidCompanion();
 builder.Services.AddToolFramework();
 builder.Services.AddTaskEngine();
 builder.Services.AddSingleton<IKnowledgeGroundingService, KnowledgeGroundingService>();
@@ -66,6 +67,7 @@ app.Use(async (context, next) =>
 });
 
 app.UseSystemHardening();
+app.UseCompanionAuthentication();
 app.UseWorkspaceValidation();
 app.UseDefaultFiles();
 app.UseStaticFiles();
@@ -77,6 +79,7 @@ app.MapComputerUse();
 app.MapBrowserAgent();
 app.MapConnectorFoundation();
 app.MapDevelopmentAgent();
+app.MapAndroidCompanion();
 app.MapStableCore();
 
 app.MapGet("/api/status", (
@@ -504,94 +507,24 @@ app.MapPost("/api/context/preview", async (
     }
 });
 
-app.MapPost("/api/chat", async (ChatRequest request, IAiProviderResolver providerResolver, IContextManagerService contextManager, IToolOrchestrationService toolOrchestration, IAuditRecorder audit, CancellationToken cancellationToken) =>
+app.MapPost("/api/chat", async (
+    ChatRequest request,
+    IChatTurnService chat,
+    CancellationToken cancellationToken) =>
 {
-    if (request.Messages is null || request.Messages.Count == 0)
-        return Results.BadRequest(new ApiError("Hãy nhập một câu hỏi."));
-
-    if (request.Messages.Count > 40)
-        return Results.BadRequest(new ApiError("Cuộc trò chuyện quá dài. Hãy tạo cuộc trò chuyện mới."));
-
-    var allowedRoles = new HashSet<string>(StringComparer.OrdinalIgnoreCase) { "user", "assistant" };
-    if (request.Messages.Any(message => !allowedRoles.Contains(message.Role) || string.IsNullOrWhiteSpace(message.Content) || message.Content.Length > 12_000))
-        return Results.BadRequest(new ApiError("Nội dung hội thoại không hợp lệ."));
-
-    var knowledgeMode = string.IsNullOrWhiteSpace(request.KnowledgeMode) ? "normal" : request.KnowledgeMode.Trim().ToLowerInvariant();
-    if (knowledgeMode is not ("normal" or "documents-only"))
-        return Results.BadRequest(new ApiError("Chế độ trả lời theo dữ liệu không hợp lệ."));
-
-    if (!request.UseKnowledge && knowledgeMode == "documents-only")
-        return Results.BadRequest(new ApiError("Hãy bật dữ liệu riêng để sử dụng chế độ chỉ trả lời theo tài liệu."));
-
     try
     {
-        var aiProvider = providerResolver.GetActive();
-
-        if (request.UseTools && knowledgeMode == "normal")
-        {
-            var proposal = await toolOrchestration.ProposeAsync(
-                request.Messages,
-                cancellationToken);
-            if (proposal is not null)
-            {
-                audit.Record(
-                    AuditAgents.PersonalAi,
-                    "tool.proposed",
-                    $"tool-proposal:{proposal.ProposalId:D}",
-                    "chat-tool-selection",
-                    AuditResults.Proposed,
-                    proposal.ToolName);
-                return Results.Ok(new ChatResponse(
-                    proposal.AssistantMessage,
-                    aiProvider.Model,
-                    aiProvider.Name,
-                    [],
-                    proposal));
-            }
-        }
-
-        var managedContext = await contextManager.BuildAsync(
-            request.Messages,
-            request.UseKnowledge,
-            knowledgeMode,
-            request.UseMemory,
-            request.UseTaskContext,
-            cancellationToken);
-
-        if (knowledgeMode == "documents-only"
-            && managedContext.Sources.Count == 0)
-        {
-            audit.Record(
-                AuditAgents.PersonalAi,
-                "chat.completed",
-                "chat:turn",
-                "documents-only-no-source",
-                AuditResults.Succeeded);
-            return Results.Ok(new ChatResponse(
-                "Tôi chưa tìm thấy thông tin này trong kho dữ liệu.",
-                aiProvider.Model,
-                aiProvider.Name,
-                [],
-                null,
-                managedContext.Report));
-        }
-
-        var answer = await aiProvider.ReplyAsync(
-            managedContext.Messages,
-            cancellationToken);
-        audit.Record(
+        var response = await chat.ExecuteAsync(
+            request,
+            allowToolProposal: true,
             AuditAgents.PersonalAi,
-            "chat.completed",
-            "chat:turn",
             "context-managed-chat",
-            AuditResults.Succeeded);
-        return Results.Ok(new ChatResponse(
-            answer,
-            aiProvider.Model,
-            aiProvider.Name,
-            managedContext.Sources,
-            null,
-            managedContext.Report));
+            cancellationToken);
+        return Results.Ok(response);
+    }
+    catch (ChatValidationException exception)
+    {
+        return Results.BadRequest(new ApiError(exception.Message));
     }
     catch (KnowledgeDocumentValidationException exception)
     {
@@ -599,16 +532,24 @@ app.MapPost("/api/chat", async (ChatRequest request, IAiProviderResolver provide
     }
     catch (InvalidOperationException exception)
     {
-        return Results.Json(new ApiError(exception.Message), statusCode: StatusCodes.Status503ServiceUnavailable);
+        return Results.Json(
+            new ApiError(exception.Message),
+            statusCode: StatusCodes.Status503ServiceUnavailable);
     }
     catch (HttpRequestException exception)
     {
-        var statusCode = exception.StatusCode == HttpStatusCode.TooManyRequests ? StatusCodes.Status429TooManyRequests : StatusCodes.Status502BadGateway;
-        return Results.Json(new ApiError(exception.Message), statusCode: statusCode);
+        var statusCode = exception.StatusCode == HttpStatusCode.TooManyRequests
+            ? StatusCodes.Status429TooManyRequests
+            : StatusCodes.Status502BadGateway;
+        return Results.Json(
+            new ApiError(exception.Message),
+            statusCode: statusCode);
     }
     catch (TaskCanceledException) when (!cancellationToken.IsCancellationRequested)
     {
-        return Results.Json(new ApiError("Yêu cầu AI mất quá nhiều thời gian. Hãy thử lại."), statusCode: StatusCodes.Status504GatewayTimeout);
+        return Results.Json(
+            new ApiError("Yêu cầu AI mất quá nhiều thời gian. Hãy thử lại."),
+            statusCode: StatusCodes.Status504GatewayTimeout);
     }
 });
 

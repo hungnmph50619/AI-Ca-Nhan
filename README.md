@@ -1,76 +1,275 @@
-# AI Cá Nhân — MVP v0.5.3
+# AI Cá Nhân — Stable Core v1.0.0
 
-Website chat bằng ASP.NET Core 8, mặc định dùng Gemini API, nhớ nhiều cuộc trò chuyện và có kho dữ liệu riêng chạy bằng SQLite. Kiến trúc nhà cung cấp AI đã được tách riêng để sau này có thể đổi Gemini, OpenAI hoặc mô hình chạy cục bộ.
+PersonalAI là trợ lý AI cá nhân chạy bằng ASP.NET Core 8, ưu tiên dữ liệu cục bộ, có thể dùng Gemini hoặc OpenAI cho phần sinh câu trả lời. v1.0.0 là mốc **Stable Personal AI Core**: Memory, RAG, Tools, Tasks, Workspace, Context, Audit và Undo đã được ghép thành một core có contract và regression test rõ ràng trước khi mở rộng sang Browser, Computer Use hoặc Connectors.
 
-## Phiên bản này đã có
+> Đây vẫn là ứng dụng thiết kế cho một người dùng trên máy cá nhân. Không đưa trực tiếp lên Internet hoặc dùng như hệ thống nhiều người dùng nếu chưa bổ sung authentication, authorization và hardening triển khai phù hợp.
 
-- Giao diện chat responsive trên máy tính và điện thoại.
-- Hội thoại nhiều lượt, lưu cục bộ trong trình duyệt.
-- Tạo, chuyển, đổi tên và xóa nhiều cuộc trò chuyện ở thanh bên.
-- Tự đặt tiêu đề từ câu hỏi đầu tiên và tự nhập lịch sử từ phiên bản cũ.
-- Kho dữ liệu riêng: tải lên, xem danh sách và xóa tệp TXT/Markdown ngay trong giao diện.
-- Kiểm tra giới hạn 10 MB, tên tệp, định dạng văn bản và nội dung trùng lặp bằng SHA-256.
-- Nội dung được tự chia thành các đoạn nhỏ có chồng lấn và lập chỉ mục tìm kiếm toàn văn bằng SQLite FTS5.
-- Có ô **Tìm trong dữ liệu** để xem trước tối đa 5 đoạn liên quan nhất ngay trong giao diện.
-- Tài liệu đã thêm từ v0.5.1 được tự lập chỉ mục khi ứng dụng khởi động, không cần tải lại.
-- Khi trò chuyện, hệ thống tự tìm tối đa 5 đoạn liên quan và bổ sung chúng vào ngữ cảnh Gemini/OpenAI.
-- Câu trả lời hiển thị tên tệp và số đoạn đã được dùng; thông tin nguồn vẫn được giữ khi tải lại trình duyệt.
-- Dữ liệu tài liệu được coi là nội dung tham khảo không đáng tin cậy, không phải chỉ dẫn hệ thống.
-- Backend giữ kín API key; trình duyệt không nhìn thấy khóa.
-- Chọn Gemini/OpenAI, model và nhập API key ngay trong giao diện.
-- API key được mã hóa và lưu ngoài thư mục dự án trên chính máy đang chạy ứng dụng.
-- Bộ nguyên tắc riêng trong `AI-CONSTITUTION.md`.
-- Giới hạn độ dài và số lượt để tránh gửi dữ liệu quá lớn ngoài ý muốn.
-- Không cần cài máy chủ database; SQLite chạy nhúng và được Visual Studio tự khôi phục qua NuGet.
-- Có hồ sơ nền móng cho `Trợ lý cá nhân` và `Đội lập trình`; phiên bản này chưa tự chạy nhiều agent.
+## Có gì trong v1.0.0?
 
-v0.5.3 giữ toàn bộ tệp và chỉ mục trên máy, nhưng khi trò chuyện sẽ **gửi tối đa 5 đoạn liên quan** đến nhà cung cấp AI đang chọn để tạo câu trả lời. Ứng dụng không gửi toàn bộ kho dữ liệu. Không tải tài liệu nhạy cảm nếu bạn không muốn nội dung liên quan được gửi đến Gemini/OpenAI.
+### Chat và AI provider
+
+- Chat nhiều lượt với lịch sử lưu trong trình duyệt.
+- Nhiều cuộc trò chuyện: tạo, chuyển, đổi tên, xóa.
+- Gemini và OpenAI qua lớp provider riêng.
+- API key được giữ ở backend, mã hóa bằng ASP.NET Core Data Protection và lưu ngoài repository.
+- Có thể chọn provider/model trong giao diện.
+- Constitution riêng tại `src/PersonalAI.Web/AI-CONSTITUTION.md`.
+
+### Workspace
+
+Có các workspace dựng sẵn:
+
+- Cá nhân
+- Công việc
+- Học tập
+- AI Cá Nhân
+- Du lịch
+
+Có thể tạo workspace tùy chỉnh, tối đa 20 workspace.
+
+Memory, Documents/RAG, Tasks, Files và Conversations được tách theo workspace. Request backend dùng header:
+
+```text
+X-PersonalAI-Workspace
+```
+
+Workspace không tồn tại bị từ chối thay vì âm thầm fallback sang workspace khác.
+
+### Memory
+
+- Fact / preference / rule.
+- Long-term hoặc temporary.
+- Bật/tắt, cập nhật, xóa, import/export.
+- Phát hiện nội dung trùng hoặc có vẻ là bản cập nhật.
+- Nội dung memory được bảo vệ bằng Data Protection khi lưu.
+- Context Manager chỉ lấy memory đang bật, còn hiệu lực và liên quan đến câu hỏi.
+
+### Documents / RAG
+
+Hỗ trợ:
+
+- PDF
+- DOCX
+- TXT
+- Markdown
+
+Pipeline hiện có:
+
+```text
+upload
+  ↓
+extract
+  ↓
+chunk
+  ↓
+SQLite / FTS
+  ↓
+local embeddings
+  ↓
+hybrid search
+  ↓
+rerank
+  ↓
+Context Manager
+```
+
+Có document management, integrity/quality checks, reindex, local semantic search, hybrid search và source reader.
+
+Tài liệu được coi là **untrusted reference data**, không phải system instruction.
+
+Khi chat dùng tài liệu, chỉ các đoạn được Context Manager chọn mới được gửi đến provider AI đang dùng; không gửi toàn bộ kho dữ liệu.
+
+### Context Manager
+
+v1.0 giữ strategy:
+
+```text
+workspace-scoped-budgeted-context-v1
+```
+
+Context được chọn từ:
+
+- Memory
+- Documents
+- Tasks
+
+Ngân sách mặc định:
+
+- tổng: 7.600 ký tự;
+- Documents: tối đa 4.400 ký tự;
+- Memory: tối đa 1.800 ký tự;
+- Tasks: tối đa 1.400 ký tự;
+- tối đa 4 document chunks;
+- tối đa 4 memories;
+- tối đa 3 tasks.
+
+Endpoint debug không gọi AI:
+
+```http
+POST /api/context/preview
+```
+
+### Tool Framework
+
+Tool Framework có permission contract:
+
+- READ
+- WRITE
+- DELETE
+- EXTERNAL
+- SENSITIVE
+
+WRITE, DELETE, EXTERNAL và SENSITIVE yêu cầu confirmation theo policy hiện tại.
+
+Các tool local gồm nhóm đọc/tiện ích và workspace files, ví dụ:
+
+- clock
+- text stats
+- calculator
+- date math
+- memory search
+- document search
+- app summary
+- workspace list/read/write/create directory/move/delete
+
+Tool proposal không đồng nghĩa tool execution. AI có thể đề xuất tool nhưng người dùng vẫn kiểm soát việc chạy và các bước xác nhận.
+
+### Tasks
+
+Task Engine hỗ trợ:
+
+- plan nhiều bước;
+- state bền vững bằng SQLite;
+- restart recovery;
+- interrupted state;
+- safe retry;
+- task dependencies;
+- step dependencies;
+- permission/confirmation của từng tool step.
+
+Task không tự chạy chuỗi bước. Người dùng phải chủ động chạy từng bước.
+
+### Audit
+
+Audit Foundation trả lời:
+
+```text
+Time · Workspace · Agent · Action · Tool · Target · Reason · Result
+```
+
+Audit:
+
+- workspace-scoped;
+- local SQLite;
+- giữ tối đa 90 ngày;
+- tối đa 10.000 event;
+- không lưu nguyên văn prompt, Memory, document content, full tool arguments/output hay API key.
+
+API:
+
+```http
+GET /api/audit
+GET /api/audit/summary
+```
+
+### Undo
+
+Undo Foundation lưu pre-action state cho một số thao tác file có thể đảo ngược an toàn.
+
+Hiện hỗ trợ có guard:
+
+- tạo file;
+- overwrite/append file;
+- xóa file nhỏ;
+- tạo/xóa thư mục rỗng;
+- di chuyển file.
+
+Undo luôn:
+
+1. kiểm tra trạng thái hiện tại;
+2. yêu cầu confirmation;
+3. kiểm tra guard lại ở server;
+4. mới áp dụng inverse operation.
+
+Nếu file đã thay đổi sau hành động gốc, Undo bị chặn thay vì ghi đè dữ liệu mới.
+
+API:
+
+```http
+GET  /api/undo
+GET  /api/undo/{undoId}/assessment
+POST /api/undo/{undoId}/execute
+```
+
+Undo khả dụng 7 ngày, tối đa 500 record, snapshot tối đa 512 KB.
+
+## Stable Core contract
+
+v1.0.0 có release contract tập trung:
+
+- Version: `1.0.0`
+- API contract: `1`
+- Channel: `stable`
+
+Capabilities:
+
+```http
+GET /api/system/capabilities
+```
+
+Readiness local:
+
+```http
+GET /api/system/health
+```
+
+Health check **không gọi Gemini/OpenAI**.
+
+Mọi API response có:
+
+```text
+X-PersonalAI-Request-Id
+X-PersonalAI-Api-Version: 1
+```
+
+Unhandled API exception được sanitize; stack trace và đường dẫn local không được trả về client.
+
+## Guardrails hiện tại
+
+v1.0.0 **không phải autonomous agent**.
+
+Hiện tại:
+
+- Workspace isolation: bật
+- WRITE confirmation: bắt buộc
+- DELETE confirmation: bắt buộc
+- EXTERNAL confirmation: bắt buộc
+- Undo confirmation: bắt buộc
+- Automatic multi-step execution: tắt
+- Background scheduler: tắt
+- Autonomous agent loop: tắt
+- Parallel tool calls: tắt
+
+Chưa có:
+
+- browser automation;
+- computer control;
+- background scheduler;
+- autonomous agent loop;
+- automatic confirmation;
+- connectors Gmail/Calendar;
+- cloud multi-user auth.
 
 ## Yêu cầu
 
-- Visual Studio 2022 có workload **ASP.NET and web development**, hoặc
-- [.NET 8 SDK](https://dotnet.microsoft.com/download/dotnet/8.0).
-- Một Gemini API key từ Google AI Studio hoặc OpenAI API key. Model Gemini mặc định có Free Tier theo chính sách hiện hành của Google.
+- .NET 8 SDK, hoặc
+- Visual Studio 2022 với workload **ASP.NET and web development**.
 
-Lưu ý: theo bảng giá Gemini, dữ liệu gửi qua Free Tier có thể được dùng để cải thiện sản phẩm của Google. Chưa đưa tài liệu mật, dữ liệu khách hàng hoặc thông tin nhạy cảm vào bản thử nghiệm này.
+Để chat với model bên ngoài, cần API key Gemini hoặc OpenAI. Các chức năng local như quản lý dữ liệu, Tasks, Audit, Undo và health contract vẫn có thể hoạt động khi AI provider chưa được cấu hình.
 
-## Chạy trên Windows với Visual Studio
+## Chạy ứng dụng
 
-1. Mở `PersonalAI.sln`.
-2. Nhấn `Ctrl + F5`.
-3. Trong website, chọn **Cài đặt AI** ở thanh bên.
-4. Chọn Gemini hoặc OpenAI, nhập tên model và API key.
-5. Nhấn **Lưu & kiểm tra**. Từ lần chạy sau ứng dụng tự dùng lại cấu hình này.
-6. Chọn **Kho dữ liệu** để thêm tệp `.txt` hoặc `.md` (tối đa 10 MB).
-
-Không ghi API key thật vào `appsettings.json`, không gửi key lên GitHub, không đưa key vào JavaScript và không gửi khóa cho người khác.
-
-## API key được lưu ở đâu?
-
-Trên Windows, cấu hình nằm tại:
-
-```text
-%LOCALAPPDATA%\PersonalAI\ai-settings.json
-```
-
-API key trong file đã được bảo vệ bằng ASP.NET Core Data Protection và không nằm trong thư mục Git. Giao diện chỉ nhận lại trạng thái cùng bốn ký tự cuối, không nhận key đầy đủ. Nếu chưa lưu bằng giao diện, ứng dụng vẫn hỗ trợ `GEMINI_API_KEY` và `OPENAI_API_KEY` làm phương án dự phòng.
-
-Ứng dụng v0.5.3 được thiết kế để chạy cá nhân trên máy của bạn. Trước khi đưa lên Internet hoặc cho nhiều người dùng, cần bổ sung đăng nhập và phân quyền vì màn hình cài đặt và kho dữ liệu hiện chưa có xác thực.
-
-## Kho dữ liệu được lưu ở đâu?
-
-Trên Windows, SQLite và bản sao tài liệu nằm tại:
-
-```text
-%LOCALAPPDATA%\PersonalAI\Knowledge\personal-ai.db
-%LOCALAPPDATA%\PersonalAI\Knowledge\files\
-```
-
-Các tệp này không nằm trong repository và không bị Git tải lên GitHub. Khi xóa một tài liệu trong giao diện, cả metadata trong SQLite và bản sao cục bộ của tài liệu đều được xóa.
-
-## Chạy bằng dòng lệnh
-
-### PowerShell
+### Windows / PowerShell
 
 ```powershell
 $env:GEMINI_API_KEY="khóa-của-bạn"
@@ -84,60 +283,155 @@ export GEMINI_API_KEY="khóa-của-bạn"
 dotnet run --project ./src/PersonalAI.Web
 ```
 
-Mở địa chỉ được in trong terminal: `https://localhost:7188` hoặc `http://localhost:5188`.
+Hoặc mở `PersonalAI.sln` bằng Visual Studio và chạy project `PersonalAI.Web`.
 
-## Chọn nhà cung cấp và model
+Ứng dụng thường mở ở URL do ASP.NET Core in ra trong terminal, ví dụ `https://localhost:7188` hoặc `http://localhost:5188`.
 
-Nên đổi trực tiếp bằng nút **Cài đặt AI**. Giá trị trong `appsettings.json` chỉ là mặc định cho lần chạy đầu:
+## API key
 
-```json
-"AI": {
-  "Provider": "Gemini"
-},
-"Gemini": {
-  "Model": "gemini-3.1-flash-lite"
-}
-```
-
-Bạn có thể chuyển qua lại giữa Gemini và OpenAI mà không sửa mã nguồn. Mỗi nhà cung cấp giữ model và API key riêng.
-
-## Sửa nguyên tắc của AI
-
-Mở:
+Cấu hình AI trên Windows nằm tại:
 
 ```text
-src/PersonalAI.Web/AI-CONSTITUTION.md
+%LOCALAPPDATA%\PersonalAI\ai-settings.json
 ```
 
-Sửa các nguyên tắc rồi khởi động lại ứng dụng. Nội dung file này được gửi trong trường `instructions` ở mỗi yêu cầu.
+Không commit API key vào:
 
-## Cấu trúc chính
+- `appsettings.json`
+- JavaScript
+- Git
+- issue/log công khai
+
+Nếu chưa lưu key trong giao diện, ứng dụng vẫn hỗ trợ biến môi trường:
+
+```text
+GEMINI_API_KEY
+OPENAI_API_KEY
+```
+
+## Dữ liệu cục bộ
+
+Các store chính trên Windows nằm ngoài repository, dưới `%LOCALAPPDATA%\PersonalAI`.
+
+Ví dụ:
+
+```text
+Memory\memories.json
+Knowledge\personal-ai.db
+Knowledge\files\
+Tasks\personal-tasks.db
+Audit\audit.db
+Undo\undo.db
+Workspace\
+```
+
+Workspace phụ có storage riêng cho Knowledge và Files. Conversations được namespace theo workspace trong browser localStorage.
+
+Một số root có thể override bằng configuration/environment, gồm:
+
+```text
+Workspace:Root / Workspace__Root
+Tasks:Root     / Tasks__Root
+Audit:Root     / Audit__Root
+Undo:Root      / Undo__Root
+```
+
+## Kiến trúc mức cao
+
+```text
+Browser
+  │
+  ├── Conversations (localStorage, workspace scoped)
+  │
+  ▼
+ASP.NET Core
+  │
+  ├── Workspace boundary
+  ├── Memory
+  ├── Documents / RAG
+  ├── Tasks
+  ├── Files
+  ├── Audit
+  ├── Undo
+  │
+  ├── Context Manager
+  │      ├── Memory selection
+  │      ├── Document hybrid retrieval
+  │      └── Task relevance
+  │
+  ├── Tool Framework
+  │      ├── permission policy
+  │      ├── confirmation
+  │      ├── activity log
+  │      ├── audit
+  │      └── undo capture
+  │
+  └── IAiProvider
+         ├── Gemini
+         └── OpenAI
+```
+
+## Cấu trúc repository
 
 ```text
 PersonalAI/
 ├── PersonalAI.sln
 ├── README.md
-└── src/PersonalAI.Web/
-    ├── AI-CONSTITUTION.md
-    ├── Program.cs
-    ├── Models/
-    ├── Options/
-    ├── Services/       # AI providers, cài đặt và SQLite knowledge store
-    ├── Teams/          # hồ sơ đội agent
-    └── wwwroot/
-        ├── index.html
-        ├── styles.css
-        └── app.js
+├── docs/
+│   └── releases/
+└── src/
+    └── PersonalAI.Web/
+        ├── AI-CONSTITUTION.md
+        ├── Program.cs
+        ├── Models/
+        ├── Options/
+        ├── Services/
+        ├── Teams/
+        └── wwwroot/
 ```
 
-## Luồng xử lý
+## CI
+
+GitHub Actions hiện kiểm tra regression cho các nền chính, gồm:
+
+- build .NET;
+- Memory;
+- Documents/RAG;
+- embeddings/hybrid search;
+- Tool Framework;
+- Task persistence/recovery;
+- task dependencies;
+- Workspace isolation;
+- Context Manager;
+- Audit;
+- Undo;
+- Stable Core contract;
+- JavaScript syntax;
+- UI guardrails tiếng Việt.
+
+## Release notes
+
+Chi tiết từng mốc nằm trong:
 
 ```text
-Chat:      Trình duyệt → POST /api/chat → tìm đoạn liên quan → IAiProvider → Gemini/OpenAI
-Kho dữ liệu: Trình duyệt → /api/knowledge/documents → SQLite + tệp cục bộ
-Tìm kiếm: Trình duyệt → /api/knowledge/search → SQLite FTS5 → các đoạn liên quan
+docs/releases/
 ```
 
-Lịch sử hội thoại và metadata nguồn hiện nằm trong `localStorage` của trình duyệt. v0.5.3 đã đưa các đoạn liên quan vào ngữ cảnh AI và hiển thị nguồn đã dùng; bước tiếp theo có thể bổ sung chế độ bật/tắt dữ liệu riêng, xem trích đoạn nguồn trực tiếp từ câu trả lời và đánh giá chất lượng truy xuất. Lớp lưu trữ được tách riêng để sau này có thể chuyển từ SQLite sang PostgreSQL mà không phải viết lại giao diện.
+Mốc stable hiện tại:
 
-Endpoint `GET /api/team-profiles` cho thấy các hồ sơ đội đã được khai báo. Đây mới là hợp đồng dữ liệu cho tương lai, chưa phải hệ thống tự động thực hiện hành động.
+```text
+docs/releases/v1.0.0.md
+```
+
+## Hướng phát triển sau v1.0
+
+Sau Stable Core, các capability có quyền cao hơn nên được mở theo từng lớp, ví dụ:
+
+1. read-only connectors;
+2. browser observation/navigation có consent;
+3. external actions có explicit confirmation;
+4. computer-use sandbox;
+5. policy engine;
+6. agent orchestration với giới hạn vòng lặp và ngân sách rõ ràng.
+
+Các bước này chưa được coi là đã có trong v1.0.0.

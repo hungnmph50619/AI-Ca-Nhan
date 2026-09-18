@@ -135,6 +135,10 @@
   background: #f8efec;
 }
 
+.v090-task-status.status-interrupted {
+  background: #fff5dc;
+}
+
 .v090-task-plan {
   margin-top: 10px;
   font-size: 13px;
@@ -213,6 +217,17 @@
   border-radius: 10px;
   background: #f1f6ec;
   color: #354738 !important;
+}
+
+.v090-task-interrupted {
+  margin: 12px 0 0 !important;
+  padding: 10px 12px;
+  border: 1px solid #ead8a4;
+  border-radius: 10px;
+  background: #fff9e8;
+  color: #695725 !important;
+  font-size: 12px;
+  line-height: 1.55;
 }
 
 .v090-task-actions {

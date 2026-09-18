@@ -323,9 +323,8 @@ public sealed class WindowsComputerUseService : IComputerUseService
             buffer.Capacity);
         return buffer
             .ToString()
-            .Replace('', ' ')
-            .Replace('
-', ' ')
+            .Replace('\r', ' ')
+            .Replace('\n', ' ')
             .Trim();
     }
 
@@ -368,8 +367,7 @@ public sealed class WindowsComputerUseService : IComputerUseService
             " ",
             (value ?? string.Empty)
                 .Split(
-                    [' ', '	', '', '
-'],
+                    [' ', '\t', '\r', '\n'],
                     StringSplitOptions.RemoveEmptyEntries));
 
         return normalized.Length <= maximum

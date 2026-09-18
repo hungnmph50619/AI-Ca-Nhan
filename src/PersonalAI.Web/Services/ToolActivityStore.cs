@@ -15,6 +15,8 @@ public static class ToolActivityEventTypes
     public const string AiSynthesisCompleted = "ai-synthesis-completed";
     public const string NativeContinuationDenied = "native-continuation-denied";
     public const string NativeContinuationCompleted = "native-continuation-completed";
+    public const string TaskStepExecutionDenied = "task-step-execution-denied";
+    public const string TaskStepExecutionCompleted = "task-step-execution-completed";
 }
 
 public sealed record ToolActivityEvent(

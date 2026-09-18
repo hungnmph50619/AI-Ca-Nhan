@@ -492,6 +492,12 @@ jobs:
           test "$automation_bypass_enable_code" = "400"
           jq -e '(.error | contains("resume"))' /tmp/automation-bypass-enable.json >/dev/null
 
+          automation_bypass_disable_code=$(curl -sS -o /tmp/automation-bypass-disable.json -w '%{http_code}' -X PATCH "http://127.0.0.1:5077/api/automations/$automation_unsafe_id/enabled" \
+            -H 'Content-Type: application/json' \
+            -d '{"enabled":false,"confirmed":true}')
+          test "$automation_bypass_disable_code" = "400"
+          jq -e '(.error | contains("resume"))' /tmp/automation-bypass-disable.json >/dev/null
+
           automation_bypass_run_code=$(curl -sS -o /tmp/automation-bypass-run.json -w '%{http_code}' -X POST "http://127.0.0.1:5077/api/automations/$automation_unsafe_id/run-now" \
             -H 'Content-Type: application/json' \
             -d '{"confirmed":true}')
@@ -2221,6 +2227,8 @@ jobs:
           grep -Fq 'MinimumIntervalMinutes = 5' src/PersonalAI.Web/Services/AutomationService.cs
           grep -Fq 'MaximumIntervalMinutes = 10_080' src/PersonalAI.Web/Services/AutomationService.cs
           grep -Fq 'SchedulerPollSeconds = 30' src/PersonalAI.Web/Services/AutomationService.cs
+          grep -Fq 'next.ToUniversalTime().ToString("O")' src/PersonalAI.Web/Services/AutomationStore.cs
+          grep -Fq 'now.ToUniversalTime().ToString("O")' src/PersonalAI.Web/Services/AutomationStore.cs
           grep -Fq 'confirmed: false' src/PersonalAI.Web/Services/AutomationService.cs
           ! grep -Fq 'confirmed: true,' src/PersonalAI.Web/Services/AutomationService.cs
           grep -Fq 'AutomationRequiresExplicitCreation: true' src/PersonalAI.Web/Services/SystemCoreService.cs

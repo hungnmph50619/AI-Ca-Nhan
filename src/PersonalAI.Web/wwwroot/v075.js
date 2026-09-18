@@ -222,7 +222,7 @@
     actions.className = "v075-document-actions";
     actions.append(
       actionButton("Đổi tên", () => renameDocument(item)),
-      actionButton("Re-index", () => reindexDocument(item)),
+      actionButton("Lập lại chỉ mục", () => reindexDocument(item)),
       actionButton("Xóa", () => deleteOneDocument(item), true));
 
     card.append(checkbox, content, actions);
@@ -280,7 +280,7 @@
       });
       const payload = await response.json().catch(() => ({}));
       if (!response.ok) throw new Error(payload.error || "Không lập lại chỉ mục cho tài liệu được.");
-      showFeedback(`Đã re-index “${payload.fileName}”: ${payload.chunkCount} đoạn, ${payload.indexedChunkCount} vector.`, "success");
+      showFeedback(`Đã lập lại chỉ mục “${payload.fileName}”: ${payload.chunkCount} đoạn, ${payload.indexedChunkCount} véc-tơ.`, "success");
     });
   }
 
@@ -326,7 +326,7 @@
       anchor.click();
       anchor.remove();
       URL.revokeObjectURL(url);
-      showFeedback(`Đã xuất metadata của ${(payload.documents || []).length} tài liệu.`, "success");
+      showFeedback(`Đã xuất thông tin mô tả của ${(payload.documents || []).length} tài liệu.`, "success");
     } catch (error) {
       showFeedback(error.message, "error");
     }

@@ -86,6 +86,7 @@ final class ApiClient {
         body.put("useMemory", true);
         body.put("useTools", false);
         body.put("useTaskContext", true);
+        body.put("useLifeContext", true);
 
         return request(
                 "POST",

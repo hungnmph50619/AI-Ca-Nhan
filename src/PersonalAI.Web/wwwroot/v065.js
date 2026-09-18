@@ -54,7 +54,7 @@
           <span class="field-label">Hết hạn</span>
           <input id="memoryExpiresAt" type="datetime-local">
         </label>
-        <p class="field-hint memory-v065-hint">Trí nhớ tạm thời mặc định hết hạn sau 30 ngày. Trí nhớ cũ hoặc hết hạn sẽ không được đưa vào ngữ cảnh chat.</p>`;
+        <p class="field-hint memory-v065-hint">Trí nhớ tạm thời mặc định hết hạn sau 30 ngày. Trí nhớ cũ hoặc hết hạn sẽ không được đưa vào ngữ cảnh trò chuyện.</p>`;
       kind.insertAdjacentElement("afterend", lifecycle);
       document.querySelector("#memoryRetention")?.addEventListener("change", () => {
         ensureTemporaryExpiry();
@@ -133,7 +133,7 @@
       } else if (memory.isStale) {
         const stale = document.createElement("div");
         stale.className = "memory-v065-expiry";
-        stale.textContent = "Thông tin này đã lâu chưa được cập nhật và sẽ không tự động dùng trong chat.";
+        stale.textContent = "Thông tin này đã lâu chưa được cập nhật và sẽ không tự động dùng khi trò chuyện.";
         body?.appendChild(stale);
       }
 

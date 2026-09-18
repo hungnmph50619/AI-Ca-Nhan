@@ -25,6 +25,7 @@ public interface IKnowledgeEmbeddingIndex
 public sealed class KnowledgeEmbeddingIndex(
     IKnowledgeDocumentStore knowledgeStore,
     IKnowledgeEmbeddingService embeddingService,
+    IWorkspaceStoragePathResolver storagePaths,
     ILogger<KnowledgeEmbeddingIndex> logger) : IKnowledgeEmbeddingIndex
 {
     private const int MaximumSearchLength = 500;
@@ -32,13 +33,10 @@ public sealed class KnowledgeEmbeddingIndex(
 
     private readonly SemaphoreSlim _initializationLock = new(1, 1);
     private readonly SemaphoreSlim _backfillLock = new(1, 1);
-    private readonly string _databasePath = Path.Combine(
-        Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
-        "PersonalAI",
-        "Knowledge",
-        "personal-ai.db");
-    private bool _initialized;
-    private bool _backfillCompleted;
+    private readonly HashSet<string> _initializedWorkspaces =
+        new(StringComparer.OrdinalIgnoreCase);
+    private readonly HashSet<string> _backfilledWorkspaces =
+        new(StringComparer.OrdinalIgnoreCase);
 
     public async Task IndexDocumentAsync(
         Guid documentId,
@@ -218,7 +216,8 @@ public sealed class KnowledgeEmbeddingIndex(
 
     private async Task InitializeAsync(CancellationToken cancellationToken)
     {
-        if (_initialized)
+        var workspaceId = storagePaths.CurrentWorkspaceId;
+        if (_initializedWorkspaces.Contains(workspaceId))
         {
             return;
         }
@@ -226,7 +225,7 @@ public sealed class KnowledgeEmbeddingIndex(
         await _initializationLock.WaitAsync(cancellationToken);
         try
         {
-            if (_initialized)
+            if (_initializedWorkspaces.Contains(workspaceId))
             {
                 return;
             }
@@ -250,7 +249,7 @@ public sealed class KnowledgeEmbeddingIndex(
                 ON ChunkEmbeddings (ModelId, Dimensions);
                 """;
             await command.ExecuteNonQueryAsync(cancellationToken);
-            _initialized = true;
+            _initializedWorkspaces.Add(workspaceId);
         }
         finally
         {
@@ -261,7 +260,8 @@ public sealed class KnowledgeEmbeddingIndex(
     private async Task EnsureBackfillAsync(CancellationToken cancellationToken)
     {
         await InitializeAsync(cancellationToken);
-        if (_backfillCompleted)
+        var workspaceId = storagePaths.CurrentWorkspaceId;
+        if (_backfilledWorkspaces.Contains(workspaceId))
         {
             return;
         }
@@ -269,7 +269,7 @@ public sealed class KnowledgeEmbeddingIndex(
         await _backfillLock.WaitAsync(cancellationToken);
         try
         {
-            if (_backfillCompleted)
+            if (_backfilledWorkspaces.Contains(workspaceId))
             {
                 return;
             }
@@ -313,7 +313,7 @@ public sealed class KnowledgeEmbeddingIndex(
                 await UpsertEmbeddingsAsync(staleChunks, cancellationToken);
             }
 
-            _backfillCompleted = true;
+            _backfilledWorkspaces.Add(workspaceId);
         }
         finally
         {
@@ -374,7 +374,7 @@ public sealed class KnowledgeEmbeddingIndex(
     {
         var connectionString = new SqliteConnectionStringBuilder
         {
-            DataSource = _databasePath,
+            DataSource = storagePaths.KnowledgeDatabasePath,
             Mode = SqliteOpenMode.ReadWriteCreate,
             Cache = SqliteCacheMode.Shared,
             ForeignKeys = true

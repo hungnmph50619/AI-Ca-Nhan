@@ -24,17 +24,14 @@ public sealed class KnowledgeQualityService(
     IKnowledgeEmbeddingIndex embeddingIndex,
     IKnowledgeHybridSearchService hybridSearch,
     IKnowledgeDocumentManagementService managementService,
+    IWorkspaceStoragePathResolver storagePaths,
     ILogger<KnowledgeQualityService> logger) : IKnowledgeQualityService
 {
     private const int MaximumEvaluationCases = 50;
     private readonly SemaphoreSlim _repairLock = new(1, 1);
-    private readonly string _knowledgeDirectory = Path.Combine(
-        Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
-        "PersonalAI",
-        "Knowledge");
 
-    private string DatabasePath => Path.Combine(_knowledgeDirectory, "personal-ai.db");
-    private string FilesDirectory => Path.Combine(_knowledgeDirectory, "files");
+    private string DatabasePath => storagePaths.KnowledgeDatabasePath;
+    private string FilesDirectory => storagePaths.KnowledgeFilesDirectory;
 
     public async Task<KnowledgeQualityStatus> GetStatusAsync(
         CancellationToken cancellationToken = default)

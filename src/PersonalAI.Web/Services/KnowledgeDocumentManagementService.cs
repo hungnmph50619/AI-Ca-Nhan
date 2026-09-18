@@ -30,17 +30,14 @@ public sealed class KnowledgeDocumentManagementService(
     IKnowledgeDocumentStore knowledgeStore,
     IKnowledgeEmbeddingIndex embeddingIndex,
     KnowledgeDocumentExtractor extractor,
+    IWorkspaceStoragePathResolver storagePaths,
     ILogger<KnowledgeDocumentManagementService> logger) : IKnowledgeDocumentManagementService
 {
     private readonly KnowledgeDocumentChunker _chunker = new();
     private readonly SemaphoreSlim _mutationLock = new(1, 1);
-    private readonly string _knowledgeDirectory = Path.Combine(
-        Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
-        "PersonalAI",
-        "Knowledge");
 
-    private string DatabasePath => Path.Combine(_knowledgeDirectory, "personal-ai.db");
-    private string FilesDirectory => Path.Combine(_knowledgeDirectory, "files");
+    private string DatabasePath => storagePaths.KnowledgeDatabasePath;
+    private string FilesDirectory => storagePaths.KnowledgeFilesDirectory;
 
     public async Task<KnowledgeDocumentManagementResponse> GetAllAsync(
         CancellationToken cancellationToken = default)

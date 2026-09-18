@@ -3,24 +3,20 @@ using PersonalAI.Web.Models;
 
 namespace PersonalAI.Web.Services;
 
-public sealed class KnowledgeSourceReader
+public sealed class KnowledgeSourceReader(
+    IWorkspaceStoragePathResolver storagePaths)
 {
-    private readonly string _databasePath = Path.Combine(
-        Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
-        "PersonalAI",
-        "Knowledge",
-        "personal-ai.db");
 
     public async Task<KnowledgeSearchResult?> GetChunkAsync(
         Guid documentId,
         int chunkIndex,
         CancellationToken cancellationToken = default)
     {
-        if (chunkIndex <= 0 || !File.Exists(_databasePath)) return null;
+        if (chunkIndex <= 0 || !File.Exists(storagePaths.KnowledgeDatabasePath)) return null;
 
         var connectionString = new SqliteConnectionStringBuilder
         {
-            DataSource = _databasePath,
+            DataSource = storagePaths.KnowledgeDatabasePath,
             Mode = SqliteOpenMode.ReadOnly,
             Cache = SqliteCacheMode.Shared
         }.ToString();

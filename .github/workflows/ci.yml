@@ -828,6 +828,9 @@ jobs:
             -d '{"confirmed":false}')
           echo "$persisted_execution" | jq -e '.execution.status == "succeeded" and .execution.output.result == 56 and .task.status == "completed"' >/dev/null
 
+          echo "=== AUDIT WARNINGS ==="
+          grep -n -A12 -B2 -E 'Không thể ghi audit|audit event|AuditRecorder|SqliteException' /tmp/personalai.log || true
+          echo "=== END AUDIT WARNINGS ==="
           custom_audit=$(curl -fsS -H "X-PersonalAI-Workspace: $custom_workspace_id" 'http://127.0.0.1:5077/api/audit?limit=200')
           echo "$custom_audit" | jq '{storage, retentionDays, maximumEntries, items: [.items[] | {workspaceId, agent, action, tool, target, reason, result}]}'
           echo "$custom_audit" | jq -e '.storage == "local-sqlite" and .retentionDays == 90 and .maximumEntries == 10000 and (.items | length) >= 5' >/dev/null

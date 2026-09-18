@@ -849,7 +849,7 @@ jobs:
           grep -Fq 'dependsOn' src/PersonalAI.Web/Services/TaskEngineService.cs
           grep -Fq 'taskDependencySelect' src/PersonalAI.Web/wwwroot/v090.js
           grep -Fq 'Phụ thuộc bước' src/PersonalAI.Web/wwwroot/v090.js
-          grep -Fq 'Task Dependencies' docs/releases/v0.9.4.md
+          grep -Fq 'Task Dependencies' docs/releases/v0.9.3.md
           grep -Fq 'v090.css' src/PersonalAI.Web/wwwroot/index.html
           grep -Fq 'v090.js' src/PersonalAI.Web/wwwroot/index.html
           grep -Fq 'Tác vụ theo không gian v0.9.4' src/PersonalAI.Web/wwwroot/v090.js
@@ -923,7 +923,7 @@ jobs:
           grep -Fq 'CreateProviderFunctionName' src/PersonalAI.Web/Services/ToolOrchestrationService.cs
           ! grep -Fq 'BuildPlannerPrompt' src/PersonalAI.Web/Services/ToolOrchestrationService.cs
           ! grep -Fq 'TryParsePlannerDecision' src/PersonalAI.Web/Services/ToolOrchestrationService.cs
-          grep -Fq 'Workspace v0.9.4' docs/releases/v0.9.4.md
+          grep -Fq 'PersonalAI v0.9.4 — Workspace' docs/releases/v0.9.4.md
           grep -Fq 'X-PersonalAI-Workspace' src/PersonalAI.Web/Services/WorkspaceEndpoints.cs
           grep -Fq 'PersonalWorkspaceIds' src/PersonalAI.Web/Models/WorkspaceModels.cs
           grep -Fq 'IWorkspaceContextAccessor' src/PersonalAI.Web/Services/WorkspaceFoundation.cs

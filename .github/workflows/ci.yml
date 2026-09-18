@@ -54,10 +54,10 @@ jobs:
             exit 1
           fi
 
-          curl -fsS http://127.0.0.1:5077/api/status | jq -e '.version == "0.8.7"' >/dev/null
+          curl -fsS http://127.0.0.1:5077/api/status | jq -e '.version == "0.8.8"' >/dev/null
 
           tools=$(curl -fsS http://127.0.0.1:5077/api/tools)
-          echo "$tools" | jq -e '.frameworkVersion == "0.8.7" and (.permissionTypes | sort) == (["DELETE","EXTERNAL","READ","SENSITIVE","WRITE"] | sort)' >/dev/null
+          echo "$tools" | jq -e '.frameworkVersion == "0.8.8" and (.permissionTypes | sort) == (["DELETE","EXTERNAL","READ","SENSITIVE","WRITE"] | sort)' >/dev/null
           echo "$tools" | jq -e '(.tools | length) == 13 and any(.tools[]; .name == "local.clock" and .localOnly == true and .requiredPermissions == ["READ"]) and any(.tools[]; .name == "local.text_stats" and .timeoutMs == 2000) and any(.tools[]; .name == "memory.search") and any(.tools[]; .name == "documents.search") and any(.tools[]; .name == "local.calculate") and any(.tools[]; .name == "local.date_math") and any(.tools[]; .name == "app.summary") and any(.tools[]; .name == "workspace.list" and .requiredPermissions == ["READ"]) and any(.tools[]; .name == "workspace.read_text" and .requiredPermissions == ["READ"]) and any(.tools[]; .name == "workspace.write_text" and .requiredPermissions == ["WRITE"] and .requiresConfirmation == true) and any(.tools[]; .name == "workspace.create_directory" and .requiredPermissions == ["WRITE"] and .requiresConfirmation == true) and any(.tools[]; .name == "workspace.move" and .requiredPermissions == ["WRITE"] and .requiresConfirmation == true) and any(.tools[]; .name == "workspace.delete" and .requiredPermissions == ["DELETE"] and .requiresConfirmation == true)' >/dev/null
 
           text_tool=$(curl -fsS http://127.0.0.1:5077/api/tools/local.text_stats)
@@ -122,7 +122,7 @@ jobs:
           read_execution=$(curl -fsS -X POST http://127.0.0.1:5077/api/tools/orchestrate/execute \
             -H 'Content-Type: application/json' \
             -d '{"proposalId":"'"$read_proposal_id"'","confirmed":false}')
-          echo "$read_execution" | jq -e '.proposal.toolName == "local.calculate" and .execution.status == "succeeded" and .execution.output.result == 42 and .execution.approvedPermissions == ["READ"] and .localSummary == "7 * 6 = 42." and .canAiSynthesize == true and (.synthesisExpiresAt | length) > 10' >/dev/null
+          echo "$read_execution" | jq -e '.proposal.toolName == "local.calculate" and .execution.status == "succeeded" and .execution.output.result == 42 and .execution.approvedPermissions == ["READ"] and .localSummary == "7 * 6 = 42." and .canAiSynthesize == true and (.synthesisExpiresAt | length) > 10 and .canNativeContinue == false and .nativeContinueExpiresAt == null' >/dev/null
           read_invocation_id=$(echo "$read_execution" | jq -r '.execution.invocationId')
 
           synth_without_confirmation_code=$(curl -sS -o /tmp/tool-synth-unconfirmed.json -w '%{http_code}' -X POST http://127.0.0.1:5077/api/tools/orchestrate/synthesize \
@@ -135,6 +135,17 @@ jobs:
             -H 'Content-Type: application/json' \
             -d '{"invocationId":"00000000-0000-0000-0000-000000000001","confirmedExternal":false}')
           test "$unknown_synth_code" = "404"
+
+          manual_native_code=$(curl -sS -o /tmp/tool-native-manual.json -w '%{http_code}' -X POST http://127.0.0.1:5077/api/tools/orchestrate/continue-native \
+            -H 'Content-Type: application/json' \
+            -d '{"invocationId":"'"$read_invocation_id"'","confirmedExternal":false}')
+          test "$manual_native_code" = "400"
+          jq -e '(.error | contains("native function context"))' /tmp/tool-native-manual.json >/dev/null
+
+          unknown_native_code=$(curl -sS -o /tmp/tool-native-missing.json -w '%{http_code}' -X POST http://127.0.0.1:5077/api/tools/orchestrate/continue-native \
+            -H 'Content-Type: application/json' \
+            -d '{"invocationId":"00000000-0000-0000-0000-000000000002","confirmedExternal":true}')
+          test "$unknown_native_code" = "404"
 
           read_replay_code=$(curl -sS -o /tmp/tool-proposal-replay.json -w '%{http_code}' -X POST http://127.0.0.1:5077/api/tools/orchestrate/execute \
             -H 'Content-Type: application/json' \
@@ -563,6 +574,16 @@ jobs:
           grep -Fq '/api/tools/orchestrate/prepare' src/PersonalAI.Web/Services/ToolFrameworkEndpoints.cs
           grep -Fq '/api/tools/orchestrate/execute' src/PersonalAI.Web/Services/ToolFrameworkEndpoints.cs
           grep -Fq '/api/tools/orchestrate/synthesize' src/PersonalAI.Web/Services/ToolFrameworkEndpoints.cs
+          grep -Fq '/api/tools/orchestrate/continue-native' src/PersonalAI.Web/Services/ToolFrameworkEndpoints.cs
+          grep -Fq 'ContinueFunctionCallAsync' src/PersonalAI.Web/Services/IAiProvider.cs
+          grep -Fq 'GetByName' src/PersonalAI.Web/Services/AiProviderResolver.cs
+          grep -Fq 'function_call_output' src/PersonalAI.Web/Services/OpenAiChatService.cs
+          grep -Fq 'FunctionContinuationInstructions' src/PersonalAI.Web/Services/OpenAiChatService.cs
+          grep -Fq 'mode = "NONE"' src/PersonalAI.Web/Services/GeminiChatService.cs
+          grep -Fq 'functionResponse' src/PersonalAI.Web/Services/GeminiChatService.cs
+          grep -Fq 'NativeProposalContexts' src/PersonalAI.Web/Services/ToolOrchestrationService.cs
+          grep -Fq 'MaximumNativeResultCharacters = 16_000' src/PersonalAI.Web/Services/ToolOrchestrationService.cs
+          grep -Fq 'v088.css' src/PersonalAI.Web/wwwroot/index.html
           grep -Fq 'ToolResultSynthesisService' src/PersonalAI.Web/Services/ToolResultSynthesisService.cs
           grep -Fq 'UseTools' src/PersonalAI.Web/Models/ChatModels.cs
           grep -Fq 'v085.css' src/PersonalAI.Web/wwwroot/index.html

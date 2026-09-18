@@ -22,6 +22,17 @@ public interface IWorkspaceFileService
         CancellationToken cancellationToken = default);
 
     WorkspaceDirectoryWriteResult CreateDirectory(string relativePath);
+
+    Task<WorkspaceMoveResult> MoveAsync(
+        string sourcePath,
+        string destinationPath,
+        string? expectedSha256,
+        CancellationToken cancellationToken = default);
+
+    Task<WorkspaceDeleteResult> DeleteAsync(
+        string relativePath,
+        string? expectedSha256,
+        CancellationToken cancellationToken = default);
 }
 
 public sealed record WorkspaceDirectoryEntry(
@@ -61,6 +72,21 @@ public sealed record WorkspaceDirectoryWriteResult(
     string Path,
     bool Created,
     DateTimeOffset LastModifiedAt);
+
+public sealed record WorkspaceMoveResult(
+    string SourcePath,
+    string DestinationPath,
+    string Type,
+    long? SizeBytes,
+    string? Sha256,
+    DateTimeOffset LastModifiedAt);
+
+public sealed record WorkspaceDeleteResult(
+    string Path,
+    string Type,
+    long? SizeBytes,
+    string? Sha256,
+    bool Deleted);
 
 public sealed class WorkspaceFileService : IWorkspaceFileService
 {
@@ -507,6 +533,298 @@ public sealed class WorkspaceFileService : IWorkspaceFileService
             info.LastWriteTimeUtc);
     }
 
+
+    public async Task<WorkspaceMoveResult> MoveAsync(
+        string sourcePath,
+        string destinationPath,
+        string? expectedSha256,
+        CancellationToken cancellationToken = default)
+    {
+        cancellationToken.ThrowIfCancellationRequested();
+        expectedSha256 = NormalizeExpectedSha256(expectedSha256);
+
+        var sourceFullPath = ResolvePath(sourcePath, allowRoot: false);
+        var destinationFullPath = ResolvePath(destinationPath, allowRoot: false);
+        EnsureNoSymlinkTraversal(sourceFullPath);
+
+        if (sourceFullPath.Equals(destinationFullPath, _pathComparison))
+        {
+            throw new ToolExecutionInputException(
+                "Đường dẫn nguồn và đích phải khác nhau.");
+        }
+
+        if (File.Exists(destinationFullPath) || Directory.Exists(destinationFullPath))
+        {
+            throw new ToolExecutionInputException(
+                "Đường dẫn đích đã tồn tại; workspace.move không ghi đè.");
+        }
+
+        var destinationParent = Path.GetDirectoryName(destinationFullPath);
+        if (string.IsNullOrWhiteSpace(destinationParent) || !Directory.Exists(destinationParent))
+        {
+            throw new ToolExecutionInputException(
+                "Thư mục cha của đường dẫn đích chưa tồn tại.");
+        }
+
+        EnsureNoSymlinkTraversal(destinationParent);
+
+        if (File.Exists(sourceFullPath))
+        {
+            var sourceInfo = new FileInfo(sourceFullPath);
+            if (IsSymlink(sourceInfo))
+            {
+                throw new ToolExecutionInputException(
+                    "Không di chuyển symbolic link hoặc reparse point trong workspace.");
+            }
+
+            var sha256 = await ComputeSha256FileAsync(sourceFullPath, cancellationToken);
+            EnsureExpectedSha256Matches(expectedSha256, sha256);
+
+            try
+            {
+                File.Move(sourceFullPath, destinationFullPath, overwrite: false);
+            }
+            catch (UnauthorizedAccessException)
+            {
+                throw new ToolExecutionInputException(
+                    "Không có quyền di chuyển tệp này trong workspace.");
+            }
+            catch (IOException)
+            {
+                throw new ToolExecutionInputException(
+                    "Không thể di chuyển tệp này trong workspace.");
+            }
+
+            var movedInfo = new FileInfo(destinationFullPath);
+            return new WorkspaceMoveResult(
+                ToRelativePath(sourceFullPath),
+                ToRelativePath(destinationFullPath),
+                "file",
+                movedInfo.Length,
+                sha256,
+                movedInfo.LastWriteTimeUtc);
+        }
+
+        if (Directory.Exists(sourceFullPath))
+        {
+            var sourceInfo = new DirectoryInfo(sourceFullPath);
+            if (IsSymlink(sourceInfo))
+            {
+                throw new ToolExecutionInputException(
+                    "Không di chuyển symbolic link hoặc reparse point trong workspace.");
+            }
+
+            if (expectedSha256 is not null)
+            {
+                throw new ToolExecutionInputException(
+                    "expectedSha256 chỉ áp dụng khi di chuyển tệp.");
+            }
+
+            var sourcePrefix = sourceFullPath.EndsWith(Path.DirectorySeparatorChar)
+                ? sourceFullPath
+                : sourceFullPath + Path.DirectorySeparatorChar;
+            if (destinationFullPath.StartsWith(sourcePrefix, _pathComparison))
+            {
+                throw new ToolExecutionInputException(
+                    "Không thể di chuyển thư mục vào bên trong chính nó.");
+            }
+
+            try
+            {
+                Directory.Move(sourceFullPath, destinationFullPath);
+            }
+            catch (UnauthorizedAccessException)
+            {
+                throw new ToolExecutionInputException(
+                    "Không có quyền di chuyển thư mục này trong workspace.");
+            }
+            catch (IOException)
+            {
+                throw new ToolExecutionInputException(
+                    "Không thể di chuyển thư mục này trong workspace.");
+            }
+
+            var movedInfo = new DirectoryInfo(destinationFullPath);
+            return new WorkspaceMoveResult(
+                ToRelativePath(sourceFullPath),
+                ToRelativePath(destinationFullPath),
+                "directory",
+                null,
+                null,
+                movedInfo.LastWriteTimeUtc);
+        }
+
+        throw new ToolExecutionInputException(
+            "Không tìm thấy tệp hoặc thư mục nguồn trong workspace.");
+    }
+
+    public async Task<WorkspaceDeleteResult> DeleteAsync(
+        string relativePath,
+        string? expectedSha256,
+        CancellationToken cancellationToken = default)
+    {
+        cancellationToken.ThrowIfCancellationRequested();
+        expectedSha256 = NormalizeExpectedSha256(expectedSha256);
+
+        var fullPath = ResolvePath(relativePath, allowRoot: false);
+        EnsureNoSymlinkTraversal(fullPath);
+
+        if (File.Exists(fullPath))
+        {
+            var info = new FileInfo(fullPath);
+            if (IsSymlink(info))
+            {
+                throw new ToolExecutionInputException(
+                    "Không xóa symbolic link hoặc reparse point trong workspace.");
+            }
+
+            var sizeBytes = info.Length;
+            var sha256 = await ComputeSha256FileAsync(fullPath, cancellationToken);
+            EnsureExpectedSha256Matches(expectedSha256, sha256);
+
+            try
+            {
+                File.Delete(fullPath);
+            }
+            catch (UnauthorizedAccessException)
+            {
+                throw new ToolExecutionInputException(
+                    "Không có quyền xóa tệp này trong workspace.");
+            }
+            catch (IOException)
+            {
+                throw new ToolExecutionInputException(
+                    "Không thể xóa tệp này trong workspace.");
+            }
+
+            return new WorkspaceDeleteResult(
+                ToRelativePath(fullPath),
+                "file",
+                sizeBytes,
+                sha256,
+                true);
+        }
+
+        if (Directory.Exists(fullPath))
+        {
+            var info = new DirectoryInfo(fullPath);
+            if (IsSymlink(info))
+            {
+                throw new ToolExecutionInputException(
+                    "Không xóa symbolic link hoặc reparse point trong workspace.");
+            }
+
+            if (expectedSha256 is not null)
+            {
+                throw new ToolExecutionInputException(
+                    "expectedSha256 chỉ áp dụng khi xóa tệp.");
+            }
+
+            bool hasEntries;
+            try
+            {
+                hasEntries = Directory.EnumerateFileSystemEntries(fullPath).Any();
+            }
+            catch (UnauthorizedAccessException)
+            {
+                throw new ToolExecutionInputException(
+                    "Không có quyền kiểm tra thư mục trước khi xóa.");
+            }
+            catch (IOException)
+            {
+                throw new ToolExecutionInputException(
+                    "Không thể kiểm tra thư mục trước khi xóa.");
+            }
+
+            if (hasEntries)
+            {
+                throw new ToolExecutionInputException(
+                    "workspace.delete chỉ xóa thư mục rỗng; không hỗ trợ xóa đệ quy.");
+            }
+
+            try
+            {
+                Directory.Delete(fullPath, recursive: false);
+            }
+            catch (UnauthorizedAccessException)
+            {
+                throw new ToolExecutionInputException(
+                    "Không có quyền xóa thư mục này trong workspace.");
+            }
+            catch (IOException)
+            {
+                throw new ToolExecutionInputException(
+                    "Không thể xóa thư mục này trong workspace.");
+            }
+
+            return new WorkspaceDeleteResult(
+                ToRelativePath(fullPath),
+                "directory",
+                null,
+                null,
+                true);
+        }
+
+        throw new ToolExecutionInputException(
+            "Không tìm thấy tệp hoặc thư mục cần xóa trong workspace.");
+    }
+
+    private static string? NormalizeExpectedSha256(string? expectedSha256)
+    {
+        if (string.IsNullOrWhiteSpace(expectedSha256))
+        {
+            return null;
+        }
+
+        var normalized = expectedSha256.Trim().ToLowerInvariant();
+        if (normalized.Length != 64 || normalized.Any(character => !Uri.IsHexDigit(character)))
+        {
+            throw new ToolExecutionInputException(
+                "expectedSha256 phải là SHA-256 hex gồm 64 ký tự.");
+        }
+
+        return normalized;
+    }
+
+    private static void EnsureExpectedSha256Matches(string? expectedSha256, string actualSha256)
+    {
+        if (expectedSha256 is not null
+            && !string.Equals(expectedSha256, actualSha256, StringComparison.OrdinalIgnoreCase))
+        {
+            throw new ToolExecutionInputException(
+                "Tệp đã thay đổi so với expectedSha256; từ chối mutation để tránh tác động nhầm phiên bản.");
+        }
+    }
+
+    private static async Task<string> ComputeSha256FileAsync(
+        string fullPath,
+        CancellationToken cancellationToken)
+    {
+        try
+        {
+            await using var stream = new FileStream(
+                fullPath,
+                FileMode.Open,
+                FileAccess.Read,
+                FileShare.Read,
+                bufferSize: 81920,
+                useAsync: true);
+            using var sha256 = SHA256.Create();
+            var hash = await sha256.ComputeHashAsync(stream, cancellationToken);
+            return Convert.ToHexString(hash).ToLowerInvariant();
+        }
+        catch (UnauthorizedAccessException)
+        {
+            throw new ToolExecutionInputException(
+                "Không có quyền đọc tệp để kiểm tra checksum trước mutation.");
+        }
+        catch (IOException)
+        {
+            throw new ToolExecutionInputException(
+                "Không thể đọc tệp để kiểm tra checksum trước mutation.");
+        }
+    }
+
     private static void ValidateTextBytes(byte[] bytes)
     {
         string text;
@@ -790,5 +1108,93 @@ public sealed class WorkspaceCreateDirectoryTool(IWorkspaceFileService workspace
         var path = arguments.GetProperty("path").GetString()?.Trim() ?? string.Empty;
         var result = workspace.CreateDirectory(path);
         return Task.FromResult(JsonSerializer.SerializeToElement(result));
+    }
+}
+
+
+public sealed class WorkspaceMoveTool(IWorkspaceFileService workspace) : IPersonalAiTool
+{
+    private static readonly JsonElement Schema = ToolSchema.Parse(
+        """
+        {
+          "type": "object",
+          "properties": {
+            "sourcePath": { "type": "string", "minLength": 1, "maxLength": 500 },
+            "destinationPath": { "type": "string", "minLength": 1, "maxLength": 500 },
+            "expectedSha256": { "type": "string", "minLength": 64, "maxLength": 64 }
+          },
+          "required": ["sourcePath", "destinationPath"],
+          "additionalProperties": false
+        }
+        """);
+
+    public ToolDefinition Definition { get; } = new(
+        "workspace.move",
+        "Đổi tên hoặc di chuyển tệp/thư mục bên trong workspace. Không ghi đè đích, không đi qua symlink và có thể kiểm tra expectedSha256 cho tệp.",
+        "1.0.0",
+        [ToolPermissions.Write],
+        5_000,
+        Schema,
+        LocalOnly: true,
+        RequiresConfirmation: true);
+
+    public async Task<JsonElement> ExecuteAsync(
+        JsonElement arguments,
+        CancellationToken cancellationToken = default)
+    {
+        var sourcePath = arguments.GetProperty("sourcePath").GetString()?.Trim() ?? string.Empty;
+        var destinationPath = arguments.GetProperty("destinationPath").GetString()?.Trim() ?? string.Empty;
+        var expectedSha256 = arguments.TryGetProperty("expectedSha256", out var hashElement)
+            ? hashElement.GetString()
+            : null;
+
+        var result = await workspace.MoveAsync(
+            sourcePath,
+            destinationPath,
+            expectedSha256,
+            cancellationToken);
+        return JsonSerializer.SerializeToElement(result);
+    }
+}
+
+public sealed class WorkspaceDeleteTool(IWorkspaceFileService workspace) : IPersonalAiTool
+{
+    private static readonly JsonElement Schema = ToolSchema.Parse(
+        """
+        {
+          "type": "object",
+          "properties": {
+            "path": { "type": "string", "minLength": 1, "maxLength": 500 },
+            "expectedSha256": { "type": "string", "minLength": 64, "maxLength": 64 }
+          },
+          "required": ["path"],
+          "additionalProperties": false
+        }
+        """);
+
+    public ToolDefinition Definition { get; } = new(
+        "workspace.delete",
+        "Xóa tệp hoặc thư mục rỗng bên trong workspace. Không xóa đệ quy, chặn symlink/path escape và có thể kiểm tra expectedSha256 trước khi xóa tệp.",
+        "1.0.0",
+        [ToolPermissions.Delete],
+        5_000,
+        Schema,
+        LocalOnly: true,
+        RequiresConfirmation: true);
+
+    public async Task<JsonElement> ExecuteAsync(
+        JsonElement arguments,
+        CancellationToken cancellationToken = default)
+    {
+        var path = arguments.GetProperty("path").GetString()?.Trim() ?? string.Empty;
+        var expectedSha256 = arguments.TryGetProperty("expectedSha256", out var hashElement)
+            ? hashElement.GetString()
+            : null;
+
+        var result = await workspace.DeleteAsync(
+            path,
+            expectedSha256,
+            cancellationToken);
+        return JsonSerializer.SerializeToElement(result);
     }
 }

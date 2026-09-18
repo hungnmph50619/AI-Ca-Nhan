@@ -54,11 +54,11 @@ jobs:
             exit 1
           fi
 
-          curl -fsS http://127.0.0.1:5077/api/status | jq -e '.version == "0.8.3"' >/dev/null
+          curl -fsS http://127.0.0.1:5077/api/status | jq -e '.version == "0.8.4"' >/dev/null
 
           tools=$(curl -fsS http://127.0.0.1:5077/api/tools)
-          echo "$tools" | jq -e '.frameworkVersion == "0.8.3" and (.permissionTypes | sort) == (["DELETE","EXTERNAL","READ","SENSITIVE","WRITE"] | sort)' >/dev/null
-          echo "$tools" | jq -e '(.tools | length) == 11 and any(.tools[]; .name == "local.clock" and .localOnly == true and .requiredPermissions == ["READ"]) and any(.tools[]; .name == "local.text_stats" and .timeoutMs == 2000) and any(.tools[]; .name == "memory.search") and any(.tools[]; .name == "documents.search") and any(.tools[]; .name == "local.calculate") and any(.tools[]; .name == "local.date_math") and any(.tools[]; .name == "app.summary") and any(.tools[]; .name == "workspace.list" and .requiredPermissions == ["READ"]) and any(.tools[]; .name == "workspace.read_text" and .requiredPermissions == ["READ"]) and any(.tools[]; .name == "workspace.write_text" and .requiredPermissions == ["WRITE"] and .requiresConfirmation == true) and any(.tools[]; .name == "workspace.create_directory" and .requiredPermissions == ["WRITE"] and .requiresConfirmation == true)' >/dev/null
+          echo "$tools" | jq -e '.frameworkVersion == "0.8.4" and (.permissionTypes | sort) == (["DELETE","EXTERNAL","READ","SENSITIVE","WRITE"] | sort)' >/dev/null
+          echo "$tools" | jq -e '(.tools | length) == 13 and any(.tools[]; .name == "local.clock" and .localOnly == true and .requiredPermissions == ["READ"]) and any(.tools[]; .name == "local.text_stats" and .timeoutMs == 2000) and any(.tools[]; .name == "memory.search") and any(.tools[]; .name == "documents.search") and any(.tools[]; .name == "local.calculate") and any(.tools[]; .name == "local.date_math") and any(.tools[]; .name == "app.summary") and any(.tools[]; .name == "workspace.list" and .requiredPermissions == ["READ"]) and any(.tools[]; .name == "workspace.read_text" and .requiredPermissions == ["READ"]) and any(.tools[]; .name == "workspace.write_text" and .requiredPermissions == ["WRITE"] and .requiresConfirmation == true) and any(.tools[]; .name == "workspace.create_directory" and .requiredPermissions == ["WRITE"] and .requiresConfirmation == true) and any(.tools[]; .name == "workspace.move" and .requiredPermissions == ["WRITE"] and .requiresConfirmation == true) and any(.tools[]; .name == "workspace.delete" and .requiredPermissions == ["DELETE"] and .requiresConfirmation == true)' >/dev/null
 
           text_tool=$(curl -fsS http://127.0.0.1:5077/api/tools/local.text_stats)
           echo "$text_tool" | jq -e '.name == "local.text_stats" and .inputSchema.type == "object" and .inputSchema.additionalProperties == false and .inputSchema.required == ["text"]' >/dev/null
@@ -161,9 +161,86 @@ jobs:
             -d '{"toolName":"workspace.read_text","arguments":{"path":"drafts/note.txt"},"approvedPermissions":["READ"],"confirmed":false}')
           echo "$overwritten_read" | jq -e '.status == "succeeded" and .output.content == "Replaced safely."' >/dev/null
 
+          overwrite_hash=$(echo "$workspace_overwrite" | jq -r '.output.sha256')
+
+          move_unconfirmed_code=$(curl -sS -o /tmp/workspace-move-unconfirmed.json -w '%{http_code}' -X POST http://127.0.0.1:5077/api/tools/execute \
+            -H 'Content-Type: application/json' \
+            -d '{"toolName":"workspace.move","arguments":{"sourcePath":"drafts/note.txt","destinationPath":"drafts/renamed.txt"},"approvedPermissions":["WRITE"],"confirmed":false}')
+          test "$move_unconfirmed_code" = "403"
+          jq -e '.status == "denied" and (.error | contains("xác nhận"))' /tmp/workspace-move-unconfirmed.json >/dev/null
+
+          move_stale_payload=$(jq -nc --arg hash "$append_hash" '{toolName:"workspace.move",arguments:{sourcePath:"drafts/note.txt",destinationPath:"drafts/renamed.txt",expectedSha256:$hash},approvedPermissions:["WRITE"],confirmed:true}')
+          move_stale_code=$(curl -sS -o /tmp/workspace-move-stale.json -w '%{http_code}' -X POST http://127.0.0.1:5077/api/tools/execute \
+            -H 'Content-Type: application/json' -d "$move_stale_payload")
+          test "$move_stale_code" = "400"
+          jq -e '.status == "invalid-input" and (.error | contains("expectedSha256"))' /tmp/workspace-move-stale.json >/dev/null
+
+          move_payload=$(jq -nc --arg hash "$overwrite_hash" '{toolName:"workspace.move",arguments:{sourcePath:"drafts/note.txt",destinationPath:"drafts/renamed.txt",expectedSha256:$hash},approvedPermissions:["WRITE"],confirmed:true}')
+          workspace_move=$(curl -fsS -X POST http://127.0.0.1:5077/api/tools/execute \
+            -H 'Content-Type: application/json' -d "$move_payload")
+          echo "$workspace_move" | jq -e '.status == "succeeded" and .output.sourcePath == "drafts/note.txt" and .output.destinationPath == "drafts/renamed.txt" and .output.type == "file" and .output.sha256 == "'"$overwrite_hash"'"' >/dev/null
+
+          moved_read=$(curl -fsS -X POST http://127.0.0.1:5077/api/tools/execute \
+            -H 'Content-Type: application/json' \
+            -d '{"toolName":"workspace.read_text","arguments":{"path":"drafts/renamed.txt"},"approvedPermissions":["READ"],"confirmed":false}')
+          echo "$moved_read" | jq -e '.status == "succeeded" and .output.content == "Replaced safely."' >/dev/null
+
+          delete_unconfirmed_code=$(curl -sS -o /tmp/workspace-delete-unconfirmed.json -w '%{http_code}' -X POST http://127.0.0.1:5077/api/tools/execute \
+            -H 'Content-Type: application/json' \
+            -d '{"toolName":"workspace.delete","arguments":{"path":"drafts/renamed.txt"},"approvedPermissions":["DELETE"],"confirmed":false}')
+          test "$delete_unconfirmed_code" = "403"
+          jq -e '.status == "denied" and (.error | contains("xác nhận"))' /tmp/workspace-delete-unconfirmed.json >/dev/null
+
+          delete_permission_code=$(curl -sS -o /tmp/workspace-delete-permission.json -w '%{http_code}' -X POST http://127.0.0.1:5077/api/tools/execute \
+            -H 'Content-Type: application/json' \
+            -d '{"toolName":"workspace.delete","arguments":{"path":"drafts/renamed.txt"},"approvedPermissions":["WRITE"],"confirmed":true}')
+          test "$delete_permission_code" = "403"
+          jq -e '.status == "denied" and (.error | contains("DELETE"))' /tmp/workspace-delete-permission.json >/dev/null
+
+          delete_stale_payload=$(jq -nc --arg hash "$append_hash" '{toolName:"workspace.delete",arguments:{path:"drafts/renamed.txt",expectedSha256:$hash},approvedPermissions:["DELETE"],confirmed:true}')
+          delete_stale_code=$(curl -sS -o /tmp/workspace-delete-stale.json -w '%{http_code}' -X POST http://127.0.0.1:5077/api/tools/execute \
+            -H 'Content-Type: application/json' -d "$delete_stale_payload")
+          test "$delete_stale_code" = "400"
+          jq -e '.status == "invalid-input" and (.error | contains("expectedSha256"))' /tmp/workspace-delete-stale.json >/dev/null
+
+          nonempty_delete_code=$(curl -sS -o /tmp/workspace-delete-nonempty.json -w '%{http_code}' -X POST http://127.0.0.1:5077/api/tools/execute \
+            -H 'Content-Type: application/json' \
+            -d '{"toolName":"workspace.delete","arguments":{"path":"notes"},"approvedPermissions":["DELETE"],"confirmed":true}')
+          test "$nonempty_delete_code" = "400"
+          jq -e '.status == "invalid-input" and (.error | contains("không hỗ trợ xóa đệ quy"))' /tmp/workspace-delete-nonempty.json >/dev/null
+
+          delete_payload=$(jq -nc --arg hash "$overwrite_hash" '{toolName:"workspace.delete",arguments:{path:"drafts/renamed.txt",expectedSha256:$hash},approvedPermissions:["DELETE"],confirmed:true}')
+          workspace_delete=$(curl -fsS -X POST http://127.0.0.1:5077/api/tools/execute \
+            -H 'Content-Type: application/json' -d "$delete_payload")
+          echo "$workspace_delete" | jq -e '.status == "succeeded" and .output.path == "drafts/renamed.txt" and .output.type == "file" and .output.deleted == true and .output.sha256 == "'"$overwrite_hash"'"' >/dev/null
+          test ! -e /tmp/personalai-workspace/drafts/renamed.txt
+
+          workspace_move_dir=$(curl -fsS -X POST http://127.0.0.1:5077/api/tools/execute \
+            -H 'Content-Type: application/json' \
+            -d '{"toolName":"workspace.move","arguments":{"sourcePath":"drafts","destinationPath":"archive"},"approvedPermissions":["WRITE"],"confirmed":true}')
+          echo "$workspace_move_dir" | jq -e '.status == "succeeded" and .output.type == "directory" and .output.sourcePath == "drafts" and .output.destinationPath == "archive"' >/dev/null
+
+          workspace_delete_dir=$(curl -fsS -X POST http://127.0.0.1:5077/api/tools/execute \
+            -H 'Content-Type: application/json' \
+            -d '{"toolName":"workspace.delete","arguments":{"path":"archive"},"approvedPermissions":["DELETE"],"confirmed":true}')
+          echo "$workspace_delete_dir" | jq -e '.status == "succeeded" and .output.type == "directory" and .output.deleted == true' >/dev/null
+          test ! -e /tmp/personalai-workspace/archive
+
+          move_traversal_code=$(curl -sS -o /tmp/workspace-move-traversal.json -w '%{http_code}' -X POST http://127.0.0.1:5077/api/tools/execute \
+            -H 'Content-Type: application/json' \
+            -d '{"toolName":"workspace.move","arguments":{"sourcePath":"readme.txt","destinationPath":"../outside.txt"},"approvedPermissions":["WRITE"],"confirmed":true}')
+          test "$move_traversal_code" = "400"
+          jq -e '.status == "invalid-input" and (.error | contains(".."))' /tmp/workspace-move-traversal.json >/dev/null
+
+          delete_symlink_code=$(curl -sS -o /tmp/workspace-delete-symlink.json -w '%{http_code}' -X POST http://127.0.0.1:5077/api/tools/execute \
+            -H 'Content-Type: application/json' \
+            -d '{"toolName":"workspace.delete","arguments":{"path":"escape"},"approvedPermissions":["DELETE"],"confirmed":true}')
+          test "$delete_symlink_code" = "400"
+          jq -e '.status == "invalid-input" and (.error | contains("symbolic link"))' /tmp/workspace-delete-symlink.json >/dev/null
+
           duplicate_create_code=$(curl -sS -o /tmp/workspace-duplicate-create.json -w '%{http_code}' -X POST http://127.0.0.1:5077/api/tools/execute \
             -H 'Content-Type: application/json' \
-            -d '{"toolName":"workspace.write_text","arguments":{"path":"drafts/note.txt","content":"duplicate","mode":"create"},"approvedPermissions":["WRITE"],"confirmed":true}')
+            -d '{"toolName":"workspace.write_text","arguments":{"path":"readme.txt","content":"duplicate","mode":"create"},"approvedPermissions":["WRITE"],"confirmed":true}')
           test "$duplicate_create_code" = "400"
           jq -e '.status == "invalid-input" and (.error | contains("đã tồn tại"))' /tmp/workspace-duplicate-create.json >/dev/null
 
@@ -402,6 +479,8 @@ jobs:
           grep -Fq 'documents.search' src/PersonalAI.Web/Services/InternalTools.cs
           grep -Fq 'workspace.write_text' src/PersonalAI.Web/Services/WorkspaceFileTools.cs
           grep -Fq 'workspace.create_directory' src/PersonalAI.Web/Services/WorkspaceFileTools.cs
+          grep -Fq 'workspace.move' src/PersonalAI.Web/Services/WorkspaceFileTools.cs
+          grep -Fq 'workspace.delete' src/PersonalAI.Web/Services/WorkspaceFileTools.cs
           grep -Fq 'workspace.list' src/PersonalAI.Web/Services/WorkspaceFileTools.cs
           grep -Fq 'workspace.read_text' src/PersonalAI.Web/Services/WorkspaceFileTools.cs
 

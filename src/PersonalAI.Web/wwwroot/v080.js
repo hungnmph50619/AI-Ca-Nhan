@@ -1,5 +1,5 @@
 (() => {
-  const VERSION = "0.8.6";
+  const VERSION = "0.8.7";
   let loading = false;
 
   if (document.readyState === "loading") {
@@ -80,7 +80,7 @@
 
     const intro = document.createElement("div");
     intro.className = "v080-framework-intro";
-    intro.innerHTML = "<strong>Tool Result Synthesis v0.8.6</strong><p>Framework có 13 công cụ, proposal vẫn tách khỏi execution và kết quả tool giờ có tóm tắt local. Người dùng có thể chủ động gửi kết quả sang provider để AI diễn giải.</p>";
+    intro.innerHTML = "<strong>Provider-native Function Calling v0.8.7</strong><p>Chat dùng function/tool calling gốc của OpenAI Responses hoặc Gemini để chọn một công cụ. Function call vẫn chỉ tạo proposal; server validate schema và giữ nguyên permission/confirmation pipeline.</p>";
 
     const permissionLegend = document.createElement("div");
     permissionLegend.className = "v080-permission-legend";
@@ -98,7 +98,7 @@
 
     const note = document.createElement("p");
     note.className = "security-copy";
-    note.textContent = "v0.8.6 không tự gửi output tool ra ngoài. Tóm tắt local luôn chạy trên máy; “Diễn giải bằng AI” cần xác nhận riêng vì output sẽ được gửi tới provider đang cấu hình. Kết quả SENSITIVE bị chặn khỏi AI synthesis.";
+    note.textContent = "v0.8.7 bỏ planner JSON tự chế khỏi luồng chat và dùng native function calling của provider. Tên function được ánh xạ an toàn, model không tự cấp permission, chỉ một proposal được chấp nhận mỗi lượt; WRITE/DELETE vẫn cần xác nhận riêng.";
 
     card.append(header, intro, permissionLegend, status, list, note);
     dialog.appendChild(card);

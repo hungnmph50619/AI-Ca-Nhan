@@ -24,7 +24,23 @@ public sealed record ExecuteToolProposalRequest(
 
 public sealed record ToolProposalExecutionResponse(
     ToolCallProposal Proposal,
-    ToolExecutionResponse Execution);
+    ToolExecutionResponse Execution,
+    string LocalSummary,
+    bool CanAiSynthesize,
+    DateTimeOffset? SynthesisExpiresAt = null);
+
+public sealed record ToolResultSynthesisRequest(
+    Guid InvocationId,
+    bool ConfirmedExternal = false);
+
+public sealed record ToolResultSynthesisResponse(
+    Guid InvocationId,
+    string Mode,
+    string Message,
+    string? Provider,
+    string? Model,
+    bool OutputTruncated,
+    DateTimeOffset CreatedAt);
 
 internal sealed record ToolPlannerDecision(
     string Action,

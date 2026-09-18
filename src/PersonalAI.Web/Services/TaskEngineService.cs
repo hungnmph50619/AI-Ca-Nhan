@@ -635,7 +635,7 @@ Quy tắc bắt buộc:
 - Nếu mục tiêu không thể hoàn thành bằng danh mục hiện có, trả steps là mảng rỗng và giải thích ngắn trong plan.
 - Chỉ trả một đối tượng JSON thuần, không dùng Markdown hay khối mã.
 - Cấu trúc chính xác:
-{"plan":"Tóm tắt kế hoạch bằng tiếng Việt","steps":[{"title":"Tên bước bằng tiếng Việt","description":"Mô tả ngắn bằng tiếng Việt","toolName":"tên.công_cụ","arguments":{}}]}
+{"plan":"Tóm tắt kế hoạch bằng tiếng Việt", "steps":[{"title":"Tên bước bằng tiếng Việt", "description":"Mô tả ngắn bằng tiếng Việt", "toolName":"tên.công_cụ", "arguments":{ } } ] }
 """;
     }
 

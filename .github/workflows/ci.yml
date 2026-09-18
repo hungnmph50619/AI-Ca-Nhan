@@ -55,7 +55,7 @@ jobs:
             exit 1
           fi
 
-          curl -fsS http://127.0.0.1:5077/api/status | jq -e '.version == "0.9.4"' >/dev/null
+          curl -fsS http://127.0.0.1:5077/api/status | jq -e '.version == "0.9.5"' >/dev/null
 
           workspaces=$(curl -fsS http://127.0.0.1:5077/api/workspaces)
           echo "$workspaces" | jq -e '.currentWorkspaceId == "personal" and .maximumWorkspaces == 20 and (.workspaces | length) >= 5 and any(.workspaces[]; .id == "personal" and .isBuiltIn == true) and any(.workspaces[]; .id == "work") and any(.workspaces[]; .id == "study") and any(.workspaces[]; .id == "ai-ca-nhan") and any(.workspaces[]; .id == "travel")' >/dev/null
@@ -108,6 +108,37 @@ jobs:
           personal_tasks=$(curl -fsS http://127.0.0.1:5077/api/tasks)
           echo "$personal_tasks" | jq -e 'all(.tasks[]; .id != "'"$custom_task_id"'")' >/dev/null
 
+          context_preview_payload=$(jq -nc '{messages:[{role:"user",content:"workspace-ci-secret-094 workspace scoped document 094 task theo workspace"}],useKnowledge:true,knowledgeMode:"normal",useMemory:true,useTaskContext:true}')
+          context_preview=$(curl -fsS -X POST http://127.0.0.1:5077/api/context/preview \
+            -H "X-PersonalAI-Workspace: $custom_workspace_id" \
+            -H 'Content-Type: application/json' \
+            -d "$context_preview_payload")
+          echo "$context_preview" | jq -e '.context.workspaceId == "'"$custom_workspace_id"'" and .context.strategy == "workspace-scoped-budgeted-context-v1" and .context.selectedMemories >= 1 and .context.selectedDocuments >= 1 and .context.selectedTasks >= 1 and .context.budget.maximumCharacters == 7600 and .context.budget.usedCharacters <= .context.budget.maximumCharacters and any(.context.items[]; .kind == "memory") and any(.context.items[]; .kind == "document") and any(.context.items[]; .kind == "task") and any(.sources[]; .fileName == "workspace-094.txt")' >/dev/null
+          ! echo "$context_preview" | grep -Fq 'workspace-ci-secret-094'
+
+          context_without_tasks=$(curl -fsS -X POST http://127.0.0.1:5077/api/context/preview \
+            -H "X-PersonalAI-Workspace: $custom_workspace_id" \
+            -H 'Content-Type: application/json' \
+            -d '{"messages":[{"role":"user","content":"task theo workspace"}],"useKnowledge":false,"knowledgeMode":"normal","useMemory":false,"useTaskContext":false}')
+          echo "$context_without_tasks" | jq -e '.context.selectedTasks == 0 and .context.selectedMemories == 0 and .context.selectedDocuments == 0 and .context.budget.usedCharacters == 0' >/dev/null
+
+          documents_only_preview=$(curl -fsS -X POST http://127.0.0.1:5077/api/context/preview \
+            -H "X-PersonalAI-Workspace: $custom_workspace_id" \
+            -H 'Content-Type: application/json' \
+            -d '{"messages":[{"role":"user","content":"workspace scoped document 094"}],"useKnowledge":true,"knowledgeMode":"documents-only","useMemory":true,"useTaskContext":true}')
+          echo "$documents_only_preview" | jq -e '.context.selectedDocuments >= 1 and .context.selectedMemories == 0 and .context.selectedTasks == 0 and any(.sources[]; .fileName == "workspace-094.txt")' >/dev/null
+
+          personal_context_preview=$(curl -fsS -X POST http://127.0.0.1:5077/api/context/preview \
+            -H 'Content-Type: application/json' \
+            -d '{"messages":[{"role":"user","content":"workspace scoped document 094"}],"useKnowledge":true,"knowledgeMode":"normal","useMemory":true,"useTaskContext":true}')
+          echo "$personal_context_preview" | jq -e '.context.workspaceId == "personal" and all(.sources[]; .fileName != "workspace-094.txt")' >/dev/null
+
+          invalid_context_code=$(curl -sS -o /tmp/context-invalid.json -w '%{http_code}' -X POST http://127.0.0.1:5077/api/context/preview \
+            -H 'Content-Type: application/json' \
+            -d '{"messages":[]}')
+          test "$invalid_context_code" = "400"
+          jq -e '(.error | contains("tin nhắn"))' /tmp/context-invalid.json >/dev/null
+
           custom_files_before=$(curl -fsS -X POST http://127.0.0.1:5077/api/tools/execute \
             -H "X-PersonalAI-Workspace: $custom_workspace_id" \
             -H 'Content-Type: application/json' \
@@ -133,7 +164,7 @@ jobs:
           echo "$personal_files" | jq -e 'all(.output.entries[]; .name != "workspace-only.txt")' >/dev/null
 
           tools=$(curl -fsS http://127.0.0.1:5077/api/tools)
-          echo "$tools" | jq -e '.frameworkVersion == "0.9.4" and (.permissionTypes | sort) == (["DELETE","EXTERNAL","READ","SENSITIVE","WRITE"] | sort)' >/dev/null
+          echo "$tools" | jq -e '.frameworkVersion == "0.9.5" and (.permissionTypes | sort) == (["DELETE","EXTERNAL","READ","SENSITIVE","WRITE"] | sort)' >/dev/null
           echo "$tools" | jq -e '(.tools | length) == 13 and any(.tools[]; .name == "local.clock" and .localOnly == true and .requiredPermissions == ["READ"]) and any(.tools[]; .name == "local.text_stats" and .timeoutMs == 2000) and any(.tools[]; .name == "memory.search") and any(.tools[]; .name == "documents.search") and any(.tools[]; .name == "local.calculate") and any(.tools[]; .name == "local.date_math") and any(.tools[]; .name == "app.summary") and any(.tools[]; .name == "workspace.list" and .requiredPermissions == ["READ"]) and any(.tools[]; .name == "workspace.read_text" and .requiredPermissions == ["READ"]) and any(.tools[]; .name == "workspace.write_text" and .requiredPermissions == ["WRITE"] and .requiresConfirmation == true) and any(.tools[]; .name == "workspace.create_directory" and .requiredPermissions == ["WRITE"] and .requiresConfirmation == true) and any(.tools[]; .name == "workspace.move" and .requiredPermissions == ["WRITE"] and .requiresConfirmation == true) and any(.tools[]; .name == "workspace.delete" and .requiredPermissions == ["DELETE"] and .requiresConfirmation == true)' >/dev/null
 
           text_tool=$(curl -fsS http://127.0.0.1:5077/api/tools/local.text_stats)
@@ -852,18 +883,18 @@ jobs:
           grep -Fq 'Task Dependencies' docs/releases/v0.9.3.md
           grep -Fq 'v090.css' src/PersonalAI.Web/wwwroot/index.html
           grep -Fq 'v090.js' src/PersonalAI.Web/wwwroot/index.html
-          grep -Fq 'Tác vụ theo không gian v0.9.4' src/PersonalAI.Web/wwwroot/v090.js
+          grep -Fq 'Tác vụ trong Context Manager v0.9.5' src/PersonalAI.Web/wwwroot/v090.js
           grep -Fq 'MỤC TIÊU → KẾ HOẠCH → TỪNG BƯỚC' src/PersonalAI.Web/wwwroot/v090.js
           grep -Fq 'arguments_sha256' src/PersonalAI.Web/Services/ToolActivityStore.cs
           grep -Fq 'output_sha256' src/PersonalAI.Web/Services/ToolActivityStore.cs
           grep -Fq 'v089.css' src/PersonalAI.Web/wwwroot/index.html
-          grep -Fq 'Nhật ký hoạt động công cụ v0.9.4' src/PersonalAI.Web/wwwroot/v080.js
+          grep -Fq 'Nhật ký hoạt động công cụ v0.9.5' src/PersonalAI.Web/wwwroot/v080.js
           grep -Fq 'Nhật ký hoạt động gần đây' src/PersonalAI.Web/wwwroot/v080.js
           grep -Fq 'v088.css' src/PersonalAI.Web/wwwroot/index.html
           grep -Fq 'Nguồn đề xuất:' src/PersonalAI.Web/wwwroot/app.js
           grep -Fq 'Tham số' src/PersonalAI.Web/wwwroot/app.js
           grep -Fq 'CÔNG CỤ NỘI BỘ TRÊN MÁY NÀY' src/PersonalAI.Web/wwwroot/v080.js
-          grep -Fq 'Nhật ký hoạt động công cụ v0.9.4' src/PersonalAI.Web/wwwroot/v080.js
+          grep -Fq 'Nhật ký hoạt động công cụ v0.9.5' src/PersonalAI.Web/wwwroot/v080.js
           grep -Fq 'Mô hình' src/PersonalAI.Web/wwwroot/index.html
           grep -Fq 'Khóa truy cập' src/PersonalAI.Web/wwwroot/index.html
           ! grep -Fq 'Planner:' src/PersonalAI.Web/wwwroot/app.js
@@ -930,6 +961,15 @@ jobs:
           grep -Fq 'v094.js' src/PersonalAI.Web/wwwroot/index.html
           grep -Fq 'v094.css' src/PersonalAI.Web/wwwroot/index.html
           grep -Fq 'personal-ai-v0.9.4-workspace-' src/PersonalAI.Web/wwwroot/app.js
+          grep -Fq 'Context Manager' docs/releases/v0.9.5.md
+          grep -Fq 'IContextManagerService' src/PersonalAI.Web/Services/ContextManagerService.cs
+          grep -Fq 'MaximumContextCharacters = 7_600' src/PersonalAI.Web/Services/ContextManagerService.cs
+          grep -Fq '/api/context/preview' src/PersonalAI.Web/Program.cs
+          grep -Fq 'UseTaskContext' src/PersonalAI.Web/Models/ChatModels.cs
+          grep -Fq 'ContextSelectionReport' src/PersonalAI.Web/Models/ContextModels.cs
+          grep -Fq 'context-report' src/PersonalAI.Web/wwwroot/app.js
+          grep -Fq 'v095.css' src/PersonalAI.Web/wwwroot/index.html
+          grep -Fq 'v095.js' src/PersonalAI.Web/wwwroot/index.html
 
 
       - name: Setup Node.js
@@ -957,3 +997,4 @@ jobs:
           node --check src/PersonalAI.Web/wwwroot/v080.js
           node --check src/PersonalAI.Web/wwwroot/v090.js
           node --check src/PersonalAI.Web/wwwroot/v094.js
+          node --check src/PersonalAI.Web/wwwroot/v095.js

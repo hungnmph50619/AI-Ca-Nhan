@@ -1,5 +1,5 @@
 (() => {
-  const VERSION = "0.8.2";
+  const VERSION = "0.8.3";
   let loading = false;
 
   if (document.readyState === "loading") {
@@ -80,7 +80,7 @@
 
     const intro = document.createElement("div");
     intro.className = "v080-framework-intro";
-    intro.innerHTML = "<strong>File Read Tools v0.8.2</strong><p>Framework hiện có 9 công cụ local, bổ sung workspace.list và workspace.read_text để đọc workspace được cấp quyền. Đường dẫn luôn tương đối, bị chặn path traversal/symlink và có giới hạn kích thước.</p>";
+    intro.innerHTML = "<strong>File Tools v0.8.3</strong><p>Framework hiện có 9 công cụ local, bổ sung workspace.list và workspace.read_text để đọc workspace được cấp quyền. Đường dẫn luôn tương đối, bị chặn path traversal/symlink và có giới hạn kích thước.</p>";
 
     const permissionLegend = document.createElement("div");
     permissionLegend.className = "v080-permission-legend";

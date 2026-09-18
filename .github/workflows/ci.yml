@@ -459,6 +459,12 @@ jobs:
           test "$connector_private_code" = "400"
           jq -e '(.error | contains("private/reserved"))' /tmp/connector-private.json >/dev/null
 
+          connector_documentation_code=$(curl -sS -o /tmp/connector-documentation.json -w '%{http_code}' -X POST http://127.0.0.1:5077/api/connectors \
+            -H 'Content-Type: application/json' \
+            -d '{"name":"Documentation Connector","kind":"http-bearer","baseUrl":"https://192.0.2.1/","bearerToken":"documentation-secret","confirmed":true}')
+          test "$connector_documentation_code" = "400"
+          jq -e '(.error | contains("private/reserved"))' /tmp/connector-documentation.json >/dev/null
+
           connector_created=$(curl -fsS -X POST http://127.0.0.1:5077/api/connectors \
             -H 'Content-Type: application/json' \
             -d '{"name":"CI Connector","kind":"http-bearer","baseUrl":"https://jsonplaceholder.typicode.com/","bearerToken":"ci-connector-secret-130","confirmed":true}')
@@ -1174,6 +1180,9 @@ jobs:
           connectors_after_delete=$(curl -fsS http://127.0.0.1:5077/api/connectors)
           echo "$connectors_after_delete" | jq -e 'all(.connections[]; .id != "'"$connector_id"'")' >/dev/null
 
+          connector_delete_audit=$(curl -fsS 'http://127.0.0.1:5077/api/audit?limit=200')
+          echo "$connector_delete_audit" | jq -e 'any(.items[]; .action == "connector.delete" and .target == "connector:'"$connector_id"'" and .result == "succeeded")' >/dev/null
+
           persisted_undo_list=$(curl -fsS 'http://127.0.0.1:5077/api/undo?limit=100')
           echo "$persisted_undo_list" | jq -e 'any(.items[]; .undoId == "'"$persistent_undo_id"'" and .status == "available")' >/dev/null
           persisted_undo_assessment=$(curl -fsS "http://127.0.0.1:5077/api/undo/$persistent_undo_id/assessment")
@@ -1456,6 +1465,10 @@ jobs:
           grep -Fq 'UseCookies = false' src/PersonalAI.Web/Services/ConnectorService.cs
           grep -Fq 'ConnectCallback = ConnectPublicAsync' src/PersonalAI.Web/Services/ConnectorService.cs
           grep -Fq 'MaximumResponseBytes = 512 * 1024' src/PersonalAI.Web/Services/ConnectorService.cs
+          grep -Fq 'RedactCredential(' src/PersonalAI.Web/Services/ConnectorService.cs
+          grep -Fq 'bytes[2] == 100' src/PersonalAI.Web/Services/ConnectorService.cs
+          grep -Fq 'bytes[2] == 113' src/PersonalAI.Web/Services/ConnectorService.cs
+
           grep -Fq 'v130.css' src/PersonalAI.Web/wwwroot/index.html
           grep -Fq 'v130.js' src/PersonalAI.Web/wwwroot/index.html
           grep -Fq 'CONTROLLED CAPABILITY · ENCRYPTED CREDENTIAL' src/PersonalAI.Web/wwwroot/v130.js

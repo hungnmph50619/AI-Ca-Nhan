@@ -246,7 +246,7 @@
 
     const copy = document.createElement("p");
     copy.textContent =
-      `Workspace isolation: ${yesNo(safety.workspaceIsolation)} · WRITE confirm: ${yesNo(safety.writeRequiresConfirmation)} · DELETE confirm: ${yesNo(safety.deleteRequiresConfirmation)} · Undo confirm: ${yesNo(safety.undoRequiresConfirmation)} · Computer confirm: ${yesNo(safety.computerControlRequiresConfirmation)} · Browser confirm: ${yesNo(safety.browserUseRequiresConfirmation)} · Browser private network: ${yesNo(safety.browserPrivateNetworkAccess)} · Agent loop tự trị: ${yesNo(safety.autonomousAgentLoop)} · Scheduler nền: ${yesNo(safety.backgroundScheduler)}`;
+      `Workspace isolation: ${yesNo(safety.workspaceIsolation)} · WRITE confirm: ${yesNo(safety.writeRequiresConfirmation)} · DELETE confirm: ${yesNo(safety.deleteRequiresConfirmation)} · Undo confirm: ${yesNo(safety.undoRequiresConfirmation)} · Computer confirm: ${yesNo(safety.computerControlRequiresConfirmation)} · Browser confirm: ${yesNo(safety.browserUseRequiresConfirmation)} · Connector confirm: ${yesNo(safety.connectorUseRequiresConfirmation)} · Connector secrets encrypted: ${yesNo(safety.connectorSecretsEncrypted)} · Connector write actions: ${yesNo(safety.connectorWriteActionsEnabled)} · Agent loop tự trị: ${yesNo(safety.autonomousAgentLoop)} · Scheduler nền: ${yesNo(safety.backgroundScheduler)}`;
 
     const limitsCopy = document.createElement("p");
     limitsCopy.textContent =
@@ -286,6 +286,7 @@
       undo: "Undo",
       "computer-use": "Computer Use",
       "browser-agent": "Browser Agent",
+      connectors: "Connectors",
       "ai-provider": "AI Provider"
     }[module] || module || "Module";
   }

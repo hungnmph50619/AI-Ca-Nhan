@@ -219,6 +219,9 @@ public sealed class TaskEngineService : ITaskEngineService
             var requiresConfirmation = tool.Definition.RequiresConfirmation
                 || tool.Definition.RequiredPermissions.Any(
                     ToolPermissions.RequiresExplicitConfirmation);
+            var dependsOn = NormalizeDependencies(
+                draft.DependsOn,
+                index + 1);
 
             steps.Add(new PersonalTaskStep(
                 index + 1,
@@ -228,7 +231,8 @@ public sealed class TaskEngineService : ITaskEngineService
                 draft.Arguments.Clone(),
                 tool.Definition.RequiredPermissions.ToArray(),
                 requiresConfirmation,
-                PersonalTaskStepStatuses.Pending));
+                PersonalTaskStepStatuses.Pending,
+                DependsOn: dependsOn));
         }
 
         var task = new PersonalTask(
@@ -297,6 +301,8 @@ public sealed class TaskEngineService : ITaskEngineService
             }
 
             var step = task.Steps[position];
+            EnsureDependenciesSatisfied(task, step);
+
             if (!_registry.TryGet(step.ToolName, out var tool) || tool is null)
             {
                 throw new PersonalTaskValidationException(
@@ -925,6 +931,9 @@ public sealed class TaskEngineService : ITaskEngineService
                 var requiresConfirmation = tool.Definition.RequiresConfirmation
                     || tool.Definition.RequiredPermissions.Any(
                         ToolPermissions.RequiresExplicitConfirmation);
+                var dependsOn = ReadDependencies(
+                    item,
+                    index + 1);
 
                 steps.Add(new PersonalTaskStep(
                     index + 1,
@@ -934,7 +943,8 @@ public sealed class TaskEngineService : ITaskEngineService
                     arguments.Clone(),
                     tool.Definition.RequiredPermissions.ToArray(),
                     requiresConfirmation,
-                    PersonalTaskStepStatuses.Pending));
+                    PersonalTaskStepStatuses.Pending,
+                    DependsOn: dependsOn));
             }
 
             return new ParsedTaskPlan(plan, steps);
@@ -967,18 +977,21 @@ Mục tiêu của người dùng:
 Danh mục công cụ hiện có:
 {{catalogJson}}
 
-Hãy tạo một kế hoạch có thể thực thi tuần tự bằng các công cụ trên.
+Hãy tạo một kế hoạch có thể thực thi bằng các công cụ trên và khai báo rõ quan hệ phụ thuộc giữa các bước.
 
 Quy tắc bắt buộc:
 - Chỉ dùng đúng tên công cụ có trong danh mục.
 - Mỗi bước chỉ được dùng một công cụ.
 - Tối đa {{MaximumSteps}} bước.
+- Mỗi bước có "dependsOn" là mảng số thứ tự các bước trước mà nó thực sự cần.
+- Bước 1 luôn có dependsOn rỗng. Một bước chỉ được phụ thuộc vào bước có số nhỏ hơn chính nó.
+- Không tạo vòng phụ thuộc và không thêm phụ thuộc không cần thiết.
 - Không tự giả định một thao tác đã xảy ra.
 - Không được bỏ qua quyền hoặc yêu cầu xác nhận của công cụ.
 - Nếu mục tiêu không thể hoàn thành bằng danh mục hiện có, trả steps là mảng rỗng và giải thích ngắn trong plan.
 - Chỉ trả một đối tượng JSON thuần, không dùng Markdown hay khối mã.
 - Cấu trúc chính xác:
-{"plan":"Tóm tắt kế hoạch bằng tiếng Việt", "steps":[{"title":"Tên bước bằng tiếng Việt", "description":"Mô tả ngắn bằng tiếng Việt", "toolName":"tên.công_cụ", "arguments":{ } } ] }
+{"plan":"Tóm tắt kế hoạch bằng tiếng Việt", "steps":[{"title":"Tên bước bằng tiếng Việt", "description":"Mô tả ngắn bằng tiếng Việt", "toolName":"tên.công_cụ", "arguments":{ }, "dependsOn":[] } ] }
 """;
     }
 
@@ -1009,6 +1022,100 @@ Quy tắc bắt buộc:
 
         var value = property.GetString()?.Trim();
         return string.IsNullOrWhiteSpace(value) ? fallback : value;
+    }
+
+    private static IReadOnlyList<int> ReadDependencies(
+        JsonElement element,
+        int stepIndex)
+    {
+        if (!element.TryGetProperty("dependsOn", out var property)
+            || property.ValueKind is JsonValueKind.Null or JsonValueKind.Undefined)
+        {
+            return [];
+        }
+
+        if (property.ValueKind != JsonValueKind.Array)
+        {
+            throw InvalidStep(
+                stepIndex,
+                "dependsOn phải là một mảng số thứ tự bước.");
+        }
+
+        var dependencies = new List<int>();
+        foreach (var item in property.EnumerateArray())
+        {
+            if (item.ValueKind != JsonValueKind.Number
+                || !item.TryGetInt32(out var dependency))
+            {
+                throw InvalidStep(
+                    stepIndex,
+                    "dependsOn chỉ được chứa số nguyên.");
+            }
+
+            dependencies.Add(dependency);
+        }
+
+        return NormalizeDependencies(dependencies, stepIndex);
+    }
+
+    private static IReadOnlyList<int> NormalizeDependencies(
+        IReadOnlyList<int>? dependencies,
+        int stepIndex)
+    {
+        var normalized = (dependencies ?? [])
+            .Distinct()
+            .OrderBy(value => value)
+            .ToArray();
+
+        if (normalized.Length == 0)
+        {
+            return normalized;
+        }
+
+        if (stepIndex <= 1)
+        {
+            throw InvalidStep(
+                stepIndex,
+                "bước đầu tiên không thể phụ thuộc vào bước khác.");
+        }
+
+        if (normalized.Any(value => value <= 0 || value >= stepIndex))
+        {
+            throw InvalidStep(
+                stepIndex,
+                $"dependsOn chỉ được tham chiếu các bước từ 1 đến {stepIndex - 1}.");
+        }
+
+        return normalized;
+    }
+
+    private static void EnsureDependenciesSatisfied(
+        PersonalTask task,
+        PersonalTaskStep step)
+    {
+        var dependencies = step.DependsOn ?? [];
+        if (dependencies.Count == 0)
+        {
+            return;
+        }
+
+        var incomplete = dependencies
+            .Where(dependency =>
+            {
+                var requiredStep = task.Steps.FirstOrDefault(
+                    candidate => candidate.Index == dependency);
+                return requiredStep is null
+                    || requiredStep.Status != PersonalTaskStepStatuses.Completed;
+            })
+            .ToArray();
+
+        if (incomplete.Length == 0)
+        {
+            return;
+        }
+
+        throw new PersonalTaskValidationException(
+            $"Bước {step.Index} đang chờ bước {string.Join(", ", incomplete)} hoàn tất. PersonalAI sẽ không bỏ qua quan hệ phụ thuộc.");
     }
 
     private static PersonalTaskValidationException InvalidStep(

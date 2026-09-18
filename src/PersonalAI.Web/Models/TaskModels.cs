@@ -43,7 +43,8 @@ public sealed record PersonalTaskStepDraft(
     string Title,
     string Description,
     string ToolName,
-    JsonElement Arguments);
+    JsonElement Arguments,
+    IReadOnlyList<int>? DependsOn = null);
 
 
 
@@ -60,7 +61,8 @@ public sealed record PersonalTaskStep(
     string? LocalSummary = null,
     DateTimeOffset? StartedAt = null,
     DateTimeOffset? CompletedAt = null,
-    int AttemptCount = 0);
+    int AttemptCount = 0,
+    IReadOnlyList<int>? DependsOn = null);
 
 public sealed record PersonalTask(
     Guid Id,

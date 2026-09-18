@@ -22,6 +22,7 @@ public sealed class SystemCoreService(
     IUndoService undoService,
     IComputerUseService computerUse,
     IBrowserAgentService browserAgent,
+    IConnectorService connectors,
     IAiProviderResolver providerResolver,
     ILogger<SystemCoreService> logger) : ISystemCoreService
 {
@@ -43,14 +44,14 @@ public sealed class SystemCoreService(
     private static readonly string[] ControlledModules =
     [
         "computer-use",
-        "browser-agent"
+        "browser-agent",
+        "connectors"
     ];
 
     private static readonly string[] ReservedModules =
     [
         "agents",
-        "policies",
-        "connectors"
+        "policies"
     ];
 
     public async Task<SystemHealthResponse> GetHealthAsync(
@@ -199,6 +200,25 @@ public sealed class SystemCoreService(
             CoreHealthStatuses.Degraded));
 
         modules.Add(Check(
+            "connectors",
+            () =>
+            {
+                var status = connectors.GetStatus();
+                var list = connectors.GetConnections();
+                return status.Supported
+                    ? new CoreModuleHealth(
+                        "connectors",
+                        CoreHealthStatuses.Healthy,
+                        "Connector Foundation khả dụng; credential được mã hóa và write actions đang tắt.",
+                        list.Connections.Count)
+                    : new CoreModuleHealth(
+                        "connectors",
+                        CoreHealthStatuses.Unconfigured,
+                        "Connector Foundation chưa khả dụng trong môi trường hiện tại.");
+            },
+            CoreHealthStatuses.Degraded));
+
+        modules.Add(Check(
             "ai-provider",
             () =>
             {
@@ -219,7 +239,8 @@ public sealed class SystemCoreService(
             .Where(module =>
                 module.Module != "ai-provider"
                 && module.Module != "computer-use"
-                && module.Module != "browser-agent")
+                && module.Module != "browser-agent"
+                && module.Module != "connectors")
             .ToArray();
         var ready = localModules.All(
             module => module.Status != CoreHealthStatuses.Unavailable);
@@ -262,6 +283,9 @@ public sealed class SystemCoreService(
                 BrowserUseRequiresConfirmation: true,
                 BrowserPrivateNetworkAccess: false,
                 BrowserSideEffectsEnabled: false,
+                ConnectorUseRequiresConfirmation: true,
+                ConnectorSecretsEncrypted: true,
+                ConnectorWriteActionsEnabled: false,
                 AutomaticMultiStepExecution: false,
                 BackgroundScheduler: false,
                 AutonomousAgentLoop: false,
@@ -279,7 +303,11 @@ public sealed class SystemCoreService(
                 BrowserAgentService.MaximumResponseBytes,
                 BrowserAgentService.MaximumPageTextCharacters,
                 BrowserAgentService.MaximumLinks,
-                BrowserAgentService.MaximumRedirects),
+                BrowserAgentService.MaximumRedirects,
+                ConnectorService.MaximumConnectionsPerWorkspace,
+                ConnectorService.MaximumResponseBytes,
+                ConnectorService.MaximumReturnedCharacters,
+                ConnectorService.MaximumRedirects),
             WorkspaceEndpoints.WorkspaceHeaderName,
             SystemHardeningMiddleware.RequestIdHeaderName);
 

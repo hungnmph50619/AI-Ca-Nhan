@@ -827,7 +827,9 @@ function createToolExecutionNode(execution) {
   const privacy = documentElement(
     "p",
     "tool-execution-privacy",
-    "Tóm tắt phía trên được tạo local. Output chưa được gửi sang nhà cung cấp AI.");
+    execution.aiSynthesized
+      ? "Tóm tắt ban đầu được tạo local. Output đã được gửi sang nhà cung cấp AI theo xác nhận của bạn để diễn giải."
+      : "Tóm tắt phía trên được tạo local. Output chưa được gửi sang nhà cung cấp AI.");
 
   const details = document.createElement("details");
   details.className = "tool-execution-details";

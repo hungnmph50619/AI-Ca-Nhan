@@ -38,7 +38,7 @@
     const toolbar = document.createElement("section");
     toolbar.id = "memoryV064Toolbar";
     toolbar.className = "memory-v064-toolbar";
-    toolbar.innerHTML = `<div class="memory-v064-stats" id="memoryV064Stats">Đang tải thống kê…</div><div class="memory-v064-actions"><button type="button" class="secondary-button" id="memoryExportButton">Xuất JSON</button><label class="secondary-button memory-import-label">Nhập JSON<input id="memoryImportInput" type="file" accept="application/json,.json" hidden></label><button type="button" class="memory-danger-button" id="memoryDeleteAllButton">Xóa tất cả</button></div>`;
+    toolbar.innerHTML = `<div class="memory-v064-stats" id="memoryV064Stats">Đang tải thống kê…</div><div class="memory-v064-actions"><button type="button" class="secondary-button" id="memoryExportButton">Xuất dữ liệu</button><label class="secondary-button memory-import-label">Nhập dữ liệu<input id="memoryImportInput" type="file" accept="application/json,.json" hidden></label><button type="button" class="memory-danger-button" id="memoryDeleteAllButton">Xóa tất cả</button></div>`;
 
     const header = document.querySelector(".memory-list-header");
     (header || list).insertAdjacentElement("beforebegin", toolbar);
@@ -180,7 +180,7 @@
       window.alert(`Đã nhập ${result.imported}, bỏ qua ${result.skipped} trí nhớ trùng.`);
       location.reload();
     } catch (error) {
-      window.alert(error.message || "Tệp JSON không hợp lệ.");
+      window.alert(error.message || "Tệp dữ liệu không hợp lệ.");
     }
   }
 

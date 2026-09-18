@@ -56,7 +56,7 @@ public sealed record UndoExecutionResponse(
     string Status,
     string Message);
 
-internal sealed record UndoPreparation(
+public sealed record UndoPreparation(
     Guid UndoId,
     Guid InvocationId,
     string WorkspaceId,
@@ -67,7 +67,7 @@ internal sealed record UndoPreparation(
     string? BeforeSha256,
     byte[]? SnapshotBytes);
 
-internal sealed record StoredUndoItem(
+public sealed record StoredUndoItem(
     Guid UndoId,
     Guid InvocationId,
     DateTimeOffset CreatedAt,
@@ -82,16 +82,16 @@ internal sealed record StoredUndoItem(
     byte[]? SnapshotBytes,
     string Status);
 
-internal sealed record WorkspaceUndoCapture(
+public sealed record WorkspaceUndoCapture(
     string Operation,
     string PrimaryPath,
     string? SecondaryPath,
     string? BeforeSha256,
     byte[]? SnapshotBytes);
 
-internal sealed record WorkspaceUndoCheck(
+public sealed record WorkspaceUndoCheck(
     bool CanUndo,
     string Reason);
 
-internal sealed record WorkspaceUndoApplyResult(
+public sealed record WorkspaceUndoApplyResult(
     string Message);

@@ -118,6 +118,50 @@ public static class TaskEngineEndpoints
             }
         });
 
+        app.MapGet("/api/tasks/{taskId:guid}/retry-assessment", (
+            Guid taskId,
+            ITaskEngineService taskEngine) =>
+        {
+            var assessment = taskEngine.GetRetryAssessment(taskId);
+            return assessment is null
+                ? Results.NotFound(new ApiError("Không tìm thấy tác vụ."))
+                : Results.Ok(assessment);
+        });
+
+        app.MapPost("/api/tasks/{taskId:guid}/retry", async (
+            Guid taskId,
+            RetryPersonalTaskStepRequest request,
+            ITaskEngineService taskEngine,
+            CancellationToken cancellationToken) =>
+        {
+            try
+            {
+                var result = await taskEngine.RetryFailedStepAsync(
+                    taskId,
+                    request.ConfirmedReview,
+                    cancellationToken);
+                return result is null
+                    ? Results.NotFound(new ApiError("Không tìm thấy tác vụ."))
+                    : Results.Ok(result);
+            }
+            catch (PersonalTaskConfirmationRequiredException exception)
+            {
+                return Results.Json(
+                    new ApiError(exception.Message),
+                    statusCode: StatusCodes.Status403Forbidden);
+            }
+            catch (PersonalTaskRetryBlockedException exception)
+            {
+                return Results.Json(
+                    new ApiError(exception.Message),
+                    statusCode: StatusCodes.Status409Conflict);
+            }
+            catch (PersonalTaskValidationException exception)
+            {
+                return Results.BadRequest(new ApiError(exception.Message));
+            }
+        });
+
         app.MapPost("/api/tasks/{taskId:guid}/resume", async (
             Guid taskId,
             ITaskEngineService taskEngine,

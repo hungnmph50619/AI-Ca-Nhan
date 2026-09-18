@@ -62,7 +62,7 @@ Function calling is disabled in this continuation. Produce only the final user-f
         if (string.IsNullOrWhiteSpace(apiKey))
         {
             throw new InvalidOperationException(
-                "Chưa có Gemini API key. Hãy mở Cài đặt AI để nhập key.");
+                "Chưa có khóa truy cập Gemini. Hãy mở Cài đặt AI để nhập khóa.");
         }
 
         var payload = new
@@ -127,7 +127,7 @@ Function calling is disabled in this continuation. Produce only the final user-f
                         (int)response.StatusCode,
                         detail);
                     throw new HttpRequestException(
-                        $"Gemini API trả về lỗi {(int)response.StatusCode}: {detail}",
+                        $"Gemini trả về lỗi mã {(int)response.StatusCode}. Hãy kiểm tra khóa truy cập, mô hình và cấu hình nhà cung cấp.",
                         null,
                         response.StatusCode);
                 }
@@ -183,7 +183,7 @@ Function calling is disabled in this continuation. Produce only the final user-f
         if (string.IsNullOrWhiteSpace(apiKey))
         {
             throw new InvalidOperationException(
-                "Chưa có Gemini API key. Hãy mở Cài đặt AI để nhập key.");
+                "Chưa có khóa truy cập Gemini. Hãy mở Cài đặt AI để nhập khóa.");
         }
 
         var payload = new
@@ -273,7 +273,7 @@ Function calling is disabled in this continuation. Produce only the final user-f
                     }
 
                     throw new HttpRequestException(
-                        $"Gemini API trả về lỗi {(int)response.StatusCode}: {detail}",
+                        $"Gemini trả về lỗi mã {(int)response.StatusCode}. Hãy kiểm tra khóa truy cập, mô hình và cấu hình nhà cung cấp.",
                         null,
                         response.StatusCode);
                 }
@@ -301,7 +301,7 @@ Function calling is disabled in this continuation. Produce only the final user-f
         }
 
         throw new HttpRequestException(
-            "Gemini không thể lập đề xuất function call sau nhiều lần thử.");
+            "Gemini không thể lập đề xuất gọi hàm sau nhiều lần thử.");
     }
 
     public async Task<string> ContinueFunctionCallAsync(
@@ -312,14 +312,14 @@ Function calling is disabled in this continuation. Produce only the final user-f
         if (!context.Provider.Equals(Name, StringComparison.OrdinalIgnoreCase))
         {
             throw new InvalidOperationException(
-                "Native function context không thuộc Gemini.");
+                "Ngữ cảnh gọi hàm gốc không thuộc Gemini.");
         }
 
         var apiKey = GetApiKey();
         if (string.IsNullOrWhiteSpace(apiKey))
         {
             throw new InvalidOperationException(
-                "Chưa có Gemini API key. Hãy mở Cài đặt AI để nhập key.");
+                "Chưa có khóa truy cập Gemini. Hãy mở Cài đặt AI để nhập khóa.");
         }
 
         var contents = context.Messages
@@ -464,7 +464,7 @@ Function calling is disabled in this continuation. Produce only the final user-f
                     }
 
                     throw new HttpRequestException(
-                        $"Gemini API trả về lỗi {(int)response.StatusCode}: {detail}",
+                        $"Gemini trả về lỗi mã {(int)response.StatusCode}. Hãy kiểm tra khóa truy cập, mô hình và cấu hình nhà cung cấp.",
                         null,
                         response.StatusCode);
                 }
@@ -473,7 +473,7 @@ Function calling is disabled in this continuation. Produce only the final user-f
                 if (string.IsNullOrWhiteSpace(outputText))
                 {
                     throw new InvalidOperationException(
-                        "Gemini không trả về câu trả lời cuối sau function response.");
+                        "Gemini không trả về câu trả lời cuối sau khi nhận kết quả công cụ.");
                 }
 
                 return outputText;
@@ -495,7 +495,7 @@ Function calling is disabled in this continuation. Produce only the final user-f
         }
 
         throw new HttpRequestException(
-            "Gemini không thể hoàn tất câu trả lời từ function response sau nhiều lần thử.");
+            "Gemini không thể hoàn tất câu trả lời từ kết quả công cụ sau nhiều lần thử.");
     }
 
     private ProviderFunctionCallDecision? ReadFunctionCall(

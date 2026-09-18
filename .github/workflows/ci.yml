@@ -1192,6 +1192,8 @@ jobs:
           grep -Fq 'v097.js' src/PersonalAI.Web/wwwroot/index.html
           ! grep -Fq 'MapDelete("/api/undo' src/PersonalAI.Web/Services/UndoEndpoints.cs
           grep -Fq 'Stable Personal AI Core' docs/releases/v1.0.0.md
+          grep -Fq '# AI Cá Nhân — Stable Core v1.0.0' README.md
+          ! grep -Fq '# AI Cá Nhân — MVP v0.5.3' README.md
           grep -Fq 'public const string Version = "1.0.0"' src/PersonalAI.Web/Models/SystemModels.cs
           grep -Fq 'public const string ApiContractVersion = "1"' src/PersonalAI.Web/Models/SystemModels.cs
           grep -Fq 'public const string Channel = "stable"' src/PersonalAI.Web/Models/SystemModels.cs

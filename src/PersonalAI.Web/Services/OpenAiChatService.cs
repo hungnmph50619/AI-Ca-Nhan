@@ -63,7 +63,7 @@ No tools are available in this continuation. Produce only the final user-facing 
         if (string.IsNullOrWhiteSpace(apiKey))
         {
             throw new InvalidOperationException(
-                "Chưa có OpenAI API key. Hãy mở Cài đặt AI để nhập key.");
+                "Chưa có khóa truy cập OpenAI. Hãy mở Cài đặt AI để nhập khóa.");
         }
 
         var payload = new
@@ -119,7 +119,7 @@ No tools are available in this continuation. Produce only the final user-facing 
                         (int)response.StatusCode,
                         detail);
                     throw new HttpRequestException(
-                        $"OpenAI API trả về lỗi {(int)response.StatusCode}: {detail}",
+                        $"OpenAI trả về lỗi mã {(int)response.StatusCode}. Hãy kiểm tra khóa truy cập, mô hình và cấu hình nhà cung cấp.",
                         null,
                         response.StatusCode);
                 }
@@ -127,7 +127,7 @@ No tools are available in this continuation. Produce only the final user-facing 
                 var outputText = ReadOutputText(responseBody);
                 if (string.IsNullOrWhiteSpace(outputText))
                 {
-                    throw new InvalidOperationException("API không trả về nội dung văn bản.");
+                    throw new InvalidOperationException("Nhà cung cấp AI không trả về nội dung văn bản.");
                 }
 
                 if (attempt > 1)
@@ -174,7 +174,7 @@ No tools are available in this continuation. Produce only the final user-facing 
         if (string.IsNullOrWhiteSpace(apiKey))
         {
             throw new InvalidOperationException(
-                "Chưa có OpenAI API key. Hãy mở Cài đặt AI để nhập key.");
+                "Chưa có khóa truy cập OpenAI. Hãy mở Cài đặt AI để nhập khóa.");
         }
 
         var planningModel = Model;
@@ -238,7 +238,7 @@ No tools are available in this continuation. Produce only the final user-facing 
                     }
 
                     throw new HttpRequestException(
-                        $"OpenAI API trả về lỗi {(int)response.StatusCode}: {detail}",
+                        $"OpenAI trả về lỗi mã {(int)response.StatusCode}. Hãy kiểm tra khóa truy cập, mô hình và cấu hình nhà cung cấp.",
                         null,
                         response.StatusCode);
                 }
@@ -266,7 +266,7 @@ No tools are available in this continuation. Produce only the final user-facing 
         }
 
         throw new HttpRequestException(
-            "OpenAI không thể lập đề xuất function call sau nhiều lần thử.");
+            "OpenAI không thể lập đề xuất gọi hàm sau nhiều lần thử.");
     }
 
     public async Task<string> ContinueFunctionCallAsync(
@@ -277,20 +277,20 @@ No tools are available in this continuation. Produce only the final user-facing 
         if (!context.Provider.Equals(Name, StringComparison.OrdinalIgnoreCase))
         {
             throw new InvalidOperationException(
-                "Native function context không thuộc OpenAI.");
+                "Ngữ cảnh gọi hàm gốc không thuộc OpenAI.");
         }
 
         if (string.IsNullOrWhiteSpace(context.CallId))
         {
             throw new InvalidOperationException(
-                "OpenAI function call không có call_id để trả kết quả.");
+                "Lời gọi hàm của OpenAI không có mã lời gọi để trả kết quả.");
         }
 
         var apiKey = GetApiKey();
         if (string.IsNullOrWhiteSpace(apiKey))
         {
             throw new InvalidOperationException(
-                "Chưa có OpenAI API key. Hãy mở Cài đặt AI để nhập key.");
+                "Chưa có khóa truy cập OpenAI. Hãy mở Cài đặt AI để nhập khóa.");
         }
 
         var input = context.Messages
@@ -375,7 +375,7 @@ No tools are available in this continuation. Produce only the final user-facing 
                     }
 
                     throw new HttpRequestException(
-                        $"OpenAI API trả về lỗi {(int)response.StatusCode}: {detail}",
+                        $"OpenAI trả về lỗi mã {(int)response.StatusCode}. Hãy kiểm tra khóa truy cập, mô hình và cấu hình nhà cung cấp.",
                         null,
                         response.StatusCode);
                 }
@@ -384,7 +384,7 @@ No tools are available in this continuation. Produce only the final user-facing 
                 if (string.IsNullOrWhiteSpace(outputText))
                 {
                     throw new InvalidOperationException(
-                        "OpenAI không trả về câu trả lời cuối sau function result.");
+                        "OpenAI không trả về câu trả lời cuối sau khi nhận kết quả công cụ.");
                 }
 
                 return outputText;
@@ -406,7 +406,7 @@ No tools are available in this continuation. Produce only the final user-facing 
         }
 
         throw new HttpRequestException(
-            "OpenAI không thể hoàn tất câu trả lời từ function result sau nhiều lần thử.");
+            "OpenAI không thể hoàn tất câu trả lời từ kết quả công cụ sau nhiều lần thử.");
     }
 
     private ProviderFunctionCallDecision? ReadFunctionCall(

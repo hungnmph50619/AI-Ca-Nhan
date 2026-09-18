@@ -1489,9 +1489,9 @@ jobs:
           grep -Fq 'v097.js' src/PersonalAI.Web/wwwroot/index.html
           ! grep -Fq 'MapDelete("/api/undo' src/PersonalAI.Web/Services/UndoEndpoints.cs
           grep -Fq 'Stable Personal AI Core' docs/releases/v1.0.0.md
-          grep -Fq '# AI Cá Nhân — Connector Foundation v1.3.0' README.md
+          grep -Fq '# AI Cá Nhân — Software Development Agent v1.4.0' README.md
           ! grep -Fq '# AI Cá Nhân — MVP v0.5.3' README.md
-          grep -Fq 'public const string Version = "1.3.0"' src/PersonalAI.Web/Models/SystemModels.cs
+          grep -Fq 'public const string Version = "1.4.0"' src/PersonalAI.Web/Models/SystemModels.cs
           grep -Fq 'public const string ApiContractVersion = "1"' src/PersonalAI.Web/Models/SystemModels.cs
           grep -Fq 'public const string Channel = "controlled"' src/PersonalAI.Web/Models/SystemModels.cs
           grep -Fq '/api/system/health' src/PersonalAI.Web/Services/SystemEndpoints.cs
@@ -1575,6 +1575,43 @@ jobs:
           ! grep -Fq 'HttpMethod.Patch' src/PersonalAI.Web/Services/ConnectorService.cs
           ! grep -Fq 'CookieContainer' src/PersonalAI.Web/Services/ConnectorService.cs
           ! grep -Fq 'EncryptedBearerToken' src/PersonalAI.Web/Models/ConnectorModels.cs
+          grep -Fq 'Controlled Software Development Agent' docs/releases/v1.4.0.md
+          grep -Fq 'public const string Development = "DEVELOPMENT"' src/PersonalAI.Web/Models/ToolModels.cs
+          grep -Fq 'IDevelopmentAgentService' src/PersonalAI.Web/Services/DevelopmentAgentService.cs
+          grep -Fq '/api/development/status' src/PersonalAI.Web/Services/DevelopmentEndpoints.cs
+          grep -Fq 'dev.workspace.inspect' src/PersonalAI.Web/Services/DevelopmentTools.cs
+          grep -Fq 'dev.search.text' src/PersonalAI.Web/Services/DevelopmentTools.cs
+          grep -Fq 'dev.git.status' src/PersonalAI.Web/Services/DevelopmentTools.cs
+          grep -Fq 'dev.git.diff' src/PersonalAI.Web/Services/DevelopmentTools.cs
+          grep -Fq 'dev.dotnet.restore' src/PersonalAI.Web/Services/DevelopmentTools.cs
+          grep -Fq 'dev.dotnet.build' src/PersonalAI.Web/Services/DevelopmentTools.cs
+          grep -Fq 'dev.dotnet.test' src/PersonalAI.Web/Services/DevelopmentTools.cs
+          grep -Fq 'ToolPermissions.Development' src/PersonalAI.Web/Services/DevelopmentTools.cs
+          grep -Fq 'DevelopmentUseRequiresConfirmation: true' src/PersonalAI.Web/Services/SystemCoreService.cs
+          grep -Fq 'DevelopmentArbitraryShellEnabled: false' src/PersonalAI.Web/Services/SystemCoreService.cs
+          grep -Fq 'DevelopmentGitWriteActionsEnabled: false' src/PersonalAI.Web/Services/SystemCoreService.cs
+          grep -Fq 'DevelopmentArbitraryProcessEnabled: false' src/PersonalAI.Web/Services/SystemCoreService.cs
+          grep -Fq 'MaximumScannedFiles = 2_000' src/PersonalAI.Web/Services/DevelopmentAgentService.cs
+          grep -Fq 'MaximumSearchHits = 100' src/PersonalAI.Web/Services/DevelopmentAgentService.cs
+          grep -Fq 'MaximumProcessOutputCharacters = 48_000' src/PersonalAI.Web/Services/DevelopmentAgentService.cs
+          grep -Fq 'UseShellExecute = false' src/PersonalAI.Web/Services/DevelopmentAgentService.cs
+          grep -Fq 'startInfo.ArgumentList.Add(argument)' src/PersonalAI.Web/Services/DevelopmentAgentService.cs
+          grep -Fq 'GIT_TERMINAL_PROMPT' src/PersonalAI.Web/Services/DevelopmentAgentService.cs
+          grep -Fq '--no-ext-diff' src/PersonalAI.Web/Services/DevelopmentAgentService.cs
+          grep -Fq '--no-textconv' src/PersonalAI.Web/Services/DevelopmentAgentService.cs
+          grep -Fq '--ignore-submodules=all' src/PersonalAI.Web/Services/DevelopmentAgentService.cs
+          grep -Fq 'v140.css' src/PersonalAI.Web/wwwroot/index.html
+          grep -Fq 'v140.js' src/PersonalAI.Web/wwwroot/index.html
+          grep -Fq 'CONTROLLED CAPABILITY · NO ARBITRARY SHELL' src/PersonalAI.Web/wwwroot/v140.js
+          grep -Fq 'DEVELOPMENT: "PHÁT TRIỂN PHẦN MỀM"' src/PersonalAI.Web/wwwroot/v080.js
+          grep -Fq 'DEVELOPMENT: "PHÁT TRIỂN PHẦN MỀM"' src/PersonalAI.Web/wwwroot/v090.js
+          ! grep -Fq 'UseShellExecute = true' src/PersonalAI.Web/Services/DevelopmentAgentService.cs
+          ! grep -Fq 'startInfo.Arguments =' src/PersonalAI.Web/Services/DevelopmentAgentService.cs
+          ! grep -Fq '"commit"' src/PersonalAI.Web/Services/DevelopmentAgentService.cs
+          ! grep -Fq '"push"' src/PersonalAI.Web/Services/DevelopmentAgentService.cs
+          ! grep -Fq '"checkout"' src/PersonalAI.Web/Services/DevelopmentAgentService.cs
+          ! grep -Fq '"reset"' src/PersonalAI.Web/Services/DevelopmentAgentService.cs
+
 
 
 
@@ -1613,3 +1650,4 @@ jobs:
           node --check src/PersonalAI.Web/wwwroot/v110.js
           node --check src/PersonalAI.Web/wwwroot/v120.js
           node --check src/PersonalAI.Web/wwwroot/v130.js
+          node --check src/PersonalAI.Web/wwwroot/v140.js

@@ -829,7 +829,14 @@ jobs:
           echo "$persisted_execution" | jq -e '.execution.status == "succeeded" and .execution.output.result == 56 and .task.status == "completed"' >/dev/null
 
           custom_audit=$(curl -fsS -H "X-PersonalAI-Workspace: $custom_workspace_id" 'http://127.0.0.1:5077/api/audit?limit=200')
-          echo "$custom_audit" | jq -e '.storage == "local-sqlite" and .retentionDays == 90 and .maximumEntries == 10000 and (.items | length) >= 5 and all(.items[]; .workspaceId == "'"$custom_workspace_id"'") and any(.items[]; .agent == "user" and .action == "workspace.create" and .target == "workspace:'"$custom_workspace_id"'" and .reason == "user-request" and .result == "succeeded") and any(.items[]; .action == "memory.create" and (.target | startswith("memory:")) and .tool == null) and any(.items[]; .action == "document.upload" and (.target | startswith("document:"))) and any(.items[]; .action == "task.prepare" and (.target | startswith("task:")) and .result == "prepared") and any(.items[]; .agent == "personal-ai" and .action == "context.preview") and any(.items[]; .action == "tool.execute" and .tool == "workspace.write_text")' >/dev/null
+          echo "$custom_audit" | jq -e '.storage == "local-sqlite" and .retentionDays == 90 and .maximumEntries == 10000 and (.items | length) >= 5' >/dev/null
+          echo "$custom_audit" | jq -e 'all(.items[]; .workspaceId == "'"$custom_workspace_id"'")' >/dev/null
+          echo "$custom_audit" | jq -e 'any(.items[]; .agent == "user" and .action == "workspace.create" and .target == "workspace:'"$custom_workspace_id"'" and .reason == "user-request" and .result == "succeeded")' >/dev/null
+          echo "$custom_audit" | jq -e 'any(.items[]; .action == "memory.create" and (.target | startswith("memory:")) and .tool == null)' >/dev/null
+          echo "$custom_audit" | jq -e 'any(.items[]; .action == "document.upload" and (.target | startswith("document:")))' >/dev/null
+          echo "$custom_audit" | jq -e 'any(.items[]; .action == "task.prepare" and (.target | startswith("task:")) and .result == "prepared")' >/dev/null
+          echo "$custom_audit" | jq -e 'any(.items[]; .agent == "personal-ai" and .action == "context.preview")' >/dev/null
+          echo "$custom_audit" | jq -e 'any(.items[]; .action == "tool.execute" and .tool == "workspace.write_text")' >/dev/null
           ! echo "$custom_audit" | grep -Fq 'workspace-ci-secret-094'
           echo "$custom_audit" | jq -e 'all(.items[]; (.time | type) == "string" and (.agent | type) == "string" and (.action | type) == "string" and (.target | type) == "string" and (.reason | type) == "string" and (.result | type) == "string")' >/dev/null
 

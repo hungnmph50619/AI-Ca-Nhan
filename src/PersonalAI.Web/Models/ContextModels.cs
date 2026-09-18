@@ -5,6 +5,7 @@ public static class ContextSelectionKinds
     public const string Memory = "memory";
     public const string Document = "document";
     public const string Task = "task";
+    public const string LifeContext = "life-context";
 }
 
 public sealed record ContextSelectionItem(
@@ -20,7 +21,8 @@ public sealed record ContextBudgetReport(
     int UsedCharacters,
     int MemoryCharacters,
     int DocumentCharacters,
-    int TaskCharacters);
+    int TaskCharacters,
+    int LifeContextCharacters);
 
 public sealed record ContextSelectionReport(
     string WorkspaceId,
@@ -28,6 +30,7 @@ public sealed record ContextSelectionReport(
     int SelectedMemories,
     int SelectedDocuments,
     int SelectedTasks,
+    int SelectedLifeContext,
     ContextBudgetReport Budget,
     IReadOnlyList<ContextSelectionItem> Items);
 
@@ -36,7 +39,8 @@ public sealed record ContextPreviewRequest(
     bool UseKnowledge = true,
     string KnowledgeMode = "normal",
     bool UseMemory = true,
-    bool UseTaskContext = true);
+    bool UseTaskContext = true,
+    bool UseLifeContext = true);
 
 public sealed record ContextPreviewResponse(
     ContextSelectionReport Context,

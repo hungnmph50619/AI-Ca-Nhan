@@ -637,7 +637,7 @@ public sealed class ToolOrchestrationService : IToolOrchestrationService
         var confirmation = definition.RequiresConfirmation
             || definition.RequiredPermissions.Any(ToolPermissions.RequiresExplicitConfirmation);
 
-        return $"{definition.Description} Internal tool: {definition.Name}. "
+        return $"{definition.Description} Công cụ nội bộ: {definition.Name}. "
             + $"Permissions: {permissions}. "
             + (confirmation
                 ? "Đây chỉ là đề xuất; ứng dụng sẽ yêu cầu xác nhận riêng trước khi thực thi."

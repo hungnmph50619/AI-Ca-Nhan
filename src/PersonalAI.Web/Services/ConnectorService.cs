@@ -418,10 +418,13 @@ public sealed class ConnectorService : IConnectorService, IDisposable
             var decoded = DecodeText(
                 bytes,
                 response.Content.Headers.ContentType?.CharSet);
-            var truncated = decoded.Length > MaximumReturnedCharacters;
+            var sanitized = RedactCredential(
+                decoded,
+                token);
+            var truncated = sanitized.Length > MaximumReturnedCharacters;
             var returned = truncated
-                ? decoded[..MaximumReturnedCharacters]
-                : decoded;
+                ? sanitized[..MaximumReturnedCharacters]
+                : sanitized;
 
             return new ConnectorReadResult(
                 stored.Id,
@@ -879,9 +882,16 @@ public sealed class ConnectorService : IConnectorService, IDisposable
                 || (a == 172
                     && b is >= 16 and <= 31)
                 || (a == 192 && b == 0)
+                || (a == 192 && b == 2)
                 || (a == 192 && b == 168)
                 || (a == 198
                     && b is 18 or 19)
+                || (a == 198
+                    && b == 51
+                    && bytes[2] == 100)
+                || (a == 203
+                    && b == 0
+                    && bytes[2] == 113)
                 || a >= 224);
         }
 
@@ -1009,6 +1019,22 @@ public sealed class ConnectorService : IConnectorService, IDisposable
             or HttpStatusCode.SeeOther
             or HttpStatusCode.TemporaryRedirect
             or HttpStatusCode.PermanentRedirect;
+
+    private static string RedactCredential(
+        string value,
+        string credential)
+    {
+        if (string.IsNullOrEmpty(value)
+            || string.IsNullOrEmpty(credential))
+        {
+            return value;
+        }
+
+        return value.Replace(
+            credential,
+            "[REDACTED_CREDENTIAL]",
+            StringComparison.Ordinal);
+    }
 
     private static string SafeInline(
         string value,

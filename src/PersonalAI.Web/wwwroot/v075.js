@@ -50,7 +50,7 @@
           <span id="v075ManagementSummary">Đang tải trạng thái chỉ mục…</span>
         </div>
         <div class="v075-management-actions">
-          <button class="secondary-button" id="v075ExportButton" type="button">Xuất metadata</button>
+          <button class="secondary-button" id="v075ExportButton" type="button">Xuất thông tin mô tả</button>
           <button class="danger-button" id="v075BulkDeleteButton" type="button" disabled>Xóa đã chọn</button>
         </div>
       </div>
@@ -66,10 +66,10 @@
         <select id="v075StatusFilter" aria-label="Lọc theo trạng thái chỉ mục">
           <option value="">Mọi trạng thái</option>
           <option value="ready">Sẵn sàng</option>
-          <option value="needs-indexing">Thiếu vector</option>
+          <option value="needs-indexing">Thiếu véc-tơ</option>
           <option value="indexing">Đang lập chỉ mục</option>
           <option value="error">Lỗi đọc tài liệu</option>
-          <option value="index-error">Lỗi vector</option>
+          <option value="index-error">Lỗi véc-tơ</option>
         </select>
         <select id="v075Sort" aria-label="Sắp xếp tài liệu">
           <option value="newest">Mới nhất</option>
@@ -134,7 +134,7 @@
     if (summary) {
       const chunkCount = managementState.documents.reduce((sum, item) => sum + Number(item.chunkCount || 0), 0);
       const indexedCount = managementState.documents.reduce((sum, item) => sum + Number(item.indexedChunkCount || 0), 0);
-      summary.textContent = `${payload.total ?? managementState.documents.length} tài liệu · ${chunkCount} đoạn · ${indexedCount} vector · ${payload.embeddingModel || "local"}`;
+      summary.textContent = `${payload.total ?? managementState.documents.length} tài liệu · ${chunkCount} đoạn · ${indexedCount} véc-tơ · ${payload.embeddingModel || "mô hình trên máy"}`;
     }
 
     showFeedback("");
@@ -204,7 +204,7 @@
       item.fileType,
       formatBytes(item.fileSize),
       `${item.chunkCount} đoạn`,
-      `${item.indexedChunkCount}/${item.chunkCount} vector`,
+      `${item.indexedChunkCount}/${item.chunkCount} véc-tơ`,
       item.pageCount ? `${item.pageCount} trang` : null,
       formatDate(item.createdAt)
     ].filter(Boolean).join(" · ");
@@ -213,7 +213,7 @@
     status.className = `v075-index-status status-${item.indexStatus || "unknown"}`;
     status.textContent = statusLabel(item.indexStatus);
     status.title = item.missingEmbeddingCount > 0
-      ? `Còn ${item.missingEmbeddingCount} đoạn chưa có vector hiện hành.`
+      ? `Còn ${item.missingEmbeddingCount} đoạn chưa có véc-tơ hiện hành.`
       : "Chỉ mục hiện hành đã đầy đủ.";
 
     content.append(title, meta, status);
@@ -280,7 +280,7 @@
       });
       const payload = await response.json().catch(() => ({}));
       if (!response.ok) throw new Error(payload.error || "Không re-index được tài liệu.");
-      showFeedback(`Đã re-index “${payload.fileName}”: ${payload.chunkCount} đoạn, ${payload.indexedChunkCount} vector.`, "success");
+      showFeedback(`Đã re-index “${payload.fileName}”: ${payload.chunkCount} đoạn, ${payload.indexedChunkCount} véc-tơ.`, "success");
     });
   }
 
@@ -377,10 +377,10 @@
   function statusLabel(status) {
     return {
       ready: "Sẵn sàng",
-      "needs-indexing": "Thiếu vector",
+      "needs-indexing": "Thiếu véc-tơ",
       indexing: "Đang lập chỉ mục",
       error: "Lỗi đọc tài liệu",
-      "index-error": "Lỗi vector"
+      "index-error": "Lỗi véc-tơ"
     }[status] || "Chưa xác định";
   }
 

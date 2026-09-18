@@ -81,3 +81,17 @@ internal sealed record StoredUndoItem(
     string? PostSha256,
     byte[]? SnapshotBytes,
     string Status);
+
+internal sealed record WorkspaceUndoCapture(
+    string Operation,
+    string PrimaryPath,
+    string? SecondaryPath,
+    string? BeforeSha256,
+    byte[]? SnapshotBytes);
+
+internal sealed record WorkspaceUndoCheck(
+    bool CanUndo,
+    string Reason);
+
+internal sealed record WorkspaceUndoApplyResult(
+    string Message);

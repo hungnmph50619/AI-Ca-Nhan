@@ -65,7 +65,9 @@ public sealed record ProviderFunctionCallContext(
     string? ResponseId,
     string? CallId,
     JsonElement Arguments,
-    IReadOnlyList<ChatMessage> Messages);
+    IReadOnlyList<ChatMessage> Messages,
+    ProviderFunctionDefinition Function,
+    JsonElement? NativeCall = null);
 
 public sealed record ToolNativeContinuationRequest(
     Guid InvocationId,

@@ -6,6 +6,7 @@ public static class TaskEngineEndpoints
 {
     public static IServiceCollection AddTaskEngine(this IServiceCollection services)
     {
+        services.AddSingleton<IPersonalTaskStore, SqlitePersonalTaskStore>();
         services.AddScoped<ITaskEngineService, TaskEngineService>();
         return services;
     }
@@ -110,6 +111,26 @@ public static class TaskEngineEndpoints
                 return Results.Json(
                     new ApiError(exception.Message),
                     statusCode: StatusCodes.Status403Forbidden);
+            }
+            catch (PersonalTaskValidationException exception)
+            {
+                return Results.BadRequest(new ApiError(exception.Message));
+            }
+        });
+
+        app.MapPost("/api/tasks/{taskId:guid}/resume", async (
+            Guid taskId,
+            ITaskEngineService taskEngine,
+            CancellationToken cancellationToken) =>
+        {
+            try
+            {
+                var task = await taskEngine.ResumeAsync(
+                    taskId,
+                    cancellationToken);
+                return task is null
+                    ? Results.NotFound(new ApiError("Không tìm thấy tác vụ."))
+                    : Results.Ok(task);
             }
             catch (PersonalTaskValidationException exception)
             {

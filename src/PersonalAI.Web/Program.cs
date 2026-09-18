@@ -28,6 +28,7 @@ builder.Services.AddKnowledgeQuality();
 builder.Services.AddAuditFoundation();
 builder.Services.AddUndoFoundation();
 builder.Services.AddComputerUse();
+builder.Services.AddBrowserAgent();
 builder.Services.AddToolFramework();
 builder.Services.AddTaskEngine();
 builder.Services.AddSingleton<IKnowledgeGroundingService, KnowledgeGroundingService>();
@@ -71,6 +72,7 @@ app.MapWorkspaceFoundation();
 app.MapAuditFoundation();
 app.MapUndoFoundation();
 app.MapComputerUse();
+app.MapBrowserAgent();
 app.MapStableCore();
 
 app.MapGet("/api/status", (

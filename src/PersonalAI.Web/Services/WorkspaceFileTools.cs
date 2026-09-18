@@ -974,9 +974,12 @@ public sealed class WorkspaceFileService : IWorkspaceFileService
                 "Thư mục làm việc gốc chưa tồn tại. Hãy tạo thư mục đã cấu hình trước khi dùng công cụ tệp.");
         }
 
+        var workspaceRoots = Path.GetFullPath(
+            _baseRoot + "-workspaces");
+        Directory.CreateDirectory(workspaceRoots);
+
         var workspaceRoot = Path.Combine(
-            _baseRoot,
-            "workspaces",
+            workspaceRoots,
             _workspaceContext.CurrentWorkspaceId);
         Directory.CreateDirectory(workspaceRoot);
         return Path.GetFullPath(workspaceRoot);

@@ -26,6 +26,7 @@ public sealed class SystemCoreService(
     IDevelopmentAgentService development,
     ICompanionService companion,
     ILifeContextService lifeContext,
+    IAutomationStore automationStore,
     IAiProviderResolver providerResolver,
     ILogger<SystemCoreService> logger) : ISystemCoreService
 {
@@ -52,7 +53,8 @@ public sealed class SystemCoreService(
         "software-development",
         "android-companion",
         "life-context",
-        "decision-engine"
+        "decision-engine",
+        "automation"
     ];
 
     private static readonly string[] ReservedModules =
@@ -296,6 +298,20 @@ public sealed class SystemCoreService(
             CoreHealthStatuses.Degraded));
 
         modules.Add(Check(
+            "automation",
+            () =>
+            {
+                var count = automationStore.Count(
+                    workspaceContext.CurrentWorkspaceId);
+                return new CoreModuleHealth(
+                    "automation",
+                    CoreHealthStatuses.Healthy,
+                    "Automation scheduler khả dụng; chỉ auto-run READ/local step và không tự confirmation.",
+                    count);
+            },
+            CoreHealthStatuses.Degraded));
+
+        modules.Add(Check(
             "ai-provider",
             () =>
             {
@@ -321,7 +337,8 @@ public sealed class SystemCoreService(
                 && module.Module != "software-development"
                 && module.Module != "android-companion"
                 && module.Module != "life-context"
-                && module.Module != "decision-engine")
+                && module.Module != "decision-engine"
+                && module.Module != "automation")
             .ToArray();
         var ready = localModules.All(
             module => module.Status != CoreHealthStatuses.Unavailable);
@@ -382,8 +399,12 @@ public sealed class SystemCoreService(
                 DecisionEngineAutoActionEnabled: false,
                 DecisionEngineToolExecutionEnabled: false,
                 DecisionEnginePersistsAnalyses: false,
+                AutomationRequiresExplicitCreation: true,
+                AutomationAutoConfirmationEnabled: false,
+                AutomationDecisionRecommendationAutoExecutionEnabled: false,
+                AutomationRunsAtMostOneTaskStepPerTick: true,
                 AutomaticMultiStepExecution: false,
-                BackgroundScheduler: false,
+                BackgroundScheduler: true,
                 AutonomousAgentLoop: false,
                 ParallelToolCalls: false),
             new CoreLimitsContract(
@@ -415,7 +436,11 @@ public sealed class SystemCoreService(
                 LifeContextService.MaximumRetentionDays,
                 DecisionEngineService.MaximumQuestionCharacters,
                 DecisionEngineService.MaximumOptions,
-                DecisionEngineService.MaximumCriteria),
+                DecisionEngineService.MaximumCriteria,
+                SqliteAutomationStore.MaximumAutomationsPerWorkspace,
+                AutomationService.MinimumIntervalMinutes,
+                AutomationService.MaximumIntervalMinutes,
+                AutomationService.SchedulerPollSeconds),
             WorkspaceEndpoints.WorkspaceHeaderName,
             SystemHardeningMiddleware.RequestIdHeaderName);
 

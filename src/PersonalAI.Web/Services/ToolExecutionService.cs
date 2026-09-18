@@ -90,6 +90,7 @@ public sealed class ToolExecutionService(
     IToolRegistry registry,
     IToolInputValidator validator,
     IToolPolicy policy,
+    IUndoService undo,
     ILogger<ToolExecutionService> logger) : IToolExecutionService
 {
     public async Task<ToolExecutionResponse> ExecuteAsync(
@@ -154,11 +155,18 @@ public sealed class ToolExecutionService(
 
         using var timeoutCts = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
         timeoutCts.CancelAfter(definition.TimeoutMs);
+        UndoPreparation? undoPreparation = null;
 
         try
         {
+            undoPreparation = await undo.PrepareAsync(
+                invocationId,
+                definition.Name,
+                request.Arguments,
+                timeoutCts.Token);
+
             var output = await tool.ExecuteAsync(request.Arguments, timeoutCts.Token);
-            return Complete(
+            var response = Complete(
                 invocationId,
                 definition.Name,
                 ToolExecutionStatuses.Succeeded,
@@ -169,9 +177,14 @@ public sealed class ToolExecutionService(
                 startedAt,
                 definition.RequiredPermissions,
                 policyDecision.ApprovedPermissions);
+            var undoId = undo.Complete(
+                undoPreparation,
+                response);
+            return response with { UndoId = undoId };
         }
         catch (ToolExecutionInputException exception)
         {
+            undo.Abandon(undoPreparation);
             return Complete(
                 invocationId,
                 definition.Name,
@@ -188,6 +201,7 @@ public sealed class ToolExecutionService(
             timeoutCts.IsCancellationRequested
             && !cancellationToken.IsCancellationRequested)
         {
+            undo.Abandon(undoPreparation);
             logger.LogWarning(
                 "Tool {ToolName} timed out after {TimeoutMs} ms. Invocation {InvocationId}.",
                 definition.Name,
@@ -207,10 +221,12 @@ public sealed class ToolExecutionService(
         }
         catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
         {
+            undo.Abandon(undoPreparation);
             throw;
         }
         catch (Exception exception)
         {
+            undo.Abandon(undoPreparation);
             logger.LogError(
                 exception,
                 "Tool {ToolName} failed. Invocation {InvocationId}.",

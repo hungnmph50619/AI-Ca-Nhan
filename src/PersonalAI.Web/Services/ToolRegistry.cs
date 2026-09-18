@@ -20,6 +20,8 @@ public interface IToolRegistry
 
 public sealed class ToolRegistry : IToolRegistry
 {
+    public const int MaximumToolTimeoutMs = 180_000;
+
     private static readonly Regex ValidName = new(
         @"^[a-z][a-z0-9_-]*(\.[a-z][a-z0-9_-]*)+$",
         RegexOptions.Compiled | RegexOptions.CultureInvariant);
@@ -75,10 +77,11 @@ public sealed class ToolRegistry : IToolRegistry
                 $"Công cụ {definition.Name} phải có mô tả.");
         }
 
-        if (definition.TimeoutMs is < 100 or > 60_000)
+        if (definition.TimeoutMs < 100
+            || definition.TimeoutMs > MaximumToolTimeoutMs)
         {
             throw new InvalidOperationException(
-                $"Thời gian chờ của công cụ {definition.Name} phải từ 100 đến 60000 mili giây.");
+                $"Thời gian chờ của công cụ {definition.Name} phải từ 100 đến {MaximumToolTimeoutMs} mili giây.");
         }
 
         if (definition.InputSchema.ValueKind != System.Text.Json.JsonValueKind.Object)

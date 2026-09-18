@@ -331,6 +331,12 @@
       "local.date_math": "Tính toán ngày giờ",
       "local.text_stats": "Thống kê văn bản",
       "memory.search": "Tìm trong trí nhớ",
+      "computer.screen.info": "Thông tin màn hình",
+      "computer.cursor.position": "Vị trí con trỏ",
+      "computer.windows.list": "Danh sách cửa sổ",
+      "computer.window.active": "Cửa sổ đang hoạt động",
+      "computer.window.focus": "Chuyển focus cửa sổ",
+      "computer.cursor.move": "Di chuyển con trỏ",
       "workspace.create_directory": "Tạo thư mục",
       "workspace.delete": "Xóa tệp hoặc thư mục",
       "workspace.list": "Liệt kê thư mục làm việc",
@@ -350,6 +356,12 @@
       "local.date_math": "Cộng khoảng thời gian vào một mốc ISO-8601 hoặc tính chênh lệch giữa hai mốc thời gian.",
       "local.text_stats": "Đếm ký tự, từ, dòng và số byte UTF-8 của một đoạn văn bản ngay trên máy.",
       "memory.search": "Tìm trong các trí nhớ cá nhân đang bật bằng cách xếp hạng từ khóa trên máy.",
+      "computer.screen.info": "Đọc kích thước desktop và số màn hình trên Windows; không thay đổi trạng thái máy.",
+      "computer.cursor.position": "Đọc tọa độ con trỏ hiện tại; không di chuyển con trỏ.",
+      "computer.windows.list": "Liệt kê cửa sổ đang hiển thị. Tiêu đề cửa sổ có thể nhạy cảm nên luôn cần xác nhận.",
+      "computer.window.active": "Đọc cửa sổ foreground. Tiêu đề cửa sổ có thể nhạy cảm nên luôn cần xác nhận.",
+      "computer.window.focus": "Yêu cầu Windows chuyển focus sang cửa sổ đã chọn; cần quyền điều khiển máy và xác nhận.",
+      "computer.cursor.move": "Di chuyển con trỏ tới một tọa độ đã chọn; không click và luôn cần xác nhận.",
       "workspace.create_directory": "Tạo thư mục bên trong thư mục làm việc đã cấp quyền; chặn đường dẫn vượt phạm vi và liên kết tượng trưng.",
       "workspace.delete": "Xóa tệp hoặc thư mục rỗng trong thư mục làm việc; không xóa đệ quy và có thể kiểm tra mã băm SHA-256 trước khi xóa tệp.",
       "workspace.list": "Liệt kê trực tiếp các tệp và thư mục trong thư mục làm việc đã cấp quyền; chỉ trả đường dẫn tương đối và không đi qua liên kết tượng trưng.",
@@ -366,7 +378,8 @@
       WRITE: "GHI",
       DELETE: "XÓA",
       EXTERNAL: "BÊN NGOÀI",
-      SENSITIVE: "NHẠY CẢM"
+      SENSITIVE: "NHẠY CẢM",
+      COMPUTER: "ĐIỀU KHIỂN MÁY"
     };
     return labels[String(permission || "").toUpperCase()] || "KHÔNG XÁC ĐỊNH";
   }

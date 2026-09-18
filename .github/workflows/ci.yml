@@ -31,14 +31,14 @@ jobs:
         run: |
           set -euo pipefail
           trap 'echo "Smoke test failed at line ${LINENO}: ${BASH_COMMAND}" >&2' ERR
-          rm -rf /tmp/personalai-workspace /tmp/personalai-tasks /tmp/personalai-audit
+          rm -rf /tmp/personalai-workspace /tmp/personalai-tasks /tmp/personalai-audit /tmp/personalai-undo
           mkdir -p /tmp/personalai-workspace/notes
           printf 'Workspace root file.\n' >/tmp/personalai-workspace/readme.txt
           printf 'Workspace alpha secure file tool content.\nSecond line.\n' >/tmp/personalai-workspace/notes/plan.md
           printf '\0binary payload' >/tmp/personalai-workspace/binary.bin
           ln -s /tmp /tmp/personalai-workspace/escape
 
-          Workspace__Root=/tmp/personalai-workspace Tasks__Root=/tmp/personalai-tasks Audit__Root=/tmp/personalai-audit dotnet run --project src/PersonalAI.Web/PersonalAI.Web.csproj --configuration Release --no-build --urls http://127.0.0.1:5077 >/tmp/personalai.log 2>&1 &
+          Workspace__Root=/tmp/personalai-workspace Tasks__Root=/tmp/personalai-tasks Audit__Root=/tmp/personalai-audit Undo__Root=/tmp/personalai-undo dotnet run --project src/PersonalAI.Web/PersonalAI.Web.csproj --configuration Release --no-build --urls http://127.0.0.1:5077 >/tmp/personalai.log 2>&1 &
           APP_PID=$!
           trap 'kill "$APP_PID" 2>/dev/null || true' EXIT
 
@@ -55,7 +55,7 @@ jobs:
             exit 1
           fi
 
-          curl -fsS http://127.0.0.1:5077/api/status | jq -e '.version == "0.9.6"' >/dev/null
+          curl -fsS http://127.0.0.1:5077/api/status | jq -e '.version == "0.9.7"' >/dev/null
 
           workspaces=$(curl -fsS http://127.0.0.1:5077/api/workspaces)
           echo "$workspaces" | jq -e '.currentWorkspaceId == "personal" and .maximumWorkspaces == 20 and (.workspaces | length) >= 5 and any(.workspaces[]; .id == "personal" and .isBuiltIn == true) and any(.workspaces[]; .id == "work") and any(.workspaces[]; .id == "study") and any(.workspaces[]; .id == "ai-ca-nhan") and any(.workspaces[]; .id == "travel")' >/dev/null
@@ -68,7 +68,7 @@ jobs:
           echo "$custom_workspace" | jq -e '.isBuiltIn == false and (.activeModules | sort) == (["memory","documents","tasks","files","conversations"] | sort) and (.reservedModules | sort) == (["agents","policies"] | sort)' >/dev/null
 
           custom_status=$(curl -fsS -H "X-PersonalAI-Workspace: $custom_workspace_id" http://127.0.0.1:5077/api/status)
-          echo "$custom_status" | jq -e '.version == "0.9.6" and .workspaceName == "CI Workspace"' >/dev/null
+          echo "$custom_status" | jq -e '.version == "0.9.7" and .workspaceName == "CI Workspace"' >/dev/null
 
           invalid_workspace_code=$(curl -sS -o /tmp/workspace-invalid.json -w '%{http_code}' \
             -H 'X-PersonalAI-Workspace: does-not-exist' \
@@ -163,8 +163,101 @@ jobs:
             -d '{"toolName":"workspace.list","arguments":{"path":".","maxEntries":50},"approvedPermissions":["READ"],"confirmed":false}')
           echo "$personal_files" | jq -e 'all(.output.entries[]; .name != "workspace-only.txt")' >/dev/null
 
+          custom_create_undo_id=$(echo "$create_custom_file" | jq -r '.undoId // empty')
+          test -n "$custom_create_undo_id"
+          custom_undos=$(curl -fsS -H "X-PersonalAI-Workspace: $custom_workspace_id" 'http://127.0.0.1:5077/api/undo?limit=100')
+          echo "$custom_undos" | jq -e '.storage == "local-sqlite" and .availabilityDays == 7 and .maximumEntries == 500 and .maximumSnapshotBytes == 524288 and any(.items[]; .undoId == "'"$custom_create_undo_id"'" and .status == "available")' >/dev/null
+          personal_undos_before=$(curl -fsS 'http://127.0.0.1:5077/api/undo?limit=100')
+          echo "$personal_undos_before" | jq -e 'all(.items[]; .undoId != "'"$custom_create_undo_id"'")' >/dev/null
+
+          custom_undo_assessment=$(curl -fsS -H "X-PersonalAI-Workspace: $custom_workspace_id" "http://127.0.0.1:5077/api/undo/$custom_create_undo_id/assessment")
+          echo "$custom_undo_assessment" | jq -e '.canUndo == true and .status == "available" and .operation == "delete-created-file"' >/dev/null
+
+          custom_undo_denied_code=$(curl -sS -o /tmp/undo-unconfirmed.json -w '%{http_code}' -X POST \
+            -H "X-PersonalAI-Workspace: $custom_workspace_id" \
+            -H 'Content-Type: application/json' \
+            -d '{"confirmed":false}' \
+            "http://127.0.0.1:5077/api/undo/$custom_create_undo_id/execute")
+          test "$custom_undo_denied_code" = "403"
+
+          custom_undo_result=$(curl -fsS -X POST \
+            -H "X-PersonalAI-Workspace: $custom_workspace_id" \
+            -H 'Content-Type: application/json' \
+            -d '{"confirmed":true}' \
+            "http://127.0.0.1:5077/api/undo/$custom_create_undo_id/execute")
+          echo "$custom_undo_result" | jq -e '.status == "undone" and .undo.status == "undone"' >/dev/null
+          test ! -e "/tmp/personalai-workspace-workspaces/$custom_workspace_id/workspace-only.txt"
+
+          undo_base=$(curl -fsS -X POST http://127.0.0.1:5077/api/tools/execute \
+            -H 'Content-Type: application/json' \
+            -d '{"toolName":"workspace.write_text","arguments":{"path":"undo-cycle.txt","content":"alpha","mode":"create"},"approvedPermissions":["WRITE"],"confirmed":true}')
+          echo "$undo_base" | jq -e '.status == "succeeded" and (.undoId | type) == "string"' >/dev/null
+
+          undo_overwrite=$(curl -fsS -X POST http://127.0.0.1:5077/api/tools/execute \
+            -H 'Content-Type: application/json' \
+            -d '{"toolName":"workspace.write_text","arguments":{"path":"undo-cycle.txt","content":"beta","mode":"overwrite"},"approvedPermissions":["WRITE"],"confirmed":true}')
+          overwrite_undo_id=$(echo "$undo_overwrite" | jq -r '.undoId')
+          curl -fsS -X POST \
+            -H 'Content-Type: application/json' \
+            -d '{"confirmed":true}' \
+            "http://127.0.0.1:5077/api/undo/$overwrite_undo_id/execute" | jq -e '.status == "undone"' >/dev/null
+          restored_after_overwrite=$(curl -fsS -X POST http://127.0.0.1:5077/api/tools/execute \
+            -H 'Content-Type: application/json' \
+            -d '{"toolName":"workspace.read_text","arguments":{"path":"undo-cycle.txt","maxCharacters":100},"approvedPermissions":["READ"],"confirmed":false}')
+          echo "$restored_after_overwrite" | jq -e '.output.content == "alpha"' >/dev/null
+
+          undo_delete=$(curl -fsS -X POST http://127.0.0.1:5077/api/tools/execute \
+            -H 'Content-Type: application/json' \
+            -d '{"toolName":"workspace.delete","arguments":{"path":"undo-cycle.txt"},"approvedPermissions":["DELETE"],"confirmed":true}')
+          delete_undo_id=$(echo "$undo_delete" | jq -r '.undoId')
+          test ! -e /tmp/personalai-workspace/undo-cycle.txt
+          curl -fsS -X POST \
+            -H 'Content-Type: application/json' \
+            -d '{"confirmed":true}' \
+            "http://127.0.0.1:5077/api/undo/$delete_undo_id/execute" | jq -e '.status == "undone"' >/dev/null
+          test "$(cat /tmp/personalai-workspace/undo-cycle.txt)" = "alpha"
+
+          undo_move=$(curl -fsS -X POST http://127.0.0.1:5077/api/tools/execute \
+            -H 'Content-Type: application/json' \
+            -d '{"toolName":"workspace.move","arguments":{"sourcePath":"undo-cycle.txt","destinationPath":"undo-moved.txt"},"approvedPermissions":["WRITE"],"confirmed":true}')
+          move_undo_id=$(echo "$undo_move" | jq -r '.undoId')
+          curl -fsS -X POST \
+            -H 'Content-Type: application/json' \
+            -d '{"confirmed":true}' \
+            "http://127.0.0.1:5077/api/undo/$move_undo_id/execute" | jq -e '.status == "undone"' >/dev/null
+          test -f /tmp/personalai-workspace/undo-cycle.txt
+          test ! -e /tmp/personalai-workspace/undo-moved.txt
+
+          undo_dir=$(curl -fsS -X POST http://127.0.0.1:5077/api/tools/execute \
+            -H 'Content-Type: application/json' \
+            -d '{"toolName":"workspace.create_directory","arguments":{"path":"undo-empty-dir"},"approvedPermissions":["WRITE"],"confirmed":true}')
+          dir_undo_id=$(echo "$undo_dir" | jq -r '.undoId')
+          curl -fsS -X POST \
+            -H 'Content-Type: application/json' \
+            -d '{"confirmed":true}' \
+            "http://127.0.0.1:5077/api/undo/$dir_undo_id/execute" | jq -e '.status == "undone"' >/dev/null
+          test ! -e /tmp/personalai-workspace/undo-empty-dir
+
+          guard_create=$(curl -fsS -X POST http://127.0.0.1:5077/api/tools/execute \
+            -H 'Content-Type: application/json' \
+            -d '{"toolName":"workspace.write_text","arguments":{"path":"undo-guard.txt","content":"one","mode":"create"},"approvedPermissions":["WRITE"],"confirmed":true}')
+          guard_original_undo_id=$(echo "$guard_create" | jq -r '.undoId')
+          guard_append=$(curl -fsS -X POST http://127.0.0.1:5077/api/tools/execute \
+            -H 'Content-Type: application/json' \
+            -d '{"toolName":"workspace.write_text","arguments":{"path":"undo-guard.txt","content":" two","mode":"append"},"approvedPermissions":["WRITE"],"confirmed":true}')
+          guard_append_undo_id=$(echo "$guard_append" | jq -r '.undoId')
+          test -n "$guard_append_undo_id"
+          guard_assessment=$(curl -fsS "http://127.0.0.1:5077/api/undo/$guard_original_undo_id/assessment")
+          echo "$guard_assessment" | jq -e '.canUndo == false and (.reason | contains("thay đổi"))' >/dev/null
+
+          persistent_undo=$(curl -fsS -X POST http://127.0.0.1:5077/api/tools/execute \
+            -H 'Content-Type: application/json' \
+            -d '{"toolName":"workspace.write_text","arguments":{"path":"undo-persist.txt","content":"persist me","mode":"create"},"approvedPermissions":["WRITE"],"confirmed":true}')
+          persistent_undo_id=$(echo "$persistent_undo" | jq -r '.undoId')
+          test -n "$persistent_undo_id"
+
           tools=$(curl -fsS http://127.0.0.1:5077/api/tools)
-          echo "$tools" | jq -e '.frameworkVersion == "0.9.6" and (.permissionTypes | sort) == (["DELETE","EXTERNAL","READ","SENSITIVE","WRITE"] | sort)' >/dev/null
+          echo "$tools" | jq -e '.frameworkVersion == "0.9.7" and (.permissionTypes | sort) == (["DELETE","EXTERNAL","READ","SENSITIVE","WRITE"] | sort)' >/dev/null
           echo "$tools" | jq -e '(.tools | length) == 13 and any(.tools[]; .name == "local.clock" and .localOnly == true and .requiredPermissions == ["READ"]) and any(.tools[]; .name == "local.text_stats" and .timeoutMs == 2000) and any(.tools[]; .name == "memory.search") and any(.tools[]; .name == "documents.search") and any(.tools[]; .name == "local.calculate") and any(.tools[]; .name == "local.date_math") and any(.tools[]; .name == "app.summary") and any(.tools[]; .name == "workspace.list" and .requiredPermissions == ["READ"]) and any(.tools[]; .name == "workspace.read_text" and .requiredPermissions == ["READ"]) and any(.tools[]; .name == "workspace.write_text" and .requiredPermissions == ["WRITE"] and .requiresConfirmation == true) and any(.tools[]; .name == "workspace.create_directory" and .requiredPermissions == ["WRITE"] and .requiresConfirmation == true) and any(.tools[]; .name == "workspace.move" and .requiredPermissions == ["WRITE"] and .requiresConfirmation == true) and any(.tools[]; .name == "workspace.delete" and .requiredPermissions == ["DELETE"] and .requiresConfirmation == true)' >/dev/null
 
           text_tool=$(curl -fsS http://127.0.0.1:5077/api/tools/local.text_stats)
@@ -796,7 +889,7 @@ jobs:
           con.close()
           PY
 
-          Workspace__Root=/tmp/personalai-workspace Tasks__Root=/tmp/personalai-tasks Audit__Root=/tmp/personalai-audit dotnet run --project src/PersonalAI.Web/PersonalAI.Web.csproj --configuration Release --no-build --urls http://127.0.0.1:5077 >/tmp/personalai-restart.log 2>&1 &
+          Workspace__Root=/tmp/personalai-workspace Tasks__Root=/tmp/personalai-tasks Audit__Root=/tmp/personalai-audit Undo__Root=/tmp/personalai-undo dotnet run --project src/PersonalAI.Web/PersonalAI.Web.csproj --configuration Release --no-build --urls http://127.0.0.1:5077 >/tmp/personalai-restart.log 2>&1 &
           APP_PID=$!
 
           ready=0
@@ -909,18 +1002,18 @@ jobs:
           grep -Fq 'Task Dependencies' docs/releases/v0.9.3.md
           grep -Fq 'v090.css' src/PersonalAI.Web/wwwroot/index.html
           grep -Fq 'v090.js' src/PersonalAI.Web/wwwroot/index.html
-          grep -Fq 'Tác vụ có audit v0.9.6' src/PersonalAI.Web/wwwroot/v090.js
+          grep -Fq 'Tác vụ có Undo Foundation v0.9.7' src/PersonalAI.Web/wwwroot/v090.js
           grep -Fq 'MỤC TIÊU → KẾ HOẠCH → TỪNG BƯỚC' src/PersonalAI.Web/wwwroot/v090.js
           grep -Fq 'arguments_sha256' src/PersonalAI.Web/Services/ToolActivityStore.cs
           grep -Fq 'output_sha256' src/PersonalAI.Web/Services/ToolActivityStore.cs
           grep -Fq 'v089.css' src/PersonalAI.Web/wwwroot/index.html
-          grep -Fq 'Nhật ký hoạt động công cụ v0.9.6' src/PersonalAI.Web/wwwroot/v080.js
+          grep -Fq 'Nhật ký hoạt động công cụ v0.9.7' src/PersonalAI.Web/wwwroot/v080.js
           grep -Fq 'Nhật ký hoạt động gần đây' src/PersonalAI.Web/wwwroot/v080.js
           grep -Fq 'v088.css' src/PersonalAI.Web/wwwroot/index.html
           grep -Fq 'Nguồn đề xuất:' src/PersonalAI.Web/wwwroot/app.js
           grep -Fq 'Tham số' src/PersonalAI.Web/wwwroot/app.js
           grep -Fq 'CÔNG CỤ NỘI BỘ TRÊN MÁY NÀY' src/PersonalAI.Web/wwwroot/v080.js
-          grep -Fq 'Nhật ký hoạt động công cụ v0.9.6' src/PersonalAI.Web/wwwroot/v080.js
+          grep -Fq 'Nhật ký hoạt động công cụ v0.9.7' src/PersonalAI.Web/wwwroot/v080.js
           grep -Fq 'Mô hình' src/PersonalAI.Web/wwwroot/index.html
           grep -Fq 'Khóa truy cập' src/PersonalAI.Web/wwwroot/index.html
           ! grep -Fq 'Planner:' src/PersonalAI.Web/wwwroot/app.js

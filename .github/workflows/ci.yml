@@ -119,6 +119,14 @@ jobs:
             -H 'Content-Type: application/json' \
             -d '{"toolName":"workspace.write_text","arguments":{"path":"workspace-only.txt","content":"scoped 094","mode":"create"},"approvedPermissions":["WRITE"],"confirmed":true}')
           echo "$create_custom_file" | jq -e '.status == "succeeded" and .output.path == "workspace-only.txt"' >/dev/null
+          test -f "/tmp/personalai-workspace-workspaces/$custom_workspace_id/workspace-only.txt"
+          test ! -e "/tmp/personalai-workspace/workspaces/$custom_workspace_id/workspace-only.txt"
+
+          cross_workspace_read_code=$(curl -sS -o /tmp/workspace-cross-read.json -w '%{http_code}' -X POST http://127.0.0.1:5077/api/tools/execute \
+            -H 'Content-Type: application/json' \
+            -d '{"toolName":"workspace.read_text","arguments":{"path":"workspaces/'"$custom_workspace_id"'/workspace-only.txt"},"approvedPermissions":["READ"],"confirmed":false}')
+          test "$cross_workspace_read_code" = "400"
+          jq -e '.status == "invalid-input"' /tmp/workspace-cross-read.json >/dev/null
           personal_files=$(curl -fsS -X POST http://127.0.0.1:5077/api/tools/execute \
             -H 'Content-Type: application/json' \
             -d '{"toolName":"workspace.list","arguments":{"path":".","maxEntries":50},"approvedPermissions":["READ"],"confirmed":false}')

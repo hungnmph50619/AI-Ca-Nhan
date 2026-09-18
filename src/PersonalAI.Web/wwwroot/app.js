@@ -660,9 +660,8 @@ function createMessageNode(role, content, sources = [], toolProposal = null) {
     bubble.appendChild(createMessageSourcesNode(normalizedSources));
   }
 
-  const normalizedProposal = normalizeToolProposal(toolProposal);
-  if (role === "assistant" && normalizedProposal) {
-    bubble.appendChild(createToolProposalNode(normalizedProposal));
+  if (role === "assistant" && toolProposal) {
+    bubble.appendChild(createToolProposalNode(toolProposal));
   }
 
   row.append(avatar, bubble);

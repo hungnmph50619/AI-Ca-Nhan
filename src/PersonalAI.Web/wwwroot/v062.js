@@ -96,7 +96,7 @@
 
     if (!editingId) {
       if (duplicate) {
-        const overwrite = window.confirm(`Đã có một trí nhớ cùng nội dung (${kindLabel(duplicate.kind)}). Bạn có muốn cập nhật trí nhớ đó?`);
+        const overwrite = await window.PersonalAiUi.confirm(`Đã có một trí nhớ cùng nội dung (${kindLabel(duplicate.kind)}). Bạn có muốn cập nhật trí nhớ đó?`, { title: "Phát hiện trí nhớ trùng", confirmText: "Cập nhật trí nhớ" });
         if (!overwrite) return feedback("Đã hủy để tránh tạo trí nhớ trùng.");
         return updateMemory(duplicate.id, kind, content, true, lifecycle, "Đã cập nhật trí nhớ trùng.");
       }
@@ -112,9 +112,9 @@
 
     let confirmOverwrite = false;
     if (duplicate) {
-      confirmOverwrite = window.confirm(`Đã có một trí nhớ cùng nội dung (${kindLabel(duplicate.kind)}). Ghi đè trí nhớ đó bằng thay đổi này?`);
+      confirmOverwrite = await window.PersonalAiUi.confirm(`Đã có một trí nhớ cùng nội dung (${kindLabel(duplicate.kind)}). Ghi đè trí nhớ đó bằng thay đổi này?`, { title: "Xác nhận ghi đè", confirmText: "Ghi đè" });
       if (!confirmOverwrite) return feedback("Đã hủy để tránh ghi đè trí nhớ hiện có.");
-    } else if (!window.confirm("Lưu thay đổi cho trí nhớ này?")) {
+    } else if (!(await window.PersonalAiUi.confirm("Lưu thay đổi cho trí nhớ này?", { title: "Xác nhận lưu thay đổi", confirmText: "Lưu thay đổi" }))) {
       return;
     }
 
@@ -137,12 +137,12 @@
       const payload = await response.json().catch(() => ({}));
 
       if (response.status === 409 && payload.suggestion && payload.candidateMemoryId && !confirmCreateSimilar) {
-        const updateExisting = window.confirm(`${payload.error || "Nội dung có vẻ là bản cập nhật."}\n\nTrí nhớ cũ: ${payload.candidateContent || ""}\n\nBấm OK để cập nhật trí nhớ cũ, hoặc Hủy để chọn lưu thành trí nhớ mới.`);
+        const updateExisting = await window.PersonalAiUi.confirm(`${payload.error || "Nội dung có vẻ là bản cập nhật."}\n\nTrí nhớ cũ: ${payload.candidateContent || ""}\n\nBạn có muốn cập nhật trí nhớ cũ không?`, { title: "Phát hiện nội dung tương tự", confirmText: "Cập nhật trí nhớ cũ", cancelText: "Lưu thành trí nhớ mới" });
         if (updateExisting) {
           return updateMemory(payload.candidateMemoryId, kind, content, false, lifecycle, "Đã cập nhật trí nhớ cũ thay vì tạo bản trùng.");
         }
 
-        if (!window.confirm("Bạn vẫn muốn lưu nội dung này thành một trí nhớ mới?")) {
+        if (!(await window.PersonalAiUi.confirm("Bạn vẫn muốn lưu nội dung này thành một trí nhớ mới?", { title: "Xác nhận tạo trí nhớ mới", confirmText: "Tạo trí nhớ mới" }))) {
           feedback("Đã hủy lưu trí nhớ mới.");
           return false;
         }
@@ -192,7 +192,7 @@
     const edit = event.target.closest?.("[data-memory-edit]");
     if (edit) return beginEdit(edit.dataset.memoryEdit);
     const remove = event.target.closest?.("[data-memory-delete-v062]");
-    if (!remove || !window.confirm("Xóa trí nhớ này?")) return;
+    if (!remove || !(await window.PersonalAiUi.confirm("Xóa trí nhớ này?", { title: "Xác nhận xóa trí nhớ", confirmText: "Xóa", danger: true }))) return;
     await deleteById(remove.dataset.memoryDeleteV062, true);
   }
 

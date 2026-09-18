@@ -25,6 +25,20 @@ public static class TaskEngineEndpoints
                 : Results.Ok(task);
         });
 
+        app.MapPost("/api/tasks/prepare", (
+            PreparePersonalTaskRequest request,
+            ITaskEngineService taskEngine) =>
+        {
+            try
+            {
+                return Results.Ok(taskEngine.Prepare(request));
+            }
+            catch (PersonalTaskValidationException exception)
+            {
+                return Results.BadRequest(new ApiError(exception.Message));
+            }
+        });
+
         app.MapPost("/api/tasks", async (
             CreatePersonalTaskRequest request,
             ITaskEngineService taskEngine,

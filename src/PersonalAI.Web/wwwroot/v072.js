@@ -53,7 +53,7 @@
       const indexed = Number(payload.indexedChunks || 0).toLocaleString("vi-VN");
       const total = Number(payload.totalChunks || 0).toLocaleString("vi-VN");
       const dimensions = Number(payload.dimensions || 0).toLocaleString("vi-VN");
-      node.textContent = `Véc-tơ trên máy · ${indexed}/${total} đoạn · ${dimensions} chiều · ${payload.embeddingModel || "mô hình trên máy"}`;
+      node.textContent = `Véc-tơ trên máy · ${indexed}/${total} đoạn · ${dimensions} chiều`;
     } catch {
       node.textContent = "Véc-tơ trên máy · sẽ tự lập chỉ mục khi tìm kiếm ngữ nghĩa.";
     }
@@ -108,9 +108,8 @@
 
   function renderSemanticResults(payload, summaryNode, listNode) {
     const results = Array.isArray(payload.results) ? payload.results : [];
-    const model = payload.embeddingModel || "mô hình véc-tơ trên máy";
     summaryNode.textContent = results.length > 0
-      ? `${results.length} đoạn gần nhất · Mô hình véc-tơ: ${model}`
+      ? `${results.length} đoạn gần nhất · tìm kiếm ngữ nghĩa trên máy`
       : "Không có đoạn đủ tương đồng";
     listNode.replaceChildren();
 

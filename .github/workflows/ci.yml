@@ -68,7 +68,7 @@ jobs:
           echo "$custom_workspace" | jq -e '.isBuiltIn == false and (.activeModules | sort) == (["memory","documents","tasks","files","conversations"] | sort) and (.reservedModules | sort) == (["agents","policies"] | sort)' >/dev/null
 
           custom_status=$(curl -fsS -H "X-PersonalAI-Workspace: $custom_workspace_id" http://127.0.0.1:5077/api/status)
-          echo "$custom_status" | jq -e '.version == "0.9.4" and .workspaceName == "CI Workspace"' >/dev/null
+          echo "$custom_status" | jq -e '.version == "0.9.5" and .workspaceName == "CI Workspace"' >/dev/null
 
           invalid_workspace_code=$(curl -sS -o /tmp/workspace-invalid.json -w '%{http_code}' \
             -H 'X-PersonalAI-Workspace: does-not-exist' \

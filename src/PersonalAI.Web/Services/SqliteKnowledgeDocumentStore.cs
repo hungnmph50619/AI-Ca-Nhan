@@ -9,7 +9,8 @@ namespace PersonalAI.Web.Services;
 
 public sealed class SqliteKnowledgeDocumentStore(
     ILogger<SqliteKnowledgeDocumentStore> logger,
-    KnowledgeDocumentExtractor extractor) : IKnowledgeDocumentStore
+    KnowledgeDocumentExtractor extractor,
+    IWorkspaceStoragePathResolver storagePaths) : IKnowledgeDocumentStore
 {
     public const long MaximumFileSize = 10 * 1024 * 1024;
     private const int MaximumSearchLength = 200;
@@ -27,23 +28,21 @@ public sealed class SqliteKnowledgeDocumentStore(
 
     private readonly SemaphoreSlim _initializationLock = new(1, 1);
     private readonly KnowledgeDocumentChunker _chunker = new();
-    private readonly string _knowledgeDirectory = Path.Combine(
-        Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
-        "PersonalAI",
-        "Knowledge");
-    private bool _initialized;
+    private readonly HashSet<string> _initializedWorkspaces =
+        new(StringComparer.OrdinalIgnoreCase);
 
-    private string DatabasePath => Path.Combine(_knowledgeDirectory, "personal-ai.db");
-    private string FilesDirectory => Path.Combine(_knowledgeDirectory, "files");
+    private string DatabasePath => storagePaths.KnowledgeDatabasePath;
+    private string FilesDirectory => storagePaths.KnowledgeFilesDirectory;
 
     public async Task InitializeAsync(CancellationToken cancellationToken = default)
     {
-        if (_initialized) return;
+        var workspaceId = storagePaths.CurrentWorkspaceId;
+        if (_initializedWorkspaces.Contains(workspaceId)) return;
 
         await _initializationLock.WaitAsync(cancellationToken);
         try
         {
-            if (_initialized) return;
+            if (_initializedWorkspaces.Contains(workspaceId)) return;
 
             Directory.CreateDirectory(FilesDirectory);
             await using var connection = CreateConnection();
@@ -122,7 +121,7 @@ public sealed class SqliteKnowledgeDocumentStore(
             await EnsureColumnAsync(connection, "DocumentChunks", "Section", "TEXT NULL", cancellationToken);
             await EnsureColumnAsync(connection, "DocumentChunks", "TokenEstimate", "INTEGER NULL", cancellationToken);
             await BackfillMissingChunksAsync(connection, cancellationToken);
-            _initialized = true;
+            _initializedWorkspaces.Add(workspaceId);
         }
         finally
         {

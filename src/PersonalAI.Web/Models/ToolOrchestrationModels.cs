@@ -30,7 +30,9 @@ public sealed record ToolProposalExecutionResponse(
     ToolExecutionResponse Execution,
     string LocalSummary,
     bool CanAiSynthesize,
-    DateTimeOffset? SynthesisExpiresAt = null);
+    DateTimeOffset? SynthesisExpiresAt = null,
+    bool CanNativeContinue = false,
+    DateTimeOffset? NativeContinueExpiresAt = null);
 
 public sealed record ToolResultSynthesisRequest(
     Guid InvocationId,
@@ -53,4 +55,27 @@ public sealed record ProviderFunctionDefinition(
 
 public sealed record ProviderFunctionCallDecision(
     string Name,
-    JsonElement Arguments);
+    JsonElement Arguments,
+    ProviderFunctionCallContext Context);
+
+public sealed record ProviderFunctionCallContext(
+    string Provider,
+    string Model,
+    string FunctionName,
+    string? ResponseId,
+    string? CallId,
+    JsonElement Arguments,
+    IReadOnlyList<ChatMessage> Messages);
+
+public sealed record ToolNativeContinuationRequest(
+    Guid InvocationId,
+    bool ConfirmedExternal = false);
+
+public sealed record ToolNativeContinuationResponse(
+    Guid InvocationId,
+    string Mode,
+    string Message,
+    string Provider,
+    string Model,
+    bool OutputTruncated,
+    DateTimeOffset CreatedAt);

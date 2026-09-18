@@ -1,10 +1,10 @@
 (() => {
-  const VERSION = "0.9.5";
+  const VERSION = "1.6.0";
 
   window.PersonalAiContextManager = Object.freeze({
     version: VERSION,
     maximumCharacters: 7600,
-    strategy: "workspace-scoped-budgeted-context-v1"
+    strategy: "workspace-scoped-budgeted-context-v2-life-context"
   });
 
   if (document.readyState === "loading") {
@@ -29,7 +29,7 @@
     badge.id = "contextManagerBadge";
     badge.className = "context-manager-badge";
     badge.textContent = "Context Manager";
-    badge.title = "v0.9.5 chỉ chọn Memory, Documents và Tasks liên quan trong workspace hiện tại, theo ngân sách context.";
+    badge.title = "v1.6 chọn Memory, Documents, Tasks và Life Context đã consent trong workspace hiện tại, theo ngân sách context.";
     clearButton.before(badge);
   }
 })();

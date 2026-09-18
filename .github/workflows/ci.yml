@@ -55,18 +55,18 @@ jobs:
             exit 1
           fi
 
-          curl -fsS http://127.0.0.1:5077/api/status | jq -e '.version == "1.1.0"' >/dev/null
+          curl -fsS http://127.0.0.1:5077/api/status | jq -e '.version == "1.2.0"' >/dev/null
 
           curl -fsS -D /tmp/status-headers http://127.0.0.1:5077/api/status -o /tmp/status-body.json
           grep -Eiq '^X-PersonalAI-Request-Id: [a-f0-9]{32}' /tmp/status-headers
           grep -Eiq '^X-PersonalAI-Api-Version: 1' /tmp/status-headers
           grep -Eiq '^X-Content-Type-Options: nosniff' /tmp/status-headers
-          jq -e '.version == "1.1.0" and .apiContractVersion == "1" and .channel == "controlled"' /tmp/status-body.json >/dev/null
+          jq -e '.version == "1.2.0" and .apiContractVersion == "1" and .channel == "controlled"' /tmp/status-body.json >/dev/null
 
           capabilities=$(curl -fsS http://127.0.0.1:5077/api/system/capabilities)
           echo "$capabilities" | jq -e '
             . as $caps
-            | .version == "1.1.0"
+            | .version == "1.2.0"
             and .apiContractVersion == "1"
             and .channel == "controlled"
             and .workspaceHeader == "X-PersonalAI-Workspace"
@@ -79,8 +79,9 @@ jobs:
           echo "$capabilities" | jq -e '
             any(.reservedModules[]; . == "agents")
             and any(.reservedModules[]; . == "policies")
-            and .controlledModules == ["computer-use"]
-            and any(.reservedModules[]; . == "browser")
+            and .controlledModules == ["computer-use","browser-agent"]
+            and all(.reservedModules[]; . != "browser")
+            and all(.reservedModules[]; . != "browser-agent")
             and all(.reservedModules[]; . != "computer-use")
             and any(.reservedModules[]; . == "connectors")
             and .safety.workspaceIsolation == true
@@ -90,6 +91,9 @@ jobs:
             and .safety.undoRequiresConfirmation == true
             and .safety.computerControlRequiresConfirmation == true
             and .safety.sensitiveComputerObservationRequiresConfirmation == true
+            and .safety.browserUseRequiresConfirmation == true
+            and .safety.browserPrivateNetworkAccess == false
+            and .safety.browserSideEffectsEnabled == false
             and .safety.automaticMultiStepExecution == false
             and .safety.backgroundScheduler == false
             and .safety.autonomousAgentLoop == false
@@ -103,11 +107,15 @@ jobs:
             and .limits.undoAvailabilityDays == 7
             and .limits.maximumUndoEntries == 500
             and .limits.maximumUndoSnapshotBytes == 524288
+            and .limits.browserMaximumResponseBytes == 1048576
+            and .limits.browserMaximumPageTextCharacters == 24000
+            and .limits.browserMaximumLinks == 100
+            and .limits.browserMaximumRedirects == 5
           ' >/dev/null
 
           core_health=$(curl -fsS http://127.0.0.1:5077/api/system/health)
           echo "$core_health" | jq -e '
-            .version == "1.1.0"
+            .version == "1.2.0"
             and .apiContractVersion == "1"
             and .channel == "controlled"
             and .ready == true
@@ -122,6 +130,7 @@ jobs:
             and any(.modules[]; .module == "audit" and .status == "healthy")
             and any(.modules[]; .module == "undo" and .status == "healthy")
             and any(.modules[]; .module == "computer-use" and .status == "unconfigured")
+            and any(.modules[]; .module == "browser-agent" and .status == "healthy")
             and any(.modules[]; .module == "ai-provider" and (.status == "healthy" or .status == "unconfigured"))
           ' >/dev/null
 
@@ -136,7 +145,7 @@ jobs:
           echo "$custom_workspace" | jq -e '.isBuiltIn == false and (.activeModules | sort) == (["memory","documents","tasks","files","conversations"] | sort) and (.reservedModules | sort) == (["agents","policies"] | sort)' >/dev/null
 
           custom_status=$(curl -fsS -H "X-PersonalAI-Workspace: $custom_workspace_id" http://127.0.0.1:5077/api/status)
-          echo "$custom_status" | jq -e '.version == "1.1.0" and .workspaceName == "CI Workspace"' >/dev/null
+          echo "$custom_status" | jq -e '.version == "1.2.0" and .workspaceName == "CI Workspace"' >/dev/null
 
           custom_core_health=$(curl -fsS -H "X-PersonalAI-Workspace: $custom_workspace_id" http://127.0.0.1:5077/api/system/health)
           echo "$custom_core_health" | jq -e '.ready == true and .workspaceId == "'"$custom_workspace_id"'" and any(.modules[]; .module == "files" and .status == "healthy")' >/dev/null
@@ -337,8 +346,8 @@ jobs:
           test -n "$persistent_undo_id"
 
           tools=$(curl -fsS http://127.0.0.1:5077/api/tools)
-          echo "$tools" | jq -e '.frameworkVersion == "1.1.0" and (.permissionTypes | sort) == (["COMPUTER","DELETE","EXTERNAL","READ","SENSITIVE","WRITE"] | sort)' >/dev/null
-          echo "$tools" | jq -e '(.tools | length) == 19
+          echo "$tools" | jq -e '.frameworkVersion == "1.2.0" and (.permissionTypes | sort) == (["BROWSER","COMPUTER","DELETE","EXTERNAL","READ","SENSITIVE","WRITE"] | sort)' >/dev/null
+          echo "$tools" | jq -e '(.tools | length) == 23
             and any(.tools[]; .name == "local.clock" and .localOnly == true and .requiredPermissions == ["READ"])
             and any(.tools[]; .name == "local.text_stats" and .timeoutMs == 2000)
             and any(.tools[]; .name == "memory.search")
@@ -357,10 +366,14 @@ jobs:
             and any(.tools[]; .name == "computer.windows.list" and .requiredPermissions == ["READ","SENSITIVE"] and .requiresConfirmation == true)
             and any(.tools[]; .name == "computer.window.active" and .requiredPermissions == ["READ","SENSITIVE"] and .requiresConfirmation == true)
             and any(.tools[]; .name == "computer.window.focus" and .requiredPermissions == ["WRITE","COMPUTER","SENSITIVE"] and .requiresConfirmation == true)
-            and any(.tools[]; .name == "computer.cursor.move" and .requiredPermissions == ["WRITE","COMPUTER"] and .requiresConfirmation == true)' >/dev/null
+            and any(.tools[]; .name == "computer.cursor.move" and .requiredPermissions == ["WRITE","COMPUTER"] and .requiresConfirmation == true)
+            and any(.tools[]; .name == "browser.session.info" and .requiredPermissions == ["READ","BROWSER"] and .requiresConfirmation == true)
+            and any(.tools[]; .name == "browser.navigate" and .requiredPermissions == ["READ","EXTERNAL","BROWSER"] and .requiresConfirmation == true)
+            and any(.tools[]; .name == "browser.page.observe" and .requiredPermissions == ["READ","BROWSER"] and .requiresConfirmation == true)
+            and any(.tools[]; .name == "browser.link.open" and .requiredPermissions == ["READ","EXTERNAL","BROWSER"] and .requiresConfirmation == true)' >/dev/null
 
           computer_status=$(curl -fsS http://127.0.0.1:5077/api/computer/status)
-          echo "$computer_status" | jq -e '.version == "1.1.0" and .supported == false and .interactiveSession == false and .availableCapabilities == [] and any(.limitations[]; contains("Windows"))' >/dev/null
+          echo "$computer_status" | jq -e '.version == "1.2.0" and .supported == false and .interactiveSession == false and .availableCapabilities == [] and any(.limitations[]; contains("Windows"))' >/dev/null
 
           computer_sensitive_denied_code=$(curl -sS -o /tmp/computer-sensitive-denied.json -w '%{http_code}' -X POST http://127.0.0.1:5077/api/tools/execute \
             -H 'Content-Type: application/json' \
@@ -379,6 +392,48 @@ jobs:
             -d '{"toolName":"computer.screen.info","arguments":{},"approvedPermissions":["READ"],"confirmed":false}')
           test "$computer_unsupported_code" = "400"
           jq -e '.status == "invalid-input" and (.error | contains("Windows"))' /tmp/computer-unsupported.json >/dev/null
+
+          browser_status=$(curl -fsS http://127.0.0.1:5077/api/browser/status)
+          echo "$browser_status" | jq -e '.version == "1.2.0" and .engine == "http-html" and .supported == true and .javaScriptEnabled == false and .cookiesEnabled == false and .downloadsEnabled == false and .formSubmissionEnabled == false and .maximumResponseBytes == 1048576 and .maximumPageTextCharacters == 24000 and .maximumLinks == 100 and .maximumRedirects == 5' >/dev/null
+
+          browser_unconfirmed_code=$(curl -sS -o /tmp/browser-unconfirmed.json -w '%{http_code}' -X POST http://127.0.0.1:5077/api/tools/execute \
+            -H 'Content-Type: application/json' \
+            -d '{"toolName":"browser.navigate","arguments":{"url":"https://example.com/"},"approvedPermissions":["READ","EXTERNAL","BROWSER"],"confirmed":false}')
+          test "$browser_unconfirmed_code" = "403"
+          jq -e '.status == "denied" and (.error | contains("xác nhận"))' /tmp/browser-unconfirmed.json >/dev/null
+
+          browser_missing_permission_code=$(curl -sS -o /tmp/browser-missing-permission.json -w '%{http_code}' -X POST http://127.0.0.1:5077/api/tools/execute \
+            -H 'Content-Type: application/json' \
+            -d '{"toolName":"browser.navigate","arguments":{"url":"https://example.com/"},"approvedPermissions":["READ","EXTERNAL"],"confirmed":true}')
+          test "$browser_missing_permission_code" = "403"
+          jq -e '.status == "denied" and (.error | contains("TRÌNH DUYỆT"))' /tmp/browser-missing-permission.json >/dev/null
+
+          browser_private_code=$(curl -sS -o /tmp/browser-private.json -w '%{http_code}' -X POST http://127.0.0.1:5077/api/tools/execute \
+            -H 'Content-Type: application/json' \
+            -d '{"toolName":"browser.navigate","arguments":{"url":"http://127.0.0.1/"},"approvedPermissions":["READ","EXTERNAL","BROWSER"],"confirmed":true}')
+          test "$browser_private_code" = "400"
+          jq -e '.status == "invalid-input" and (.error | contains("private/reserved"))' /tmp/browser-private.json >/dev/null
+
+          browser_nav=$(curl -fsS -X POST http://127.0.0.1:5077/api/tools/execute \
+            -H 'Content-Type: application/json' \
+            -d '{"toolName":"browser.navigate","arguments":{"url":"https://example.com/"},"approvedPermissions":["READ","EXTERNAL","BROWSER"],"confirmed":true}')
+          echo "$browser_nav" | jq -e '.status == "succeeded" and .success == true and (.output.finalUrl | startswith("https://example.com")) and .output.statusCode == 200 and .output.responseBytes > 0 and .output.textCharacters > 0' >/dev/null
+
+          browser_observe=$(curl -fsS -X POST http://127.0.0.1:5077/api/tools/execute \
+            -H 'Content-Type: application/json' \
+            -d '{"toolName":"browser.page.observe","arguments":{"maximumCharacters":5000,"maximumLinks":20},"approvedPermissions":["READ","BROWSER"],"confirmed":true}')
+          echo "$browser_observe" | jq -e '.status == "succeeded" and (.output.text | contains("Example Domain")) and .output.workspaceId == "personal"' >/dev/null
+
+          browser_custom_session=$(curl -fsS -X POST http://127.0.0.1:5077/api/tools/execute \
+            -H "X-PersonalAI-Workspace: $custom_workspace_id" \
+            -H 'Content-Type: application/json' \
+            -d '{"toolName":"browser.session.info","arguments":{},"approvedPermissions":["READ","BROWSER"],"confirmed":true}')
+          echo "$browser_custom_session" | jq -e '.status == "succeeded" and .output.workspaceId == "'"$custom_workspace_id"'" and .output.hasPage == false' >/dev/null
+
+          browser_personal_session=$(curl -fsS -X POST http://127.0.0.1:5077/api/tools/execute \
+            -H 'Content-Type: application/json' \
+            -d '{"toolName":"browser.session.info","arguments":{},"approvedPermissions":["READ","BROWSER"],"confirmed":true}')
+          echo "$browser_personal_session" | jq -e '.status == "succeeded" and .output.workspaceId == "personal" and .output.hasPage == true and (.output.url | startswith("https://example.com"))' >/dev/null
 
           text_tool=$(curl -fsS http://127.0.0.1:5077/api/tools/local.text_stats)
           echo "$text_tool" | jq -e '.name == "local.text_stats" and .inputSchema.type == "object" and .inputSchema.additionalProperties == false and .inputSchema.required == ["text"]' >/dev/null
@@ -1127,18 +1182,18 @@ jobs:
           grep -Fq 'Task Dependencies' docs/releases/v0.9.3.md
           grep -Fq 'v090.css' src/PersonalAI.Web/wwwroot/index.html
           grep -Fq 'v090.js' src/PersonalAI.Web/wwwroot/index.html
-          grep -Fq 'Tác vụ có Undo Foundation v1.1.0' src/PersonalAI.Web/wwwroot/v090.js
+          grep -Fq 'Tác vụ có Undo Foundation v1.2.0' src/PersonalAI.Web/wwwroot/v090.js
           grep -Fq 'MỤC TIÊU → KẾ HOẠCH → TỪNG BƯỚC' src/PersonalAI.Web/wwwroot/v090.js
           grep -Fq 'arguments_sha256' src/PersonalAI.Web/Services/ToolActivityStore.cs
           grep -Fq 'output_sha256' src/PersonalAI.Web/Services/ToolActivityStore.cs
           grep -Fq 'v089.css' src/PersonalAI.Web/wwwroot/index.html
-          grep -Fq 'Nhật ký hoạt động công cụ v1.1.0' src/PersonalAI.Web/wwwroot/v080.js
+          grep -Fq 'Nhật ký hoạt động công cụ v1.2.0' src/PersonalAI.Web/wwwroot/v080.js
           grep -Fq 'Nhật ký hoạt động gần đây' src/PersonalAI.Web/wwwroot/v080.js
           grep -Fq 'v088.css' src/PersonalAI.Web/wwwroot/index.html
           grep -Fq 'Nguồn đề xuất:' src/PersonalAI.Web/wwwroot/app.js
           grep -Fq 'Tham số' src/PersonalAI.Web/wwwroot/app.js
           grep -Fq 'CÔNG CỤ NỘI BỘ TRÊN MÁY NÀY' src/PersonalAI.Web/wwwroot/v080.js
-          grep -Fq 'Nhật ký hoạt động công cụ v1.1.0' src/PersonalAI.Web/wwwroot/v080.js
+          grep -Fq 'Nhật ký hoạt động công cụ v1.2.0' src/PersonalAI.Web/wwwroot/v080.js
           grep -Fq 'Mô hình' src/PersonalAI.Web/wwwroot/index.html
           grep -Fq 'Khóa truy cập' src/PersonalAI.Web/wwwroot/index.html
           ! grep -Fq 'Planner:' src/PersonalAI.Web/wwwroot/app.js
@@ -1236,9 +1291,9 @@ jobs:
           grep -Fq 'v097.js' src/PersonalAI.Web/wwwroot/index.html
           ! grep -Fq 'MapDelete("/api/undo' src/PersonalAI.Web/Services/UndoEndpoints.cs
           grep -Fq 'Stable Personal AI Core' docs/releases/v1.0.0.md
-          grep -Fq '# AI Cá Nhân — Controlled Computer Use v1.1.0' README.md
+          grep -Fq '# AI Cá Nhân — Controlled Browser Agent v1.2.0' README.md
           ! grep -Fq '# AI Cá Nhân — MVP v0.5.3' README.md
-          grep -Fq 'public const string Version = "1.1.0"' src/PersonalAI.Web/Models/SystemModels.cs
+          grep -Fq 'public const string Version = "1.2.0"' src/PersonalAI.Web/Models/SystemModels.cs
           grep -Fq 'public const string ApiContractVersion = "1"' src/PersonalAI.Web/Models/SystemModels.cs
           grep -Fq 'public const string Channel = "controlled"' src/PersonalAI.Web/Models/SystemModels.cs
           grep -Fq '/api/system/health' src/PersonalAI.Web/Services/SystemEndpoints.cs
@@ -1272,6 +1327,29 @@ jobs:
           ! grep -Fq '"computer.keyboard' src/PersonalAI.Web/Services/ComputerUseTools.cs
           ! grep -Fq 'SendInput' src/PersonalAI.Web/Services/ComputerUseService.cs
           ! grep -Fq 'Process.Start' src/PersonalAI.Web/Services/ComputerUseService.cs
+          grep -Fq 'Controlled Browser Agent' docs/releases/v1.2.0.md
+          grep -Fq 'public const string Browser = "BROWSER"' src/PersonalAI.Web/Models/ToolModels.cs
+          grep -Fq 'IBrowserAgentService' src/PersonalAI.Web/Services/BrowserAgentService.cs
+          grep -Fq '/api/browser/status' src/PersonalAI.Web/Services/BrowserAgentEndpoints.cs
+          grep -Fq 'browser.navigate' src/PersonalAI.Web/Services/BrowserAgentTools.cs
+          grep -Fq 'browser.page.observe' src/PersonalAI.Web/Services/BrowserAgentTools.cs
+          grep -Fq 'browser.link.open' src/PersonalAI.Web/Services/BrowserAgentTools.cs
+          grep -Fq 'ToolPermissions.Browser' src/PersonalAI.Web/Services/BrowserAgentTools.cs
+          grep -Fq 'BrowserUseRequiresConfirmation: true' src/PersonalAI.Web/Services/SystemCoreService.cs
+          grep -Fq 'BrowserPrivateNetworkAccess: false' src/PersonalAI.Web/Services/SystemCoreService.cs
+          grep -Fq 'BrowserSideEffectsEnabled: false' src/PersonalAI.Web/Services/SystemCoreService.cs
+          grep -Fq 'ConnectCallback = ConnectPublicAsync' src/PersonalAI.Web/Services/BrowserAgentService.cs
+          grep -Fq 'AllowAutoRedirect = false' src/PersonalAI.Web/Services/BrowserAgentService.cs
+          grep -Fq 'UseCookies = false' src/PersonalAI.Web/Services/BrowserAgentService.cs
+          grep -Fq 'MaximumResponseBytes = 1 * 1024 * 1024' src/PersonalAI.Web/Services/BrowserAgentService.cs
+          grep -Fq 'v120.css' src/PersonalAI.Web/wwwroot/index.html
+          grep -Fq 'v120.js' src/PersonalAI.Web/wwwroot/index.html
+          grep -Fq 'CONTROLLED CAPABILITY · HTTP/HTML' src/PersonalAI.Web/wwwroot/v120.js
+          ! grep -Fq 'HttpMethod.Post' src/PersonalAI.Web/Services/BrowserAgentService.cs
+          ! grep -Fq 'UseCookies = true' src/PersonalAI.Web/Services/BrowserAgentService.cs
+          ! grep -Fq 'CookieContainer' src/PersonalAI.Web/Services/BrowserAgentService.cs
+          ! grep -Fq 'Process.Start' src/PersonalAI.Web/Services/BrowserAgentService.cs
+
 
 
 
@@ -1306,3 +1384,4 @@ jobs:
           node --check src/PersonalAI.Web/wwwroot/v097.js
           node --check src/PersonalAI.Web/wwwroot/v100.js
           node --check src/PersonalAI.Web/wwwroot/v110.js
+          node --check src/PersonalAI.Web/wwwroot/v120.js

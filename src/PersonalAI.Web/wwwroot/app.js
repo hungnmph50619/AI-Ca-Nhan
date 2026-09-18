@@ -293,14 +293,14 @@ function toggleApiKeyVisibility() {
   const shouldShow = elements.apiKey.type === "password";
   elements.apiKey.type = shouldShow ? "text" : "password";
   elements.toggleApiKey.textContent = shouldShow ? "Ẩn" : "Hiện";
-  elements.toggleApiKey.setAttribute("aria-label", shouldShow ? "Ẩn khóa API" : "Hiện khóa API");
+  elements.toggleApiKey.setAttribute("aria-label", shouldShow ? "Ẩn khóa truy cập" : "Hiện khóa truy cập");
   elements.toggleApiKey.setAttribute("aria-pressed", String(shouldShow));
 }
 
 function resetApiKeyVisibility() {
   elements.apiKey.type = "password";
   elements.toggleApiKey.textContent = "Hiện";
-  elements.toggleApiKey.setAttribute("aria-label", "Hiện khóa API");
+  elements.toggleApiKey.setAttribute("aria-label", "Hiện khóa truy cập");
   elements.toggleApiKey.setAttribute("aria-pressed", "false");
 }
 
@@ -564,7 +564,7 @@ async function refreshStatus() {
     elements.statusDot.className = `status-dot ${status.configured ? "online" : "offline"}`;
     elements.statusText.textContent = status.configured
       ? `Sẵn sàng · ${status.provider} · ${status.model}`
-      : "Chưa cấu hình khóa API";
+      : "Chưa cấu hình khóa truy cập";
   } catch {
     elements.statusDot.className = "status-dot offline";
     elements.statusText.textContent = "Không kết nối được máy chủ";

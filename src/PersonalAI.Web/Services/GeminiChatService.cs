@@ -210,7 +210,7 @@ Do not invent function names or arguments outside the supplied schemas.
                     {
                         name = function.Name,
                         description = function.Description,
-                        parameters = function.Parameters
+                        parameters = SanitizeFunctionSchema(function.Parameters)
                     })
                 }
             },
@@ -359,6 +359,67 @@ Do not invent function names or arguments outside the supplied schemas.
         }
 
         return calls.Count == 1 ? calls[0] : null;
+    }
+
+
+    private static JsonElement SanitizeFunctionSchema(JsonElement schema)
+    {
+        using var stream = new MemoryStream();
+        using (var writer = new Utf8JsonWriter(stream))
+        {
+            WriteFunctionSchema(schema, writer);
+        }
+
+        using var document = JsonDocument.Parse(stream.ToArray());
+        return document.RootElement.Clone();
+    }
+
+    private static void WriteFunctionSchema(JsonElement schema, Utf8JsonWriter writer)
+    {
+        if (schema.ValueKind != JsonValueKind.Object)
+        {
+            schema.WriteTo(writer);
+            return;
+        }
+
+        writer.WriteStartObject();
+        foreach (var property in schema.EnumerateObject())
+        {
+            switch (property.Name)
+            {
+                case "type":
+                case "description":
+                case "enum":
+                case "required":
+                case "minimum":
+                case "maximum":
+                case "minItems":
+                case "maxItems":
+                    writer.WritePropertyName(property.Name);
+                    property.Value.WriteTo(writer);
+                    break;
+                case "items":
+                    writer.WritePropertyName(property.Name);
+                    WriteFunctionSchema(property.Value, writer);
+                    break;
+                case "properties":
+                    if (property.Value.ValueKind != JsonValueKind.Object)
+                    {
+                        break;
+                    }
+
+                    writer.WritePropertyName(property.Name);
+                    writer.WriteStartObject();
+                    foreach (var child in property.Value.EnumerateObject())
+                    {
+                        writer.WritePropertyName(child.Name);
+                        WriteFunctionSchema(child.Value, writer);
+                    }
+                    writer.WriteEndObject();
+                    break;
+            }
+        }
+        writer.WriteEndObject();
     }
 
     private string GetApiKey() => _settingsStore.GetApiKey(Name);

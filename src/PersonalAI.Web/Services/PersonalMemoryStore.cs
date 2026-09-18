@@ -31,13 +31,18 @@ public sealed class PersonalMemoryStore : IPersonalMemoryStore
     private readonly SemaphoreSlim _gate = new(1, 1);
     private readonly IDataProtector _protector;
     private readonly ILogger<PersonalMemoryStore> _logger;
+    private readonly IWorkspaceContextAccessor _workspaceContext;
     private readonly string _memoryPath;
     private List<StoredPersonalMemory> _memories;
 
-    public PersonalMemoryStore(IDataProtectionProvider dataProtectionProvider, ILogger<PersonalMemoryStore> logger)
+    public PersonalMemoryStore(
+        IDataProtectionProvider dataProtectionProvider,
+        ILogger<PersonalMemoryStore> logger,
+        IWorkspaceContextAccessor workspaceContext)
     {
         _protector = dataProtectionProvider.CreateProtector("PersonalAI.PersonalMemory.v1");
         _logger = logger;
+        _workspaceContext = workspaceContext;
         var localData = Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData);
         if (string.IsNullOrWhiteSpace(localData))
             localData = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.UserProfile), ".personalai");
@@ -91,7 +96,8 @@ public sealed class PersonalMemoryStore : IPersonalMemoryStore
                 UpdatedAt = now,
                 IsEnabled = request.IsEnabled,
                 Retention = retention,
-                ExpiresAt = expiresAt
+                ExpiresAt = expiresAt,
+                WorkspaceId = _workspaceContext.CurrentWorkspaceId
             };
             _memories.Add(stored);
             await PersistAsync(cancellationToken);
@@ -107,7 +113,8 @@ public sealed class PersonalMemoryStore : IPersonalMemoryStore
         await _gate.WaitAsync(cancellationToken);
         try
         {
-            var stored = _memories.FirstOrDefault(memory => memory.Id == memoryId);
+            var stored = _memories.FirstOrDefault(memory =>
+                memory.Id == memoryId && IsCurrentWorkspace(memory));
             if (stored is null) return null;
 
             var duplicate = FindDuplicate(content, memoryId);
@@ -136,7 +143,8 @@ public sealed class PersonalMemoryStore : IPersonalMemoryStore
         await _gate.WaitAsync(cancellationToken);
         try
         {
-            var stored = _memories.FirstOrDefault(memory => memory.Id == memoryId);
+            var stored = _memories.FirstOrDefault(memory =>
+                memory.Id == memoryId && IsCurrentWorkspace(memory));
             if (stored is null) return null;
             stored.IsEnabled = isEnabled;
             await PersistAsync(cancellationToken);
@@ -150,7 +158,8 @@ public sealed class PersonalMemoryStore : IPersonalMemoryStore
         await _gate.WaitAsync(cancellationToken);
         try
         {
-            var removed = _memories.RemoveAll(memory => memory.Id == memoryId) > 0;
+            var removed = _memories.RemoveAll(memory =>
+                memory.Id == memoryId && IsCurrentWorkspace(memory)) > 0;
             if (!removed) return false;
             await PersistAsync(cancellationToken);
             return true;
@@ -163,9 +172,9 @@ public sealed class PersonalMemoryStore : IPersonalMemoryStore
         await _gate.WaitAsync(cancellationToken);
         try
         {
-            var count = _memories.Count;
+            var count = _memories.Count(IsCurrentWorkspace);
             if (count == 0) return 0;
-            _memories.Clear();
+            _memories.RemoveAll(IsCurrentWorkspace);
             await PersistAsync(cancellationToken);
             return count;
         }
@@ -240,7 +249,8 @@ public sealed class PersonalMemoryStore : IPersonalMemoryStore
                     UpdatedAt = updatedAt,
                     IsEnabled = item.IsEnabled,
                     Retention = retention,
-                    ExpiresAt = expiresAt
+                    ExpiresAt = expiresAt,
+                    WorkspaceId = _workspaceContext.CurrentWorkspaceId
                 });
                 imported++;
             }
@@ -259,8 +269,23 @@ public sealed class PersonalMemoryStore : IPersonalMemoryStore
     private IEnumerable<PersonalMemory> PublicMemories()
     {
         var now = DateTimeOffset.UtcNow;
-        return _memories.Select(memory => ToPublicMemory(memory, now)).Where(memory => memory is not null).Cast<PersonalMemory>();
+        return _memories
+            .Where(IsCurrentWorkspace)
+            .Select(memory => ToPublicMemory(memory, now))
+            .Where(memory => memory is not null)
+            .Cast<PersonalMemory>();
     }
+
+    private bool IsCurrentWorkspace(StoredPersonalMemory memory) =>
+        string.Equals(
+            NormalizeWorkspaceId(memory.WorkspaceId),
+            _workspaceContext.CurrentWorkspaceId,
+            StringComparison.OrdinalIgnoreCase);
+
+    private static string NormalizeWorkspaceId(string? workspaceId) =>
+        string.IsNullOrWhiteSpace(workspaceId)
+            ? PersonalWorkspaceIds.Personal
+            : workspaceId.Trim().ToLowerInvariant();
 
     private PersonalMemory? FindDuplicate(string content, Guid? exceptId = null) =>
         PublicMemories().FirstOrDefault(memory => memory.Id != exceptId && NormalizeContent(memory.Content) == NormalizeContent(content));
@@ -334,7 +359,8 @@ public sealed class PersonalMemoryStore : IPersonalMemoryStore
                 retention,
                 stored.ExpiresAt,
                 expired,
-                stale);
+                stale,
+                NormalizeWorkspaceId(stored.WorkspaceId));
         }
         catch (Exception exception) when (exception is CryptographicException or ArgumentException)
         {
@@ -418,4 +444,5 @@ internal sealed class StoredPersonalMemory
     public bool IsEnabled { get; set; } = true;
     public string Retention { get; set; } = "long-term";
     public DateTimeOffset? ExpiresAt { get; set; }
+    public string WorkspaceId { get; set; } = PersonalWorkspaceIds.Personal;
 }

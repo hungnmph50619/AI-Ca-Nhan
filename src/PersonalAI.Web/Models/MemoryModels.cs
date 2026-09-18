@@ -10,7 +10,8 @@ public sealed record PersonalMemory(
     string Retention = "long-term",
     DateTimeOffset? ExpiresAt = null,
     bool IsExpired = false,
-    bool IsStale = false);
+    bool IsStale = false,
+    string WorkspaceId = PersonalWorkspaceIds.Personal);
 
 public sealed record CreatePersonalMemoryRequest(
     string? Kind,

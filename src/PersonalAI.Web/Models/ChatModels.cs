@@ -26,4 +26,4 @@ public sealed record ChatResponse(
     ToolCallProposal? ToolProposal = null,
     ContextSelectionReport? Context = null);
 
-public sealed record ApiError(string Error);
+public sealed record ApiError(string Error, string? RequestId = null);

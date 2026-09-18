@@ -1,5 +1,5 @@
 (() => {
-  const VERSION = "1.3.0";
+  const VERSION = "1.4.0";
   let busy = false;
   let knownTasks = [];
 
@@ -87,7 +87,7 @@
     const intro = document.createElement("div");
     intro.className = "v090-task-intro";
     const introTitle = document.createElement("strong");
-    introTitle.textContent = "Tác vụ có Undo Foundation v1.3.0";
+    introTitle.textContent = "Tác vụ có Undo Foundation v1.4.0";
     const introText = document.createElement("p");
     introText.textContent = "Tác vụ có thể phụ thuộc vào tác vụ khác và từng bước có thể khai báo phụ thuộc vào các bước trước. PersonalAI chỉ cho chạy khi các phụ thuộc đã hoàn tất; không có chuỗi nào tự chạy." ;
     intro.append(introTitle, introText);
@@ -172,7 +172,7 @@
 
     const note = document.createElement("p");
     note.className = "security-copy";
-    note.textContent = "v1.3.0 giữ tối đa 50 tác vụ trong mỗi không gian trên máy, hỗ trợ phụ thuộc giữa tác vụ và giữa các bước. Phụ thuộc không làm tăng quyền tự động: mỗi bước vẫn phải được người dùng chủ động chạy và các thao tác có tác động vẫn cần xác nhận." ;
+    note.textContent = "v1.4.0 giữ tối đa 50 tác vụ trong mỗi không gian trên máy, hỗ trợ phụ thuộc giữa tác vụ và giữa các bước. Phụ thuộc không làm tăng quyền tự động: mỗi bước vẫn phải được người dùng chủ động chạy và các thao tác có tác động vẫn cần xác nhận." ;
 
     card.append(header, intro, form, feedback, listHeader, list, note);
     dialog.appendChild(card);
@@ -840,6 +840,13 @@
       "browser.link.open": "Mở liên kết",
       "connectors.list": "Danh sách connector",
       "connector.http.get": "Đọc connector HTTPS",
+      "dev.workspace.inspect": "Phân tích workspace code",
+      "dev.search.text": "Tìm trong source",
+      "dev.git.status": "Git status",
+      "dev.git.diff": "Git diff",
+      "dev.dotnet.restore": "dotnet restore",
+      "dev.dotnet.build": "dotnet build",
+      "dev.dotnet.test": "dotnet test",
       "workspace.create_directory": "Tạo thư mục",
       "workspace.delete": "Xóa tệp hoặc thư mục",
       "workspace.list": "Liệt kê thư mục làm việc",
@@ -858,7 +865,8 @@
       SENSITIVE: "NHẠY CẢM",
       COMPUTER: "ĐIỀU KHIỂN MÁY",
       BROWSER: "TRÌNH DUYỆT",
-      CONNECTOR: "KẾT NỐI"
+      CONNECTOR: "KẾT NỐI",
+      DEVELOPMENT: "PHÁT TRIỂN PHẦN MỀM"
     };
     const permissions = Array.isArray(values) ? values : [];
     return permissions.map(value => labels[String(value).toUpperCase()] || "KHÔNG XÁC ĐỊNH").join(", ") || "Không có";
@@ -927,6 +935,28 @@
       case "connector.http.get":
         add("Connector ID", value.connectorId);
         add("Path", value.path);
+        break;
+      case "dev.workspace.inspect":
+        break;
+      case "dev.search.text":
+        add("Từ khóa", value.query);
+        add("Phân biệt hoa/thường", value.caseSensitive);
+        add("Số kết quả tối đa", value.maximumHits);
+        break;
+      case "dev.git.status":
+        add("Repository", value.repositoryPath || ".");
+        break;
+      case "dev.git.diff":
+        add("Repository", value.repositoryPath || ".");
+        add("Staged", value.staged);
+        break;
+      case "dev.dotnet.restore":
+        add("Target", value.targetPath);
+        break;
+      case "dev.dotnet.build":
+      case "dev.dotnet.test":
+        add("Target", value.targetPath);
+        add("Configuration", value.configuration || "Debug");
         break;
       case "workspace.list":
         add("Thư mục", value.path || ".");

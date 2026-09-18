@@ -1,10 +1,10 @@
-# AI Cá Nhân — Android Companion v1.5.0
+# AI Cá Nhân — Life Context Foundation v1.6.0
 
-PersonalAI là trợ lý AI cá nhân chạy bằng ASP.NET Core 8, ưu tiên dữ liệu cục bộ, có thể dùng Gemini hoặc OpenAI cho phần sinh câu trả lời. v1.0.0 vẫn là **Stable Personal AI Core**; v1.1 thêm Controlled Computer Use, v1.2 Browser Agent, v1.3 Connector Foundation, v1.4 Software Development Agent và v1.5 thêm **Android Companion** với pairing, device token theo workspace, chat và task read-only.
+PersonalAI là trợ lý AI cá nhân chạy bằng ASP.NET Core 8, ưu tiên dữ liệu cục bộ, có thể dùng Gemini hoặc OpenAI cho phần sinh câu trả lời. v1.0.0 vẫn là **Stable Personal AI Core**; v1.1 thêm Controlled Computer Use, v1.2 Browser Agent, v1.3 Connector Foundation, v1.4 Software Development Agent, v1.5 Android Companion và v1.6 thêm **Life Context Foundation** với explicit consent, retention, workspace isolation và context injection có budget.
 
 > Đây vẫn là ứng dụng thiết kế cho một người dùng trên máy cá nhân. Không đưa trực tiếp lên Internet hoặc dùng như hệ thống nhiều người dùng nếu chưa bổ sung authentication, authorization và hardening triển khai phù hợp.
 
-## Có gì trong v1.5.0?
+## Có gì trong v1.6.0?
 
 ### Chat và AI provider
 
@@ -81,10 +81,10 @@ Khi chat dùng tài liệu, chỉ các đoạn được Context Manager chọn m
 
 ### Context Manager
 
-v1.0 giữ strategy:
+v1.6 dùng strategy:
 
 ```text
-workspace-scoped-budgeted-context-v1
+workspace-scoped-budgeted-context-v2-life-context
 ```
 
 Context được chọn từ:
@@ -92,16 +92,21 @@ Context được chọn từ:
 - Memory
 - Documents
 - Tasks
+- Life Context đã consent
 
 Ngân sách mặc định:
 
-- tổng: 7.600 ký tự;
+- tổng vẫn giữ: 7.600 ký tự;
 - Documents: tối đa 4.400 ký tự;
 - Memory: tối đa 1.800 ký tự;
 - Tasks: tối đa 1.400 ký tự;
+- Life Context candidate budget: tối đa 1.200 ký tự;
 - tối đa 4 document chunks;
 - tối đa 4 memories;
-- tối đa 3 tasks.
+- tối đa 3 tasks;
+- tối đa 4 Life Context entries.
+
+Life Context không làm tăng global ceiling; nó dùng phần context budget còn lại và chỉ được chọn khi source đang bật, consent còn hiệu lực, entry chưa hết hạn và query có liên quan.
 
 Endpoint debug không gọi AI:
 
@@ -309,6 +314,55 @@ DELETE /api/companion/admin/devices/{id}?confirmed=true
 
 Mặc định pairing/client API yêu cầu HTTPS. HTTP LAN chỉ được bật khi backend có `Companion__AllowInsecureHttp=true` và người dùng cũng opt-in trên app Android.
 
+### Life Context Foundation
+
+v1.6.0 thêm lớp context đời sống theo nguyên tắc **consent trước, collection sau**.
+
+Supported source kinds:
+
+- `manual`
+- `calendar`
+- `location`
+- `activity`
+- `device`
+- `other`
+
+Tạo source calendar/location/activity/device **không tự cấp quyền hệ điều hành và không bật collector**. v1.6 chỉ lưu snapshot do người dùng/import flow chủ động gửi.
+
+Mỗi source có:
+
+- workspace ownership;
+- explicit consent;
+- enabled state;
+- retention từ 1–365 ngày;
+- encrypted entry content.
+
+Storage mặc định:
+
+```text
+%LOCALAPPDATA%\PersonalAI\LifeContext\life-context.json
+```
+
+Entry content được bảo vệ bằng ASP.NET Core Data Protection với protector `PersonalAI.LifeContext.v1`.
+
+API chính:
+
+```http
+GET    /api/life-context/status
+GET    /api/life-context/sources
+POST   /api/life-context/sources
+PATCH  /api/life-context/sources/{id}/enabled
+PATCH  /api/life-context/sources/{id}/consent
+POST   /api/life-context/sources/{id}/entries
+GET    /api/life-context/entries
+DELETE /api/life-context/entries/{id}
+DELETE /api/life-context/sources/{id}?confirmed=true
+```
+
+Consent revoke có thể purge snapshot hiện có; UI mặc định revoke kèm purge. Entry hết retention bị loại khỏi query/context và được cleanup khỏi local encrypted store.
+
+v1.6 cố ý chưa có background GPS, Android location permission, calendar auto-sync, activity recognition, health data, sensor collection hoặc cloud sync.
+
 ### Tasks
 
 Task Engine hỗ trợ:
@@ -380,13 +434,13 @@ Undo khả dụng 7 ngày, tối đa 500 record, snapshot tối đa 512 KB.
 
 ## Stable Core contract
 
-v1.5.0 giữ API contract của Stable Core và mở rộng controlled capability layer:
+v1.6.0 giữ API contract của Stable Core và mở rộng controlled capability layer:
 
-- Version: `1.5.0`
+- Version: `1.6.0`
 - API contract: `1`
 - Channel: `controlled`
 - Stable Core: v1.0 semantics
-- Controlled modules: `computer-use`, `browser-agent`, `connectors`, `software-development`, `android-companion`
+- Controlled modules: `computer-use`, `browser-agent`, `connectors`, `software-development`, `android-companion`, `life-context`
 
 Capabilities:
 
@@ -413,7 +467,7 @@ Unhandled API exception được sanitize; stack trace và đường dẫn local
 
 ## Guardrails hiện tại
 
-v1.5.0 **không phải autonomous agent**.
+v1.6.0 **không phải autonomous agent**.
 
 Hiện tại:
 
@@ -438,6 +492,9 @@ Hiện tại:
 - Android device token: backend chỉ lưu hash
 - Android remote tool execution: tắt
 - Android remote task mutation: tắt
+- Life Context explicit consent: bắt buộc
+- Life Context automatic collection: tắt
+- Life Context entry content encryption: bật
 - Automatic multi-step execution: tắt
 - Background scheduler: tắt
 - Autonomous agent loop: tắt
@@ -460,6 +517,7 @@ Chưa có:
 - autonomous coding loop;
 - Android remote tool/task mutation;
 - Android background agent/sensor collection;
+- Life Context background GPS/calendar/activity/sensor collection;
 - cloud multi-user auth.
 
 ## Yêu cầu
@@ -526,6 +584,7 @@ Audit\audit.db
 Undo\undo.db
 Connectors\connections.json
 Companion\devices.json
+LifeContext\life-context.json
 Workspace\
 ```
 
@@ -540,6 +599,7 @@ Audit:Root     / Audit__Root
 Undo:Root      / Undo__Root
 Connectors:Root / Connectors__Root
 Companion:Root  / Companion__Root
+LifeContext:Root / LifeContext__Root
 ```
 
 ## Kiến trúc mức cao
@@ -562,11 +622,13 @@ ASP.NET Core
   ├── Connectors
   ├── Software Development Agent
   ├── Android Companion
+  ├── Life Context
   │
   ├── Context Manager
   │      ├── Memory selection
   │      ├── Document hybrid retrieval
-  │      └── Task relevance
+  │      ├── Task relevance
+  │      └── Life Context relevance + consent
   │
   ├── Tool Framework
   │      ├── permission policy
@@ -619,6 +681,8 @@ GitHub Actions hiện kiểm tra regression cho các nền chính, gồm:
 - Stable Core contract;
 - Android Companion pairing/auth/isolation;
 - Android debug APK build;
+- Life Context consent/encryption/retention/isolation;
+- Context Manager Life Context selection/opt-out;
 - JavaScript syntax;
 - UI guardrails tiếng Việt.
 
@@ -644,10 +708,11 @@ docs/releases/v1.2.0.md
 docs/releases/v1.3.0.md
 docs/releases/v1.4.0.md
 docs/releases/v1.5.0.md
+docs/releases/v1.6.0.md
 ```
 
-## Hướng phát triển sau v1.5
+## Hướng phát triển sau v1.6
 
-Computer Use, Browser Agent, Connector Foundation, Software Development Agent và Android Companion hiện nằm trong controlled capability layer.
+Computer Use, Browser Agent, Connector Foundation, Software Development Agent, Android Companion và Life Context hiện nằm trong controlled capability layer.
 
-Theo roadmap gốc, mốc kế tiếp là **v1.6 — Life Context**, sau đó là **v1.7 Decision Engine → v1.8 Automation → v1.9 Reliability / Security → v2.0 Personal AI OS**.
+Theo roadmap gốc, mốc kế tiếp là **v1.7 — Decision Engine**, sau đó là **v1.8 Automation → v1.9 Reliability / Security → v2.0 Personal AI OS**.

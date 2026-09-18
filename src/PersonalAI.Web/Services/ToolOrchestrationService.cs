@@ -31,7 +31,7 @@ public sealed class ToolOrchestrationService : IToolOrchestrationService
     private readonly IToolExecutionService _executor;
     private readonly IAiProviderResolver _providerResolver;
     private readonly ILogger<ToolOrchestrationService> _logger;
-    private readonly ConcurrentDictionary<Guid, ToolCallProposal> _proposals = new();
+    private static readonly ConcurrentDictionary<Guid, ToolCallProposal> Proposals = new();
 
     public ToolOrchestrationService(
         IToolRegistry registry,
@@ -159,7 +159,7 @@ public sealed class ToolOrchestrationService : IToolOrchestrationService
             requiresConfirmation,
             DateTimeOffset.UtcNow.Add(ProposalLifetime));
 
-        _proposals[proposal.ProposalId] = proposal;
+        Proposals[proposal.ProposalId] = proposal;
         return proposal;
     }
 
@@ -170,14 +170,14 @@ public sealed class ToolOrchestrationService : IToolOrchestrationService
     {
         CleanupExpired();
 
-        if (!_proposals.TryGetValue(proposalId, out var proposal))
+        if (!Proposals.TryGetValue(proposalId, out var proposal))
         {
             return null;
         }
 
         if (!_registry.TryGet(proposal.ToolName, out var tool) || tool is null)
         {
-            _proposals.TryRemove(proposalId, out _);
+            Proposals.TryRemove(proposalId, out _);
             return null;
         }
 
@@ -193,7 +193,7 @@ public sealed class ToolOrchestrationService : IToolOrchestrationService
             return new ToolProposalExecutionResponse(proposal, denied);
         }
 
-        if (!_proposals.TryRemove(proposalId, out proposal))
+        if (!Proposals.TryRemove(proposalId, out proposal))
         {
             return null;
         }
@@ -367,24 +367,24 @@ Không tự thêm permission. Không tự xác nhận. Arguments phải tuân th
     private void CleanupExpired()
     {
         var now = DateTimeOffset.UtcNow;
-        foreach (var pair in _proposals)
+        foreach (var pair in Proposals)
         {
             if (pair.Value.ExpiresAt <= now)
             {
-                _proposals.TryRemove(pair.Key, out _);
+                Proposals.TryRemove(pair.Key, out _);
             }
         }
 
-        if (_proposals.Count <= 100)
+        if (Proposals.Count <= 100)
         {
             return;
         }
 
-        foreach (var proposal in _proposals.Values
+        foreach (var proposal in Proposals.Values
                      .OrderBy(value => value.ExpiresAt)
-                     .Take(_proposals.Count - 100))
+                     .Take(Proposals.Count - 100))
         {
-            _proposals.TryRemove(proposal.ProposalId, out _);
+            Proposals.TryRemove(proposal.ProposalId, out _);
         }
     }
 

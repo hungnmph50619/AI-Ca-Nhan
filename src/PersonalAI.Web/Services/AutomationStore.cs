@@ -192,7 +192,7 @@ public sealed class SqliteAutomationStore : IAutomationStore
                 AutomationStates.Scheduled);
             command.Parameters.AddWithValue(
                 "$now",
-                now.ToString("O"));
+                now.ToUniversalTime().ToString("O"));
             command.Parameters.AddWithValue(
                 "$limit",
                 Math.Clamp(limit, 1, 100));
@@ -377,7 +377,7 @@ public sealed class SqliteAutomationStore : IAutomationStore
         command.Parameters.AddWithValue(
             "$next",
             automation.NextRunAt is DateTimeOffset next
-                ? next.ToString("O")
+                ? next.ToUniversalTime().ToString("O")
                 : DBNull.Value);
         command.Parameters.AddWithValue(
             "$payload",

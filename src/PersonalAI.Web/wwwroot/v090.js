@@ -1,5 +1,5 @@
 (() => {
-  const VERSION = "1.2.0";
+  const VERSION = "1.3.0";
   let busy = false;
   let knownTasks = [];
 
@@ -87,7 +87,7 @@
     const intro = document.createElement("div");
     intro.className = "v090-task-intro";
     const introTitle = document.createElement("strong");
-    introTitle.textContent = "Tác vụ có Undo Foundation v1.2.0";
+    introTitle.textContent = "Tác vụ có Undo Foundation v1.3.0";
     const introText = document.createElement("p");
     introText.textContent = "Tác vụ có thể phụ thuộc vào tác vụ khác và từng bước có thể khai báo phụ thuộc vào các bước trước. PersonalAI chỉ cho chạy khi các phụ thuộc đã hoàn tất; không có chuỗi nào tự chạy." ;
     intro.append(introTitle, introText);
@@ -172,7 +172,7 @@
 
     const note = document.createElement("p");
     note.className = "security-copy";
-    note.textContent = "v1.2.0 giữ tối đa 50 tác vụ trong mỗi không gian trên máy, hỗ trợ phụ thuộc giữa tác vụ và giữa các bước. Phụ thuộc không làm tăng quyền tự động: mỗi bước vẫn phải được người dùng chủ động chạy và các thao tác có tác động vẫn cần xác nhận." ;
+    note.textContent = "v1.3.0 giữ tối đa 50 tác vụ trong mỗi không gian trên máy, hỗ trợ phụ thuộc giữa tác vụ và giữa các bước. Phụ thuộc không làm tăng quyền tự động: mỗi bước vẫn phải được người dùng chủ động chạy và các thao tác có tác động vẫn cần xác nhận." ;
 
     card.append(header, intro, form, feedback, listHeader, list, note);
     dialog.appendChild(card);
@@ -838,6 +838,8 @@
       "browser.navigate": "Điều hướng web",
       "browser.page.observe": "Đọc trang web",
       "browser.link.open": "Mở liên kết",
+      "connectors.list": "Danh sách connector",
+      "connector.http.get": "Đọc connector HTTPS",
       "workspace.create_directory": "Tạo thư mục",
       "workspace.delete": "Xóa tệp hoặc thư mục",
       "workspace.list": "Liệt kê thư mục làm việc",
@@ -855,7 +857,8 @@
       EXTERNAL: "BÊN NGOÀI",
       SENSITIVE: "NHẠY CẢM",
       COMPUTER: "ĐIỀU KHIỂN MÁY",
-      BROWSER: "TRÌNH DUYỆT"
+      BROWSER: "TRÌNH DUYỆT",
+      CONNECTOR: "KẾT NỐI"
     };
     const permissions = Array.isArray(values) ? values : [];
     return permissions.map(value => labels[String(value).toUpperCase()] || "KHÔNG XÁC ĐỊNH").join(", ") || "Không có";
@@ -918,6 +921,12 @@
         break;
       case "browser.link.open":
         add("Link index", value.linkIndex);
+        break;
+      case "connectors.list":
+        break;
+      case "connector.http.get":
+        add("Connector ID", value.connectorId);
+        add("Path", value.path);
         break;
       case "workspace.list":
         add("Thư mục", value.path || ".");

@@ -55,10 +55,77 @@ jobs:
             exit 1
           fi
 
-          curl -fsS http://127.0.0.1:5077/api/status | jq -e '.version == "0.9.3"' >/dev/null
+          curl -fsS http://127.0.0.1:5077/api/status | jq -e '.version == "0.9.4"' >/dev/null
+
+          workspaces=$(curl -fsS http://127.0.0.1:5077/api/workspaces)
+          echo "$workspaces" | jq -e '.currentWorkspaceId == "personal" and .maximumWorkspaces == 20 and (.workspaces | length) >= 5 and any(.workspaces[]; .id == "personal" and .isBuiltIn == true) and any(.workspaces[]; .id == "work") and any(.workspaces[]; .id == "study") and any(.workspaces[]; .id == "ai-ca-nhan") and any(.workspaces[]; .id == "travel")' >/dev/null
+
+          custom_workspace=$(curl -fsS -X POST http://127.0.0.1:5077/api/workspaces \
+            -H 'Content-Type: application/json' \
+            -d '{"name":"CI Workspace","description":"Không gian thử nghiệm v0.9.4"}')
+          custom_workspace_id=$(echo "$custom_workspace" | jq -r '.id')
+          test -n "$custom_workspace_id"
+          echo "$custom_workspace" | jq -e '.isBuiltIn == false and (.activeModules | sort) == (["memory","documents","tasks","files","conversations"] | sort) and (.reservedModules | sort) == (["agents","policies"] | sort)' >/dev/null
+
+          custom_status=$(curl -fsS -H "X-PersonalAI-Workspace: $custom_workspace_id" http://127.0.0.1:5077/api/status)
+          echo "$custom_status" | jq -e '.version == "0.9.4" and .workspaceName == "CI Workspace"' >/dev/null
+
+          invalid_workspace_code=$(curl -sS -o /tmp/workspace-invalid.json -w '%{http_code}' \
+            -H 'X-PersonalAI-Workspace: does-not-exist' \
+            http://127.0.0.1:5077/api/status)
+          test "$invalid_workspace_code" = "400"
+          jq -e '(.error | contains("không tồn tại"))' /tmp/workspace-invalid.json >/dev/null
+
+          custom_memory=$(curl -fsS -X POST http://127.0.0.1:5077/api/memory \
+            -H "X-PersonalAI-Workspace: $custom_workspace_id" \
+            -H 'Content-Type: application/json' \
+            -d '{"kind":"fact","content":"workspace-ci-secret-094"}')
+          echo "$custom_memory" | jq -e '.workspaceId == "'"$custom_workspace_id"'" and .content == "workspace-ci-secret-094"' >/dev/null
+          personal_memories=$(curl -fsS http://127.0.0.1:5077/api/memory)
+          echo "$personal_memories" | jq -e 'all(.[]; .content != "workspace-ci-secret-094")' >/dev/null
+          custom_memories=$(curl -fsS -H "X-PersonalAI-Workspace: $custom_workspace_id" http://127.0.0.1:5077/api/memory)
+          echo "$custom_memories" | jq -e 'any(.[]; .content == "workspace-ci-secret-094")' >/dev/null
+
+          printf 'workspace scoped document 094\n' >/tmp/workspace-094.txt
+          custom_document=$(curl -fsS -X POST http://127.0.0.1:5077/api/knowledge/documents \
+            -H "X-PersonalAI-Workspace: $custom_workspace_id" \
+            -F 'file=@/tmp/workspace-094.txt;type=text/plain')
+          custom_document_id=$(echo "$custom_document" | jq -r '.id')
+          test -n "$custom_document_id"
+          custom_documents=$(curl -fsS -H "X-PersonalAI-Workspace: $custom_workspace_id" http://127.0.0.1:5077/api/knowledge/documents)
+          echo "$custom_documents" | jq -e 'any(.[]; .fileName == "workspace-094.txt")' >/dev/null
+          personal_documents=$(curl -fsS http://127.0.0.1:5077/api/knowledge/documents)
+          echo "$personal_documents" | jq -e 'all(.[]; .fileName != "workspace-094.txt")' >/dev/null
+
+          custom_task=$(curl -fsS -X POST http://127.0.0.1:5077/api/tasks/prepare \
+            -H "X-PersonalAI-Workspace: $custom_workspace_id" \
+            -H 'Content-Type: application/json' \
+            -d '{"goal":"Kiểm tra task theo workspace","plan":"Đọc giờ cục bộ.","steps":[{"title":"Đọc giờ","description":"Đọc giờ hệ thống.","toolName":"local.clock","arguments":{}}]}')
+          custom_task_id=$(echo "$custom_task" | jq -r '.id')
+          echo "$custom_task" | jq -e '.workspaceId == "'"$custom_workspace_id"'"' >/dev/null
+          custom_tasks=$(curl -fsS -H "X-PersonalAI-Workspace: $custom_workspace_id" http://127.0.0.1:5077/api/tasks)
+          echo "$custom_tasks" | jq -e 'any(.tasks[]; .id == "'"$custom_task_id"'")' >/dev/null
+          personal_tasks=$(curl -fsS http://127.0.0.1:5077/api/tasks)
+          echo "$personal_tasks" | jq -e 'all(.tasks[]; .id != "'"$custom_task_id"'")' >/dev/null
+
+          custom_files_before=$(curl -fsS -X POST http://127.0.0.1:5077/api/tools/execute \
+            -H "X-PersonalAI-Workspace: $custom_workspace_id" \
+            -H 'Content-Type: application/json' \
+            -d '{"toolName":"workspace.list","arguments":{"path":".","maxEntries":50},"approvedPermissions":["READ"],"confirmed":false}')
+          echo "$custom_files_before" | jq -e '.status == "succeeded" and all(.output.entries[]; .name != "readme.txt")' >/dev/null
+
+          create_custom_file=$(curl -fsS -X POST http://127.0.0.1:5077/api/tools/execute \
+            -H "X-PersonalAI-Workspace: $custom_workspace_id" \
+            -H 'Content-Type: application/json' \
+            -d '{"toolName":"workspace.write_text","arguments":{"path":"workspace-only.txt","content":"scoped 094","mode":"create"},"approvedPermissions":["WRITE"],"confirmed":true}')
+          echo "$create_custom_file" | jq -e '.status == "succeeded" and .output.path == "workspace-only.txt"' >/dev/null
+          personal_files=$(curl -fsS -X POST http://127.0.0.1:5077/api/tools/execute \
+            -H 'Content-Type: application/json' \
+            -d '{"toolName":"workspace.list","arguments":{"path":".","maxEntries":50},"approvedPermissions":["READ"],"confirmed":false}')
+          echo "$personal_files" | jq -e 'all(.output.entries[]; .name != "workspace-only.txt")' >/dev/null
 
           tools=$(curl -fsS http://127.0.0.1:5077/api/tools)
-          echo "$tools" | jq -e '.frameworkVersion == "0.9.3" and (.permissionTypes | sort) == (["DELETE","EXTERNAL","READ","SENSITIVE","WRITE"] | sort)' >/dev/null
+          echo "$tools" | jq -e '.frameworkVersion == "0.9.4" and (.permissionTypes | sort) == (["DELETE","EXTERNAL","READ","SENSITIVE","WRITE"] | sort)' >/dev/null
           echo "$tools" | jq -e '(.tools | length) == 13 and any(.tools[]; .name == "local.clock" and .localOnly == true and .requiredPermissions == ["READ"]) and any(.tools[]; .name == "local.text_stats" and .timeoutMs == 2000) and any(.tools[]; .name == "memory.search") and any(.tools[]; .name == "documents.search") and any(.tools[]; .name == "local.calculate") and any(.tools[]; .name == "local.date_math") and any(.tools[]; .name == "app.summary") and any(.tools[]; .name == "workspace.list" and .requiredPermissions == ["READ"]) and any(.tools[]; .name == "workspace.read_text" and .requiredPermissions == ["READ"]) and any(.tools[]; .name == "workspace.write_text" and .requiredPermissions == ["WRITE"] and .requiresConfirmation == true) and any(.tools[]; .name == "workspace.create_directory" and .requiredPermissions == ["WRITE"] and .requiresConfirmation == true) and any(.tools[]; .name == "workspace.move" and .requiredPermissions == ["WRITE"] and .requiresConfirmation == true) and any(.tools[]; .name == "workspace.delete" and .requiredPermissions == ["DELETE"] and .requiresConfirmation == true)' >/dev/null
 
           text_tool=$(curl -fsS http://127.0.0.1:5077/api/tools/local.text_stats)
@@ -774,21 +841,21 @@ jobs:
           grep -Fq 'dependsOn' src/PersonalAI.Web/Services/TaskEngineService.cs
           grep -Fq 'taskDependencySelect' src/PersonalAI.Web/wwwroot/v090.js
           grep -Fq 'Phụ thuộc bước' src/PersonalAI.Web/wwwroot/v090.js
-          grep -Fq 'Task Dependencies' docs/releases/v0.9.3.md
+          grep -Fq 'Task Dependencies' docs/releases/v0.9.4.md
           grep -Fq 'v090.css' src/PersonalAI.Web/wwwroot/index.html
           grep -Fq 'v090.js' src/PersonalAI.Web/wwwroot/index.html
-          grep -Fq 'Tác vụ có phụ thuộc v0.9.3' src/PersonalAI.Web/wwwroot/v090.js
+          grep -Fq 'Tác vụ theo không gian v0.9.4' src/PersonalAI.Web/wwwroot/v090.js
           grep -Fq 'MỤC TIÊU → KẾ HOẠCH → TỪNG BƯỚC' src/PersonalAI.Web/wwwroot/v090.js
           grep -Fq 'arguments_sha256' src/PersonalAI.Web/Services/ToolActivityStore.cs
           grep -Fq 'output_sha256' src/PersonalAI.Web/Services/ToolActivityStore.cs
           grep -Fq 'v089.css' src/PersonalAI.Web/wwwroot/index.html
-          grep -Fq 'Nhật ký hoạt động công cụ v0.9.3' src/PersonalAI.Web/wwwroot/v080.js
+          grep -Fq 'Nhật ký hoạt động công cụ v0.9.4' src/PersonalAI.Web/wwwroot/v080.js
           grep -Fq 'Nhật ký hoạt động gần đây' src/PersonalAI.Web/wwwroot/v080.js
           grep -Fq 'v088.css' src/PersonalAI.Web/wwwroot/index.html
           grep -Fq 'Nguồn đề xuất:' src/PersonalAI.Web/wwwroot/app.js
           grep -Fq 'Tham số' src/PersonalAI.Web/wwwroot/app.js
           grep -Fq 'CÔNG CỤ NỘI BỘ TRÊN MÁY NÀY' src/PersonalAI.Web/wwwroot/v080.js
-          grep -Fq 'Nhật ký hoạt động công cụ v0.9.3' src/PersonalAI.Web/wwwroot/v080.js
+          grep -Fq 'Nhật ký hoạt động công cụ v0.9.4' src/PersonalAI.Web/wwwroot/v080.js
           grep -Fq 'Mô hình' src/PersonalAI.Web/wwwroot/index.html
           grep -Fq 'Khóa truy cập' src/PersonalAI.Web/wwwroot/index.html
           ! grep -Fq 'Planner:' src/PersonalAI.Web/wwwroot/app.js
@@ -848,6 +915,14 @@ jobs:
           grep -Fq 'CreateProviderFunctionName' src/PersonalAI.Web/Services/ToolOrchestrationService.cs
           ! grep -Fq 'BuildPlannerPrompt' src/PersonalAI.Web/Services/ToolOrchestrationService.cs
           ! grep -Fq 'TryParsePlannerDecision' src/PersonalAI.Web/Services/ToolOrchestrationService.cs
+          grep -Fq 'Workspace v0.9.4' docs/releases/v0.9.4.md
+          grep -Fq 'X-PersonalAI-Workspace' src/PersonalAI.Web/Services/WorkspaceEndpoints.cs
+          grep -Fq 'PersonalWorkspaceIds' src/PersonalAI.Web/Models/WorkspaceModels.cs
+          grep -Fq 'IWorkspaceContextAccessor' src/PersonalAI.Web/Services/WorkspaceFoundation.cs
+          grep -Fq 'v094.js' src/PersonalAI.Web/wwwroot/index.html
+          grep -Fq 'v094.css' src/PersonalAI.Web/wwwroot/index.html
+          grep -Fq 'personal-ai-v0.9.4-workspace-' src/PersonalAI.Web/wwwroot/app.js
+
 
       - name: Setup Node.js
         uses: actions/setup-node@v4
@@ -873,3 +948,4 @@ jobs:
           node --check src/PersonalAI.Web/wwwroot/v076.js
           node --check src/PersonalAI.Web/wwwroot/v080.js
           node --check src/PersonalAI.Web/wwwroot/v090.js
+          node --check src/PersonalAI.Web/wwwroot/v094.js

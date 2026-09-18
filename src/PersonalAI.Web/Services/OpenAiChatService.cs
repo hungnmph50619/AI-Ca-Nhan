@@ -197,6 +197,7 @@ No tools are available in this continuation. Produce only the final user-facing 
             }),
             tool_choice = "auto",
             parallel_tool_calls = false,
+            include = new[] { "reasoning.encrypted_content" },
             max_output_tokens = Math.Clamp(_options.MaxOutputTokens, 128, 16_384),
             store = false
         };

@@ -55,10 +55,10 @@ jobs:
             exit 1
           fi
 
-          curl -fsS http://127.0.0.1:5077/api/status | jq -e '.version == "0.8.8"' >/dev/null
+          curl -fsS http://127.0.0.1:5077/api/status | jq -e '.version == "0.8.9"' >/dev/null
 
           tools=$(curl -fsS http://127.0.0.1:5077/api/tools)
-          echo "$tools" | jq -e '.frameworkVersion == "0.8.8" and (.permissionTypes | sort) == (["DELETE","EXTERNAL","READ","SENSITIVE","WRITE"] | sort)' >/dev/null
+          echo "$tools" | jq -e '.frameworkVersion == "0.8.9" and (.permissionTypes | sort) == (["DELETE","EXTERNAL","READ","SENSITIVE","WRITE"] | sort)' >/dev/null
           echo "$tools" | jq -e '(.tools | length) == 13 and any(.tools[]; .name == "local.clock" and .localOnly == true and .requiredPermissions == ["READ"]) and any(.tools[]; .name == "local.text_stats" and .timeoutMs == 2000) and any(.tools[]; .name == "memory.search") and any(.tools[]; .name == "documents.search") and any(.tools[]; .name == "local.calculate") and any(.tools[]; .name == "local.date_math") and any(.tools[]; .name == "app.summary") and any(.tools[]; .name == "workspace.list" and .requiredPermissions == ["READ"]) and any(.tools[]; .name == "workspace.read_text" and .requiredPermissions == ["READ"]) and any(.tools[]; .name == "workspace.write_text" and .requiredPermissions == ["WRITE"] and .requiresConfirmation == true) and any(.tools[]; .name == "workspace.create_directory" and .requiredPermissions == ["WRITE"] and .requiresConfirmation == true) and any(.tools[]; .name == "workspace.move" and .requiredPermissions == ["WRITE"] and .requiresConfirmation == true) and any(.tools[]; .name == "workspace.delete" and .requiredPermissions == ["DELETE"] and .requiresConfirmation == true)' >/dev/null
 
           text_tool=$(curl -fsS http://127.0.0.1:5077/api/tools/local.text_stats)
@@ -90,6 +90,10 @@ jobs:
             -H 'Content-Type: application/json' \
             -d '{"toolName":"local.calculate","arguments":{"expression":"2 + 3 * (4 - 1)"},"approvedPermissions":["READ"],"confirmed":false}')
           echo "$calculator_result" | jq -e '.status == "succeeded" and .output.result == 11 and .output.resultText == "11"' >/dev/null
+
+          direct_activity=$(curl -fsS 'http://127.0.0.1:5077/api/tools/activity?limit=100')
+          echo "$direct_activity" | jq -e '.storage == "local-sqlite" and .retentionDays == 30 and .maximumEntries == 2000 and (.items | length) > 0 and any(.items[]; .eventType == "direct-execution-completed" and .toolName == "local.calculate" and (.argumentsSha256 | length) == 64 and (.outputSha256 | length) == 64)' >/dev/null
+          ! echo "$direct_activity" | grep -Fq 'Xin chào'
 
           calculator_invalid_code=$(curl -sS -o /tmp/calculator-invalid.json -w '%{http_code}' -X POST http://127.0.0.1:5077/api/tools/execute \
             -H 'Content-Type: application/json' \
@@ -124,6 +128,9 @@ jobs:
             -H 'Content-Type: application/json' \
             -d '{"proposalId":"'"$read_proposal_id"'","confirmed":false}')
           echo "$read_execution" | jq -e '.proposal.toolName == "local.calculate" and .execution.status == "succeeded" and .execution.output.result == 42 and .execution.approvedPermissions == ["READ"] and .localSummary == "7 * 6 = 42." and .canAiSynthesize == true and (.synthesisExpiresAt | length) > 10 and .canNativeContinue == false and .nativeContinueExpiresAt == null' >/dev/null
+
+          orchestration_activity=$(curl -fsS 'http://127.0.0.1:5077/api/tools/activity?limit=100')
+          echo "$orchestration_activity" | jq -e 'any(.items[]; .eventType == "proposal-created" and .toolName == "local.calculate" and .planningMode == "manual" and (.argumentsSha256 | length) == 64) and any(.items[]; .eventType == "execution-completed" and .toolName == "local.calculate" and .status == "succeeded" and (.outputSha256 | length) == 64)' >/dev/null
           read_invocation_id=$(echo "$read_execution" | jq -r '.execution.invocationId')
 
           synth_without_confirmation_code=$(curl -sS -o /tmp/tool-synth-unconfirmed.json -w '%{http_code}' -X POST http://127.0.0.1:5077/api/tools/orchestrate/synthesize \
@@ -590,11 +597,20 @@ jobs:
           grep -Fq 'NativeOutput' src/PersonalAI.Web/Models/ToolOrchestrationModels.cs
           grep -Fq 'char.IsHighSurrogate' src/PersonalAI.Web/Services/ToolOrchestrationService.cs
           grep -Fq 'MaximumNativeResultCharacters = 16_000' src/PersonalAI.Web/Services/ToolOrchestrationService.cs
+          grep -Fq '/api/tools/activity' src/PersonalAI.Web/Services/ToolFrameworkEndpoints.cs
+          grep -Fq 'SqliteToolActivityStore' src/PersonalAI.Web/Services/ToolActivityStore.cs
+          grep -Fq 'MaximumEntries = 2_000' src/PersonalAI.Web/Services/ToolActivityStore.cs
+          grep -Fq 'RetentionDays = 30' src/PersonalAI.Web/Services/ToolActivityStore.cs
+          grep -Fq 'arguments_sha256' src/PersonalAI.Web/Services/ToolActivityStore.cs
+          grep -Fq 'output_sha256' src/PersonalAI.Web/Services/ToolActivityStore.cs
+          grep -Fq 'v089.css' src/PersonalAI.Web/wwwroot/index.html
+          grep -Fq 'Nhật ký hoạt động công cụ v0.8.9' src/PersonalAI.Web/wwwroot/v080.js
+          grep -Fq 'Nhật ký hoạt động gần đây' src/PersonalAI.Web/wwwroot/v080.js
           grep -Fq 'v088.css' src/PersonalAI.Web/wwwroot/index.html
           grep -Fq 'Nguồn đề xuất:' src/PersonalAI.Web/wwwroot/app.js
           grep -Fq 'Tham số' src/PersonalAI.Web/wwwroot/app.js
           grep -Fq 'CÔNG CỤ NỘI BỘ TRÊN MÁY NÀY' src/PersonalAI.Web/wwwroot/v080.js
-          grep -Fq 'Hoàn tất câu trả lời từ kết quả công cụ v0.8.8' src/PersonalAI.Web/wwwroot/v080.js
+          grep -Fq 'Nhật ký hoạt động công cụ v0.8.9' src/PersonalAI.Web/wwwroot/v080.js
           grep -Fq 'Mô hình' src/PersonalAI.Web/wwwroot/index.html
           grep -Fq 'Khóa truy cập' src/PersonalAI.Web/wwwroot/index.html
           ! grep -Fq 'Planner:' src/PersonalAI.Web/wwwroot/app.js

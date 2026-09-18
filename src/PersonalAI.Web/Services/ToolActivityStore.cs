@@ -10,7 +10,9 @@ public static class ToolActivityEventTypes
     public const string ProposalCreated = "proposal-created";
     public const string ExecutionDenied = "execution-denied";
     public const string ExecutionCompleted = "execution-completed";
+    public const string AiSynthesisDenied = "ai-synthesis-denied";
     public const string AiSynthesisCompleted = "ai-synthesis-completed";
+    public const string NativeContinuationDenied = "native-continuation-denied";
     public const string NativeContinuationCompleted = "native-continuation-completed";
 }
 

@@ -32,6 +32,7 @@ builder.Services.AddBrowserAgent();
 builder.Services.AddConnectorFoundation();
 builder.Services.AddDevelopmentAgent();
 builder.Services.AddAndroidCompanion();
+builder.Services.AddLifeContext();
 builder.Services.AddToolFramework();
 builder.Services.AddTaskEngine();
 builder.Services.AddSingleton<IKnowledgeGroundingService, KnowledgeGroundingService>();
@@ -80,6 +81,7 @@ app.MapBrowserAgent();
 app.MapConnectorFoundation();
 app.MapDevelopmentAgent();
 app.MapAndroidCompanion();
+app.MapLifeContext();
 app.MapStableCore();
 
 app.MapGet("/api/status", (
@@ -490,6 +492,7 @@ app.MapPost("/api/context/preview", async (
             knowledgeMode,
             request.UseMemory,
             request.UseTaskContext,
+            request.UseLifeContext,
             cancellationToken);
         audit.Record(
             AuditAgents.PersonalAi,

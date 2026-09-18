@@ -240,7 +240,7 @@ jobs:
 
           duplicate_create_code=$(curl -sS -o /tmp/workspace-duplicate-create.json -w '%{http_code}' -X POST http://127.0.0.1:5077/api/tools/execute \
             -H 'Content-Type: application/json' \
-            -d '{"toolName":"workspace.write_text","arguments":{"path":"drafts/note.txt","content":"duplicate","mode":"create"},"approvedPermissions":["WRITE"],"confirmed":true}')
+            -d '{"toolName":"workspace.write_text","arguments":{"path":"readme.txt","content":"duplicate","mode":"create"},"approvedPermissions":["WRITE"],"confirmed":true}')
           test "$duplicate_create_code" = "400"
           jq -e '.status == "invalid-input" and (.error | contains("đã tồn tại"))' /tmp/workspace-duplicate-create.json >/dev/null
 

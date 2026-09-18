@@ -1,10 +1,10 @@
-# AI Cá Nhân — Software Development Agent v1.4.0
+# AI Cá Nhân — Android Companion v1.5.0
 
-PersonalAI là trợ lý AI cá nhân chạy bằng ASP.NET Core 8, ưu tiên dữ liệu cục bộ, có thể dùng Gemini hoặc OpenAI cho phần sinh câu trả lời. v1.0.0 vẫn là **Stable Personal AI Core**; v1.1 thêm Controlled Computer Use, v1.2 thêm Browser Agent có guard, v1.3 thêm Connector Foundation và v1.4 thêm **Software Development Agent có kiểm soát** cho inspect/search source, Git read-only và dotnet restore/build/test.
+PersonalAI là trợ lý AI cá nhân chạy bằng ASP.NET Core 8, ưu tiên dữ liệu cục bộ, có thể dùng Gemini hoặc OpenAI cho phần sinh câu trả lời. v1.0.0 vẫn là **Stable Personal AI Core**; v1.1 thêm Controlled Computer Use, v1.2 Browser Agent, v1.3 Connector Foundation, v1.4 Software Development Agent và v1.5 thêm **Android Companion** với pairing, device token theo workspace, chat và task read-only.
 
 > Đây vẫn là ứng dụng thiết kế cho một người dùng trên máy cá nhân. Không đưa trực tiếp lên Internet hoặc dùng như hệ thống nhiều người dùng nếu chưa bổ sung authentication, authorization và hardening triển khai phù hợp.
 
-## Có gì trong v1.4.0?
+## Có gì trong v1.5.0?
 
 ### Chat và AI provider
 
@@ -274,6 +274,41 @@ GET /api/development/status
 
 `dotnet build/test` có thể chạy MSBuild task hoặc test code do project định nghĩa, nên chỉ nên dùng với workspace/repository mà người dùng tin cậy.
 
+### Android Companion
+
+v1.5.0 thêm ứng dụng Android native tại:
+
+```text
+android/PersonalAI.Companion/
+```
+
+Android Companion dùng one-time pairing code từ desktop. Mỗi device nhận một token riêng, bị khóa vào workspace đã pair.
+
+Backend chỉ lưu **SHA-256 hash** của device token; token plaintext chỉ được trả đúng một lần lúc claim. App Android mã hóa token bằng **Android Keystore + AES-GCM**.
+
+Client API:
+
+```http
+GET  /api/companion/client/me
+GET  /api/companion/client/core
+GET  /api/companion/client/tasks
+POST /api/companion/client/chat
+```
+
+Android chat dùng chung Context Manager với desktop nhưng backend cưỡng chế `UseTools = false`, nên v1.5 không cho điện thoại chạy Computer/Browser/Connector/Development/Workspace tools.
+
+Tasks trên Android là read-only. Không có execute/retry/resume/cancel qua companion namespace.
+
+Desktop local quản lý pairing/device tại:
+
+```http
+POST   /api/companion/admin/pairing/start
+GET    /api/companion/admin/devices
+DELETE /api/companion/admin/devices/{id}?confirmed=true
+```
+
+Mặc định pairing/client API yêu cầu HTTPS. HTTP LAN chỉ được bật khi backend có `Companion__AllowInsecureHttp=true` và người dùng cũng opt-in trên app Android.
+
 ### Tasks
 
 Task Engine hỗ trợ:
@@ -345,13 +380,13 @@ Undo khả dụng 7 ngày, tối đa 500 record, snapshot tối đa 512 KB.
 
 ## Stable Core contract
 
-v1.4.0 giữ API contract của Stable Core và mở rộng controlled capability layer:
+v1.5.0 giữ API contract của Stable Core và mở rộng controlled capability layer:
 
-- Version: `1.4.0`
+- Version: `1.5.0`
 - API contract: `1`
 - Channel: `controlled`
 - Stable Core: v1.0 semantics
-- Controlled modules: `computer-use`, `browser-agent`, `connectors`, `software-development`
+- Controlled modules: `computer-use`, `browser-agent`, `connectors`, `software-development`, `android-companion`
 
 Capabilities:
 
@@ -378,7 +413,7 @@ Unhandled API exception được sanitize; stack trace và đường dẫn local
 
 ## Guardrails hiện tại
 
-v1.4.0 **không phải autonomous agent**.
+v1.5.0 **không phải autonomous agent**.
 
 Hiện tại:
 
@@ -399,6 +434,10 @@ Hiện tại:
 - Development arbitrary shell: tắt
 - Development arbitrary process: tắt
 - Development Git write actions: tắt
+- Android pairing: bắt buộc
+- Android device token: backend chỉ lưu hash
+- Android remote tool execution: tắt
+- Android remote task mutation: tắt
 - Automatic multi-step execution: tắt
 - Background scheduler: tắt
 - Autonomous agent loop: tắt
@@ -419,6 +458,8 @@ Chưa có:
 - arbitrary shell/process execution;
 - Git write actions;
 - autonomous coding loop;
+- Android remote tool/task mutation;
+- Android background agent/sensor collection;
 - cloud multi-user auth.
 
 ## Yêu cầu
@@ -484,6 +525,7 @@ Tasks\personal-tasks.db
 Audit\audit.db
 Undo\undo.db
 Connectors\connections.json
+Companion\devices.json
 Workspace\
 ```
 
@@ -497,6 +539,7 @@ Tasks:Root     / Tasks__Root
 Audit:Root     / Audit__Root
 Undo:Root      / Undo__Root
 Connectors:Root / Connectors__Root
+Companion:Root  / Companion__Root
 ```
 
 ## Kiến trúc mức cao
@@ -518,6 +561,7 @@ ASP.NET Core
   ├── Undo
   ├── Connectors
   ├── Software Development Agent
+  ├── Android Companion
   │
   ├── Context Manager
   │      ├── Memory selection
@@ -542,6 +586,8 @@ ASP.NET Core
 PersonalAI/
 ├── PersonalAI.sln
 ├── README.md
+├── android/
+│   └── PersonalAI.Companion/
 ├── docs/
 │   └── releases/
 └── src/
@@ -571,6 +617,8 @@ GitHub Actions hiện kiểm tra regression cho các nền chính, gồm:
 - Audit;
 - Undo;
 - Stable Core contract;
+- Android Companion pairing/auth/isolation;
+- Android debug APK build;
 - JavaScript syntax;
 - UI guardrails tiếng Việt.
 
@@ -595,10 +643,11 @@ docs/releases/v1.1.0.md
 docs/releases/v1.2.0.md
 docs/releases/v1.3.0.md
 docs/releases/v1.4.0.md
+docs/releases/v1.5.0.md
 ```
 
-## Hướng phát triển sau v1.4
+## Hướng phát triển sau v1.5
 
-Computer Use, Browser Agent, Connector Foundation và Software Development Agent hiện nằm trong controlled capability layer.
+Computer Use, Browser Agent, Connector Foundation, Software Development Agent và Android Companion hiện nằm trong controlled capability layer.
 
-Mốc tiếp theo cần được lấy trực tiếp từ roadmap hiện hành trước khi mở thêm quyền; README không tự suy diễn tên/version kế tiếp.
+Theo roadmap gốc, mốc kế tiếp là **v1.6 — Life Context**, sau đó là **v1.7 Decision Engine → v1.8 Automation → v1.9 Reliability / Security → v2.0 Personal AI OS**.

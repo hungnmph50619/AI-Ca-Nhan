@@ -19,6 +19,7 @@ public sealed record ConnectorStatusResponse(
     IReadOnlyList<string> AvailableCapabilities,
     int MaximumConnectionsPerWorkspace,
     int MaximumResponseBytes,
+    int MaximumReturnedCharacters,
     int MaximumRedirects,
     bool SecretsEncrypted,
     bool WriteActionsEnabled,

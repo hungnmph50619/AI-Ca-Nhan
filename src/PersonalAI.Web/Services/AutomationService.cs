@@ -48,8 +48,10 @@ public sealed class AutomationService(
     public const int MinimumIntervalMinutes = 5;
     public const int MaximumIntervalMinutes = 10_080;
     public const int SchedulerPollSeconds = 30;
-    public const int MaximumDueBatchSize = 20;
+    public const int MaximumDueBatchSize = 1;
     public const int MaximumNameCharacters = 80;
+
+    private static readonly object CreationGate = new();
 
     public AutomationStatusResponse GetStatus() =>
         new(
@@ -155,7 +157,30 @@ public sealed class AutomationService(
             null,
             0);
 
-        store.Save(item);
+        lock (CreationGate)
+        {
+            if (store.Count(workspaceId)
+                >= SqliteAutomationStore.MaximumAutomationsPerWorkspace)
+            {
+                throw new AutomationValidationException(
+                    $"Workspace đã đạt giới hạn {SqliteAutomationStore.MaximumAutomationsPerWorkspace} automation.");
+            }
+
+            var existingForTask = store.GetAll(workspaceId)
+                .Any(existing =>
+                    existing.TaskId == task.Id
+                    && existing.State
+                        is not (AutomationStates.Completed
+                            or AutomationStates.Failed));
+            if (existingForTask)
+            {
+                throw new AutomationValidationException(
+                    "Task này đã có automation chưa kết thúc. Hãy pause/resume hoặc xóa automation hiện tại thay vì tạo lịch cạnh tranh trên cùng task.");
+            }
+
+            store.Save(item);
+        }
+
         audit.Record(
             AuditAgents.User,
             "automation.create",

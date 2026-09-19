@@ -77,6 +77,7 @@ public sealed record AgentExecutionResponse(
     OfficeDraft? Office = null,
     OperatorActionPlan? Operator = null,
     ReviewerReport? Reviewer = null,
+    SecurityReviewReport? Security = null,
     string? Error = null);
 
 public sealed record AgentExecutionContext(
@@ -95,4 +96,5 @@ public sealed record AgentResult(
     DeveloperReport? Developer = null,
     OfficeDraft? Office = null,
     OperatorActionPlan? Operator = null,
-    ReviewerReport? Reviewer = null);
+    ReviewerReport? Reviewer = null,
+    SecurityReviewReport? Security = null);

@@ -1,5 +1,5 @@
 (() => {
-  const VERSION = "2.2.2";
+  const VERSION = "2.2.3";
 
   document.addEventListener("DOMContentLoaded", () => {
     const card = document.querySelector("#agentDialog .agent-card");

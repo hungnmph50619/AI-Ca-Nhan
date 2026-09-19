@@ -104,3 +104,35 @@
     width: 100%;
   }
 }
+
+/* Đồng bộ khung hộp thoại với thẻ nội dung, tránh bị cắt mất bên trái. */
+#computerUseDialog {
+  box-sizing: border-box;
+  width: min(820px, calc(100vw - 32px));
+  max-width: calc(100vw - 32px);
+}
+#computerUseDialog > .v110-computer-card {
+  box-sizing: border-box;
+  width: 100%;
+  max-width: 100%;
+  min-width: 0;
+}
+#computerKeyboardPreview {
+  margin-top: 16px;
+}
+#computerKeyboardPreview .secondary-button {
+  margin-top: 8px;
+}
+#computerKeyboardPreview select,
+#computerKeyboardPreview input {
+  display: block;
+  max-width: 100%;
+}
+@media (max-width: 640px) {
+  #computerUseDialog {
+    width: calc(100vw - 20px);
+    max-width: calc(100vw - 20px);
+  }
+  #computerUseDialog > .v110-computer-card { padding: 16px; }
+  .v110-computer-actions { flex-wrap: wrap; gap: 8px; }
+}

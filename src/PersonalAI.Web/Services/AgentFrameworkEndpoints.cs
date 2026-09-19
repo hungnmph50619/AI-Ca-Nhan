@@ -15,6 +15,7 @@ public static class AgentFrameworkEndpoints
         services.AddScoped<IAgent, OfficeFrameworkAgent>();
         services.AddScoped<IAgent, OperatorFrameworkAgent>();
         services.AddScoped<IAgent, ReviewerFrameworkAgent>();
+        services.AddScoped<IAgent, SecurityFrameworkAgent>();
         services.AddScoped<IAgentRegistry, AgentRegistry>();
         services.AddScoped<IAgentFrameworkService, AgentFrameworkService>();
         return services;
@@ -48,6 +49,9 @@ public static class AgentFrameworkEndpoints
 
         app.MapGet("/api/reviewer-agent/status", () =>
             Results.Ok(ReviewerAgentLimits.GetStatus()));
+
+        app.MapGet("/api/security-agent/status", () =>
+            Results.Ok(SecurityAgentLimits.GetStatus()));
 
         app.MapGet("/api/agents/{agentId}", (
             string agentId,

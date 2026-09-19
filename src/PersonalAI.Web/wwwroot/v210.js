@@ -23,6 +23,18 @@
     research:"Nghiên cứu",developer:"Phân tích mã",office:"Văn phòng",
     operator:"Lập kế hoạch thao tác",reviewer:"Rà soát",security:"Bảo mật"
   };
+
+  const vietnameseKinds = {
+    email: "Thư điện tử", memo: "Bản ghi nhớ", agenda: "Chương trình họp",
+    minutes: "Biên bản họp", summary: "Bản tóm tắt",
+    ambiguity: "Nội dung chưa rõ", inconsistency: "Nội dung chưa nhất quán",
+    "unsupported-claim": "Nhận định chưa có bằng chứng",
+    "missing-information": "Thiếu thông tin", clarity: "Cần diễn đạt rõ hơn",
+    browser: "Trình duyệt", computer: "Máy tính",
+    connector: "Dịch vụ kết nối", manual: "Thao tác thủ công",
+    low: "Thấp", medium: "Trung bình", high: "Cao"
+  };
+  const translatedValue = value => vietnameseKinds[value] || "Chưa xác định";
   const translatedName = agent => translatedNames[agent.id] || "Tác nhân AI";
   const translatedRole = agent => translatedRoles[agent.role] || "Chức năng chuyên biệt";
 
@@ -267,7 +279,7 @@
       : isPlanner
         ? "Ví dụ: Phát triển AI Cá Nhân từ v2.1.2 đến v2.2 theo từng bước an toàn."
         : "Ví dụ: Phân tích những việc tôi đang làm và đề xuất bước tiếp theo.";
-    runButton.textContent = isSecurity ? "Kiểm tra mẫu rủi ro" : isReviewer ? "Rà soát nội dung" : isOperator ? "Chuẩn bị thao tác" : isOffice ? "Soạn bản nháp" : isDeveloper ? "Phân tích mã" : isResearch ? "Nghiên cứu tài liệu" : isPlanner ? "Lập kế hoạch" : "Chạy agent";
+    runButton.textContent = isSecurity ? "Kiểm tra mẫu rủi ro" : isReviewer ? "Rà soát nội dung" : isOperator ? "Chuẩn bị thao tác" : isOffice ? "Soạn bản nháp" : isDeveloper ? "Phân tích mã" : isResearch ? "Nghiên cứu tài liệu" : isPlanner ? "Lập kế hoạch" : "Chạy tác nhân";
 
     [
       ["Vai trò", translatedRole(agent)],
@@ -290,7 +302,7 @@
     const text = goal.value.trim();
     if (!agentId || !text) return;
 
-    feedback.textContent = "Agent đang xử lý…";
+    feedback.textContent = "Tác nhân đang xử lý…";
     result.hidden = true;
     runButton.disabled = true;
 
@@ -349,7 +361,7 @@
     } else {
       const copy = document.createElement("div");
       copy.className = "agent-result-copy";
-      copy.textContent = payload.message || "Agent không trả về nội dung.";
+      copy.textContent = payload.message || "Tác nhân chưa trả về nội dung.";
       result.append(copy);
     }
 
@@ -368,7 +380,7 @@
 
     const status = document.createElement("span");
     status.className = "planner-plan-status";
-    status.textContent = plan.status || "prepared";
+    status.textContent = plan.status === "prepared" ? "Đã chuẩn bị, chưa thực hiện" : "Chưa xác định";
 
     heading.append(title, status);
 
@@ -391,7 +403,7 @@
 
       const role = document.createElement("span");
       role.className = "planner-step-role";
-      role.textContent = step.suggestedRole || "general-assistant";
+      role.textContent = translatedRoles[step.suggestedRole] || "Trợ lý tổng hợp";
 
       stepHeading.append(stepTitle, role);
 
@@ -423,7 +435,7 @@
       if (step.requiresUserInput) {
         const userInput = document.createElement("p");
         userInput.className = "planner-step-user-input";
-        userInput.textContent = "Cần người dùng cung cấp thêm thông tin.";
+        userInput.textContent = "Cần bạn cung cấp thêm thông tin.";
         card.append(userInput);
       }
 
@@ -555,7 +567,7 @@
     const root = document.createElement("section");
     root.className = "office-draft";
     const title = document.createElement("h3");
-    title.textContent = "Bản nháp văn phòng · " + (draft.kind || "");
+    title.textContent = "Bản nháp văn phòng · " + translatedValue(draft.kind);
     const subject = document.createElement("h4");
     subject.textContent = draft.title || "";
     const body = document.createElement("div");
@@ -566,7 +578,7 @@
     appendPlannerList(root, "Việc đề xuất (chưa thực hiện)", draft.actionItems);
     appendPlannerList(root, "Thông tin cần xác nhận", draft.missingInformation);
     const boundary = document.createElement("p");
-    boundary.textContent = "Đây chỉ là bản nháp; hệ thống chưa gửi email, tạo lịch/task, chỉnh sửa hoặc tự lưu tài liệu. Hãy rà soát nội dung trước khi dùng.";
+    boundary.textContent = "Đây chỉ là bản nháp; hệ thống chưa gửi thư, tạo lịch hoặc công việc, chỉnh sửa hay tự lưu tài liệu. Hãy kiểm tra nội dung trước khi dùng.";
     root.append(boundary);
     result.append(root);
   }
@@ -586,8 +598,8 @@
       const heading = document.createElement("h4");
       heading.textContent = step.step + ". " + (step.title || "");
       const channel = document.createElement("p");
-      channel.textContent = "Kênh đề xuất: " + (step.channel || "manual")
-        + " · Mức rủi ro: " + (step.riskLevel || "");
+      channel.textContent = "Kênh đề xuất: " + translatedValue(step.channel)
+        + " · Mức rủi ro: " + translatedValue(step.riskLevel);
       const description = document.createElement("p");
       description.textContent = step.description || "";
       const expected = document.createElement("p");
@@ -612,7 +624,7 @@
     appendPlannerList(root, "Cần làm rõ", plan.openQuestions);
     appendPlannerList(root, "Giới hạn", plan.limitations);
     const boundary = document.createElement("p");
-    boundary.textContent = "Bản kế hoạch này không có nút thực thi. Không điều khiển máy/browser, gọi connector, gửi tin, lưu kế hoạch hoặc dispatch agent.";
+    boundary.textContent = "Bản kế hoạch này không có nút thực thi. Không điều khiển máy hoặc trình duyệt, gọi dịch vụ kết nối, gửi tin, lưu kế hoạch hoặc giao việc cho tác nhân khác.";
     root.append(boundary);
     result.append(root);
   }
@@ -634,7 +646,7 @@
       const card = document.createElement("article");
       card.className = "reviewer-finding";
       const title = document.createElement("h4");
-      title.textContent = (item.kind || "review") + " — " + (item.observation || "");
+      title.textContent = translatedValue(item.kind) + " — " + (item.observation || "");
       const excerpt = document.createElement("p");
       excerpt.textContent = "Trích nguyên văn: “" + (item.evidenceExcerpt || "") + "”";
       const suggestion = document.createElement("p");
@@ -666,9 +678,9 @@
       const card = document.createElement("article");
       card.className = "security-finding";
       const title = document.createElement("h4");
-      title.textContent = (item.title || "") + " (" + (item.severity || "") + ")";
+      title.textContent = (item.title || "") + " (Mức cảnh báo: " + translatedValue(item.severity) + ")";
       const rule = document.createElement("p");
-      rule.textContent = "Mẫu: " + (item.ruleId || "");
+      rule.textContent = "Quy tắc kiểm tra: " + (item.title || "");
       const explanation = document.createElement("p");
       explanation.textContent = item.explanation || "";
       const check = document.createElement("p");
@@ -679,7 +691,7 @@
 
     appendPlannerList(root, "Giới hạn", review.limitations);
     const boundary = document.createElement("p");
-    boundary.textContent = "Kết quả chỉ dựa trên mẫu trong nội dung nhập, không echo nội dung hoặc gửi tới AI provider. Không phát hiện mẫu không có nghĩa an toàn. Không thay đổi quyền, thực thi hoặc chặn thao tác.";
+    boundary.textContent = "Kết quả chỉ dựa trên một số mẫu kiểm tra; không lặp lại nội dung bạn nhập hoặc gửi sang dịch vụ AI. Không phát hiện mẫu không có nghĩa là an toàn. Hệ thống không thay đổi quyền hay tự thực hiện hoặc chặn thao tác.";
     root.append(boundary);
     result.append(root);
   }

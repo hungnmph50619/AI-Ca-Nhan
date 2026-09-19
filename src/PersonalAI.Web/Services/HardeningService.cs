@@ -17,7 +17,13 @@ public static class HardeningLimits
     public const int HeartbeatSeconds = 30;
 }
 
-public sealed class HardeningBusyException(string message) : Exception(message);
+public sealed class HardeningBusyException : Exception
+{
+    public HardeningBusyException(string message) : base(message) { }
+
+    public HardeningBusyException(string message, Exception innerException)
+        : base(message, innerException) { }
+}
 public sealed class HardeningValidationException(string message) : Exception(message);
 
 public interface IHardeningRuntimeState
@@ -1169,7 +1175,19 @@ public sealed class HardeningRuntimeHostedService(
 
         runtime.MarkStarted();
         _timer = new Timer(
-            _ => runtime.Heartbeat(),
+            _ =>
+            {
+                try
+                {
+                    runtime.Heartbeat();
+                }
+                catch (Exception exception)
+                {
+                    logger.LogWarning(
+                        exception,
+                        "Hardening heartbeat could not be persisted.");
+                }
+            },
             null,
             TimeSpan.FromSeconds(
                 HardeningLimits.HeartbeatSeconds),
@@ -1183,7 +1201,17 @@ public sealed class HardeningRuntimeHostedService(
         _timer?.Change(
             Timeout.InfiniteTimeSpan,
             Timeout.InfiniteTimeSpan);
-        runtime.MarkCleanShutdown();
+        try
+        {
+            runtime.MarkCleanShutdown();
+        }
+        catch (Exception exception)
+        {
+            logger.LogWarning(
+                exception,
+                "Hardening clean-shutdown marker could not be persisted.");
+        }
+
         return Task.CompletedTask;
     }
 
@@ -1234,7 +1262,7 @@ public sealed class HardeningApiGuardMiddleware(
         {
             context.Response.StatusCode =
                 StatusCodes.Status429TooManyRequests;
-            context.Response.Headers.RetryAfter =
+            context.Response.Headers["Retry-After"] =
                 Math.Max(1, rate.RetryAfterSeconds).ToString();
             await context.Response.WriteAsJsonAsync(
                 new ApiError(
@@ -1251,7 +1279,7 @@ public sealed class HardeningApiGuardMiddleware(
                 context.Request.Path.Value);
             context.Response.StatusCode =
                 StatusCodes.Status503ServiceUnavailable;
-            context.Response.Headers.RetryAfter = "1";
+            context.Response.Headers["Retry-After"] = "1";
             await context.Response.WriteAsJsonAsync(
                 new ApiError(
                     "Hệ thống đang xử lý quá nhiều yêu cầu đồng thời. Hãy thử lại."));

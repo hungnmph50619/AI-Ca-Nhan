@@ -25,7 +25,12 @@ public static class AgentOrchestrationLimits
             PersistsWorkflows: false,
             AutonomousLoopEnabled: false,
             SelfTestPassed: SelfTest.Value,
-            NextStage: "v2.2.1-workflow-hardening");
+            NextStage: "v2.2.2-orchestration-reliability",
+            MaximumWorkflowSeconds: WorkflowHandoffGuard.MaximumWorkflowSeconds,
+            MaximumStepSeconds: WorkflowHandoffGuard.MaximumStepSeconds,
+            StopsOnTimeout: true,
+            SensitiveHandoffScreeningEnabled: true,
+            HandoffGuardSelfTestPassed: WorkflowHandoffGuard.RunSelfTest());
 }
 
 public static class AgentWorkflowValidation
@@ -181,11 +186,22 @@ public sealed class AgentOrchestrationService(
             "explicit-workflow-approval",
             AuditResults.Prepared);
 
+        using var workflowDeadline = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
+        workflowDeadline.CancelAfter(TimeSpan.FromSeconds(WorkflowHandoffGuard.MaximumWorkflowSeconds));
+        string? stopReason = null;
+
         try
         {
             for (var i = 0; i < steps.Count; i++)
             {
                 cancellationToken.ThrowIfCancellationRequested();
+                if (workflowDeadline.IsCancellationRequested)
+                {
+                    failedStep = i + 1;
+                    stopReason = "timeout";
+                    error = "Workflow vượt giới hạn thời gian và đã dừng; các bước sau không chạy.";
+                    break;
+                }
 
                 var step = steps[i];
                 try
@@ -197,7 +213,10 @@ public sealed class AgentOrchestrationService(
                         throw new AgentValidationException("Workspace đã thay đổi trong khi workflow đang chạy.");
 
                     var previous = i > 0 ? completed[^1].Result.Message : null;
-                    var goal = AgentWorkflowValidation.BuildGoal(step, previous);
+                    var goal = WorkflowHandoffGuard.Prepare(step, previous);
+                    using var stepDeadline = CancellationTokenSource.CreateLinkedTokenSource(
+                        workflowDeadline.Token);
+                    stepDeadline.CancelAfter(TimeSpan.FromSeconds(WorkflowHandoffGuard.MaximumStepSeconds));
                     var result = await agents.ExecuteAsync(
                         step.AgentId!,
                         new AgentExecutionRequest(
@@ -206,7 +225,7 @@ public sealed class AgentOrchestrationService(
                             UseMemory: request.UseMemory,
                             UseTaskContext: request.UseTaskContext,
                             UseLifeContext: request.UseLifeContext),
-                        cancellationToken);
+                        stepDeadline.Token);
 
                     // No agent can select another agent or change this step list.
                     completed.Add(new AgentWorkflowStepResult(
@@ -220,11 +239,27 @@ public sealed class AgentOrchestrationService(
                 {
                     throw;
                 }
+                catch (OperationCanceledException)
+                    when (!cancellationToken.IsCancellationRequested)
+                {
+                    failedStep = i + 1;
+                    stopReason = "timeout";
+                    error = "Bước này đã dừng vì hết thời gian; các bước sau không chạy.";
+                    break;
+                }
+                catch (AgentValidationException)
+                {
+                    failedStep = i + 1;
+                    stopReason = "validation-blocked";
+                    error = "Không thể thực hiện bước tiếp theo vì workspace hoặc dữ liệu chuyển giao không hợp lệ; các bước sau không chạy.";
+                    break;
+                }
                 catch (Exception)
                 {
                     // Avoid returning exception details potentially containing
                     // credentials or model/provider text.
                     failedStep = i + 1;
+                    stopReason = "step-failed";
                     error = "Bước này không hoàn tất; workflow đã dừng và không chạy các bước sau.";
                     break;
                 }
@@ -240,7 +275,9 @@ public sealed class AgentOrchestrationService(
             return new AgentWorkflowResponse(
                 workflowId,
                 workspaceId,
-                succeeded ? AgentWorkflowStatuses.Completed : AgentWorkflowStatuses.Stopped,
+                succeeded ? AgentWorkflowStatuses.Completed
+                    : stopReason == "timeout" ? AgentWorkflowStatuses.TimedOut
+                    : AgentWorkflowStatuses.Stopped,
                 completed,
                 steps.Count,
                 failedStep,
@@ -250,7 +287,8 @@ public sealed class AgentOrchestrationService(
                 PersistedWorkflow: false,
                 ParallelExecution: false,
                 StartedAt: startedAt,
-                CompletedAt: DateTimeOffset.UtcNow);
+                CompletedAt: DateTimeOffset.UtcNow,
+                StopReason: stopReason);
         }
         catch (OperationCanceledException)
             when (cancellationToken.IsCancellationRequested)

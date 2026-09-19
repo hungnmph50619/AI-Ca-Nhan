@@ -1,0 +1,61 @@
+name: Minimap vision lab safety smoke
+on:
+  push:
+    branches:
+      - 'feature/v2.3.0-minimap-vision-lab'
+  pull_request:
+
+jobs:
+  vision-lab:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: '8.0.x'
+      - name: Build full AI Cá Nhân
+        run: dotnet build PersonalAI.sln --configuration Release
+      - name: Check Vietnamese vision-lab script syntax
+        run: node --check src/PersonalAI.Web/wwwroot/vision.js
+      - name: Smoke-test opt-in and localhost boundary
+        shell: bash
+        run: |
+          set -euo pipefail
+          dotnet run --project src/PersonalAI.Web/PersonalAI.Web.csproj \
+            --configuration Release --no-build --no-launch-profile \
+            --urls http://127.0.0.1:5079 >/tmp/vision-lab.log 2>&1 &
+          app_pid=$!
+          trap 'kill "$app_pid" 2>/dev/null || true' EXIT
+          ready=0
+          for attempt in {1..35}; do
+            if curl -fsS http://127.0.0.1:5079/api/vision/minimap/status >/tmp/vision-status.json; then
+              ready=1
+              break
+            fi
+            sleep 1
+          done
+          if [ "$ready" -ne 1 ]; then
+            cat /tmp/vision-lab.log
+            exit 1
+          fi
+          jq -e '.mode == "saved-image-manual-review"
+            and .automaticScreenshot == false
+            and .liveOpponentTracking == false
+            and .sendsImageToProviderOnlyAfterExplicitConfirmation == true' </tmp/vision-status.json
+          curl -fsS http://127.0.0.1:5079/vision.html |
+            grep -F 'Mắt nhìn AI'
+          curl -fsS http://127.0.0.1:5079/vision.js |
+            grep -F 'consent.checked'
+          cross_origin=$(curl -s -o /dev/null -w '%{http_code}' \
+            -H 'Origin: https://invalid.example' \
+            http://127.0.0.1:5079/api/vision/minimap/status)
+          test "$cross_origin" = "404"
+          no_consent=$(curl -s -o /dev/null -w '%{http_code}' -X POST \
+            -F 'confirmed=false' -F 'image=@src/PersonalAI.Web/wwwroot/vision.js;type=image/png' \
+            http://127.0.0.1:5079/api/vision/minimap/analyze)
+          test "$no_consent" = "400"
+          oversized=$(curl -s -o /dev/null -w '%{http_code}' -X POST \
+            -H 'Content-Length: 3000000' \
+            http://127.0.0.1:5079/api/vision/minimap/analyze)
+          test "$oversized" = "413"
+          echo 'Minimap vision lab build, script, status, origin, consent and size checks passed.'

@@ -141,3 +141,14 @@ Tìm kiếm: Trình duyệt → /api/knowledge/search → SQLite FTS5 → các �
 Lịch sử hội thoại và metadata nguồn hiện nằm trong `localStorage` của trình duyệt. v0.5.3 đã đưa các đoạn liên quan vào ngữ cảnh AI và hiển thị nguồn đã dùng; bước tiếp theo có thể bổ sung chế độ bật/tắt dữ liệu riêng, xem trích đoạn nguồn trực tiếp từ câu trả lời và đánh giá chất lượng truy xuất. Lớp lưu trữ được tách riêng để sau này có thể chuyển từ SQLite sang PostgreSQL mà không phải viết lại giao diện.
 
 Endpoint `GET /api/team-profiles` cho thấy các hồ sơ đội đã được khai báo. Đây mới là hợp đồng dữ liệu cho tương lai, chưa phải hệ thống tự động thực hiện hành động.
+
+## Thử nghiệm cầu nối Xerath Support Assistant — bản đầu tiên
+
+AI Cá Nhân có API cục bộ `GET /api/integrations/xerath/status` và `POST /api/integrations/xerath/notice` để nhận **hai loại tín hiệu đã được xác nhận** từ trợ lý Xerath: `own-health-loss` (máu của chính bạn vừa giảm nhanh) và `completed-kill` (điểm hạ gục đã được công bố). Endpoint phản hồi câu thông báo tiếng Việt theo mẫu cố định, kèm nguồn, trạng thái xác nhận và hạn sử dụng; **đây mới là kết nối thử nghiệm, KHÔNG chạy Gemini/OpenAI, KHÔNG có nhận diện hình ảnh, KHÔNG theo dõi rừng địch hoặc đưa quyết định chiến thuật**.
+
+Cách chạy: tại thư mục AI-Ca-Nhan, dùng `dotnet run --project src/PersonalAI.Web --launch-profile PersonalAI.Web`. Chương trình mặc định có địa chỉ **http://localhost:5188** bên cạnh HTTPS. Trên cùng máy Windows, chạy Xerath Support Assistant, mở **Chỉ số trực tiếp & tổng hợp**, bấm **Kiểm tra kết nối AI cá nhân** để xác nhận API đang hoạt động, sau đó tùy chọn tích ô **Thử cầu nối AI cá nhân trên máy** và bật HUD. Kết nối không bắt buộc; khi AI Cá Nhân chưa chạy, HUD hiển thị thông báo cục bộ sẵn có mà không đợi quá lâu.
+
+Hợp đồng dữ liệu yêu cầu `POST http://127.0.0.1:5188/api/integrations/xerath/notice`, header `X-Xerath-Bridge: 1`, body JSON dạng `{"kind":"own-health-loss","gameTimeSeconds":120,"healthPercent":30}` hoặc `{"kind":"completed-kill","gameTimeSeconds":120,"healthPercent":null}`. API chỉ chấp nhận người gọi loopback và tên host localhost/127.0.0.1, chỉ xử lý tín hiệu nằm trong danh sách cho phép và không đưa chuỗi tùy ý từ bên gọi vào HUD. **Không mở địa chỉ này ra Internet**, không cấu hình port-forward hoặc reverse proxy; API này chưa có xác thực giữa các tiến trình cục bộ. Không có ảnh, lịch sử chat, API key hoặc dữ liệu vị trí tướng địch nào được gửi qua cầu nối.
+
+**Các bước tương lai:** bổ sung kiểm thử truyền dữ liệu và đo độ trễ; tạo bộ quan sát ảnh để *phân tích luyện tập* với nhãn rõ ràng; chỉ xem xét bật từng loại phân tích lên HUD trong trận sau khi kiểm thử và xác minh phạm vi Riot cho phép. Đừng hiểu API này là AI đã biết xem trận hoặc tự chọn đường di chuyển và kỹ năng.
+

@@ -1,8 +1,21 @@
-# AI Cá Nhân — Research Agent v2.1.2
+# AI Cá Nhân — Developer Agent v2.1.3
 
-PersonalAI là trợ lý AI cá nhân chạy bằng ASP.NET Core 8, ưu tiên dữ liệu cục bộ, có thể dùng Gemini hoặc OpenAI cho phần sinh câu trả lời. v2.0.0 đã tạo **Personal AI OS**; v2.1.0 thêm Agent Framework; v2.1.1 thêm **Planner Agent**; v2.1.2 bổ sung **Research Agent** tổng hợp bằng chứng từ tài liệu trong workspace, dẫn nguồn nội bộ và ghi rõ giới hạn kiểm chứng. Không tự tìm web/email, chạy tool, tạo task hay điều phối agent.
+PersonalAI là trợ lý AI cá nhân chạy bằng ASP.NET Core 8, ưu tiên dữ liệu cục bộ, có thể dùng Gemini hoặc OpenAI cho phần sinh câu trả lời. v2.0.0 đã tạo **Personal AI OS**; v2.1.0 thêm Agent Framework; v2.1.1 thêm **Planner Agent**; v2.1.2 bổ sung **Research Agent**; v2.1.3 có **Developer Agent** dùng code search trong workspace để đề xuất thay đổi có dẫn vị trí file/dòng, không tự chạy lệnh, sửa mã, tạo commit hay điều phối agent.
 
 > Đây vẫn là ứng dụng thiết kế cho một người dùng trên máy cá nhân. Personal AI OS v2.0 giữ toàn bộ hardening của v1.9 nhưng **không thay thế authentication/authorization** cần có khi triển khai Internet hoặc môi trường nhiều người dùng.
+
+## Có gì trong v2.1.3?
+
+### Developer Agent
+
+Executable agent thứ tư: `development.developer`. Agent xem project metadata, tìm tối đa **24 đoạn mã** theo từ khóa trong workspace, rồi tạo báo cáo gồm nhận định, chỉ số nguồn mã, đề xuất thay đổi và bước kiểm chứng. Có thể dùng cú pháp `search: ExecuteAsync` để tìm chính xác. Nếu không có dòng mã phù hợp, agent trả trạng thái `insufficient-context` mà không gọi AI provider.
+
+- API: `GET /api/developer-agent/status`, `GET /api/agents/development.developer`, `POST /api/agents/development.developer/execute`.
+- Source-index validation chặn các vị trí snippet bịa đặt; **không bảo đảm mọi nhận định của mô hình được mã hỗ trợ đúng**.
+- Không tự gọi development tools, chạy build/test/git/shell, sửa file, tạo commit, task hoặc dispatch agent.
+- Người dùng chọn Developer Agent trong sidebar **Agents** và nhận báo cáo đọc-only. Các snippet khớp từ khóa có thể được gửi tới AI provider đã cấu hình theo thao tác chủ động này; không dùng chức năng với mã nhạy cảm nếu không muốn gửi ra ngoài.
+
+### Research Agent v2.1.2 vẫn được giữ nguyên
 
 ## Có gì trong v2.1.2?
 
@@ -943,6 +956,7 @@ GitHub Actions hiện kiểm tra regression cho các nền chính, gồm:
 - v2.0 Personal AI OS manifest/readiness/governance/capability-state contract;
 - v2.1 Agent Framework registry/explicit execution/context isolation/no-tool-execution contract;
 - v2.1.2 Research Agent source-bound reporting, insufficient-evidence fallback và citation-index validation;
+- v2.1.3 Developer Agent workspace-only snippet review, no-write/no-command policy và evidence-index validation;
 - JavaScript syntax;
 - UI guardrails tiếng Việt.
 
@@ -976,10 +990,11 @@ docs/releases/v2.0.0.md
 docs/releases/v2.1.0.md
 docs/releases/v2.1.1.md
 docs/releases/v2.1.2.md
+docs/releases/v2.1.3.md
 ```
 
-## Hướng phát triển sau v2.1.2
+## Hướng phát triển sau v2.1.3
 
 Computer Use, Browser Agent, Connector Foundation, Software Development Agent, Android Companion, Life Context, Decision Engine và Automation hiện nằm trong controlled capability layer.
 
-Sau v2.1.2, mốc kế tiếp là **v2.1.3 — Developer Agent**. Web/email research ở đây chưa tích hợp tự động; trước khi mở cần luồng cấp quyền, provenance và connector provider-specific. Agent Orchestration vẫn thuộc giai đoạn v2.2.
+Sau v2.1.3, mốc kế tiếp là **v2.1.4 — Office Agent**. Web/email research ở đây chưa tích hợp tự động; trước khi mở cần luồng cấp quyền, provenance và connector provider-specific. Agent Orchestration vẫn thuộc giai đoạn v2.2.

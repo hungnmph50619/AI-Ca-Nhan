@@ -214,7 +214,7 @@
 
   function workspaceHeaders() {
     const workspace =
-      localStorage.getItem("personal-ai-v0.4-workspace") || "personal";
+      window.PersonalAiWorkspace?.currentId || "personal";
     return {
       "X-PersonalAI-Workspace": workspace
     };

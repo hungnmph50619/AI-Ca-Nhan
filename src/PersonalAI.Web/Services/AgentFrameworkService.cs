@@ -296,7 +296,7 @@ public sealed class AgentFrameworkService(
             AgentFrameworkLimits.MaximumConversationMessages,
             AgentFrameworkLimits.MaximumConcurrentExecutions,
             AutomaticDelegationEnabled: false,
-            AgentMessagingEnabled: true,
+            AgentMessagingEnabled: false,
             SharedTaskQueueEnabled: false,
             ParallelAgentExecutionEnabled: false,
             ToolExecutionEnabled: false,

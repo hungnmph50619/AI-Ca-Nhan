@@ -184,6 +184,8 @@ public sealed class AgentOrchestrationService(
         int NextIndex,
         DateTimeOffset StartedAt,
         DateTimeOffset ExpiresAt,
+        DateTimeOffset PausedAt,
+        TimeSpan AccumulatedReviewWait,
         string Token,
         string PreviewDigest,
         string Preview);
@@ -214,7 +216,7 @@ public sealed class AgentOrchestrationService(
 
             return await ExecuteSegmentAsync(
                 id, workspace.CurrentWorkspaceId, request, steps,
-                [], 0, startedAt, cancellationToken);
+                [], 0, startedAt, TimeSpan.Zero, cancellationToken);
         }
         finally
         {
@@ -269,7 +271,9 @@ public sealed class AgentOrchestrationService(
             return await ExecuteSegmentAsync(
                 pending.Id, pending.WorkspaceId, pending.Request,
                 pending.Steps, pending.Completed.ToList(), pending.NextIndex,
-                pending.StartedAt, cancellationToken);
+                pending.StartedAt,
+                pending.AccumulatedReviewWait + (DateTimeOffset.UtcNow - pending.PausedAt),
+                cancellationToken);
         }
         finally
         {
@@ -285,13 +289,15 @@ public sealed class AgentOrchestrationService(
         IReadOnlyList<AgentWorkflowStepResult> completedBefore,
         int firstIndex,
         DateTimeOffset startedAt,
+        TimeSpan accumulatedReviewWait,
         CancellationToken cancellationToken)
     {
         var completed = new List<AgentWorkflowStepResult>(completedBefore);
         using var deadline = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
-        // A resumed segment must not reset the total workflow time budget.
+        // Review pause is not active execution time. Count all previous active
+        // segments while allowing the user to use the advertised review window.
         var remaining = TimeSpan.FromSeconds(WorkflowHandoffGuard.MaximumWorkflowSeconds)
-            - (DateTimeOffset.UtcNow - startedAt);
+            - ((DateTimeOffset.UtcNow - startedAt) - accumulatedReviewWait);
         if (remaining <= TimeSpan.Zero)
             return Response(id, workspaceId, AgentWorkflowStatuses.TimedOut,
                 completed, steps.Count, firstIndex + 1,
@@ -351,7 +357,7 @@ public sealed class AgentOrchestrationService(
                         WorkflowHandoffGuard.Prepare(steps[i + 1], result.Message);
                         var checkpoint = CreateCheckpoint(id, workspaceId,
                             request, steps, completed, i + 1, startedAt,
-                            result.Message);
+                            accumulatedReviewWait, result.Message);
                         audit.Record("orchestration", "agent.workflow",
                             $"agent-workflow:{id:D}", "handoff-awaiting-user-review",
                             AuditResults.Prepared);
@@ -418,6 +424,7 @@ public sealed class AgentOrchestrationService(
         IReadOnlyList<AgentWorkflowStepResult> completed,
         int nextIndex,
         DateTimeOffset startedAt,
+        TimeSpan accumulatedReviewWait,
         string priorOutput)
     {
         RemoveExpired();
@@ -429,9 +436,11 @@ public sealed class AgentOrchestrationService(
             WorkflowHandoffGuard.MaximumHandoffCharacters, priorOutput.Length)];
         var digest = Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(preview)));
         var token = Convert.ToHexString(RandomNumberGenerator.GetBytes(32));
-        var expiry = DateTimeOffset.UtcNow.AddMinutes(PendingReviewMinutes);
+        var pausedAt = DateTimeOffset.UtcNow;
+        var expiry = pausedAt.AddMinutes(PendingReviewMinutes);
         var state = new PendingWorkflow(id, workspaceId, request, steps,
-            completed.ToArray(), nextIndex, startedAt, expiry, token, digest, preview);
+            completed.ToArray(), nextIndex, startedAt, expiry, pausedAt,
+            accumulatedReviewWait, token, digest, preview);
 
         if (!Pending.TryAdd(id, state))
             throw new AgentValidationException("Checkpoint workflow đã tồn tại.");

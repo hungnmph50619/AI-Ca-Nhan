@@ -66,7 +66,8 @@ public sealed class WindowsComputerUseService(
             "Không mở ứng dụng, chạy shell hoặc thực thi lệnh hệ thống.",
             "Các hành động thay đổi focus/cursor phải đi qua Tool Framework và xác nhận.",
             "Điều khiển được khóa lúc khởi động; phải cho phép thủ công. Nút dừng chỉ chặn các lệnh mới qua dịch vụ, không phải phím dừng toàn hệ thống.",
-            "Nhấp chuột có thể kích hoạt hành động trong ứng dụng khác; chỉ thử trên cửa sổ thử nghiệm không chứa dữ liệu quan trọng."
+            "Nhấp chuột có thể kích hoạt hành động trong ứng dụng khác; chỉ thử trên cửa sổ thử nghiệm không chứa dữ liệu quan trọng.",
+            "Mỗi lần bật chỉ có tối đa 60 giây và 5 thao tác, tính cả thao tác bị Windows từ chối."
         };
 
         if (!windows)
@@ -82,6 +83,7 @@ public sealed class WindowsComputerUseService(
                 "Tiến trình hiện không chạy trong interactive Windows session.");
         }
 
+        var session = control.GetStatus();
         return new ComputerUseStatusResponse(
             PersonalAiRelease.Version,
             RuntimeInformation.OSDescription,
@@ -89,7 +91,9 @@ public sealed class WindowsComputerUseService(
             interactive,
             capabilities,
             limitations,
-            DesktopActionsPaused: control.Paused);
+            DesktopActionsPaused: session.Paused,
+            DesktopSessionExpiresAt: session.ExpiresAt,
+            DesktopRemainingActions: session.RemainingActions);
     }
 
     public ComputerScreenInfo GetScreenInfo()

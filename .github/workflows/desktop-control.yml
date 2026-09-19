@@ -4,9 +4,11 @@ on:
   push:
     branches:
       - feature/desktop-gap-audit-and-control-stop
+      - feature/desktop-manual-mouse-actions
   pull_request:
     paths:
       - 'src/PersonalAI.Web/Services/ComputerUse*'
+      - 'src/PersonalAI.Web/Services/ComputerClickLeftTool.cs'
       - 'src/PersonalAI.Web/Services/ComputerControlGate.cs'
       - 'src/PersonalAI.Web/Models/ComputerUseModels.cs'
       - '.github/workflows/desktop-control.yml'
@@ -65,6 +67,26 @@ jobs:
             if ($blockedTool.StatusCode -ne 400 -or $blocked.status -ne "invalid-input" -or $blocked.error -notmatch "tạm dừng") {
               throw "Công cụ điều khiển không tuân thủ trạng thái dừng."
             }
+
+            $mouseBody = @{
+              toolName = "computer.mouse.click-left"
+              arguments = @{ windowId = "0x1234"; x = 0; y = 0 }
+              approvedPermissions = @("WRITE", "COMPUTER", "SENSITIVE")
+              confirmed = $true
+            } | ConvertTo-Json -Depth 5
+            $blockedMouse = Invoke-WebRequest "$base/api/tools/execute" -Method Post -ContentType "application/json" -Body $mouseBody -SkipHttpErrorCheck
+            $mouseResult = $blockedMouse.Content | ConvertFrom-Json
+            if ($blockedMouse.StatusCode -ne 400 -or $mouseResult.status -ne "invalid-input" -or $mouseResult.error -notmatch "tạm dừng") {
+              throw "Nhấp chuột vẫn được phép khi hệ thống đang dừng."
+            }
+            $mouseBodyUnconfirmed = @{
+              toolName = "computer.mouse.click-left"
+              arguments = @{ windowId = "0x1234"; x = 0; y = 0 }
+              approvedPermissions = @("WRITE", "COMPUTER", "SENSITIVE")
+              confirmed = $false
+            } | ConvertTo-Json -Depth 5
+            $unconfirmedMouse = Invoke-WebRequest "$base/api/tools/execute" -Method Post -ContentType "application/json" -Body $mouseBodyUnconfirmed -SkipHttpErrorCheck
+            if ($unconfirmedMouse.StatusCode -ne 403) { throw "Cho nhấp chuột khi chưa có xác nhận riêng." }
 
             if ($status.interactiveSession) {
               $enabled = Invoke-RestMethod "$base/api/computer/control/enable" -Method Post -Headers @{ "X-PersonalAI-Manual-Approval" = "dong-y" }

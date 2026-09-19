@@ -1,0 +1,77 @@
+.tool-execution {
+  display: grid;
+  gap: 8px;
+  margin-top: 12px;
+  padding: 12px;
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  background: #f7faf7;
+}
+
+.tool-execution-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+}
+
+.tool-execution-title {
+  font-size: 13px;
+}
+
+.tool-execution-status {
+  padding: 3px 7px;
+  border-radius: 999px;
+  background: var(--soft);
+  color: var(--muted);
+  font-size: 10px;
+  font-weight: 800;
+  text-transform: uppercase;
+}
+
+.tool-execution-privacy {
+  margin: 0;
+  color: var(--muted);
+  font-size: 11px;
+}
+
+.tool-execution-details {
+  border-top: 1px solid var(--line);
+  padding-top: 8px;
+}
+
+.tool-execution-details summary {
+  cursor: pointer;
+  color: var(--muted);
+  font-size: 12px;
+  font-weight: 700;
+}
+
+.tool-execution-output {
+  max-height: 240px;
+  margin: 8px 0 0;
+  padding: 10px;
+  overflow: auto;
+  border: 1px solid var(--line);
+  border-radius: 9px;
+  background: var(--paper);
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  font-size: 12px;
+}
+
+.tool-execution-actions {
+  display: flex;
+  justify-content: flex-end;
+}
+
+@media (max-width: 720px) {
+  .tool-execution-header {
+    align-items: flex-start;
+    flex-direction: column;
+  }
+
+  .tool-execution-actions button {
+    width: 100%;
+  }
+}

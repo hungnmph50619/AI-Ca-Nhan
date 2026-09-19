@@ -3,9 +3,41 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <meta name="description" content="Trợ lý AI cá nhân phiên bản 0.6.2">
+  <meta name="description" content="Trợ lý AI cá nhân phiên bản 2.2.6">
   <title>AI Cá Nhân</title>
   <link rel="stylesheet" href="styles.css">
+  <link rel="stylesheet" href="v0631.css">
+  <link rel="stylesheet" href="v064.css">
+  <link rel="stylesheet" href="v065.css">
+  <link rel="stylesheet" href="v072.css">
+  <link rel="stylesheet" href="v073.css">
+  <link rel="stylesheet" href="v074.css">
+  <link rel="stylesheet" href="v075.css">
+  <link rel="stylesheet" href="v076.css">
+  <link rel="stylesheet" href="v080.css">
+  <link rel="stylesheet" href="v089.css">
+  <link rel="stylesheet" href="v090.css">
+  <link rel="stylesheet" href="v094.css">
+  <link rel="stylesheet" href="v095.css">
+  <link rel="stylesheet" href="v096.css">
+  <link rel="stylesheet" href="v097.css">
+  <link rel="stylesheet" href="v100.css">
+  <link rel="stylesheet" href="v110.css">
+  <link rel="stylesheet" href="v120.css">
+  <link rel="stylesheet" href="v130.css">
+  <link rel="stylesheet" href="v140.css">
+  <link rel="stylesheet" href="v150.css">
+  <link rel="stylesheet" href="v160.css">
+  <link rel="stylesheet" href="v170.css">
+  <link rel="stylesheet" href="v180.css">
+  <link rel="stylesheet" href="v200.css">
+  <link rel="stylesheet" href="v210.css">
+  <link rel="stylesheet" href="v211.css">
+  <link rel="stylesheet" href="v220.css">
+  <link rel="stylesheet" href="v085.css">
+  <link rel="stylesheet" href="v086.css">
+  <link rel="stylesheet" href="v087.css">
+  <link rel="stylesheet" href="v088.css">
 </head>
 <body>
   <div class="app-shell">
@@ -14,7 +46,7 @@
         <div class="brand-mark" aria-hidden="true">A</div>
         <div>
           <strong>AI Cá Nhân</strong>
-          <span>Phiên bản 0.6.2</span>
+          <span>Phiên bản 2.1.7</span>
         </div>
       </div>
 
@@ -25,9 +57,10 @@
       </section>
       <div class="sidebar-tools">
         <button class="settings-button" id="knowledgeButton" type="button"><span aria-hidden="true">▣</span><span>Kho dữ liệu</span><span class="tool-count" id="knowledgeSidebarCount" aria-label="Số tài liệu">0</span></button>
+        <a class="settings-button" href="vision.html" style="display:flex;align-items:center;gap:8px;text-decoration:none" title="Mắt nhìn AI: phân tích thủ công ảnh minimap đã lưu" aria-label="Mắt nhìn AI: xem lại ảnh minimap">◉ <span>Mắt nhìn AI · Ảnh minimap</span></a>
         <button class="settings-button" id="settingsButton" type="button"><span aria-hidden="true">⚙</span> Cài đặt AI</button>
       </div>
-      <div class="privacy-note"><span class="privacy-icon" aria-hidden="true">◇</span><div><strong>Thiết kế riêng tư</strong><p>Khóa API chỉ nằm ở máy chủ, không gửi xuống trình duyệt.</p></div></div>
+      <div class="privacy-note"><span class="privacy-icon" aria-hidden="true">◇</span><div><strong>Thiết kế riêng tư</strong><p>Khóa truy cập chỉ nằm ở máy chủ, không gửi xuống trình duyệt.</p></div></div>
     </aside>
 
     <main class="chat-panel">
@@ -38,7 +71,7 @@
       </header>
       <section class="messages" id="messages" aria-live="polite">
         <div class="welcome" id="welcome">
-          <div class="welcome-orb" aria-hidden="true">✦</div><p class="eyebrow">TRỢ LÝ CỦA RIÊNG BẠN</p><h1>Hôm nay tôi có thể<br>giúp gì cho bạn?</h1><p class="welcome-copy">Hỏi bất kỳ điều gì. Trợ lý có thể dùng dữ liệu riêng và ghi rõ nguồn đã tham khảo.</p>
+          <div class="welcome-orb" aria-hidden="true">✦</div><p class="eyebrow">TRỢ LÝ CỦA RIÊNG BẠN</p><h1>Hôm nay tôi có thể<br>giúp gì cho bạn?</h1><p class="welcome-copy">Hỏi bất kỳ điều gì. Trợ lý có thể dùng dữ liệu riêng, đánh số nguồn và cho bạn mở đúng đoạn tài liệu đã tham khảo.</p>
           <div class="suggestions">
             <button type="button" data-prompt="Giải thích AI hoạt động như thế nào bằng ngôn ngữ dễ hiểu."><span>01</span><strong>Giải thích một chủ đề</strong><small>Ngắn gọn, dễ hiểu</small></button>
             <button type="button" data-prompt="Hãy giúp tôi lập kế hoạch học AI trong 7 ngày."><span>02</span><strong>Lập một kế hoạch</strong><small>Cụ thể, có từng bước</small></button>
@@ -46,42 +79,79 @@
           </div>
         </div>
       </section>
-      <footer class="composer-wrap"><form class="composer" id="chatForm"><textarea id="messageInput" rows="1" maxlength="12000" placeholder="Nhắn tin cho AI của bạn…" aria-label="Tin nhắn"></textarea><button class="send-button" id="sendButton" type="submit" aria-label="Gửi tin nhắn">↑</button></form><p class="disclaimer">AI có thể mắc lỗi. Hãy kiểm tra thông tin quan trọng.</p></footer>
+      <footer class="composer-wrap">
+        <form class="composer" id="chatForm"><textarea id="messageInput" rows="1" maxlength="12000" placeholder="Nhắn tin cho AI của bạn…" aria-label="Tin nhắn"></textarea><button class="send-button" id="sendButton" type="submit" aria-label="Gửi tin nhắn">↑</button></form>
+        <div class="tool-orchestration-toggle-row">
+          <label class="tool-orchestration-toggle" title="Cho phép AI đề xuất một công cụ phù hợp; công cụ chưa chạy cho tới khi bạn bấm chạy">
+            <input id="useToolsToggle" type="checkbox">
+            <span>Đề xuất công cụ</span>
+          </label>
+          <small>AI chỉ tạo đề xuất; công cụ chưa tự chạy. Sau khi chạy, bạn vẫn phải xác nhận trước khi gửi kết quả trở lại nhà cung cấp AI để hoàn tất câu trả lời.</small>
+        </div>
+        <p class="disclaimer">AI có thể mắc lỗi. Hãy kiểm tra thông tin quan trọng.</p>
+      </footer>
     </main>
   </div>
 
   <dialog class="settings-dialog" id="settingsDialog" aria-labelledby="settingsTitle">
     <div class="settings-card">
       <header class="settings-header"><div><p class="eyebrow">THIẾT LẬP TRÊN MÁY NÀY</p><h2 id="settingsTitle">Cài đặt AI</h2></div><button class="dialog-close" id="settingsCloseButton" type="button" aria-label="Đóng">×</button></header>
-      <form id="settingsForm">
+      <form id="settingsForm" novalidate>
         <label class="field-label" for="providerSelect">Nhà cung cấp</label><select id="providerSelect" required><option value="Gemini">Google Gemini</option><option value="OpenAI">OpenAI</option></select>
-        <label class="field-label" for="modelSelect">Model</label><select id="modelSelect" required></select>
-        <input class="custom-model-input" id="customModelInput" type="text" maxlength="120" autocomplete="off" placeholder="Nhập chính xác tên model" aria-label="Tên model tùy chỉnh" hidden><p class="field-hint">Chọn model đề xuất hoặc chọn “Model tùy chỉnh”.</p>
-        <label class="field-label" for="apiKeyInput">API key</label><div class="password-field"><input id="apiKeyInput" type="password" maxlength="512" autocomplete="new-password" placeholder="Để trống nếu muốn giữ key hiện tại"><button class="password-toggle" id="toggleApiKeyButton" type="button" aria-label="Hiện API key" aria-pressed="false">Hiện</button></div><p class="field-hint" id="apiKeyHint">Chưa có API key được lưu.</p>
+        <label class="field-label" for="modelSelect">Mô hình</label><select id="modelSelect" required></select>
+        <input class="custom-model-input" id="customModelInput" type="text" maxlength="120" autocomplete="off" placeholder="Nhập chính xác tên mô hình" aria-label="Tên mô hình tùy chỉnh" hidden><p class="field-hint">Chọn mô hình đề xuất hoặc chọn “Mô hình tùy chỉnh”.</p>
+        <label class="field-label" for="apiKeyInput">Khóa truy cập</label><div class="password-field"><input id="apiKeyInput" type="password" maxlength="512" autocomplete="new-password" placeholder="Để trống nếu muốn giữ khóa hiện tại"><button class="password-toggle" id="toggleApiKeyButton" type="button" aria-label="Hiện khóa truy cập" aria-pressed="false">Hiện</button></div><p class="field-hint" id="apiKeyHint">Chưa có khóa truy cập được lưu.</p>
         <div class="settings-feedback" id="settingsFeedback" role="status" aria-live="polite"></div><div class="settings-actions"><button class="secondary-button" id="saveSettingsButton" type="submit">Chỉ lưu</button><button class="primary-button" id="testConnectionButton" type="button">Lưu & kiểm tra</button></div>
       </form>
-      <p class="security-copy">API key được mã hóa và lưu ngoài thư mục dự án. Giao diện không đọc lại key đầy đủ và Git không tải key lên GitHub.</p>
+      <p class="security-copy">Khóa truy cập được mã hóa và lưu ngoài thư mục dự án. Giao diện không đọc lại toàn bộ khóa và Git không tải khóa lên GitHub.</p>
     </div>
   </dialog>
 
   <dialog class="settings-dialog knowledge-dialog" id="knowledgeDialog" aria-labelledby="knowledgeTitle">
     <div class="settings-card knowledge-card">
       <header class="settings-header"><div><p class="eyebrow">DỮ LIỆU NẰM TRÊN MÁY NÀY</p><h2 id="knowledgeTitle">Kho dữ liệu</h2></div><button class="dialog-close" id="knowledgeCloseButton" type="button" aria-label="Đóng">×</button></header>
-      <div class="knowledge-intro"><div class="knowledge-intro-icon" aria-hidden="true">▤</div><div><strong>Hỏi đáp có nguồn v0.6.2</strong><p>Trợ lý tự tìm các đoạn liên quan, dùng làm ngữ cảnh trả lời và hiển thị nguồn ngay dưới tin nhắn.</p></div></div>
-      <form id="knowledgeUploadForm"><label class="knowledge-dropzone" id="knowledgeDropzone" for="knowledgeFileInput"><span class="dropzone-icon" aria-hidden="true">↑</span><strong>Chọn hoặc thả tài liệu vào đây</strong><small>TXT, Markdown · tối đa 10 MB mỗi tệp</small><span class="secondary-button upload-label">Chọn tệp</span></label><input class="visually-hidden" id="knowledgeFileInput" name="file" type="file" accept=".txt,.md,text/plain,text/markdown"></form>
+      <div class="knowledge-intro"><div class="knowledge-intro-icon" aria-hidden="true">▤</div><div><strong>Kho dữ liệu và tìm kiếm tăng cường v0.7.6</strong><p>PDF, DOCX, TXT và Markdown có thể được quản lý, kiểm tra tính toàn vẹn, đánh giá khả năng tìm kiếm và sửa an toàn các lỗi liên quan đến đoạn văn bản hoặc véc-tơ.</p></div></div>
+      <form id="knowledgeUploadForm"><label class="knowledge-dropzone" id="knowledgeDropzone" for="knowledgeFileInput"><span class="dropzone-icon" aria-hidden="true">↑</span><strong>Chọn hoặc thả tài liệu vào đây</strong><small>PDF, DOCX, TXT, Markdown · tối đa 10 MB mỗi tệp</small><span class="secondary-button upload-label">Chọn tệp</span></label><input class="visually-hidden" id="knowledgeFileInput" name="file" type="file" accept=".pdf,.docx,.txt,.md,application/pdf,application/vnd.openxmlformats-officedocument.wordprocessingml.document,text/plain,text/markdown"></form>
       <div class="settings-feedback knowledge-feedback" id="knowledgeFeedback" role="status" aria-live="polite"></div>
-      <form class="knowledge-search" id="knowledgeSearchForm" role="search"><label class="field-label" for="knowledgeSearchInput">Tìm trong dữ liệu</label><div class="knowledge-search-row"><input id="knowledgeSearchInput" type="search" minlength="2" maxlength="200" autocomplete="off" placeholder="Ví dụ: kế hoạch học AI"><button class="primary-button" id="knowledgeSearchButton" type="submit">Tìm đoạn</button></div><p class="field-hint">Xem trước những đoạn có thể được dùng làm ngữ cảnh khi bạn trò chuyện với AI.</p></form>
+      <form class="knowledge-search" id="knowledgeSearchForm" role="search" novalidate><label class="field-label" for="knowledgeSearchInput">Tìm trong dữ liệu</label><div class="knowledge-search-row"><input id="knowledgeSearchInput" type="search" minlength="2" maxlength="200" autocomplete="off" placeholder="Ví dụ: kế hoạch học AI"><button class="primary-button" id="knowledgeSearchButton" type="submit">Từ khóa</button></div><p class="field-hint">Tìm từ khóa dùng chỉ mục toàn văn; tìm ngữ nghĩa dùng véc-tơ trên máy; tìm kết hợp hợp nhất hai cách rồi xếp hạng lại. Khi trò chuyện, hệ thống tự dùng tìm kiếm kết hợp và trả nguồn có thể mở lại.</p></form>
       <section class="knowledge-search-results" id="knowledgeSearchResults" aria-live="polite" hidden><div class="knowledge-search-heading"><strong>Kết quả tìm kiếm</strong><span id="knowledgeSearchSummary"></span></div><div class="knowledge-search-list" id="knowledgeSearchList"></div></section>
       <div class="knowledge-list-header"><div><strong>Tài liệu đã lưu</strong><span id="knowledgeSummary">0 tài liệu</span></div><button class="icon-refresh" id="knowledgeRefreshButton" type="button" aria-label="Tải lại danh sách" title="Tải lại">↻</button></div>
       <div class="knowledge-list" id="knowledgeList" role="list"></div><div class="knowledge-empty" id="knowledgeEmpty"><span aria-hidden="true">◇</span><strong>Kho dữ liệu đang trống</strong><p>Tải tài liệu đầu tiên để chuẩn bị cho chức năng hỏi đáp theo dữ liệu riêng.</p></div>
-      <p class="security-copy">Tệp và cơ sở dữ liệu được lưu ngoài thư mục Git tại <code>%LOCALAPPDATA%\PersonalAI\Knowledge</code>. Khi trò chuyện, chỉ các đoạn liên quan mới được gửi đến nhà cung cấp AI bạn đã chọn; không gửi toàn bộ kho dữ liệu.</p>
+      <p class="security-copy">Tệp gốc, cơ sở dữ liệu và véc-tơ tìm kiếm được lưu ngoài thư mục Git tại <code>%LOCALAPPDATA%\PersonalAI\Knowledge</code>. Kiểm tra tính toàn vẹn, đánh giá chất lượng tìm kiếm, sửa chỉ mục, tạo véc-tơ và xếp hạng lại đều chạy trên máy; khi trò chuyện, chỉ các đoạn đã được chọn mới được gửi đến nhà cung cấp AI bạn đã chọn.</p>
     </div>
   </dialog>
 
+  <script src="v094.js" defer></script>
+  <script src="v095.js" defer></script>
+  <script src="v096.js" defer></script>
+  <script src="v097.js" defer></script>
   <script src="app.js" defer></script>
   <script src="v054.js" defer></script>
   <script src="v060.js" defer></script>
   <script src="v0611.js" defer></script>
   <script src="v062.js" defer></script>
+  <script src="v0631.js" defer></script>
+  <script src="v064.js" defer></script>
+  <script src="v065.js" defer></script>
+  <script src="v070.js" defer></script>
+  <script src="v072.js" defer></script>
+  <script src="v073.js" defer></script>
+  <script src="v074.js" defer></script>
+  <script src="v075.js" defer></script>
+  <script src="v076.js" defer></script>
+  <script src="v080.js" defer></script>
+  <script src="v090.js" defer></script>
+  <script src="v100.js" defer></script>
+  <script src="v110.js" defer></script>
+  <script src="v120.js" defer></script>
+  <script src="v130.js" defer></script>
+  <script src="v140.js" defer></script>
+  <script src="v150.js" defer></script>
+  <script src="v160.js" defer></script>
+  <script src="v170.js" defer></script>
+  <script src="v180.js" defer></script>
+  <script src="v200.js" defer></script>
+  <script src="v210.js" defer></script>
+  <script src="v220.js" defer></script>
 </body>
 </html>

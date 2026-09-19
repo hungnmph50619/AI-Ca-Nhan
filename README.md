@@ -1,76 +1,944 @@
-# AI Cá Nhân — MVP v0.5.3
+# AI Cá Nhân — Giao diện quy trình tiếng Việt v2.2.6
 
-Website chat bằng ASP.NET Core 8, mặc định dùng Gemini API, nhớ nhiều cuộc trò chuyện và có kho dữ liệu riêng chạy bằng SQLite. Kiến trúc nhà cung cấp AI đã được tách riêng để sau này có thể đổi Gemini, OpenAI hoặc mô hình chạy cục bộ.
+PersonalAI là trợ lý AI cá nhân chạy bằng ASP.NET Core 8, ưu tiên dữ liệu cục bộ, có thể dùng Gemini hoặc OpenAI cho phần sinh câu trả lời. v2.0.0 đã tạo **Personal AI OS**; v2.1.0 thêm Agent Framework; v2.1.1 thêm **Planner Agent**; v2.1.2 bổ sung **Research Agent**; v2.1.3 có **Developer Agent**; v2.1.4 bổ sung **Office Agent**; v2.1.5 thêm **Operator Agent**; v2.1.6 bổ sung **Reviewer Agent**; v2.1.7 thêm **Security Agent** rà soát rủi ro cục bộ; **v2.2.0 bổ sung workflow tuần tự có xác nhận** để gọi 2–3 agent đã được người dùng chọn trước và chuyển đầu ra khi có opt-in. **v2.2.1** thêm giới hạn thời gian từng bước/toàn workflow và bộ kiểm tra mẫu credential trước handoff. Chưa có auto-delegation, agent tự chạy tool, shared queue, autonomous loop hoặc parallel agents.
 
-## Phiên bản này đã có
+> Đây vẫn là ứng dụng thiết kế cho một người dùng trên máy cá nhân. Personal AI OS v2.0 giữ toàn bộ hardening của v1.9 nhưng **không thay thế authentication/authorization** cần có khi triển khai Internet hoặc môi trường nhiều người dùng.
 
-- Giao diện chat responsive trên máy tính và điện thoại.
-- Hội thoại nhiều lượt, lưu cục bộ trong trình duyệt.
-- Tạo, chuyển, đổi tên và xóa nhiều cuộc trò chuyện ở thanh bên.
-- Tự đặt tiêu đề từ câu hỏi đầu tiên và tự nhập lịch sử từ phiên bản cũ.
-- Kho dữ liệu riêng: tải lên, xem danh sách và xóa tệp TXT/Markdown ngay trong giao diện.
-- Kiểm tra giới hạn 10 MB, tên tệp, định dạng văn bản và nội dung trùng lặp bằng SHA-256.
-- Nội dung được tự chia thành các đoạn nhỏ có chồng lấn và lập chỉ mục tìm kiếm toàn văn bằng SQLite FTS5.
-- Có ô **Tìm trong dữ liệu** để xem trước tối đa 5 đoạn liên quan nhất ngay trong giao diện.
-- Tài liệu đã thêm từ v0.5.1 được tự lập chỉ mục khi ứng dụng khởi động, không cần tải lại.
-- Khi trò chuyện, hệ thống tự tìm tối đa 5 đoạn liên quan và bổ sung chúng vào ngữ cảnh Gemini/OpenAI.
-- Câu trả lời hiển thị tên tệp và số đoạn đã được dùng; thông tin nguồn vẫn được giữ khi tải lại trình duyệt.
-- Dữ liệu tài liệu được coi là nội dung tham khảo không đáng tin cậy, không phải chỉ dẫn hệ thống.
-- Backend giữ kín API key; trình duyệt không nhìn thấy khóa.
-- Chọn Gemini/OpenAI, model và nhập API key ngay trong giao diện.
-- API key được mã hóa và lưu ngoài thư mục dự án trên chính máy đang chạy ứng dụng.
-- Bộ nguyên tắc riêng trong `AI-CONSTITUTION.md`.
-- Giới hạn độ dài và số lượt để tránh gửi dữ liệu quá lớn ngoài ý muốn.
-- Không cần cài máy chủ database; SQLite chạy nhúng và được Visual Studio tự khôi phục qua NuGet.
-- Có hồ sơ nền móng cho `Trợ lý cá nhân` và `Đội lập trình`; phiên bản này chưa tự chạy nhiều agent.
+## Có gì trong v2.2.6?
 
-v0.5.3 giữ toàn bộ tệp và chỉ mục trên máy, nhưng khi trò chuyện sẽ **gửi tối đa 5 đoạn liên quan** đến nhà cung cấp AI đang chọn để tạo câu trả lời. Ứng dụng không gửi toàn bộ kho dữ liệu. Không tải tài liệu nhạy cảm nếu bạn không muốn nội dung liên quan được gửi đến Gemini/OpenAI.
+### Giao diện dễ thao tác bằng bàn phím và trình đọc màn hình
+
+Trong **Các tác nhân AI → Quy trình nhiều bước**, bạn có thể dùng phím **Tab** để chọn tác nhân, nhập mục tiêu, xem trước cấu hình và duyệt hoặc từ chối chuyển dữ liệu. Khi kết quả mới xuất hiện, tiêu điểm chuyển đến tiêu đề tương ứng; thông báo lỗi có thể nhận tiêu điểm để dễ nhận biết. Các ô nhập, nút và ô đánh dấu có vùng thao tác lớn hơn và chỉ báo vị trí rõ ràng, kể cả trong chế độ tương phản cao.
+
+- Tên tám tác nhân AI do máy chủ trả về được hiển thị bằng **tiếng Việt**. Hướng dẫn, thông báo lỗi và các nút trong giao diện quy trình cũng dùng tiếng Việt. Tên mã định danh và địa chỉ API không đổi để bảo đảm tương thích.
+- Khi bấm xem trước lần nữa, chỉ kiểm tra các mục tiêu và tác nhân cần nhập, **không buộc phải xác nhận trước rồi mới được xem trước**.
+- Các tiêu đề vùng xem trước, kết quả và duyệt nội dung chuyển giao có nhãn rõ cho trình đọc màn hình. Người dùng vẫn phải tự xem nội dung trước khi đồng ý chuyển.
+- Không có thêm quyền tự chạy công cụ hay tự quyết định hành động. Phạm vi và giới hạn: `docs/releases/v2.2.6.md`.
+
+### Xem trước quy trình v2.2.5 vẫn được giữ nguyên
+
+## Có gì trong v2.2.5?
+
+### Xem trước đúng cấu hình trước khi chạy
+
+Trong **Các tác nhân AI → Quy trình nhiều bước**, chọn tác nhân, nhập mục tiêu và chọn nguồn dữ liệu. Bấm **Xem trước các bước và nguồn dữ liệu** để xem danh sách tác nhân, mục tiêu, nguồn dữ liệu bật và lựa chọn chuyển kết quả trước khi thực hiện. Sau khi kiểm tra, bạn tích xác nhận rồi bấm chạy. **Nếu sửa bất kỳ lựa chọn nào, phải xem trước và xác nhận lại.**
+
+- API xem trước: `POST /api/agents/orchestration/preview`; chỉ kiểm tra cấu hình, không chạy tác nhân hoặc gọi dịch vụ AI.
+- Máy chủ kiểm tra dấu cấu hình trong yêu cầu mới từ giao diện; dấu cũ bị từ chối nếu cấu hình đã thay đổi. Dấu cấu hình không phải quyền truy cập hay mã xác thực và API cũ vẫn có thể chạy theo điều kiện xác nhận hiện tại.
+- Duyệt cấu hình ban đầu **không thay thế** việc đọc và duyệt riêng nội dung chuyển giao sau mỗi bước.
+- Toàn bộ nhãn, hướng dẫn và thông báo mới dùng tiếng Việt; tên kỹ thuật trong mã và địa chỉ API được giữ nguyên.
+- Chi tiết: `docs/releases/v2.2.5.md`.
+
+### Chẩn đoán quy trình v2.2.4 vẫn được giữ nguyên
+
+## Có gì trong v2.2.4?
+
+### Chẩn đoán trạng thái quy trình bằng tiếng Việt
+
+Sau khi bạn chạy một quy trình, ứng dụng sẽ hiển thị **Giải thích trạng thái** bằng tiếng Việt: đã hoàn tất, đang chờ bạn duyệt, đã dừng hoặc hết thời gian. Phần này đưa ra các bước kiểm tra thích hợp dựa trên trạng thái, số bước và mã lý do dừng, **không tự đọc nội dung đầu ra hay sửa lỗi**.
+
+- Truy cập từ **Các tác nhân AI → Quy trình nhiều bước**; phần chẩn đoán xuất hiện sau kết quả chạy hoặc sau bước duyệt.
+- API chỉ đọc: `GET /api/agents/orchestration/diagnostics/status` và `GET /api/agents/orchestration/diagnostics/{workflowId}`.
+- Chỉ xem thông tin của không gian làm việc hiện tại. Không chứa mục tiêu, kết quả tác nhân, nội dung chuyển giao hay mã xác nhận. Không có quyền chạy lại hoặc phê duyệt thay bạn.
+- Giao diện lựa chọn tác nhân, tên vai trò, nguồn dữ liệu và thông báo kết quả được Việt hóa. Tên biến, tên hàm và đường dẫn API giữ nguyên để không làm hỏng khả năng tương thích.
+- Tài liệu giải thích: `docs/releases/v2.2.4.md`. Mốc tiếp theo dự kiến: **v2.2.5 — Cải thiện trải nghiệm sử dụng quy trình**.
+
+### Theo dõi quy trình v2.2.3 vẫn được giữ nguyên
+
+## Có gì trong v2.2.3?
+
+### Workflow Observability
+
+Bản này thêm API theo dõi **metadata cục bộ** sau mỗi lần gọi workflow thành công: workflow ID, workspace ID, trạng thái, số bước hoàn tất, bước lỗi, lý do dừng từ danh sách định sẵn và thời gian. Không lưu mục tiêu, đầu ra agent, nội dung chuyển giao, token duyệt hoặc thông báo lỗi thô trong observation.
+
+- `GET /api/agents/orchestration/observability/status` công bố giới hạn; `GET /api/agents/orchestration/observability/{workflowId}` chỉ trả metadata thuộc workspace hiện tại.
+- Giữ tối đa 100 bản ghi trong bộ nhớ server, thời hạn 60 phút, mất khi server khởi động lại. Không có API liệt kê toàn bộ hay tác vụ thực thi qua endpoint quan sát.
+- Đây không phải nhật ký đầy đủ: request lỗi trước khi trả workflow và một số lệnh hủy có thể không tạo observation. Thời gian hiển thị có thể bao gồm lúc chờ người dùng duyệt.
+- Workflow và checkpoint của v2.2.2 vẫn có thể chứa đầu ra/preview; không nhập dữ liệu bí mật. Xem `docs/releases/v2.2.3.md`.
+
+### Orchestration Reliability v2.2.2 vẫn được giữ nguyên
+
+## Có gì trong v2.2.2?
+
+### Orchestration Reliability
+
+Trước khi chuyển đầu ra có opt-in sang agent tiếp theo, workflow tạm dừng tại **checkpoint cần người dùng xem đúng nội dung sẽ chuyển** (tối đa 1.600 ký tự) rồi đồng ý hoặc từ chối. Đồng ý mới gọi bước nhận; từ chối thì dừng workflow. Checkpoint có token dùng một lần và digest của nội dung, ràng buộc vào workflow/workspace; checkpoint chờ tối đa 10 phút, lưu tạm trong bộ nhớ server, mất khi server khởi động lại.
+
+- API: `POST /api/agents/orchestration/resume` bổ sung cho execute/status. Kết quả có trạng thái `awaiting-review` và thông tin checkpoint để giao diện xác nhận riêng.
+- Workflow giữ 120 giây **thời gian thực thi chủ động** qua các lần resume, không tính thời gian người dùng đang đọc checkpoint; mỗi bước vẫn giới hạn 50 giây theo cơ chế huỷ hợp tác.
+- Bộ lọc mẫu credential không nhận ra mọi bí mật hoặc prompt injection; cần tự kiểm tra nội dung trước khi chấp thuận gửi đến AI provider đã cấu hình. Không chạy tool, tự chọn agent, tự phê duyệt hay lưu workflow bền vững.
+- Xem `docs/releases/v2.2.2.md` để biết giới hạn và hợp đồng API.
+
+### Workflow Hardening v2.2.1 vẫn được giữ nguyên
+
+## Có gì trong v2.2.1?
+
+### Workflow Hardening
+
+Workflow được giới hạn **120 giây tổng** và **50 giây cho từng bước** qua cancellation token; nếu timeout được phát hiện, workflow dừng, trả các bước đã hoàn tất và không chạy bước tiếp theo. Đây là giới hạn huỷ hợp tác; nếu AI provider không hỗ trợ cancellation thì không có bảo đảm dừng tức thì.
+
+Handoff vẫn cần checkbox của người dùng tại **mỗi bước nhận**. Trước khi chuyển, bộ quy tắc cục bộ kiểm tra toàn bộ đầu ra trước đó (kể cả ngoài cửa sổ 1.600 ký tự) và chặn khi phát hiện một số mẫu private key, bearer token hoặc credential assignment. Kết quả báo lỗi không chứa giá trị khớp. Bộ lọc **không bảo đảm phát hiện mọi bí mật** và không thay thế kiểm tra nội dung trước khi chia sẻ với AI provider.
+
+- API giữ nguyên `GET /api/agents/orchestration/status`, `POST /api/agents/orchestration/execute`; status bổ sung thời gian và cờ kiểm tra handoff, output có `stopReason` và trạng thái `timed-out`.
+- Không agent tự chọn nhiệm vụ/agent, không chạy tool, chỉnh sửa file, chia sẻ tự động, ghi workflow hoặc tự xác nhận side effects.
+- Tài liệu đầy đủ: `docs/releases/v2.2.1.md`. Mốc tiếp theo là **v2.2.2 — Orchestration Reliability**.
+
+### Controlled Agent Orchestration v2.2.0 vẫn được giữ nguyên
+
+## Có gì trong v2.2.0?
+
+### Controlled Agent Orchestration
+
+Người dùng mở **Agents → Workflows · v2.2.0**, chọn agent và mục tiêu riêng cho từng bước (2–3 bước), chọn checkbox ở bước nhận nếu cho phép chuyển tối đa 1.600 ký tự đầu ra từ bước liền trước, rồi xác nhận toàn bộ workflow. Context bổ sung mặc định tắt. Backend gọi **thực sự từng executable agent theo thứ tự** qua Agent Framework, trả kết quả và dừng khi có bước lỗi.
+
+- API: `GET /api/agents/orchestration/status`, `POST /api/agents/orchestration/execute`.
+- Không xác nhận toàn bộ workflow → HTTP 400 trước khi agent nào chạy; handoff cần checkbox ở từng bước. Không tự chọn/thêm agent, chạy tool, sửa file, gửi tin, tạo task hoặc tự lưu workflow.
+- Agent sử dụng AI provider có thể nhận mục tiêu, context được người dùng bật và đầu ra đã được opt-in. Không nhập bí mật; nhãn "dữ liệu chỉ đọc" không bảo đảm mô hình tuyệt đối miễn nhiễm prompt injection.
+- Chỉ cho phép một workflow cùng lúc, tối đa một agent execution tại một thời điểm. **Không có** agent-initiated messaging, automatic delegation, shared queue, autonomous loop hoặc parallel execution.
+- Mốc tiếp theo là **v2.2.1 — Workflow Hardening**, chưa triển khai.
+
+### Security Agent v2.1.7 vẫn được giữ nguyên
+
+## Có gì trong v2.1.7?
+
+### Security Agent
+
+Executable agent thứ tám `security.security-reviewer` rà soát **mẫu rủi ro cục bộ** trong mô tả thao tác do người dùng chủ động nhập (tối đa 4.000 ký tự). Bộ kiểm tra cố định cảnh báo một số mẫu chứa credential/private key, xóa dữ liệu khó hoàn tác, tải-và-chạy script, nới quyền hoặc chuyển dữ liệu ra bên ngoài.
+
+- API: `GET /api/security-agent/status`, `GET /api/agents/security.security-reviewer`, `POST /api/agents/security.security-reviewer/execute`.
+- Không gọi AI provider, không tự đọc file/repo/context, không lặp lại mô tả người dùng hoặc chuỗi khớp mẫu trong báo cáo.
+- Không phát hiện mẫu **không có nghĩa an toàn**. Kết quả không thay thế permission gate, human review, quét bảo mật toàn hệ thống hoặc pentest; có thể có false positives và false negatives.
+- Không tự thực thi, sửa permission, chặn hành động, gửi dữ liệu, tạo task hoặc dispatch agent. Không nhập mật khẩu/token thật vào ô yêu cầu.
+
+### Reviewer Agent v2.1.6 vẫn được giữ nguyên
+
+## Có gì trong v2.1.6?
+
+### Reviewer Agent
+
+Executable agent thứ bảy `quality.reviewer` rà soát văn bản/bản nháp/kế hoạch người dùng **dán trực tiếp** (80–4.000 ký tự) và trả báo cáo `needs-user-review` có `summary`, tối đa 8 findings, questions và limitations.
+
+- API: `GET /api/reviewer-agent/status`, `GET /api/agents/quality.reviewer`, `POST /api/agents/quality.reviewer/execute`.
+- Mỗi finding có `evidenceExcerpt` khớp **nguyên văn** trong nội dung được dán, observation, suggestedRevision và verificationStep. Trích đoạn không tồn tại sẽ bị parser từ chối.
+- Nếu không đủ nội dung, trả `insufficient-material` mà không gọi AI provider.
+- Không tự đọc file, history, bản nháp agent khác, duyệt web, chạy test, sửa hoặc phê duyệt. Kiểm tra chuỗi excerpt không có nghĩa đã xác minh nhận định hay thông tin thực tế bên ngoài.
+- Văn bản dán có thể được gửi tới AI provider đã cấu hình. Không dán bí mật hoặc dữ liệu nhạy cảm nếu không muốn chia sẻ.
+
+### Operator Agent v2.1.5 vẫn được giữ nguyên
+
+## Có gì trong v2.1.5?
+
+### Operator Agent
+
+Executable agent thứ sáu `operations.operator` nhận mục tiêu và tạo một kế hoạch thao tác **chưa thực thi** gồm 1–10 bước: channel (browser/computer/connector/manual), riskLevel, dependsOn, requiresUserConfirmation, kết quả mong đợi và cách kiểm chứng. Những checkpoint cần xác nhận chỉ là metadata để người dùng xem, **không cấp quyền thực thi**.
+
+- API: `GET /api/operator-agent/status`, `GET /api/agents/operations.operator`, `POST /api/agents/operations.operator/execute`.
+- Parser từ chối dependency vòng/trỏ về bước sau, channel/risk không hợp lệ và bước high-risk không có checkpoint.
+- Không tự dùng browser/computer/connector/tool, không sửa file, gửi tin, tạo task, ghi kế hoạch hoặc dispatch agent.
+- Context bật bởi người dùng có thể được gửi đến AI provider; tuyệt đối không nhập password/token/OTP vào mục tiêu.
+
+### Office Agent v2.1.4 vẫn được giữ nguyên
+
+## Có gì trong v2.1.4?
+
+### Office Agent
+
+Executable agent thứ năm `office.office-assistant` soạn **bản nháp** email, memo, agenda, minutes và summary từ yêu cầu người dùng và các nguồn context được bật. Kết quả có `kind`, `title`, `body`, `actionItems` và `missingInformation`, hiển thị trong sidebar **Agents**.
+
+- API: `GET /api/office-agent/status`, `GET /api/agents/office.office-assistant`, `POST /api/agents/office.office-assistant/execute`.
+- Parser giới hạn loại bản nháp, nội dung và số mục; kết quả luôn là draft chưa gửi hoặc lưu tự động.
+- `actionItems` chỉ là lời đề xuất, không phải tác vụ đã được thực hiện.
+- Không gửi email, không tự tạo calendar event/task, không chỉnh sửa/lưu tài liệu, không tự gọi tool và không điều phối agent.
+- Context được người dùng bật có thể được gửi đến AI provider đã cấu hình. Cần rà soát thông tin, người nhận và quyết định trước khi dùng bản nháp.
+
+### Developer Agent v2.1.3 vẫn được giữ nguyên
+
+## Có gì trong v2.1.3?
+
+### Developer Agent
+
+Executable agent thứ tư: `development.developer`. Agent xem project metadata, tìm tối đa **24 đoạn mã** theo từ khóa trong workspace, rồi tạo báo cáo gồm nhận định, chỉ số nguồn mã, đề xuất thay đổi và bước kiểm chứng. Có thể dùng cú pháp `search: ExecuteAsync` để tìm chính xác. Nếu không có dòng mã phù hợp, agent trả trạng thái `insufficient-context` mà không gọi AI provider.
+
+- API: `GET /api/developer-agent/status`, `GET /api/agents/development.developer`, `POST /api/agents/development.developer/execute`.
+- Source-index validation chặn các vị trí snippet bịa đặt; **không bảo đảm mọi nhận định của mô hình được mã hỗ trợ đúng**.
+- Không tự gọi development tools, chạy build/test/git/shell, sửa file, tạo commit, task hoặc dispatch agent.
+- Người dùng chọn Developer Agent trong sidebar **Agents** và nhận báo cáo đọc-only. Các snippet khớp từ khóa có thể được gửi tới AI provider đã cấu hình theo thao tác chủ động này; không dùng chức năng với mã nhạy cảm nếu không muốn gửi ra ngoài.
+
+### Research Agent v2.1.2 vẫn được giữ nguyên
+
+## Có gì trong v2.1.2?
+
+### Research Agent
+
+Research Agent thứ ba: `research.researcher`, hoạt động trên tập tài liệu trong workspace hiện tại. Context Manager truy xuất tối đa 4 đoạn Knowledge/RAG; nếu không tìm được đoạn phù hợp, agent trả `insufficient-evidence` mà không gọi AI provider. Khi có nguồn, agent tạo báo cáo có `summary`, `findings`, `sourceNumbers`, `unansweredQuestions`, `limitations` và siêu dữ liệu các đoạn tài liệu đã truy xuất.
+
+- API: `GET /api/research/status`, `GET /api/agents/research.researcher`, `POST /api/agents/research.researcher/execute`.
+- Parser chặn chỉ số nguồn không tồn tại; nhận định `sourced` phải tham chiếu một nguồn trong tập truy xuất.
+- UI Agents hiển thị findings, chỉ số trích dẫn và tên tài liệu/đoạn/trang khi có.
+- Không tự duyệt web/email, chạy browser/connector/tool, tạo task, persist báo cáo hay dispatch agent.
+- Kiểm tra chỉ số nguồn **không bảo đảm nhận định của mô hình thật sự được văn bản hỗ trợ**; cần đối chiếu đoạn nguồn trước khi sử dụng.
+
+### Planner Agent v2.1.1 vẫn được giữ nguyên
+
+## Có gì trong v2.1.1?
+
+### Planner Agent
+
+v2.1.1 triển khai agent thứ hai: `planning.planner`.
+
+Planner nhận một goal và trả về plan có cấu trúc gồm:
+
+- summary;
+- 2–12 steps;
+- dependency giữa các step;
+- suggested role;
+- required capabilities;
+- expected outcome;
+- open questions;
+- assumptions;
+- risks.
+
+Boundary của Planner:
+
+- `CreatesTasks = false`;
+- `DispatchesAgents = false`;
+- `PersistsAutomatically = false`;
+- `ToolExecutionEnabled = false`;
+- explicit invocation bắt buộc;
+- dependency chỉ được trỏ tới step trước, nên parser chặn dependency vòng ngay ở lớp plan.
+
+Agent Framework hiện có:
+
+- `core.personal-assistant`;
+- `planning.planner`.
+
+API chung:
+
+```http
+GET  /api/agents/status
+GET  /api/agents
+GET  /api/agents/{agentId}
+POST /api/agents/{agentId}/execute
+```
+
+API Planner:
+
+```http
+GET /api/planner/status
+```
+
+Trong sidebar **Agents**, khi chọn Planner Agent, nút chuyển thành **Lập kế hoạch** và kết quả được hiển thị theo step/dependency/role/outcome. Plan chỉ ở trạng thái `prepared`; hệ thống chưa tự biến plan thành Task Engine task và chưa phân phối step cho agent khác.
+
+### Agent Framework v2.1.0 vẫn là nền
+
+### Personal AI OS
+
+v2.0 thêm một lớp hệ thống thống nhất ở trên các subsystem đã có:
+
+- `/api/os/status` — readiness theo workspace hiện tại, capability state và governance gate;
+- `/api/os/manifest` — OS layers, capability map và các ranh giới autonomy;
+- 5 lớp: Knowledge & Context, Planning & Decision, Tools & Automation, Device & External Interfaces, Governance & Recovery;
+- 18 capability được phân loại `ready`, `controlled`, `foundation`, `unconfigured` hoặc `unavailable`;
+- readiness gate trước v2.1 yêu cầu Workspace, Tasks, Tools, Audit và Hardening không unavailable;
+- sidebar có bảng điều khiển **Personal AI OS** để xem trạng thái hệ thống.
+
+Email và Calendar được biểu diễn đúng mức triển khai hiện tại:
+
+- Email = connector-backed read foundation, chưa có Gmail/Outlook provider-specific OAuth hoặc send action;
+- Calendar = Life Context calendar snapshot + connector foundation, chưa có provider-specific auto-sync/write.
+
+v2.0 **không** bật Multi-Agent, Agent Orchestration, autonomous agent loop hay parallel tool calls. Các phần đó bắt đầu từ roadmap v2.1 trở đi.
+
+### Reliability & Security Hardening từ v1.9 vẫn được giữ nguyên
+
+### Reliability & Security Hardening
+
+v1.9 bổ sung lớp bảo vệ vận hành trước v2.0:
+
+- API rate guard mặc định 600 request/phút cho mỗi IP + workspace;
+- giới hạn tối đa 16 API request xử lý đồng thời;
+- chặn API request lớn hơn 12 MB trước khi đi sâu vào pipeline;
+- runtime heartbeat và crash marker để phát hiện lần chạy trước kết thúc không sạch;
+- permission audit chạy trên **policy thật** của Tool Framework để phát hiện công cụ rủi ro có thể bypass confirmation;
+- backup toàn bộ cây dữ liệu PersonalAI mặc định với giới hạn 20.000 file / 512 MB nguồn;
+- SQLite được snapshot bằng SQLite backup API thay vì copy file database đang mở;
+- giữ tối đa 5 backup gần nhất;
+- restore theo cơ chế **queue → restart → staging → pre-restore backup → apply → rollback khi lỗi**;
+- maintenance lock cross-process để hai thao tác backup/restore không chạy chồng nhau;
+- Hardening được đưa vào `/api/system/health` và có status API riêng.
+
+API mới:
+
+```http
+GET  /api/hardening/status
+GET  /api/hardening/permissions
+GET  /api/hardening/backups
+POST /api/hardening/backups
+POST /api/hardening/restore
+```
+
+Tạo backup và xếp hàng restore đều yêu cầu xác nhận rõ ràng. Restore không thay dữ liệu ngay trong process đang chạy; nó chỉ được áp dụng ở lần khởi động tiếp theo.
+
+> Phạm vi backup v1.9 là cây dữ liệu mặc định dưới `%LOCALAPPDATA%\\PersonalAI`. Store được redirect sang đường dẫn ngoài bằng các cấu hình `*:Root` chưa được tự động gom vào archive này.
+
+### Nền tảng chức năng từ v1.8 vẫn được giữ nguyên
+
+### Chat và AI provider
+
+- Chat nhiều lượt với lịch sử lưu trong trình duyệt.
+- Nhiều cuộc trò chuyện: tạo, chuyển, đổi tên, xóa.
+- Gemini và OpenAI qua lớp provider riêng.
+- API key được giữ ở backend, mã hóa bằng ASP.NET Core Data Protection và lưu ngoài repository.
+- Có thể chọn provider/model trong giao diện.
+- Constitution riêng tại `src/PersonalAI.Web/AI-CONSTITUTION.md`.
+
+### Workspace
+
+Có các workspace dựng sẵn:
+
+- Cá nhân
+- Công việc
+- Học tập
+- AI Cá Nhân
+- Du lịch
+
+Có thể tạo workspace tùy chỉnh, tối đa 20 workspace.
+
+Memory, Documents/RAG, Tasks, Files và Conversations được tách theo workspace. Request backend dùng header:
+
+```text
+X-PersonalAI-Workspace
+```
+
+Workspace không tồn tại bị từ chối thay vì âm thầm fallback sang workspace khác.
+
+### Memory
+
+- Fact / preference / rule.
+- Long-term hoặc temporary.
+- Bật/tắt, cập nhật, xóa, import/export.
+- Phát hiện nội dung trùng hoặc có vẻ là bản cập nhật.
+- Nội dung memory được bảo vệ bằng Data Protection khi lưu.
+- Context Manager chỉ lấy memory đang bật, còn hiệu lực và liên quan đến câu hỏi.
+
+### Documents / RAG
+
+Hỗ trợ:
+
+- PDF
+- DOCX
+- TXT
+- Markdown
+
+Pipeline hiện có:
+
+```text
+upload
+  ↓
+extract
+  ↓
+chunk
+  ↓
+SQLite / FTS
+  ↓
+local embeddings
+  ↓
+hybrid search
+  ↓
+rerank
+  ↓
+Context Manager
+```
+
+Có document management, integrity/quality checks, reindex, local semantic search, hybrid search và source reader.
+
+Tài liệu được coi là **untrusted reference data**, không phải system instruction.
+
+Khi chat dùng tài liệu, chỉ các đoạn được Context Manager chọn mới được gửi đến provider AI đang dùng; không gửi toàn bộ kho dữ liệu.
+
+### Context Manager
+
+v1.6 dùng strategy:
+
+```text
+workspace-scoped-budgeted-context-v2-life-context
+```
+
+Context được chọn từ:
+
+- Memory
+- Documents
+- Tasks
+- Life Context đã consent
+
+Ngân sách mặc định:
+
+- tổng vẫn giữ: 7.600 ký tự;
+- Documents: tối đa 4.400 ký tự;
+- Memory: tối đa 1.800 ký tự;
+- Tasks: tối đa 1.400 ký tự;
+- Life Context candidate budget: tối đa 1.200 ký tự;
+- tối đa 4 document chunks;
+- tối đa 4 memories;
+- tối đa 3 tasks;
+- tối đa 4 Life Context entries.
+
+Life Context không làm tăng global ceiling; nó dùng phần context budget còn lại và chỉ được chọn khi source đang bật, consent còn hiệu lực, entry chưa hết hạn và query có liên quan.
+
+Endpoint debug không gọi AI:
+
+```http
+POST /api/context/preview
+```
+
+### Tool Framework
+
+Tool Framework có permission contract:
+
+- READ
+- WRITE
+- DELETE
+- EXTERNAL
+- SENSITIVE
+- COMPUTER
+- BROWSER
+- CONNECTOR
+- DEVELOPMENT
+
+WRITE, DELETE, EXTERNAL, SENSITIVE, COMPUTER, BROWSER, CONNECTOR và DEVELOPMENT yêu cầu confirmation theo policy hiện tại. COMPUTER dùng cho desktop control; BROWSER dùng cho browser session/navigation; CONNECTOR dùng cho authenticated external integrations; DEVELOPMENT dùng cho source/process capability phục vụ phát triển phần mềm.
+
+Các tool local gồm nhóm đọc/tiện ích và workspace files, ví dụ:
+
+- clock
+- text stats
+- calculator
+- date math
+- memory search
+- document search
+- app summary
+- workspace list/read/write/create directory/move/delete
+
+Tool proposal không đồng nghĩa tool execution. AI có thể đề xuất tool nhưng người dùng vẫn kiểm soát việc chạy và các bước xác nhận.
+
+### Controlled Computer Use
+
+v1.1.0 thêm lớp Computer Use chạy qua chính Tool Framework hiện có.
+
+Backend hiện hỗ trợ **Windows interactive session**.
+
+Các tool quan sát:
+
+- `computer.screen.info` — kích thước desktop/màn hình, READ;
+- `computer.cursor.position` — vị trí cursor, READ;
+- `computer.windows.list` — visible window metadata, READ + SENSITIVE + confirmation;
+- `computer.window.active` — foreground window metadata, READ + SENSITIVE + confirmation.
+
+Các action có kiểm soát:
+
+- `computer.window.focus` — chuyển focus tới visible window, WRITE + COMPUTER + SENSITIVE + confirmation;
+- `computer.cursor.move` — di chuyển cursor, WRITE + COMPUTER + confirmation.
+
+v1.1.0 cố ý **chưa có** screenshot, OCR, click chuột, scroll, gõ phím, clipboard, mở ứng dụng, shell hay arbitrary process execution.
+
+Status cục bộ:
+
+```http
+GET /api/computer/status
+```
+
+Window title/process metadata được coi là dữ liệu nhạy cảm. Tool có SENSITIVE permission không tự được gửi kết quả ra provider AI để synthesis/native continuation.
+
+### Controlled Browser Agent
+
+v1.2.0 thêm browser-specific layer, không dùng desktop click mù làm cơ chế duyệt web.
+
+Engine hiện tại là `http-html`:
+
+- HTTP/HTTPS GET;
+- redirect validation;
+- title/text extraction;
+- link extraction;
+- workspace-scoped session;
+- SSRF guard ở URL, DNS và TCP connect.
+
+Browser tools:
+
+- `browser.session.info` — metadata phiên hiện tại, READ + BROWSER;
+- `browser.navigate` — GET tới URL công khai, READ + EXTERNAL + BROWSER;
+- `browser.page.observe` — đọc snapshot text/link, READ + BROWSER;
+- `browser.link.open` — mở link theo index, READ + EXTERNAL + BROWSER.
+
+Mọi browser tool cần explicit confirmation.
+
+v1.2.0 cố ý chưa có JavaScript renderer, cookie/login, form submit, POST, download, upload, screenshot, click hoặc autonomous browsing loop.
+
+Status:
+
+```http
+GET /api/browser/status
+```
+
+### Connector Foundation
+
+v1.3.0 thêm connector layer riêng thay vì dùng Browser Agent để lách authentication.
+
+Kind hiện tại:
+
+`http-bearer`
+
+Mỗi connection gồm:
+
+- name;
+- public HTTPS base origin;
+- encrypted Bearer credential;
+- workspace ownership;
+- created/updated metadata.
+
+Bearer token được mã hóa local bằng ASP.NET Core Data Protection và **không được trả lại qua API/UI**.
+
+Connector tools:
+
+- `connectors.list` — READ + SENSITIVE + CONNECTOR;
+- `connector.http.get` — READ + EXTERNAL + SENSITIVE + CONNECTOR.
+
+Mọi connector tool cần explicit confirmation.
+
+Authenticated read hiện chỉ dùng HTTPS GET cùng origin. Cross-origin redirect không được phép mang Authorization header.
+
+v1.3.0 chưa có POST/PUT/PATCH/DELETE qua connector, webhook send, email send, calendar write, upload hoặc provider-specific OAuth.
+
+API quản lý local:
+
+```http
+GET    /api/connectors/status
+GET    /api/connectors
+POST   /api/connectors
+DELETE /api/connectors/{id}?confirmed=true
+```
+
+Storage mặc định:
+
+```text
+%LOCALAPPDATA%\PersonalAI\Connectors\connections.json
+```
+
+### Software Development Agent
+
+v1.4.0 thêm controlled development capability nhưng **không mở terminal tùy ý**.
+
+Development tools:
+
+- `dev.workspace.inspect` — phát hiện project manifest/ngôn ngữ trong workspace;
+- `dev.search.text` — tìm text trong source mà không dùng grep/shell;
+- `dev.git.status` — Git status read-only;
+- `dev.git.diff` — Git diff read-only, external diff/textconv bị tắt;
+- `dev.dotnet.restore` — restore target .NET cụ thể;
+- `dev.dotnet.build` — build `--no-restore`;
+- `dev.dotnet.test` — test `--no-restore`.
+
+Tất cả dùng permission `DEVELOPMENT` và `SENSITIVE`, luôn cần explicit confirmation. Restore còn dùng `EXTERNAL`.
+
+v1.4.0 cố ý chưa có:
+
+- generic shell / cmd / PowerShell / sh;
+- arbitrary executable hoặc arbitrary CLI args;
+- git add/commit/push/pull/reset/checkout/merge/rebase;
+- autonomous edit-build-test loop;
+- background coding agent.
+
+File edit vẫn dùng các `workspace.*` tools hiện có để giữ path sandbox, SHA guard và Undo.
+
+Status:
+
+```http
+GET /api/development/status
+```
+
+`dotnet build/test` có thể chạy MSBuild task hoặc test code do project định nghĩa, nên chỉ nên dùng với workspace/repository mà người dùng tin cậy.
+
+### Android Companion
+
+v1.5.0 thêm ứng dụng Android native tại:
+
+```text
+android/PersonalAI.Companion/
+```
+
+Android Companion dùng one-time pairing code từ desktop. Mỗi device nhận một token riêng, bị khóa vào workspace đã pair.
+
+Backend chỉ lưu **SHA-256 hash** của device token; token plaintext chỉ được trả đúng một lần lúc claim. App Android mã hóa token bằng **Android Keystore + AES-GCM**.
+
+Client API:
+
+```http
+GET  /api/companion/client/me
+GET  /api/companion/client/core
+GET  /api/companion/client/tasks
+POST /api/companion/client/chat
+```
+
+Android chat dùng chung Context Manager với desktop nhưng backend cưỡng chế `UseTools = false`, nên v1.5 không cho điện thoại chạy Computer/Browser/Connector/Development/Workspace tools.
+
+Tasks trên Android là read-only. Không có execute/retry/resume/cancel qua companion namespace.
+
+Desktop local quản lý pairing/device tại:
+
+```http
+POST   /api/companion/admin/pairing/start
+GET    /api/companion/admin/devices
+DELETE /api/companion/admin/devices/{id}?confirmed=true
+```
+
+Mặc định pairing/client API yêu cầu HTTPS. HTTP LAN chỉ được bật khi backend có `Companion__AllowInsecureHttp=true` và người dùng cũng opt-in trên app Android.
+
+### Life Context Foundation
+
+v1.6.0 thêm lớp context đời sống theo nguyên tắc **consent trước, collection sau**.
+
+Supported source kinds:
+
+- `manual`
+- `calendar`
+- `location`
+- `activity`
+- `device`
+- `other`
+
+Tạo source calendar/location/activity/device **không tự cấp quyền hệ điều hành và không bật collector**. v1.6 chỉ lưu snapshot do người dùng/import flow chủ động gửi.
+
+Mỗi source có:
+
+- workspace ownership;
+- explicit consent;
+- enabled state;
+- retention từ 1–365 ngày;
+- encrypted entry content.
+
+Storage mặc định:
+
+```text
+%LOCALAPPDATA%\PersonalAI\LifeContext\life-context.json
+```
+
+Entry content được bảo vệ bằng ASP.NET Core Data Protection với protector `PersonalAI.LifeContext.v1`.
+
+API chính:
+
+```http
+GET    /api/life-context/status
+GET    /api/life-context/sources
+POST   /api/life-context/sources
+PATCH  /api/life-context/sources/{id}/enabled
+PATCH  /api/life-context/sources/{id}/consent
+POST   /api/life-context/sources/{id}/entries
+GET    /api/life-context/entries
+DELETE /api/life-context/entries/{id}
+DELETE /api/life-context/sources/{id}?confirmed=true
+```
+
+Consent revoke có thể purge snapshot hiện có; UI mặc định revoke kèm purge. Entry hết retention bị loại khỏi query/context và được cleanup khỏi local encrypted store.
+
+v1.6 cố ý chưa có background GPS, Android location permission, calendar auto-sync, activity recognition, health data, sensor collection hoặc cloud sync.
+
+### Decision Engine
+
+v1.7.0 thêm lớp hỗ trợ ra quyết định dựa trên cùng Context Manager đang phục vụ chat.
+
+Input gồm:
+
+- câu hỏi quyết định;
+- 2–8 lựa chọn;
+- tối đa 8 tiêu chí;
+- constraints tùy chọn;
+- cờ bật/tắt Documents, Memory, Tasks và Life Context.
+
+API:
+
+```http
+GET  /api/decisions/status
+POST /api/decisions/preview
+POST /api/decisions/analyze
+```
+
+`preview` chỉ chọn context cục bộ, không gọi Gemini/OpenAI.
+
+`analyze` dùng active AI provider để tạo decision brief gồm evidence, so sánh lựa chọn, trade-off, risk và uncertainty.
+
+Decision Engine cố ý **không**:
+
+- implement `IPersonalAiTool`;
+- dùng Tool Orchestration;
+- chạy Task Engine;
+- auto-action;
+- auto-schedule;
+- lưu question/options/analysis mặc định.
+
+Mọi response đều giữ contract:
+
+```text
+requiresUserDecision = true
+autoActionEnabled = false
+toolExecutionEnabled = false
+```
+
+Recommendation không phải authorization để PersonalAI hành động.
+
+### Controlled Automation
+
+v1.8.0 thêm scheduler nền cho **task đã tồn tại**.
+
+Automation hỗ trợ:
+
+- one-time schedule;
+- interval schedule từ 5 phút đến 7 ngày;
+- tối đa 50 automation / workspace;
+- persistence bằng SQLite;
+- restart recovery;
+- run-now;
+- pause / enable;
+- resume sau review;
+- workspace isolation;
+- Audit.
+
+Boundary quan trọng:
+
+```text
+mỗi scheduler tick
+        ↓
+tối đa 1 task step
+        ↓
+chỉ LocalOnly + READ + không confirmation
+```
+
+Scheduler luôn gọi Task Engine với:
+
+```text
+confirmed = false
+```
+
+Nếu step cần WRITE, DELETE, EXTERNAL, SENSITIVE, COMPUTER, BROWSER, CONNECTOR, DEVELOPMENT hoặc confirmation riêng:
+
+```text
+automation
+   ↓
+awaiting-confirmation
+   ↓
+enabled = false
+```
+
+Không có đường auto-confirm.
+
+Decision Engine recommendation cũng không tự tạo/chạy automation; muốn hành động vẫn phải là một request riêng do người dùng xác nhận.
+
+API:
+
+```http
+GET    /api/automations/status
+GET    /api/automations
+GET    /api/automations/{id}
+POST   /api/automations
+PATCH  /api/automations/{id}/enabled
+POST   /api/automations/{id}/resume
+POST   /api/automations/{id}/run-now
+DELETE /api/automations/{id}?confirmed=true
+```
+
+Storage:
+
+```text
+%LOCALAPPDATA%\PersonalAI\Automation\automations.db
+```
+
+### Tasks
+
+Task Engine hỗ trợ:
+
+- plan nhiều bước;
+- state bền vững bằng SQLite;
+- restart recovery;
+- interrupted state;
+- safe retry;
+- task dependencies;
+- step dependencies;
+- permission/confirmation của từng tool step.
+
+Task không tự chạy chuỗi bước. Người dùng phải chủ động chạy từng bước.
+
+### Audit
+
+Audit Foundation trả lời:
+
+```text
+Time · Workspace · Agent · Action · Tool · Target · Reason · Result
+```
+
+Audit:
+
+- workspace-scoped;
+- local SQLite;
+- giữ tối đa 90 ngày;
+- tối đa 10.000 event;
+- không lưu nguyên văn prompt, Memory, document content, full tool arguments/output hay API key.
+
+API:
+
+```http
+GET /api/audit
+GET /api/audit/summary
+```
+
+### Undo
+
+Undo Foundation lưu pre-action state cho một số thao tác file có thể đảo ngược an toàn.
+
+Hiện hỗ trợ có guard:
+
+- tạo file;
+- overwrite/append file;
+- xóa file nhỏ;
+- tạo/xóa thư mục rỗng;
+- di chuyển file.
+
+Undo luôn:
+
+1. kiểm tra trạng thái hiện tại;
+2. yêu cầu confirmation;
+3. kiểm tra guard lại ở server;
+4. mới áp dụng inverse operation.
+
+Nếu file đã thay đổi sau hành động gốc, Undo bị chặn thay vì ghi đè dữ liệu mới.
+
+API:
+
+```http
+GET  /api/undo
+GET  /api/undo/{undoId}/assessment
+POST /api/undo/{undoId}/execute
+```
+
+Undo khả dụng 7 ngày, tối đa 500 record, snapshot tối đa 512 KB.
+
+## Stable Core contract
+
+v2.1.1 giữ API contract của Stable Core, Personal AI OS v2.0, Agent Framework v2.1.0 và thêm controlled Planner Agent:
+
+- Version: `2.1.1`
+- API contract: `1`
+- Channel: `controlled`
+- Stable Core: v1.0 semantics
+- Controlled modules: `computer-use`, `browser-agent`, `connectors`, `software-development`, `android-companion`, `life-context`, `decision-engine`, `automation`
+
+Capabilities:
+
+```http
+GET /api/system/capabilities
+```
+
+Readiness local:
+
+```http
+GET /api/system/health
+```
+
+Health check **không gọi Gemini/OpenAI**.
+
+Mọi API response có:
+
+```text
+X-PersonalAI-Request-Id
+X-PersonalAI-Api-Version: 1
+```
+
+Unhandled API exception được sanitize; stack trace và đường dẫn local không được trả về client.
+
+## Guardrails hiện tại
+
+v2.1.1 **không phải autonomous agent**.
+
+Hiện tại:
+
+- Workspace isolation: bật
+- WRITE confirmation: bắt buộc
+- DELETE confirmation: bắt buộc
+- EXTERNAL confirmation: bắt buộc
+- Undo confirmation: bắt buộc
+- Computer-control confirmation: bắt buộc
+- Sensitive computer observation confirmation: bắt buộc
+- Browser confirmation: bắt buộc
+- Browser private-network access: tắt
+- Browser side effects/form submit: tắt
+- Connector confirmation: bắt buộc
+- Connector credential encryption: bật
+- Connector write actions: tắt
+- Development confirmation: bắt buộc
+- Development arbitrary shell: tắt
+- Development arbitrary process: tắt
+- Development Git write actions: tắt
+- Android pairing: bắt buộc
+- Android device token: backend chỉ lưu hash
+- Android remote tool execution: tắt
+- Android remote task mutation: tắt
+- Life Context explicit consent: bắt buộc
+- Life Context automatic collection: tắt
+- Life Context entry content encryption: bật
+- Decision Engine yêu cầu user quyết định: bật
+- Decision Engine auto-action: tắt
+- Decision Engine tool execution: tắt
+- Decision Engine persistent analysis: tắt
+- Automation explicit create: bắt buộc
+- Automation auto-confirm: tắt
+- Decision recommendation auto-execution: tắt
+- Automation tối đa một task step mỗi tick: bật
+- Automatic multi-step execution: tắt
+- Background scheduler: bật
+- Agent Framework: bật
+- Planner Agent: bật
+- Planner creates Task Engine tasks: tắt
+- Planner dispatches agents: tắt
+- Planner persists plans automatically: tắt
+- Agent explicit invocation: bắt buộc
+- Agent tool execution: tắt
+- Agent messaging: tắt
+- Automatic agent delegation: tắt
+- Parallel agent execution: tắt
+- Agent Orchestration: tắt
+- Autonomous agent loop: tắt
+- Parallel tool calls: tắt
+
+Chưa có:
+
+- JavaScript browser automation;
+- browser form submit/login/cookies;
+- browser download/upload;
+- screenshot/OCR;
+- mouse click hoặc keyboard typing;
+- cron expression tùy ý / sub-minute schedule;
+- autonomous agent loop;
+- automatic confirmation;
+- Gmail/Calendar/Microsoft provider-specific OAuth;
+- connector write actions;
+- arbitrary shell/process execution;
+- Git write actions;
+- autonomous coding loop;
+- Android remote tool/task mutation;
+- Android background agent/sensor collection;
+- Life Context background GPS/calendar/activity/sensor collection;
+- Decision Engine automatic action/tool execution;
+- Decision → automation implicit execution;
+- background WRITE/DELETE/EXTERNAL/SENSITIVE action;
+- persistent decision history;
+- cloud multi-user auth.
 
 ## Yêu cầu
 
-- Visual Studio 2022 có workload **ASP.NET and web development**, hoặc
-- [.NET 8 SDK](https://dotnet.microsoft.com/download/dotnet/8.0).
-- Một Gemini API key từ Google AI Studio hoặc OpenAI API key. Model Gemini mặc định có Free Tier theo chính sách hiện hành của Google.
+- .NET 8 SDK, hoặc
+- Visual Studio 2022 với workload **ASP.NET and web development**.
 
-Lưu ý: theo bảng giá Gemini, dữ liệu gửi qua Free Tier có thể được dùng để cải thiện sản phẩm của Google. Chưa đưa tài liệu mật, dữ liệu khách hàng hoặc thông tin nhạy cảm vào bản thử nghiệm này.
+Để chat với model bên ngoài, cần API key Gemini hoặc OpenAI. Các chức năng local như quản lý dữ liệu, Tasks, Audit, Undo và health contract vẫn có thể hoạt động khi AI provider chưa được cấu hình.
 
-## Chạy trên Windows với Visual Studio
+## Chạy ứng dụng
 
-1. Mở `PersonalAI.sln`.
-2. Nhấn `Ctrl + F5`.
-3. Trong website, chọn **Cài đặt AI** ở thanh bên.
-4. Chọn Gemini hoặc OpenAI, nhập tên model và API key.
-5. Nhấn **Lưu & kiểm tra**. Từ lần chạy sau ứng dụng tự dùng lại cấu hình này.
-6. Chọn **Kho dữ liệu** để thêm tệp `.txt` hoặc `.md` (tối đa 10 MB).
-
-Không ghi API key thật vào `appsettings.json`, không gửi key lên GitHub, không đưa key vào JavaScript và không gửi khóa cho người khác.
-
-## API key được lưu ở đâu?
-
-Trên Windows, cấu hình nằm tại:
-
-```text
-%LOCALAPPDATA%\PersonalAI\ai-settings.json
-```
-
-API key trong file đã được bảo vệ bằng ASP.NET Core Data Protection và không nằm trong thư mục Git. Giao diện chỉ nhận lại trạng thái cùng bốn ký tự cuối, không nhận key đầy đủ. Nếu chưa lưu bằng giao diện, ứng dụng vẫn hỗ trợ `GEMINI_API_KEY` và `OPENAI_API_KEY` làm phương án dự phòng.
-
-Ứng dụng v0.5.3 được thiết kế để chạy cá nhân trên máy của bạn. Trước khi đưa lên Internet hoặc cho nhiều người dùng, cần bổ sung đăng nhập và phân quyền vì màn hình cài đặt và kho dữ liệu hiện chưa có xác thực.
-
-## Kho dữ liệu được lưu ở đâu?
-
-Trên Windows, SQLite và bản sao tài liệu nằm tại:
-
-```text
-%LOCALAPPDATA%\PersonalAI\Knowledge\personal-ai.db
-%LOCALAPPDATA%\PersonalAI\Knowledge\files\
-```
-
-Các tệp này không nằm trong repository và không bị Git tải lên GitHub. Khi xóa một tài liệu trong giao diện, cả metadata trong SQLite và bản sao cục bộ của tài liệu đều được xóa.
-
-## Chạy bằng dòng lệnh
-
-### PowerShell
+### Windows / PowerShell
 
 ```powershell
 $env:GEMINI_API_KEY="khóa-của-bạn"
@@ -84,71 +952,225 @@ export GEMINI_API_KEY="khóa-của-bạn"
 dotnet run --project ./src/PersonalAI.Web
 ```
 
-Mở địa chỉ được in trong terminal: `https://localhost:7188` hoặc `http://localhost:5188`.
+Hoặc mở `PersonalAI.sln` bằng Visual Studio và chạy project `PersonalAI.Web`.
 
-## Chọn nhà cung cấp và model
+Ứng dụng thường mở ở URL do ASP.NET Core in ra trong terminal, ví dụ `https://localhost:7188` hoặc `http://localhost:5188`.
 
-Nên đổi trực tiếp bằng nút **Cài đặt AI**. Giá trị trong `appsettings.json` chỉ là mặc định cho lần chạy đầu:
+## API key
 
-```json
-"AI": {
-  "Provider": "Gemini"
-},
-"Gemini": {
-  "Model": "gemini-3.1-flash-lite"
-}
-```
-
-Bạn có thể chuyển qua lại giữa Gemini và OpenAI mà không sửa mã nguồn. Mỗi nhà cung cấp giữ model và API key riêng.
-
-## Sửa nguyên tắc của AI
-
-Mở:
+Cấu hình AI trên Windows nằm tại:
 
 ```text
-src/PersonalAI.Web/AI-CONSTITUTION.md
+%LOCALAPPDATA%\PersonalAI\ai-settings.json
 ```
 
-Sửa các nguyên tắc rồi khởi động lại ứng dụng. Nội dung file này được gửi trong trường `instructions` ở mỗi yêu cầu.
+Không commit API key vào:
 
-## Cấu trúc chính
+- `appsettings.json`
+- JavaScript
+- Git
+- issue/log công khai
+
+Nếu chưa lưu key trong giao diện, ứng dụng vẫn hỗ trợ biến môi trường:
+
+```text
+GEMINI_API_KEY
+OPENAI_API_KEY
+```
+
+## Dữ liệu cục bộ
+
+Các store chính trên Windows nằm ngoài repository, dưới `%LOCALAPPDATA%\PersonalAI`.
+
+Ví dụ:
+
+```text
+Memory\memories.json
+Knowledge\personal-ai.db
+Knowledge\files\
+Tasks\personal-tasks.db
+Audit\audit.db
+Undo\undo.db
+Connectors\connections.json
+Companion\devices.json
+LifeContext\life-context.json
+Automation\automations.db
+Workspace\
+```
+
+Workspace phụ có storage riêng cho Knowledge và Files. Conversations được namespace theo workspace trong browser localStorage.
+
+Một số root có thể override bằng configuration/environment, gồm:
+
+```text
+Workspace:Root / Workspace__Root
+Tasks:Root     / Tasks__Root
+Audit:Root     / Audit__Root
+Undo:Root      / Undo__Root
+Connectors:Root / Connectors__Root
+Companion:Root  / Companion__Root
+LifeContext:Root / LifeContext__Root
+Automation:Root  / Automation__Root
+```
+
+## Kiến trúc mức cao
+
+```text
+Browser
+  │
+  ├── Conversations (localStorage, workspace scoped)
+  │
+  ▼
+ASP.NET Core
+  │
+  ├── Workspace boundary
+  ├── Memory
+  ├── Documents / RAG
+  ├── Tasks
+  ├── Files
+  ├── Audit
+  ├── Undo
+  ├── Connectors
+  ├── Software Development Agent
+  ├── Android Companion
+  ├── Life Context
+  ├── Decision Engine
+  ├── Automation
+  ├── Hardening / Backup / Recovery
+  ├── Personal AI OS Manifest / Readiness
+  ├── Agent Framework
+  │
+  ├── Context Manager
+  │      ├── Memory selection
+  │      ├── Document hybrid retrieval
+  │      ├── Task relevance
+  │      └── Life Context relevance + consent
+  │
+  ├── Tool Framework
+  │      ├── permission policy
+  │      ├── confirmation
+  │      ├── activity log
+  │      ├── audit
+  │      └── undo capture
+  │
+  └── IAiProvider
+         ├── Gemini
+         └── OpenAI
+```
+
+## Cấu trúc repository
 
 ```text
 PersonalAI/
 ├── PersonalAI.sln
 ├── README.md
-└── src/PersonalAI.Web/
-    ├── AI-CONSTITUTION.md
-    ├── Program.cs
-    ├── Models/
-    ├── Options/
-    ├── Services/       # AI providers, cài đặt và SQLite knowledge store
-    ├── Teams/          # hồ sơ đội agent
-    └── wwwroot/
-        ├── index.html
-        ├── styles.css
-        └── app.js
+├── android/
+│   └── PersonalAI.Companion/
+├── docs/
+│   └── releases/
+└── src/
+    └── PersonalAI.Web/
+        ├── AI-CONSTITUTION.md
+        ├── Program.cs
+        ├── Models/
+        ├── Options/
+        ├── Services/
+        ├── Teams/
+        └── wwwroot/
 ```
 
-## Luồng xử lý
+## CI
+
+GitHub Actions hiện kiểm tra regression cho các nền chính, gồm:
+
+- build .NET;
+- Memory;
+- Documents/RAG;
+- embeddings/hybrid search;
+- Tool Framework;
+- Task persistence/recovery;
+- task dependencies;
+- Workspace isolation;
+- Context Manager;
+- Audit;
+- Undo;
+- Stable Core contract;
+- Android Companion pairing/auth/isolation;
+- Android debug APK build;
+- Life Context consent/encryption/retention/isolation;
+- Context Manager Life Context selection/opt-out;
+- Decision Engine validation/context preview/no-auto-action contract;
+- Automation persistence/workspace isolation/one-step scheduler/no-auto-confirm;
+- v1.9 hardening health/permission audit/rate-resource guards/confirmation boundaries;
+- v2.0 Personal AI OS manifest/readiness/governance/capability-state contract;
+- v2.1 Agent Framework registry/explicit execution/context isolation/no-tool-execution contract;
+- v2.1.2 Research Agent source-bound reporting, insufficient-evidence fallback và citation-index validation;
+- v2.1.3 Developer Agent workspace-only snippet review, no-write/no-command policy và evidence-index validation;
+- v2.1.4 Office Agent structured draft-only output, parser validation và no-send/no-write/no-task policy;
+- v2.1.5 Operator Agent risk-aware plan-only output, dependency validation và no-execution policy;
+- v2.1.6 Reviewer Agent excerpt validation, no-external-verification và no-approval policy;
+- v2.1.7 Security Agent local pattern review, no-input-echo, no-enforcement và no-safety-certification policy;
+- v2.2.0 bounded sequential workflow, explicit user approval/handoff, stop-on-error và no-tool/no-autonomy policy;
+- JavaScript syntax;
+- UI guardrails tiếng Việt.
+
+## Release notes
+
+Chi tiết từng mốc nằm trong:
 
 ```text
-Chat:      Trình duyệt → POST /api/chat → tìm đoạn liên quan → IAiProvider → Gemini/OpenAI
-Kho dữ liệu: Trình duyệt → /api/knowledge/documents → SQLite + tệp cục bộ
-Tìm kiếm: Trình duyệt → /api/knowledge/search → SQLite FTS5 → các đoạn liên quan
+docs/releases/
 ```
 
-Lịch sử hội thoại và metadata nguồn hiện nằm trong `localStorage` của trình duyệt. v0.5.3 đã đưa các đoạn liên quan vào ngữ cảnh AI và hiển thị nguồn đã dùng; bước tiếp theo có thể bổ sung chế độ bật/tắt dữ liệu riêng, xem trích đoạn nguồn trực tiếp từ câu trả lời và đánh giá chất lượng truy xuất. Lớp lưu trữ được tách riêng để sau này có thể chuyển từ SQLite sang PostgreSQL mà không phải viết lại giao diện.
+Mốc Stable Core:
 
-Endpoint `GET /api/team-profiles` cho thấy các hồ sơ đội đã được khai báo. Đây mới là hợp đồng dữ liệu cho tương lai, chưa phải hệ thống tự động thực hiện hành động.
+```text
+docs/releases/v1.0.0.md
+```
 
-## Thử nghiệm cầu nối Xerath Support Assistant — bản đầu tiên
+Các mốc capability:
 
-AI Cá Nhân có API cục bộ `GET /api/integrations/xerath/status` và `POST /api/integrations/xerath/notice` để nhận **hai loại tín hiệu đã được xác nhận** từ trợ lý Xerath: `own-health-loss` (máu của chính bạn vừa giảm nhanh) và `completed-kill` (điểm hạ gục đã được công bố). Endpoint phản hồi câu thông báo tiếng Việt theo mẫu cố định, kèm nguồn, trạng thái xác nhận và hạn sử dụng; **đây mới là kết nối thử nghiệm, KHÔNG chạy Gemini/OpenAI, KHÔNG có nhận diện hình ảnh, KHÔNG theo dõi rừng địch hoặc đưa quyết định chiến thuật**.
+```text
+docs/releases/v1.1.0.md
+docs/releases/v1.2.0.md
+docs/releases/v1.3.0.md
+docs/releases/v1.4.0.md
+docs/releases/v1.5.0.md
+docs/releases/v1.6.0.md
+docs/releases/v1.7.0.md
+docs/releases/v1.8.0.md
+docs/releases/v1.9.0.md
+docs/releases/v2.0.0.md
+docs/releases/v2.1.0.md
+docs/releases/v2.1.1.md
+docs/releases/v2.1.2.md
+docs/releases/v2.1.3.md
+docs/releases/v2.1.4.md
+docs/releases/v2.1.5.md
+docs/releases/v2.1.6.md
+docs/releases/v2.1.7.md
+docs/releases/v2.2.0.md
+docs/releases/v2.2.1.md
+docs/releases/v2.2.2.md
+docs/releases/v2.2.3.md
+docs/releases/v2.2.4.md
+docs/releases/v2.2.5.md
+docs/releases/v2.2.6.md
+```
 
-Cách chạy: tại thư mục AI-Ca-Nhan, dùng `dotnet run --project src/PersonalAI.Web --launch-profile PersonalAI.Web`. Chương trình mặc định có địa chỉ **http://localhost:5188** bên cạnh HTTPS. Trên cùng máy Windows, chạy Xerath Support Assistant, mở **Chỉ số trực tiếp & tổng hợp**, bấm **Kiểm tra kết nối AI cá nhân** để xác nhận API đang hoạt động, sau đó tùy chọn tích ô **Thử cầu nối AI cá nhân trên máy** và bật HUD. Kết nối không bắt buộc; khi AI Cá Nhân chưa chạy, HUD hiển thị thông báo cục bộ sẵn có mà không đợi quá lâu.
+## Hướng phát triển sau v2.2.6
 
-Hợp đồng dữ liệu yêu cầu `POST http://127.0.0.1:5188/api/integrations/xerath/notice`, header `X-Xerath-Bridge: 1`, body JSON dạng `{"kind":"own-health-loss","gameTimeSeconds":120,"healthPercent":30}` hoặc `{"kind":"completed-kill","gameTimeSeconds":120,"healthPercent":null}`. API chỉ chấp nhận người gọi loopback và tên host localhost/127.0.0.1, chỉ xử lý tín hiệu nằm trong danh sách cho phép và không đưa chuỗi tùy ý từ bên gọi vào HUD. **Không mở địa chỉ này ra Internet**, không cấu hình port-forward hoặc reverse proxy; API này chưa có xác thực giữa các tiến trình cục bộ. Không có ảnh, lịch sử chat, API key hoặc dữ liệu vị trí tướng địch nào được gửi qua cầu nối.
+Computer Use, Browser Agent, Connector Foundation, Software Development Agent, Android Companion, Life Context, Decision Engine và Automation hiện nằm trong controlled capability layer.
 
-**Các bước tương lai:** bổ sung kiểm thử truyền dữ liệu và đo độ trễ; tạo bộ quan sát ảnh để *phân tích luyện tập* với nhãn rõ ràng; chỉ xem xét bật từng loại phân tích lên HUD trong trận sau khi kiểm thử và xác minh phạm vi Riot cho phép. Đừng hiểu API này là AI đã biết xem trận hoặc tự chọn đường di chuyển và kỹ năng.
+Sau v2.2.6, mốc tiếp theo dự kiến là **v2.2.7 — Cải thiện trải nghiệm sử dụng quy trình**. Web/email research và tự thực thi tool chưa được tích hợp vào điều phối; việc mở thêm quyền cần thiết kế độc lập, truy xuất nguồn và permission/confirmation rõ ràng.
 
+
+## Kết nối Xerath Support Assistant với AI Cá Nhân v2.2.6
+
+Nhánh v2.2.6 đã tích hợp lại **cầu nối Xerath v1** mà trước đây chỉ có trên `main`. Hai endpoint tương thích với ứng dụng Xerath Support Assistant hiện tại: `GET /api/integrations/xerath/status` và `POST /api/integrations/xerath/notice`. Có thể thử trên cùng máy Windows bằng địa chỉ `http://127.0.0.1:5188/api/integrations/xerath/status`. Kết quả thành công có `online: true` và `bridgeVersion: 1`. Đường dẫn giao diện AI v2.2.6, bộ agent và quy trình nhiều bước không thay đổi vì tích hợp này.
+
+**Giới hạn:** endpoint chỉ nhận `own-health-loss` (HP của chính bạn giảm nhanh) và `completed-kill` (điểm hạ gục đã được công bố), trả về hai mẫu thông báo tiếng Việt có sẵn. Không chuyển ảnh màn hình, không gọi Gemini/OpenAI, không điều khiển game, không nhận diện giao tranh hoặc định vị rừng địch. Kết nối từ Xerath Support Assistant là **tùy chọn**, và HUD có thể tự phát cảnh báo không qua AI cá nhân khi không kết nối được.
+
+**Cách cập nhật mã nguồn v2.2.6 trên máy:** đóng tiến trình AI Cá Nhân đang chạy (nhấn Ctrl+C trong PowerShell dành cho máy chủ), chuyển vào thư mục clone `AI-Ca-Nhan-Live`, sau đó chạy `git fetch origin` và `git switch feature/v2.2.6-vietnamese-workflow-accessibility` (nếu nhánh đã có cục bộ thì dùng `git pull --ff-only origin feature/v2.2.6-vietnamese-workflow-accessibility`). Nếu có sửa đổi cục bộ, sao lưu hoặc commit trước khi chuyển nhánh; không chạy lệnh ép/xóa thay đổi. Khởi động bằng `dotnet run --project src/PersonalAI.Web/PersonalAI.Web.csproj --launch-profile PersonalAI.Web`. Mở Xerath Support Assistant, vào **Chỉ số trực tiếp & tổng hợp**, nhấn **Kiểm tra kết nối AI cá nhân**, sau đó mới tích bật tùy chọn kết nối.
+
+**An toàn:** cầu nối chỉ dành cho máy cá nhân: kiểm tra địa chỉ loopback và host `localhost` hoặc `127.0.0.1`. Header `X-Xerath-Bridge: 1` chỉ là dấu nhận dạng yêu cầu, **không phải xác thực**; tiến trình khác trên cùng máy vẫn có thể gọi endpoint. Không mở cổng 5188 ra mạng LAN/Internet và không cấu hình reverse proxy đến endpoint này. Nhánh v2.2.6 vẫn áp dụng middleware giới hạn kích thước và tần suất yêu cầu chung. CI bổ sung smoke test cho status, hai thông báo hợp lệ và giá trị HP không hợp lệ. Chưa có kiểm thử âm thanh/HUD trên máy Windows của bạn từ phía AI cá nhân.

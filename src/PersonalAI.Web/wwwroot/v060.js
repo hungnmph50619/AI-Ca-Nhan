@@ -133,12 +133,12 @@
         <label class="memory-dialog-toggle">
           <input id="memoryDialogToggle" type="checkbox">
           <span>
-            <strong>Dùng trí nhớ trong chat</strong>
+            <strong>Dùng trí nhớ khi trò chuyện</strong>
             <small>Có thể tắt bất kỳ lúc nào mà không xóa dữ liệu đã lưu.</small>
           </span>
         </label>
 
-        <form id="memoryForm" class="memory-form">
+        <form id="memoryForm" class="memory-form" novalidate>
           <label class="field-label" for="memoryKind">Loại trí nhớ</label>
           <select id="memoryKind">
             <option value="fact">Thông tin</option>
@@ -212,7 +212,7 @@
       const button = event.target.closest?.("[data-memory-delete]");
       if (!button) return;
       const memoryId = button.dataset.memoryDelete;
-      if (!memoryId || !window.confirm("Xóa trí nhớ này?")) return;
+      if (!memoryId || !(await window.PersonalAiUi.confirm("Xóa trí nhớ này?", { title: "Xác nhận xóa trí nhớ", confirmText: "Xóa", danger: true }))) return;
       await deleteMemory(memoryId);
     });
   }

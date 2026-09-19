@@ -1,0 +1,50 @@
+.tool-execution-actions .primary-button {
+  min-width: 210px;
+}
+
+.tool-execution-privacy {
+  line-height: 1.5;
+}
+
+@media (max-width: 720px) {
+  .tool-execution-actions .primary-button {
+    min-width: 0;
+  }
+}
+
+
+.app-message-dialog {
+  width: min(520px, calc(100vw - 32px));
+}
+
+.app-message-card {
+  width: 100%;
+}
+
+.app-message-copy {
+  margin: 0;
+  white-space: pre-line;
+  line-height: 1.65;
+}
+
+.app-message-input {
+  width: 100%;
+  box-sizing: border-box;
+  margin-top: 4px;
+  border: 1px solid #d9dfdb;
+  border-radius: 10px;
+  padding: 10px 12px;
+  font: inherit;
+  color: inherit;
+  background: #fff;
+}
+
+.app-message-input:focus {
+  outline: none;
+  border-color: #8e9d94;
+  box-shadow: 0 0 0 3px rgba(142, 157, 148, .12);
+}
+
+.app-message-actions {
+  margin-top: 18px;
+}

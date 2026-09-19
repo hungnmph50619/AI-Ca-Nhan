@@ -1,0 +1,169 @@
+/* v0.6.3.1 UI/UX hotfix: each major surface owns its own scroll area. */
+html, body {
+  height: 100%;
+  min-height: 100%;
+  overflow: hidden;
+}
+
+body { overscroll-behavior: none; }
+
+.app-shell {
+  height: 100dvh;
+  min-height: 0;
+  overflow: hidden;
+}
+
+.sidebar {
+  height: 100dvh;
+  min-height: 0;
+  overflow: hidden;
+  padding-block: 22px;
+}
+
+.conversation-section { min-height: 0; overflow: hidden; }
+.conversation-list {
+  flex: 1 1 auto;
+  min-height: 0;
+  overscroll-behavior: contain;
+  scrollbar-gutter: stable;
+}
+
+.sidebar-tools,
+.privacy-note { flex: 0 0 auto; }
+
+.chat-panel {
+  height: 100dvh;
+  min-height: 0;
+  overflow: hidden;
+}
+
+.topbar { position: relative; z-index: 2; flex: 0 0 auto; }
+.messages {
+  min-height: 0;
+  overscroll-behavior: contain;
+  scrollbar-gutter: stable;
+  scroll-behavior: smooth;
+}
+
+.composer-wrap {
+  position: relative;
+  z-index: 2;
+  flex: 0 0 auto;
+}
+
+/* Dialogs: keep header visible and scroll only the content card. */
+.settings-dialog {
+  width: min(620px, calc(100vw - 32px));
+  max-height: min(88dvh, 820px);
+  overflow: hidden;
+  overscroll-behavior: contain;
+}
+
+.settings-dialog.knowledge-dialog { width: min(760px, calc(100vw - 32px)); }
+.settings-card {
+  max-height: min(88dvh, 820px);
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  scrollbar-gutter: stable;
+  padding: 24px 26px;
+}
+
+.settings-header {
+  position: sticky;
+  top: -24px;
+  z-index: 8;
+  margin: -24px -26px 18px;
+  padding: 22px 26px 16px;
+  border-bottom: 1px solid var(--line);
+  background: rgba(255,255,255,.96);
+  backdrop-filter: blur(10px);
+}
+
+.dialog-close {
+  flex: 0 0 auto;
+  position: sticky;
+  top: 0;
+}
+
+/* Memory management should prioritize the saved-memory list over the add form. */
+.memory-dialog { width: min(680px, calc(100vw - 32px)); }
+.memory-card { max-height: min(88dvh, 820px); }
+.memory-intro { margin-bottom: 14px !important; }
+.memory-form { margin-bottom: 14px !important; }
+.memory-form textarea,
+#memoryContent {
+  min-height: 72px !important;
+  max-height: 120px;
+  resize: vertical;
+}
+
+.memory-form-actions { margin-top: 10px !important; }
+.memory-list-header {
+  margin-top: 14px !important;
+  padding-top: 14px !important;
+}
+
+.memory-v062-controls {
+  position: sticky;
+  top: 78px;
+  z-index: 6;
+  margin: 0 -2px 10px !important;
+  padding: 8px 2px;
+  background: rgba(255,255,255,.97);
+  backdrop-filter: blur(8px);
+}
+
+#memoryList,
+.memory-list {
+  max-height: min(34dvh, 330px) !important;
+  overflow-y: auto !important;
+  overscroll-behavior: contain;
+  scrollbar-gutter: stable;
+  padding-right: 4px;
+}
+
+.memory-row {
+  gap: 10px;
+  padding: 11px 12px !important;
+}
+
+.memory-row-body { min-width: 0; }
+.memory-row-body p { margin: 7px 0 0; line-height: 1.45; overflow-wrap: anywhere; }
+.memory-v062-row-actions { align-self: center; }
+.memory-v062-row-actions button { min-height: 34px; }
+
+/* Make long content feel denser without sacrificing readability. */
+.message-row { margin-bottom: 22px; }
+.messages { padding-top: 30px; padding-bottom: 30px; }
+
+@media (max-height: 760px) and (min-width: 781px) {
+  .sidebar { gap: 12px; padding-block: 16px; }
+  .privacy-note { padding-top: 12px; }
+  .settings-dialog,
+  .settings-card { max-height: 94dvh; }
+  .settings-header { padding-top: 16px; }
+  #memoryList,
+  .memory-list { max-height: 30dvh !important; }
+}
+
+@media (max-width: 780px) {
+  html, body { overflow: hidden; }
+  .sidebar { height: 100dvh; overflow: hidden; }
+  .chat-panel { height: 100dvh; }
+  .settings-dialog,
+  .settings-dialog.knowledge-dialog,
+  .memory-dialog {
+    width: calc(100vw - 16px);
+    max-height: 94dvh;
+  }
+  .settings-card { max-height: 94dvh; padding: 18px 16px; }
+  .settings-header {
+    top: -18px;
+    margin: -18px -16px 14px;
+    padding: 16px;
+  }
+  .settings-header h2 { font-size: 28px; }
+  .memory-v062-controls { top: 68px; }
+  #memoryList,
+  .memory-list { max-height: 38dvh !important; }
+}

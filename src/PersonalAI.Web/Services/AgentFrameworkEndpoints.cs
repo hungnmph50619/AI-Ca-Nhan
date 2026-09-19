@@ -13,6 +13,7 @@ public static class AgentFrameworkEndpoints
         services.AddScoped<IAgent, ResearchFrameworkAgent>();
         services.AddScoped<IAgent, DeveloperFrameworkAgent>();
         services.AddScoped<IAgent, OfficeFrameworkAgent>();
+        services.AddScoped<IAgent, OperatorFrameworkAgent>();
         services.AddScoped<IAgentRegistry, AgentRegistry>();
         services.AddScoped<IAgentFrameworkService, AgentFrameworkService>();
         return services;
@@ -40,6 +41,9 @@ public static class AgentFrameworkEndpoints
 
         app.MapGet("/api/office-agent/status", () =>
             Results.Ok(OfficeAgentLimits.GetStatus()));
+
+        app.MapGet("/api/operator-agent/status", () =>
+            Results.Ok(OperatorAgentLimits.GetStatus()));
 
         app.MapGet("/api/agents/{agentId}", (
             string agentId,
@@ -71,6 +75,12 @@ public static class AgentFrameworkEndpoints
             {
                 return Results.BadRequest(
                     new ApiError(exception.Message));
+            }
+            catch (OperatorOutputException exception)
+            {
+                return Results.Json(
+                    new ApiError(exception.Message),
+                    statusCode: StatusCodes.Status502BadGateway);
             }
             catch (OfficeOutputException exception)
             {

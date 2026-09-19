@@ -33,7 +33,7 @@ public static class PlannerAgentLimits
             PersistsPlans: false,
             ToolExecutionEnabled: false,
             RequiresExplicitInvocation: true,
-            NextStage: "v2.1.5-operator-agent");
+            NextStage: "v2.1.6-reviewer-agent");
 }
 
 public sealed class PlannerOutputException : InvalidOperationException

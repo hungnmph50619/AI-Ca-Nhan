@@ -1,5 +1,5 @@
 (() => {
-  const VERSION = "2.1.4";
+  const VERSION = "2.1.5";
   let dialog;
   let select;
   let goal;
@@ -135,7 +135,7 @@
     const boundary = document.createElement("div");
     boundary.className = "agent-boundary";
     boundary.textContent =
-      "v2.1.4 chạy agent khi bạn chủ động bấm chạy. Office chỉ soạn nháp; không gửi email, tạo lịch/task, chỉnh sửa hay tự lưu tài liệu. Các agent không tự giao việc.";
+      "v2.1.5 chạy agent khi bạn chủ động bấm chạy. Operator chỉ chuẩn bị kế hoạch thao tác, không điều khiển máy/browser, chạy tool hoặc tạo thay đổi. Các agent không tự giao việc.";
 
     feedback = document.createElement("div");
     feedback.className = "agent-feedback";
@@ -231,7 +231,10 @@
     const isResearch = agent.role === "research";
     const isDeveloper = agent.role === "developer";
     const isOffice = agent.role === "office";
-    goal.placeholder = isOffice
+    const isOperator = agent.role === "operator";
+    goal.placeholder = isOperator
+      ? "Ví dụ: Lập kế hoạch kiểm tra một website và đề xuất các bước cần người dùng xác nhận; không thực hiện thao tác."
+      : isOffice
       ? "Ví dụ: Soạn email nháp cập nhật tiến độ dự án, chưa gửi; liệt kê thông tin còn thiếu."
       : isDeveloper
       ? "Ví dụ: search: ExecuteAsync — xem các đoạn mã liên quan và đề xuất cải tiến. Các snippet có thể được gửi đến AI provider đã cấu hình."
@@ -240,7 +243,7 @@
       : isPlanner
         ? "Ví dụ: Phát triển AI Cá Nhân từ v2.1.2 đến v2.2 theo từng bước an toàn."
         : "Ví dụ: Phân tích những việc tôi đang làm và đề xuất bước tiếp theo.";
-    runButton.textContent = isOffice ? "Soạn bản nháp" : isDeveloper ? "Phân tích mã" : isResearch ? "Nghiên cứu tài liệu" : isPlanner ? "Lập kế hoạch" : "Chạy agent";
+    runButton.textContent = isOperator ? "Chuẩn bị thao tác" : isOffice ? "Soạn bản nháp" : isDeveloper ? "Phân tích mã" : isResearch ? "Nghiên cứu tài liệu" : isPlanner ? "Lập kế hoạch" : "Chạy agent";
 
     [
       ["Role", agent.role],
@@ -305,7 +308,9 @@
   function renderExecutionResult(payload) {
     result.replaceChildren();
 
-    if (payload.office) {
+    if (payload.operator) {
+      renderOperatorPlan(payload.operator);
+    } else if (payload.office) {
       renderOfficeDraft(payload.office);
     } else if (payload.developer) {
       renderDeveloperReport(payload.developer);
@@ -405,7 +410,7 @@
     const boundary = document.createElement("p");
     boundary.className = "planner-plan-boundary";
     boundary.textContent =
-      "Plan này chỉ được chuẩn bị để bạn xem. v2.1.4 không tự tạo Task Engine task, không dispatch agent và không persist plan tự động.";
+      "Plan này chỉ được chuẩn bị để bạn xem. v2.1.5 không tự tạo Task Engine task, không dispatch agent và không persist plan tự động.";
     wrapper.append(boundary);
 
     result.append(wrapper);
@@ -534,6 +539,52 @@
     appendPlannerList(root, "Thông tin cần xác nhận", draft.missingInformation);
     const boundary = document.createElement("p");
     boundary.textContent = "Đây chỉ là bản nháp; hệ thống chưa gửi email, tạo lịch/task, chỉnh sửa hoặc tự lưu tài liệu. Hãy rà soát nội dung trước khi dùng.";
+    root.append(boundary);
+    result.append(root);
+  }
+
+  function renderOperatorPlan(plan) {
+    const root = document.createElement("section");
+    root.className = "operator-plan";
+    const title = document.createElement("h3");
+    title.textContent = "Kế hoạch thao tác · chưa thực hiện";
+    const summary = document.createElement("p");
+    summary.textContent = plan.summary || "";
+    root.append(title, summary);
+
+    (plan.steps || []).forEach(step => {
+      const card = document.createElement("article");
+      card.className = "operator-step";
+      const heading = document.createElement("h4");
+      heading.textContent = step.step + ". " + (step.title || "");
+      const channel = document.createElement("p");
+      channel.textContent = "Kênh đề xuất: " + (step.channel || "manual")
+        + " · Mức rủi ro: " + (step.riskLevel || "");
+      const description = document.createElement("p");
+      description.textContent = step.description || "";
+      const expected = document.createElement("p");
+      expected.textContent = "Kết quả mong đợi (chưa xảy ra): " + (step.expectedOutcome || "");
+      const verification = document.createElement("p");
+      verification.textContent = "Cách kiểm chứng: " + (step.verificationStep || "");
+      card.append(heading, channel, description, expected, verification);
+      if ((step.dependsOn || []).length) {
+        const dependency = document.createElement("p");
+        dependency.textContent = "Phụ thuộc bước: " + step.dependsOn.join(", ");
+        card.append(dependency);
+      }
+      if (step.requiresUserConfirmation) {
+        const confirmation = document.createElement("strong");
+        confirmation.textContent = "Cần người dùng xác nhận trước khi thực hiện bước này; chưa có quyền thực thi.";
+        card.append(confirmation);
+      }
+      root.append(card);
+    });
+
+    appendPlannerList(root, "Điều kiện trước khi thao tác", plan.preconditions);
+    appendPlannerList(root, "Cần làm rõ", plan.openQuestions);
+    appendPlannerList(root, "Giới hạn", plan.limitations);
+    const boundary = document.createElement("p");
+    boundary.textContent = "Bản kế hoạch này không có nút thực thi. Không điều khiển máy/browser, gọi connector, gửi tin, lưu kế hoạch hoặc dispatch agent.";
     root.append(boundary);
     result.append(root);
   }

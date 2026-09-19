@@ -27,7 +27,7 @@ public static class SecurityAgentLimits
             ExecutesTools: false,
             DispatchesAgents: false,
             RequiresExplicitInvocation: true,
-            NextStage: "v2.2.5-workflow-usability");
+            NextStage: "v2.2.6-workflow-accessibility");
 }
 
 public sealed class SecurityFrameworkAgent : IAgent

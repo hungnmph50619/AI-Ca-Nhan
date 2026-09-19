@@ -1,5 +1,5 @@
 (() => {
-  const VERSION = "2.1.0";
+  const VERSION = "2.1.1";
   let dialog;
   let select;
   let goal;
@@ -135,7 +135,7 @@
     const boundary = document.createElement("div");
     boundary.className = "agent-boundary";
     boundary.textContent =
-      "v2.1.0 chỉ chạy agent khi bạn bấm Chạy. Agent có thể dùng Context Manager để trả lời nhưng không tự chạy tool, không gọi agent khác, không tự tạo automation và không tự xác nhận side effect.";
+      "v2.1.1 chỉ chạy agent khi bạn chủ động bấm chạy. Planner chỉ chia goal thành plan; không tạo task thật, không dispatch agent, không tự chạy tool và không tự xác nhận side effect.";
 
     feedback = document.createElement("div");
     feedback.className = "agent-feedback";
@@ -227,6 +227,12 @@
     meta.replaceChildren();
     if (!agent) return;
 
+    const isPlanner = agent.role === "planner";
+    goal.placeholder = isPlanner
+      ? "Ví dụ: Phát triển AI Cá Nhân từ v2.1.1 đến v2.2 theo từng bước an toàn."
+      : "Ví dụ: Phân tích những việc tôi đang làm và đề xuất bước tiếp theo.";
+    runButton.textContent = isPlanner ? "Lập kế hoạch" : "Chạy agent";
+
     [
       ["Role", agent.role],
       ["Capabilities", (agent.capabilities || []).join(", ")],
@@ -277,8 +283,7 @@
 
       feedback.textContent =
         `${payload.agentName} · ${payload.provider || "local"} · ${payload.status}`;
-      result.textContent = payload.message || "Agent không trả về nội dung.";
-      result.hidden = false;
+      renderExecutionResult(payload);
     } catch (error) {
       feedback.textContent = error instanceof Error
         ? error.message
@@ -286,6 +291,129 @@
     } finally {
       runButton.disabled = agents.length === 0;
     }
+  }
+
+  function renderExecutionResult(payload) {
+    result.replaceChildren();
+
+    if (payload.plan) {
+      renderPlannerPlan(payload.plan);
+    } else {
+      const copy = document.createElement("div");
+      copy.className = "agent-result-copy";
+      copy.textContent = payload.message || "Agent không trả về nội dung.";
+      result.append(copy);
+    }
+
+    result.hidden = false;
+  }
+
+  function renderPlannerPlan(plan) {
+    const wrapper = document.createElement("section");
+    wrapper.className = "planner-plan";
+
+    const heading = document.createElement("div");
+    heading.className = "planner-plan-heading";
+
+    const title = document.createElement("h3");
+    title.textContent = "Kế hoạch đã chuẩn bị";
+
+    const status = document.createElement("span");
+    status.className = "planner-plan-status";
+    status.textContent = plan.status || "prepared";
+
+    heading.append(title, status);
+
+    const summary = document.createElement("p");
+    summary.className = "planner-plan-summary";
+    summary.textContent = plan.summary || "";
+
+    const steps = document.createElement("div");
+    steps.className = "planner-plan-steps";
+
+    (plan.steps || []).forEach(step => {
+      const card = document.createElement("article");
+      card.className = "planner-step";
+
+      const stepHeading = document.createElement("div");
+      stepHeading.className = "planner-step-heading";
+
+      const stepTitle = document.createElement("strong");
+      stepTitle.textContent = `${step.step}. ${step.title}`;
+
+      const role = document.createElement("span");
+      role.className = "planner-step-role";
+      role.textContent = step.suggestedRole || "general-assistant";
+
+      stepHeading.append(stepTitle, role);
+
+      const description = document.createElement("p");
+      description.textContent = step.description || "";
+
+      const outcome = document.createElement("p");
+      outcome.className = "planner-step-outcome";
+      outcome.textContent = `Kết quả: ${step.expectedOutcome || ""}`;
+
+      card.append(stepHeading, description, outcome);
+
+      if (Array.isArray(step.dependsOn) && step.dependsOn.length > 0) {
+        const dependency = document.createElement("p");
+        dependency.className = "planner-step-meta";
+        dependency.textContent = `Phụ thuộc bước: ${step.dependsOn.join(", ")}`;
+        card.append(dependency);
+      }
+
+      if (Array.isArray(step.requiredCapabilities)
+          && step.requiredCapabilities.length > 0) {
+        const capabilities = document.createElement("p");
+        capabilities.className = "planner-step-meta";
+        capabilities.textContent =
+          `Capabilities: ${step.requiredCapabilities.join(", ")}`;
+        card.append(capabilities);
+      }
+
+      if (step.requiresUserInput) {
+        const userInput = document.createElement("p");
+        userInput.className = "planner-step-user-input";
+        userInput.textContent = "Cần người dùng cung cấp thêm thông tin.";
+        card.append(userInput);
+      }
+
+      steps.append(card);
+    });
+
+    wrapper.append(heading, summary, steps);
+    appendPlannerList(wrapper, "Cần làm rõ", plan.openQuestions);
+    appendPlannerList(wrapper, "Giả định", plan.assumptions);
+    appendPlannerList(wrapper, "Rủi ro", plan.risks);
+
+    const boundary = document.createElement("p");
+    boundary.className = "planner-plan-boundary";
+    boundary.textContent =
+      "Plan này chỉ được chuẩn bị để bạn xem. v2.1.1 không tự tạo Task Engine task, không dispatch agent và không persist plan tự động.";
+    wrapper.append(boundary);
+
+    result.append(wrapper);
+  }
+
+  function appendPlannerList(parent, title, values) {
+    if (!Array.isArray(values) || values.length === 0) return;
+
+    const section = document.createElement("section");
+    section.className = "planner-plan-list";
+
+    const heading = document.createElement("strong");
+    heading.textContent = title;
+
+    const list = document.createElement("ul");
+    values.forEach(value => {
+      const item = document.createElement("li");
+      item.textContent = value;
+      list.append(item);
+    });
+
+    section.append(heading, list);
+    parent.append(section);
   }
 
   function workspaceHeaders() {

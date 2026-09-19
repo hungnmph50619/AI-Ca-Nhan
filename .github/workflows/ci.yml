@@ -1604,6 +1604,17 @@ jobs:
           computer_status=$(curl -fsS http://127.0.0.1:5077/api/computer/status)
           echo "$computer_status" | jq -e '.version == "2.2.6" and .supported == false and .interactiveSession == false and .availableCapabilities == [] and any(.limitations[]; contains("Windows"))' >/dev/null
 
+          # Khởi động mặc định khóa điều khiển; thử dừng lại và từ chối cho phép trên Linux.
+          echo "$computer_status" | jq -e '.desktopActionsPaused == true' >/dev/null
+          desktop_stop_code=$(curl -sS -o /tmp/desktop-stop.json -w '%{http_code}' -X POST http://127.0.0.1:5077/api/computer/control/stop)
+          test "$desktop_stop_code" = "200"
+          jq -e '.paused == true' /tmp/desktop-stop.json >/dev/null
+          desktop_enable_denied_code=$(curl -sS -o /tmp/desktop-enable-denied.json -w '%{http_code}' -X POST http://127.0.0.1:5077/api/computer/control/enable)
+          test "$desktop_enable_denied_code" = "403"
+          desktop_enable_unsupported_code=$(curl -sS -o /tmp/desktop-enable-unsupported.json -w '%{http_code}' -X POST http://127.0.0.1:5077/api/computer/control/enable -H 'X-PersonalAI-Manual-Approval: dong-y')
+          test "$desktop_enable_unsupported_code" = "400"
+          curl -fsS http://127.0.0.1:5077/api/computer/status | jq -e '.desktopActionsPaused == true' >/dev/null
+
           computer_sensitive_denied_code=$(curl -sS -o /tmp/computer-sensitive-denied.json -w '%{http_code}' -X POST http://127.0.0.1:5077/api/tools/execute \
             -H 'Content-Type: application/json' \
             -d '{"toolName":"computer.windows.list","arguments":{"limit":5},"approvedPermissions":["READ","SENSITIVE"],"confirmed":false}')
@@ -2935,6 +2946,13 @@ jobs:
           grep -Fq 'STABLE CORE · API CONTRACT 1' src/PersonalAI.Web/wwwroot/v100.js
           grep -Fq 'Controlled Computer Use' docs/releases/v1.1.0.md
           grep -Fq 'public const string Computer = "COMPUTER"' src/PersonalAI.Web/Models/ToolModels.cs
+          grep -Fq 'DesktopActionsPaused: control.Paused' src/PersonalAI.Web/Services/ComputerUseService.cs
+          grep -Fq 'control.RunAllowed' src/PersonalAI.Web/Services/ComputerUseService.cs
+          grep -Fq 'private bool _paused = true;' src/PersonalAI.Web/Services/ComputerControlGate.cs
+          grep -Fq '/api/computer/control/stop' src/PersonalAI.Web/Services/ComputerUseEndpoints.cs
+          grep -Fq '/api/computer/control/enable' src/PersonalAI.Web/Services/ComputerUseEndpoints.cs
+          grep -Fq 'computerControlStop' src/PersonalAI.Web/wwwroot/v110.js
+          grep -Fq 'computerControlEnable' src/PersonalAI.Web/wwwroot/v110.js
           grep -Fq 'IComputerUseService' src/PersonalAI.Web/Services/ComputerUseService.cs
           grep -Fq '/api/computer/status' src/PersonalAI.Web/Services/ComputerUseEndpoints.cs
           grep -Fq 'computer.windows.list' src/PersonalAI.Web/Services/ComputerUseTools.cs

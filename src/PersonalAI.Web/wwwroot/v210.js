@@ -1,5 +1,5 @@
 (() => {
-  const VERSION = "2.2.0";
+  const VERSION = "2.2.1";
   let dialog;
   let select;
   let goal;
@@ -64,7 +64,7 @@
     const heading = document.createElement("div");
     const eyebrow = document.createElement("p");
     eyebrow.className = "eyebrow";
-    eyebrow.textContent = "AGENT FRAMEWORK · v2.2";
+    eyebrow.textContent = "AGENT FRAMEWORK · v2.2.1";
     const title = document.createElement("h2");
     title.id = "agentTitle";
     title.textContent = "Chạy agent";
@@ -135,7 +135,7 @@
     const boundary = document.createElement("div");
     boundary.className = "agent-boundary";
     boundary.textContent =
-      "v2.2 hỗ trợ workflow tuần tự gồm 2–3 agent do người dùng chọn trước và chuyển đầu ra khi được đồng ý; không cho agent tự chọn thêm agent, chạy tool hoặc thực hiện thao tác bên ngoài.";
+      "v2.2.1 giới hạn thời gian từng bước/workflow và chặn chuyển đầu ra khớp một số mẫu credential. Không bảo đảm phát hiện mọi bí mật; agent không tự chọn thêm agent hoặc chạy tool.";
 
     feedback = document.createElement("div");
     feedback.className = "agent-feedback";

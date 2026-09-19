@@ -28,6 +28,7 @@ public sealed class SystemCoreService(
     ILifeContextService lifeContext,
     IAutomationStore automationStore,
     IHardeningStatusService hardening,
+    IAgentFrameworkService agentFramework,
     IAiProviderResolver providerResolver,
     ILogger<SystemCoreService> logger) : ISystemCoreService
 {
@@ -56,12 +57,12 @@ public sealed class SystemCoreService(
         "android-companion",
         "life-context",
         "decision-engine",
-        "automation"
+        "automation",
+        "agents"
     ];
 
     private static readonly string[] ReservedModules =
     [
-        "agents",
         "policies"
     ];
 
@@ -336,6 +337,23 @@ public sealed class SystemCoreService(
             CoreHealthStatuses.Degraded));
 
         modules.Add(Check(
+            "agents",
+            () =>
+            {
+                var status = agentFramework.GetStatus();
+                return status.RegisteredAgents > 0
+                    ? new CoreModuleHealth(
+                        "agents",
+                        CoreHealthStatuses.Healthy,
+                        "Agent Framework v2.1 khả dụng; explicit invocation bắt buộc, tool execution/delegation/messaging vẫn tắt.",
+                        status.RegisteredAgents)
+                    : new CoreModuleHealth(
+                        "agents",
+                        CoreHealthStatuses.Unavailable,
+                        "Agent Framework chưa có agent nào được đăng ký.");
+            }));
+
+        modules.Add(Check(
             "ai-provider",
             () =>
             {
@@ -427,6 +445,11 @@ public sealed class SystemCoreService(
                 AutomationAutoConfirmationEnabled: false,
                 AutomationDecisionRecommendationAutoExecutionEnabled: false,
                 AutomationRunsAtMostOneTaskStepPerTick: true,
+                AgentFrameworkRequiresExplicitInvocation: true,
+                AgentToolExecutionEnabled: false,
+                AutomaticAgentDelegationEnabled: false,
+                AgentMessagingEnabled: false,
+                ParallelAgentExecutionEnabled: false,
                 AutomaticMultiStepExecution: false,
                 BackgroundScheduler: true,
                 AutonomousAgentLoop: false,
@@ -464,7 +487,10 @@ public sealed class SystemCoreService(
                 SqliteAutomationStore.MaximumAutomationsPerWorkspace,
                 AutomationService.MinimumIntervalMinutes,
                 AutomationService.MaximumIntervalMinutes,
-                AutomationService.SchedulerPollSeconds),
+                AutomationService.SchedulerPollSeconds,
+                AgentFrameworkLimits.MaximumGoalCharacters,
+                AgentFrameworkLimits.MaximumConversationMessages,
+                AgentFrameworkLimits.MaximumConcurrentExecutions),
             WorkspaceEndpoints.WorkspaceHeaderName,
             SystemHardeningMiddleware.RequestIdHeaderName);
 

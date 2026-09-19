@@ -38,6 +38,7 @@ builder.Services.AddLifeContext();
 builder.Services.AddDecisionEngine();
 builder.Services.AddAutomationFoundation();
 builder.Services.AddToolFramework();
+builder.Services.AddAgentFramework();
 builder.Services.AddTaskEngine();
 builder.Services.AddSingleton<IKnowledgeGroundingService, KnowledgeGroundingService>();
 builder.Services.AddSingleton<KnowledgeSourceReader>();
@@ -92,6 +93,7 @@ app.MapAutomationFoundation();
 app.MapStableCore();
 app.MapHardeningFoundation();
 app.MapPersonalAiOs();
+app.MapAgentFramework();
 
 app.MapGet("/api/status", (
     IAiProviderResolver providerResolver,

@@ -44,12 +44,12 @@ public sealed class PersonalWorkspaceStore : IPersonalWorkspaceStore
         "documents",
         "tasks",
         "files",
-        "conversations"
+        "conversations",
+        "agents"
     ];
 
     private static readonly string[] ReservedModules =
     [
-        "agents",
         "policies"
     ];
 

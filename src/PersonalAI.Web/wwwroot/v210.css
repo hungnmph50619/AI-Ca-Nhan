@@ -1,0 +1,95 @@
+.agent-card {
+  width: min(860px, calc(100vw - 32px));
+  max-width: 860px;
+  max-height: min(820px, calc(100vh - 48px));
+  overflow: auto;
+}
+
+.agent-status {
+  margin: 0 0 16px;
+  opacity: .76;
+}
+
+.agent-grid {
+  display: grid;
+  gap: 14px;
+}
+
+.agent-meta {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 10px;
+}
+
+.agent-meta > div {
+  border: 1px solid var(--border, #d9d9d9);
+  border-radius: 12px;
+  padding: 12px;
+}
+
+.agent-meta span {
+  display: block;
+  font-size: .76rem;
+  opacity: .68;
+  margin-bottom: 4px;
+}
+
+.agent-meta strong {
+  font-size: .92rem;
+}
+
+.agent-form {
+  display: grid;
+  gap: 12px;
+}
+
+.agent-form textarea {
+  width: 100%;
+  min-height: 132px;
+  resize: vertical;
+}
+
+.agent-context-options {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px 16px;
+}
+
+.agent-context-options label {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  font-size: .88rem;
+}
+
+.agent-boundary {
+  padding: 12px 14px;
+  border-radius: 12px;
+  background: rgba(127, 127, 127, .07);
+  font-size: .86rem;
+  line-height: 1.5;
+}
+
+.agent-result {
+  margin-top: 4px;
+  border: 1px solid var(--border, #d9d9d9);
+  border-radius: 14px;
+  padding: 14px;
+  white-space: pre-wrap;
+  line-height: 1.55;
+}
+
+.agent-result[hidden] {
+  display: none;
+}
+
+.agent-feedback {
+  min-height: 22px;
+  font-size: .88rem;
+}
+
+@media (max-width: 700px) {
+  .agent-meta {
+    grid-template-columns: 1fr;
+  }
+}

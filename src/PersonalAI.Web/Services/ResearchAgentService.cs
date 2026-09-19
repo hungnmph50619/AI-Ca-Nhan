@@ -28,7 +28,7 @@ public static class ResearchAgentLimits
             CreatesTasks: false,
             DispatchesAgents: false,
             RequiresExplicitInvocation: true,
-            NextStage: "v2.2.6-workflow-accessibility");
+            NextStage: "v2.2.7-workflow-usability");
 }
 
 public sealed class ResearchOutputException(string message)
@@ -63,7 +63,7 @@ public sealed class ResearchFrameworkAgent(
 
     public AgentDefinition Definition { get; } = new(
         AgentId,
-        "Research Agent",
+        "Tác nhân nghiên cứu",
         "research",
         "Tổng hợp bằng chứng từ tài liệu trong workspace, nối các nhận định với đoạn nguồn thực và báo thiếu bằng chứng; không tự tìm web hoặc gọi tool.",
         [

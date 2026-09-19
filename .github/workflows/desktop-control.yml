@@ -5,6 +5,7 @@ on:
     branches:
       - feature/desktop-gap-audit-and-control-stop
       - feature/desktop-manual-mouse-actions
+      - feature/desktop-session-limits
   pull_request:
     paths:
       - 'src/PersonalAI.Web/Services/ComputerUse*'
@@ -49,6 +50,9 @@ jobs:
             if (-not $ready) { throw "Ứng dụng không khởi động trong thời gian chờ." }
             if (-not $status.supported) { throw "Windows chưa được nhận diện." }
             if ($status.desktopActionsPaused -ne $true) { throw "Điều khiển không khóa khi khởi động." }
+            if ($status.desktopRemainingActions -ne 0 -or $null -ne $status.desktopSessionExpiresAt) {
+              throw "Khi khởi động vẫn có lượt điều khiển hoặc thời hạn phiên."
+            }
 
             $stop = Invoke-RestMethod "$base/api/computer/control/stop" -Method Post
             if ($stop.paused -ne $true) { throw "Không tạm dừng được điều khiển." }
@@ -91,6 +95,33 @@ jobs:
             if ($status.interactiveSession) {
               $enabled = Invoke-RestMethod "$base/api/computer/control/enable" -Method Post -Headers @{ "X-PersonalAI-Manual-Approval" = "dong-y" }
               if ($enabled.paused -ne $false) { throw "Không cho phép lại trong phiên Windows tương tác." }
+              if ($enabled.remainingActions -ne 5 -or $null -eq $enabled.expiresAt) {
+                throw "Phiên điều khiển không giới hạn 5 thao tác và 60 giây."
+              }
+              $sessionBefore = Invoke-RestMethod "$base/api/computer/status"
+              if ($sessionBefore.desktopActionsPaused -ne $false -or $sessionBefore.desktopRemainingActions -ne 5) {
+                throw "API trạng thái không công bố ngân sách phiên."
+              }
+              # Dùng ID cửa sổ không tồn tại: mỗi thao tác tiêu tốn một lượt mà không nhấp máy thật.
+              $badWindow = @{
+                toolName = "computer.window.focus"
+                arguments = @{ windowId = "0x1234" }
+                approvedPermissions = @("WRITE", "COMPUTER", "SENSITIVE")
+                confirmed = $true
+              } | ConvertTo-Json -Depth 5
+              for ($i = 0; $i -lt 5; $i++) {
+                $failed = Invoke-WebRequest "$base/api/tools/execute" -Method Post -ContentType "application/json" -Body $badWindow -SkipHttpErrorCheck
+                if ($failed.StatusCode -ne 400) { throw "Lệnh thử cửa sổ không hợp lệ vẫn được thực thi." }
+              }
+              $exhausted = Invoke-RestMethod "$base/api/computer/status"
+              if ($exhausted.desktopActionsPaused -ne $true -or $exhausted.desktopRemainingActions -ne 0) {
+                throw "Không tự khóa khi dùng hết 5 lượt."
+              }
+              $blockedAfterLimit = Invoke-WebRequest "$base/api/tools/execute" -Method Post -ContentType "application/json" -Body $badWindow -SkipHttpErrorCheck
+              $blockedAfterLimitMessage = $blockedAfterLimit.Content | ConvertFrom-Json
+              if ($blockedAfterLimit.StatusCode -ne 400 -or $blockedAfterLimitMessage.error -notmatch "tạm dừng") {
+                throw "Lệnh điều khiển vẫn đi qua khi đã hết lượt."
+              }
               $stoppedAgain = Invoke-RestMethod "$base/api/computer/control/stop" -Method Post
               if ($stoppedAgain.paused -ne $true) { throw "Không dừng lại được sau khi cho phép." }
             }

@@ -133,6 +133,11 @@ public sealed class PersonalAiOsService(
             "hardening",
             "Hardening đang unavailable; chưa nên mở nền Multi-Agent.",
             blockers);
+        RequireAvailable(
+            health.Modules,
+            "agents",
+            "Agent Framework chưa sẵn sàng.",
+            blockers);
 
         var osContractReady = health.Ready
             && blockers.Count == 0;

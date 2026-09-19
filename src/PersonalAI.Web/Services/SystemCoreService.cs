@@ -28,6 +28,7 @@ public sealed class SystemCoreService(
     ILifeContextService lifeContext,
     IAutomationStore automationStore,
     IHardeningStatusService hardening,
+    IAgentFrameworkService agentFramework,
     IAiProviderResolver providerResolver,
     ILogger<SystemCoreService> logger) : ISystemCoreService
 {
@@ -56,12 +57,12 @@ public sealed class SystemCoreService(
         "android-companion",
         "life-context",
         "decision-engine",
-        "automation"
+        "automation",
+        "agents"
     ];
 
     private static readonly string[] ReservedModules =
     [
-        "agents",
         "policies"
     ];
 
@@ -334,6 +335,23 @@ public sealed class SystemCoreService(
                     count);
             },
             CoreHealthStatuses.Degraded));
+
+        modules.Add(Check(
+            "agents",
+            () =>
+            {
+                var status = agentFramework.GetStatus();
+                return status.RegisteredAgents > 0
+                    ? new CoreModuleHealth(
+                        "agents",
+                        CoreHealthStatuses.Healthy,
+                        "Agent Framework v2.1 khả dụng; explicit invocation bắt buộc, tool execution/delegation/messaging vẫn tắt.",
+                        status.RegisteredAgents)
+                    : new CoreModuleHealth(
+                        "agents",
+                        CoreHealthStatuses.Unavailable,
+                        "Agent Framework chưa có agent nào được đăng ký.");
+            }));
 
         modules.Add(Check(
             "ai-provider",

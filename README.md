@@ -1,10 +1,43 @@
-# AI Cá Nhân — Personal AI OS v2.0.0
+# AI Cá Nhân — Agent Framework v2.1.0
 
-PersonalAI là trợ lý AI cá nhân chạy bằng ASP.NET Core 8, ưu tiên dữ liệu cục bộ, có thể dùng Gemini hoặc OpenAI cho phần sinh câu trả lời. v2.0.0 là mốc **Personal AI OS**: hợp nhất Memory, Knowledge, Tasks, Tools, Desktop, Browser, Connectors, Android, Life Context, Decision Engine, Automation, Audit và Hardening thành một capability contract thống nhất, nhưng vẫn chưa bật Multi-Agent hay autonomous agent loop.
+PersonalAI là trợ lý AI cá nhân chạy bằng ASP.NET Core 8, ưu tiên dữ liệu cục bộ, có thể dùng Gemini hoặc OpenAI cho phần sinh câu trả lời. v2.0.0 đã tạo **Personal AI OS**; v2.1.0 bắt đầu giai đoạn **Multi-Agent** bằng Agent Framework có registry, context envelope và explicit execution, nhưng chưa có Agent Orchestration, agent messaging hay autonomous agent loop.
 
 > Đây vẫn là ứng dụng thiết kế cho một người dùng trên máy cá nhân. Personal AI OS v2.0 giữ toàn bộ hardening của v1.9 nhưng **không thay thế authentication/authorization** cần có khi triển khai Internet hoặc môi trường nhiều người dùng.
 
-## Có gì trong v2.0.0?
+## Có gì trong v2.1.0?
+
+### Agent Framework
+
+v2.1.0 đưa executable agent vào Personal AI OS nhưng giữ autonomy ở mức thấp:
+
+- `IAgent` + `AgentDefinition` với Name, Role, Capabilities, Tools, Context và `ExecuteAsync`;
+- Agent Registry validate id, capability, context kind và tool binding;
+- agent đầu tiên: `core.personal-assistant`;
+- agent dùng Context Manager để đọc Memory, Knowledge/RAG, Tasks và Life Context;
+- bound tool metadata hiện gồm `local.clock` và `local.text_stats`;
+- tool binding **không đồng nghĩa tool execution**; v2.1.0 không cho agent tự chạy tool;
+- chỉ explicit user invocation;
+- tối đa 1 agent execution đồng thời;
+- goal tối đa 4.000 ký tự, lịch sử tối đa 20 message;
+- mọi execution được Audit;
+- `agents` đã chuyển từ reserved module sang controlled module;
+- OS manifest có layer/capability `Agent Framework`;
+- `MultiAgentFramework = true`, nhưng `AgentOrchestration = false`.
+
+API:
+
+```http
+GET  /api/agents/status
+GET  /api/agents
+GET  /api/agents/{agentId}
+POST /api/agents/{agentId}/execute
+```
+
+Sidebar có mục **Agents** để chọn agent, nhập mục tiêu, chọn nguồn context và chạy agent bằng thao tác người dùng.
+
+v2.1.0 chưa có Planner/Research/Developer/Office/Operator/Reviewer/Security Agent riêng, chưa agent-to-agent messaging, chưa shared task queue, chưa automatic delegation và chưa parallel agent execution. Planner Agent bắt đầu ở v2.1.1.
+
+### Personal AI OS v2.0 vẫn là nền
 
 ### Personal AI OS
 
@@ -595,9 +628,9 @@ Undo khả dụng 7 ngày, tối đa 500 record, snapshot tối đa 512 KB.
 
 ## Stable Core contract
 
-v2.0.0 giữ API contract của Stable Core, giữ hardening v1.9 và thêm Personal AI OS aggregation layer:
+v2.1.0 giữ API contract của Stable Core, Personal AI OS v2.0 và thêm controlled Agent Framework:
 
-- Version: `2.0.0`
+- Version: `2.1.0`
 - API contract: `1`
 - Channel: `controlled`
 - Stable Core: v1.0 semantics
@@ -628,7 +661,7 @@ Unhandled API exception được sanitize; stack trace và đường dẫn local
 
 ## Guardrails hiện tại
 
-v2.0.0 **không phải autonomous agent**.
+v2.1.0 **không phải autonomous agent**.
 
 Hiện tại:
 
@@ -666,6 +699,13 @@ Hiện tại:
 - Automation tối đa một task step mỗi tick: bật
 - Automatic multi-step execution: tắt
 - Background scheduler: bật
+- Agent Framework: bật
+- Agent explicit invocation: bắt buộc
+- Agent tool execution: tắt
+- Agent messaging: tắt
+- Automatic agent delegation: tắt
+- Parallel agent execution: tắt
+- Agent Orchestration: tắt
 - Autonomous agent loop: tắt
 - Parallel tool calls: tắt
 
@@ -802,6 +842,7 @@ ASP.NET Core
   ├── Automation
   ├── Hardening / Backup / Recovery
   ├── Personal AI OS Manifest / Readiness
+  ├── Agent Framework
   │
   ├── Context Manager
   │      ├── Memory selection
@@ -866,6 +907,7 @@ GitHub Actions hiện kiểm tra regression cho các nền chính, gồm:
 - Automation persistence/workspace isolation/one-step scheduler/no-auto-confirm;
 - v1.9 hardening health/permission audit/rate-resource guards/confirmation boundaries;
 - v2.0 Personal AI OS manifest/readiness/governance/capability-state contract;
+- v2.1 Agent Framework registry/explicit execution/context isolation/no-tool-execution contract;
 - JavaScript syntax;
 - UI guardrails tiếng Việt.
 
@@ -896,10 +938,11 @@ docs/releases/v1.7.0.md
 docs/releases/v1.8.0.md
 docs/releases/v1.9.0.md
 docs/releases/v2.0.0.md
+docs/releases/v2.1.0.md
 ```
 
-## Hướng phát triển sau v2.0
+## Hướng phát triển sau v2.1.0
 
 Computer Use, Browser Agent, Connector Foundation, Software Development Agent, Android Companion, Life Context, Decision Engine và Automation hiện nằm trong controlled capability layer.
 
-Sau v2.0, roadmap chuyển sang **v2.1 — Multi-Agent**. Multi-Agent chỉ được xây trên OS contract, permission, audit, hardening, recovery và readiness gate đã có; v2.0 không tự mở thêm quyền.
+Sau v2.1.0, roadmap tiếp tục với **v2.1.1 — Planner Agent**: nhận goal và chia việc. Research/Developer/Office/Operator/Reviewer/Security Agent sẽ được thêm dần sau đó; Agent Orchestration vẫn là giai đoạn v2.2.

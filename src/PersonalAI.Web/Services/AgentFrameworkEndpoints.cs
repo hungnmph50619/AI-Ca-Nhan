@@ -25,6 +25,20 @@ public static class AgentFrameworkEndpoints
     public static WebApplication MapAgentFramework(
         this WebApplication app)
     {
+        app.MapGet("/api/agents/orchestration/observability/status", () =>
+            Results.Ok(WorkflowObservability.GetStatus()));
+
+        app.MapGet("/api/agents/orchestration/observability/{workflowId:guid}", (
+            Guid workflowId,
+            IWorkspaceContextAccessor workspace) =>
+        {
+            var observation = WorkflowObservability.Find(
+                workflowId, workspace.CurrentWorkspaceId);
+            return observation is null
+                ? Results.NotFound(new ApiError("Không tìm thấy workflow trong workspace hiện tại."))
+                : Results.Ok(observation);
+        });
+
         app.MapGet("/api/agents/orchestration/status", () =>
             Results.Ok(AgentOrchestrationLimits.GetStatus()));
 
@@ -35,7 +49,9 @@ public static class AgentFrameworkEndpoints
         {
             try
             {
-                return Results.Ok(await orchestration.RunAsync(request, cancellationToken));
+                var response = await orchestration.RunAsync(request, cancellationToken);
+                WorkflowObservability.Capture(response);
+                return Results.Ok(response);
             }
             catch (AgentValidationException exception)
             {
@@ -55,7 +71,9 @@ public static class AgentFrameworkEndpoints
         {
             try
             {
-                return Results.Ok(await orchestration.ResumeAsync(request, cancellationToken));
+                var response = await orchestration.ResumeAsync(request, cancellationToken);
+                WorkflowObservability.Capture(response);
+                return Results.Ok(response);
             }
             catch (AgentValidationException exception)
             {

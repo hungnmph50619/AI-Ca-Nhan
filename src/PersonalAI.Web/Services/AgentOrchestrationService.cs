@@ -289,7 +289,15 @@ public sealed class AgentOrchestrationService(
     {
         var completed = new List<AgentWorkflowStepResult>(completedBefore);
         using var deadline = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
-        deadline.CancelAfter(TimeSpan.FromSeconds(WorkflowHandoffGuard.MaximumWorkflowSeconds));
+        // A resumed segment must not reset the total workflow time budget.
+        var remaining = TimeSpan.FromSeconds(WorkflowHandoffGuard.MaximumWorkflowSeconds)
+            - (DateTimeOffset.UtcNow - startedAt);
+        if (remaining <= TimeSpan.Zero)
+            return Response(id, workspaceId, AgentWorkflowStatuses.TimedOut,
+                completed, steps.Count, firstIndex + 1,
+                "Workflow đã hết giới hạn thời gian tổng; không chạy bước tiếp theo.",
+                startedAt, "timeout");
+        deadline.CancelAfter(remaining);
         string? stopReason = null;
         string? error = null;
         int? failedStep = null;

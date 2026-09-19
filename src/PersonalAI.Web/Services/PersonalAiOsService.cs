@@ -16,8 +16,8 @@ public sealed class PersonalAiOsService(
     IWorkspaceContextAccessor workspaceContext) : IPersonalAiOsService
 {
     public const string Edition = "Personal AI OS";
-    public const string Stage = "v2.1.2";
-    public const string NextStage = "v2.1.3-developer-agent";
+    public const string Stage = "v2.1.3";
+    public const string NextStage = "v2.1.4-office-agent";
 
     private static readonly PersonalAiOsLayer[] Layers =
     [
@@ -44,7 +44,7 @@ public sealed class PersonalAiOsService(
         new(
             "coordination",
             "Agent Framework",
-            "Agent Framework có Personal Assistant, Planner và Research; Research tổng hợp nguồn nội bộ, không tự duyệt web hoặc dispatch.",
+            "Agent Framework có Personal Assistant, Planner, Research và Developer; Developer chỉ xem snippet mã trong workspace.",
             ["agent-framework"]),
         new(
             "governance",
@@ -55,9 +55,9 @@ public sealed class PersonalAiOsService(
 
     private static readonly string[] Boundaries =
     [
-        "v2.1.2 có Research Agent tổng hợp tài liệu workspace; mọi agent vẫn chỉ chạy bằng explicit invocation do người dùng chủ động gọi.",
-        "Planner chỉ chia goal thành plan; Research chỉ đọc tài liệu nội bộ và xác thực chỉ số nguồn, không tự duyệt web, tạo task, dispatch agent hoặc persist báo cáo.",
-        "v2.1.2 không bật agent-to-agent messaging, automatic delegation, shared task queue, autonomous loop, parallel agent execution hoặc parallel tool calls.",
+        "v2.1.3 có Developer Agent đọc metadata và snippet mã workspace; mọi agent vẫn chỉ chạy bằng explicit invocation do người dùng chủ động gọi.",
+        "Planner chỉ lập kế hoạch; Research chỉ đọc tài liệu nội bộ; Developer chỉ đề xuất thay đổi, không sửa file, chạy lệnh hay tạo commit.",
+        "v2.1.3 không bật agent-to-agent messaging, automatic delegation, shared task queue, autonomous loop, parallel agent execution hoặc parallel tool calls.",
         "WRITE/DELETE/EXTERNAL/SENSITIVE/COMPUTER/BROWSER/CONNECTOR/DEVELOPMENT vẫn yêu cầu policy và confirmation tương ứng.",
         "Email vẫn là connector-backed foundation, chưa có Gmail/Outlook provider-specific OAuth.",
         "Calendar vẫn dùng Life Context snapshot + connector foundation, chưa có provider-specific auto-sync/write.",
@@ -391,7 +391,7 @@ public sealed class PersonalAiOsService(
                 "Agent Framework",
                 "coordination",
                 ControlledState("agents"),
-                "Agent registry + explicit execution runtime; Personal Assistant, Planner và Research đã có, tool execution/delegation/messaging vẫn tắt.",
+                "Agent registry + explicit execution runtime; Personal Assistant, Planner, Research và Developer đã có, tool execution/delegation/messaging vẫn tắt.",
                 ["/api/agents/status", "/api/agents"],
                 false,
                 true,

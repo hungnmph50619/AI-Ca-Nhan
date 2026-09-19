@@ -26,7 +26,7 @@ public static class OfficeAgentLimits
             PersistsDrafts: false,
             ToolExecutionEnabled: false,
             RequiresExplicitInvocation: true,
-            NextStage: "v2.2.5-workflow-usability");
+            NextStage: "v2.2.6-workflow-accessibility");
 }
 
 public sealed class OfficeOutputException(string message)

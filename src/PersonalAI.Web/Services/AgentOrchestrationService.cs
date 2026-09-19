@@ -28,7 +28,7 @@ public static class AgentOrchestrationLimits
             PersistsWorkflows: false,
             AutonomousLoopEnabled: false,
             SelfTestPassed: SelfTest.Value,
-            NextStage: "v2.2.5-workflow-usability",
+            NextStage: "v2.2.6-workflow-accessibility",
             MaximumWorkflowSeconds: WorkflowHandoffGuard.MaximumWorkflowSeconds,
             MaximumStepSeconds: WorkflowHandoffGuard.MaximumStepSeconds,
             StopsOnTimeout: true,
@@ -37,7 +37,10 @@ public static class AgentOrchestrationLimits
             MandatoryContentReviewEnabled: true,
             MaximumPendingReviewMinutes: 10,
             MaximumPendingWorkflows: 8,
-            ResumableAcrossServerRestart: false);
+            ResumableAcrossServerRestart: false,
+            ConfigurationPreviewEnabled: true,
+            ConfigurationDigestValidationEnabled: true,
+            ConfigurationPreviewSelfTestPassed: WorkflowConfigurationPreview.RunSelfTest());
 }
 
 public static class AgentWorkflowValidation
@@ -201,6 +204,7 @@ public sealed class AgentOrchestrationService(
         // Validate every selected agent and goal BEFORE any agent runs.
         var steps = AgentWorkflowValidation.Validate(
             request, id => agents.GetAgent(id) is not null);
+        WorkflowConfigurationPreview.ValidateDigest(request, workspace.CurrentWorkspaceId);
 
         if (!await WorkflowGate.WaitAsync(0, cancellationToken))
             throw new AgentBusyException("Một workflow khác đang chạy.");

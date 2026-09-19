@@ -1,5 +1,5 @@
 (() => {
-  const VERSION = "2.2.4";
+  const VERSION = "2.2.5";
   let dialog;
   let select;
   let goal;
@@ -94,7 +94,7 @@
     const heading = document.createElement("div");
     const eyebrow = document.createElement("p");
     eyebrow.className = "eyebrow";
-    eyebrow.textContent = "HỆ THỐNG TÁC NHÂN AI · v2.2.4";
+    eyebrow.textContent = "HỆ THỐNG TÁC NHÂN AI · v2.2.5";
     const title = document.createElement("h2");
     title.id = "agentTitle";
     title.textContent = "Sử dụng tác nhân AI";
@@ -165,7 +165,7 @@
     const boundary = document.createElement("div");
     boundary.className = "agent-boundary";
     boundary.textContent =
-      "v2.2.4: Bạn chọn tác nhân và dữ liệu muốn dùng. Quy trình nhiều bước cần bạn duyệt nội dung trước khi chuyển. Bộ lọc dữ liệu nhạy cảm không bảo đảm phát hiện mọi bí mật. Các tác nhân không tự chạy công cụ.";
+      "v2.2.5: Bạn xem trước toàn bộ bước và nguồn dữ liệu rồi mới xác nhận chạy. Quy trình nhiều bước cần bạn duyệt nội dung trước khi chuyển. Bộ lọc dữ liệu nhạy cảm không bảo đảm phát hiện mọi bí mật. Các tác nhân không tự chạy công cụ.";
 
     feedback = document.createElement("div");
     feedback.className = "agent-feedback";

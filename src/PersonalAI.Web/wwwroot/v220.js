@@ -1,5 +1,5 @@
 (() => {
-  const VERSION = "2.2.4";
+  const VERSION = "2.2.5";
 
   document.addEventListener("DOMContentLoaded", () => {
     const card = document.querySelector("#agentDialog .agent-card");
@@ -25,7 +25,9 @@
       + '<label><input type="checkbox" id="wfMemory"> Thông tin đã ghi nhớ</label>'
       + '<label><input type="checkbox" id="wfTasks"> Công việc</label>'
       + '<label><input type="checkbox" id="wfLife"> Thông tin cuộc sống</label></fieldset>'
-      + '<label class="workflow-toggle"><input type="checkbox" id="wfConfirm" required>Tôi đã chọn và xác nhận toàn bộ các bước; các đầu ra có thể được gửi đến dịch vụ AI của tác nhân được chọn.</label>'
+      + '<button type="button" id="wfPreview">Xem trước các bước và nguồn dữ liệu</button>'
+      + '<section id="wfPreviewResult" class="workflow-step-result" aria-live="polite" hidden></section>'
+      + '<label class="workflow-toggle"><input type="checkbox" id="wfConfirm" required disabled>Tôi đã đọc bản xem trước và đồng ý chạy đúng các bước, mục tiêu và nguồn dữ liệu được hiển thị.</label>'
       + '<p class="workflow-boundary">Quy trình giới hạn tối đa 120 giây, mỗi bước tối đa 50 giây (dịch vụ AI cần hỗ trợ huỷ yêu cầu để dừng đúng hạn). Các bước có thể gửi nội dung tới dịch vụ AI; không nhập bí mật. Bộ lọc mẫu thông tin xác thực không thay thế kiểm tra dữ liệu thủ công. Chỉ chuyển dữ liệu sau khi người dùng xem và duyệt chính xác đầu ra của bước trước ở bước kiểm tra riêng. Không tự chọn tác nhân AI, chạy song song hoặc sử dụng công cụ.</p>'
       + '<button class="primary-button" id="wfRun" type="submit" disabled>Chạy quy trình đã xác nhận</button>'
       + '<p id="wfFeedback" role="status" aria-live="polite"></p>'
@@ -36,6 +38,8 @@
     const feedback = panel.querySelector("#wfFeedback");
     const results = panel.querySelector("#wfResults");
     const run = panel.querySelector("#wfRun");
+    const previewButton = panel.querySelector("#wfPreview");
+    const previewResult = panel.querySelector("#wfPreviewResult");
     const third = panel.querySelector("#wfThird");
     const thirdCheckbox = panel.querySelector("#wfStep3");
     let loaded = false;
@@ -55,11 +59,102 @@
     const bool = id => field(id).checked;
 
     let pendingReview = false;
+    let checkedConfiguration = null;
+    const currentWorkspace = () => window.PersonalAiWorkspace?.currentId || "personal";
+
+    const currentConfiguration = () => {
+      const step = n => ({
+        agentId: field("wfAgent" + n).value,
+        goal: field("wfGoal" + n).value.trim(),
+        includePreviousOutput: n > 1 && bool("wfTransfer" + n)
+      });
+      const steps = [step(1), step(2)];
+      if (thirdCheckbox.checked) steps.push(step(3));
+      return {
+        steps,
+        useKnowledge: bool("wfKnowledge"),
+        useMemory: bool("wfMemory"),
+        useTaskContext: bool("wfTasks"),
+        useLifeContext: bool("wfLife")
+      };
+    };
+
+    function invalidatePreview() {
+      checkedConfiguration = null;
+      field("wfConfirm").checked = false;
+      field("wfConfirm").disabled = true;
+      previewResult.replaceChildren();
+      previewResult.hidden = true;
+      run.disabled = true;
+      if (loaded && !pendingReview) feedback.textContent = "Cấu hình đã thay đổi: hãy xem trước và xác nhận lại trước khi chạy.";
+    }
+
+    form.addEventListener("input", event => {
+      if (event.target?.id !== "wfConfirm") invalidatePreview();
+    });
+    form.addEventListener("change", event => {
+      if (event.target?.id !== "wfConfirm") invalidatePreview();
+    });
+    field("wfConfirm").addEventListener("change", () => {
+      run.disabled = !loaded || pendingReview || !checkedConfiguration || !bool("wfConfirm");
+    });
+
+    previewButton.addEventListener("click", async () => {
+      if (!loaded || pendingReview || !form.reportValidity()) return;
+      previewButton.disabled = true;
+      invalidatePreview();
+      feedback.textContent = "Đang kiểm tra cấu hình, chưa chạy tác nhân AI…";
+      try {
+        const workspaceId = currentWorkspace();
+        const config = currentConfiguration();
+        const snapshot = JSON.stringify(config);
+        const response = await fetch("/api/agents/orchestration/preview", {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+            "X-PersonalAI-Workspace": workspaceId
+          },
+          body: snapshot
+        });
+        const preview = await response.json();
+        if (!response.ok) throw new Error(preview.error || "Không xem trước được quy trình.");
+        if (snapshot !== JSON.stringify(currentConfiguration()) || workspaceId !== currentWorkspace())
+          throw new Error("Cấu hình đã thay đổi trong lúc kiểm tra. Hãy xem trước lại.");
+        checkedConfiguration = { workspaceId, snapshot, digest: preview.configurationDigest };
+        const title = document.createElement("h4");
+        title.textContent = "Bản xem trước — chưa chạy tác nhân AI";
+        previewResult.append(title);
+        (preview.steps || []).forEach(item => {
+          const paragraph = document.createElement("p");
+          const text = config.steps[item.step - 1];
+          paragraph.textContent = "Bước " + item.step + " · " + displayAgent(item.agentId)
+            + " · Mục tiêu: " + text.goal
+            + (item.includePreviousOutput ? " · Có đề nghị chuyển đầu ra bước trước (cần duyệt riêng)" : " · Không chuyển đầu ra")
+            + (item.canUseAiProvider ? " · Có thể dùng dịch vụ AI đã cấu hình" : " · Xử lý cục bộ");
+          previewResult.append(paragraph);
+        });
+        const sources = document.createElement("p");
+        sources.textContent = "Nguồn bổ sung được chọn: "
+          + ([config.useKnowledge && "Tài liệu", config.useMemory && "Thông tin ghi nhớ",
+              config.useTaskContext && "Công việc", config.useLifeContext && "Thông tin cuộc sống"]
+              .filter(Boolean).join(", ") || "Không có");
+        const warning = document.createElement("p");
+        warning.textContent = "Bạn đang xem đúng cấu hình sẽ được gửi đi. Nếu đổi bất kỳ bước hay nguồn dữ liệu nào, phải xem trước và xác nhận lại. Bản xem trước không cấp thêm quyền thực thi công cụ.";
+        previewResult.append(sources, warning);
+        previewResult.hidden = false;
+        field("wfConfirm").disabled = false;
+        feedback.textContent = "Đã tạo bản xem trước. Hãy đọc kỹ rồi tích xác nhận để chạy.";
+      } catch (error) {
+        feedback.textContent = error instanceof Error ? error.message : "Không xem trước được quy trình.";
+      } finally {
+        previewButton.disabled = !loaded;
+      }
+    });
 
     async function presentWorkflow(payload) {
       results.replaceChildren();
       pendingReview = payload.status === "awaiting-review";
-      run.disabled = !loaded || pendingReview;
+      run.disabled = !loaded || pendingReview || !checkedConfiguration || !bool("wfConfirm");
       feedback.textContent = pendingReview
         ? "Quy trình đã tạm dừng: xem đúng dữ liệu trước khi đồng ý chuyển sang tác nhân tiếp theo."
         : payload.status === "completed"
@@ -227,8 +322,8 @@
           });
         });
         loaded = true;
-        run.disabled = false;
-        feedback.textContent = "Chọn các bước, kiểm tra nội dung và xác nhận trước khi chạy.";
+        run.disabled = true;
+        feedback.textContent = "Hãy chọn các bước, xem trước cấu hình rồi xác nhận trước khi chạy.";
       } catch (error) {
         feedback.textContent = error instanceof Error ? error.message : "Không tải được danh sách tác nhân AI.";
       }
@@ -236,15 +331,16 @@
 
     form.addEventListener("submit", async event => {
       event.preventDefault();
-      if (!loaded || !bool("wfConfirm")) return;
-
-      const step = n => ({
-        agentId: field("wfAgent" + n).value,
-        goal: field("wfGoal" + n).value.trim(),
-        includePreviousOutput: n > 1 && bool("wfTransfer" + n)
-      });
-      const steps = [step(1), step(2)];
-      if (thirdCheckbox.checked) steps.push(step(3));
+      if (!loaded || pendingReview || !checkedConfiguration || !bool("wfConfirm")) return;
+      const configuration = currentConfiguration();
+      if (checkedConfiguration.snapshot !== JSON.stringify(configuration)
+          || checkedConfiguration.workspaceId !== currentWorkspace()) {
+        invalidatePreview();
+        feedback.textContent = "Cấu hình hoặc không gian làm việc đã đổi. Hãy xem trước và xác nhận lại.";
+        return;
+      }
+      const approvedDigest = checkedConfiguration.digest;
+      const steps = configuration.steps;
 
       run.disabled = true;
       results.hidden = true;
@@ -258,22 +354,23 @@
             "X-PersonalAI-Workspace": window.PersonalAiWorkspace?.currentId || "personal"
           },
           body: JSON.stringify({
-            steps,
+            ...configuration,
             confirmSelectedWorkflow: true,
-            useKnowledge: bool("wfKnowledge"),
-            useMemory: bool("wfMemory"),
-            useTaskContext: bool("wfTasks"),
-            useLifeContext: bool("wfLife")
+            reviewedConfigurationDigest: approvedDigest
           })
         });
         const payload = await response.json();
         if (!response.ok) throw new Error(payload.error || "Quy trình chưa hoàn tất.");
 
+        checkedConfiguration = null;
+        field("wfConfirm").checked = false;
+        field("wfConfirm").disabled = true;
+        previewResult.hidden = true;
         await presentWorkflow(payload);
       } catch (error) {
         feedback.textContent = error instanceof Error ? error.message : "Không thể chạy quy trình.";
       } finally {
-        run.disabled = !loaded || pendingReview;
+        run.disabled = !loaded || pendingReview || !checkedConfiguration || !bool("wfConfirm");
       }
     });
   });

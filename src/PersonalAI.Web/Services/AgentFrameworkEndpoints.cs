@@ -54,6 +54,22 @@ public static class AgentFrameworkEndpoints
                 : Results.Ok(observation);
         });
 
+        app.MapPost("/api/agents/orchestration/preview", (
+            AgentWorkflowRequest request,
+            IAgentFrameworkService agents,
+            IWorkspaceContextAccessor workspace) =>
+        {
+            try
+            {
+                return Results.Ok(WorkflowConfigurationPreview.Build(
+                    request, workspace.CurrentWorkspaceId, agents.GetAgent));
+            }
+            catch (AgentValidationException exception)
+            {
+                return Results.BadRequest(new ApiError(exception.Message));
+            }
+        });
+
         app.MapGet("/api/agents/orchestration/status", () =>
             Results.Ok(AgentOrchestrationLimits.GetStatus()));
 

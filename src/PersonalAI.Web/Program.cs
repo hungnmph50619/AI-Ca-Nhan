@@ -55,6 +55,11 @@ builder.Services.AddHttpClient<OpenAiChatService>(client =>
     client.BaseAddress = new Uri("https://api.openai.com/v1/");
     client.Timeout = TimeSpan.FromSeconds(90);
 });
+builder.Services.AddHttpClient<MinimapVisionService>(client =>
+{
+    client.BaseAddress = new Uri("https://generativelanguage.googleapis.com/v1beta/");
+    client.Timeout = TimeSpan.FromSeconds(45);
+});
 builder.Services.AddScoped<IAiProviderResolver, AiProviderResolver>();
 builder.Services.AddSingleton<ITeamProfileCatalog, TeamProfileCatalog>();
 
@@ -568,6 +573,7 @@ app.MapPost("/api/chat", async (
 });
 
 app.MapXerathBridge();
+app.MapMinimapVision();
 
 app.MapFallbackToFile("index.html");
 app.Run();

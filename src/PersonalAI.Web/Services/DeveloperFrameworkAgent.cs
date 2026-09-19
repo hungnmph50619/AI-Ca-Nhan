@@ -125,6 +125,7 @@ public sealed class DeveloperFrameworkAgent(
             "cho", "này", "file", "tìm", "thử", "xem", "với"
         };
         var token = Regex.Matches(goal, @"[\p{L}\p{N}_]{3,}")
+            .Cast<Match>()
             .Select(m => m.Value).FirstOrDefault(t => !stop.Contains(t));
         return token is null
             ? goal[..Math.Min(200, goal.Length)]

@@ -175,5 +175,7 @@ app.MapPost("/api/chat", async (ChatRequest request, IAiProviderResolver provide
     }
 });
 
+app.MapXerathBridge();
+
 app.MapFallbackToFile("index.html");
 app.Run();

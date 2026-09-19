@@ -18,6 +18,7 @@ builder.Services.AddDataProtection().SetApplicationName("PersonalAI");
 builder.Services.AddWorkspaceFoundation();
 builder.Services.AddStableCore();
 builder.Services.AddHardeningFoundation();
+builder.Services.AddPersonalAiOs();
 builder.Services.AddSingleton<IAiSettingsStore, AiSettingsStore>();
 builder.Services.AddSingleton<KnowledgeDocumentExtractor>();
 builder.Services.AddSingleton<IKnowledgeDocumentStore, SqliteKnowledgeDocumentStore>();
@@ -90,6 +91,7 @@ app.MapDecisionEngine();
 app.MapAutomationFoundation();
 app.MapStableCore();
 app.MapHardeningFoundation();
+app.MapPersonalAiOs();
 
 app.MapGet("/api/status", (
     IAiProviderResolver providerResolver,

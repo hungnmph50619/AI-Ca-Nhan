@@ -247,8 +247,7 @@ public sealed class AgentOrchestrationService(
                     "Mã xác nhận nội dung chuyển giao không hợp lệ; không chạy thêm bước nào.");
 
             // Single-use checkpoint. Only one request can consume this grant.
-            if (!Pending.TryRemove(
-                    new KeyValuePair<Guid, PendingWorkflow>(pending.Id, pending)))
+            if (!Pending.TryRemove(pending.Id, out _))
                 throw new AgentValidationException("Checkpoint đã được dùng; không thể thực hiện lại.");
 
             if (!request.ApproveTransfer)
@@ -447,8 +446,7 @@ public sealed class AgentOrchestrationService(
         foreach (var pair in Pending)
         {
             if (pair.Value.ExpiresAt <= DateTimeOffset.UtcNow)
-                Pending.TryRemove(new KeyValuePair<Guid, PendingWorkflow>(
-                    pair.Key, pair.Value));
+                Pending.TryRemove(pair.Key, out _);
         }
     }
 

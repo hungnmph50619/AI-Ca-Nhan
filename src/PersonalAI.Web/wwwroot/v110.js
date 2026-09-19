@@ -76,11 +76,11 @@
     const heading = document.createElement("div");
     const eyebrow = document.createElement("p");
     eyebrow.className = "eyebrow";
-    eyebrow.textContent = "CONTROLLED CAPABILITY · WINDOWS";
+    eyebrow.textContent = "KHẢ NĂNG ĐIỀU KHIỂN CÓ XÁC NHẬN · WINDOWS";
 
     const title = document.createElement("h2");
     title.id = "computerUseTitle";
-    title.textContent = "Computer Use v1.1";
+    title.textContent = "Điều khiển máy tính · Bản thử nghiệm";
     heading.append(eyebrow, title);
 
     const close = document.createElement("button");
@@ -97,7 +97,7 @@
     introTitle.textContent = "Quan sát trước, hành động có xác nhận";
     const introCopy = document.createElement("p");
     introCopy.textContent =
-      "v1.1.0 chỉ thêm quan sát desktop và hai thao tác điều khiển giới hạn: chuyển focus cửa sổ và di chuyển con trỏ. Không click, không gõ phím, không chụp màn hình và không chạy shell.";
+      "Bản thử nghiệm hỗ trợ đọc thông tin máy, chuyển cửa sổ, di chuyển con trỏ và một lần nhấp chuột trái được xác nhận riêng. Chưa hỗ trợ gõ phím, chụp ảnh màn hình hay AI tự điều khiển liên tục. Chỉ nhấp trên cửa sổ thử nghiệm không chứa dữ liệu quan trọng.";
     intro.append(introTitle, introCopy);
 
     const summary = document.createElement("div");
@@ -124,7 +124,7 @@
     const safety = document.createElement("div");
     safety.className = "v110-computer-safety";
     safety.textContent =
-      "Window title được coi là dữ liệu nhạy cảm. Đọc danh sách/cửa sổ active cần quyền NHẠY CẢM và xác nhận. Focus/cursor move cần quyền ĐIỀU KHIỂN MÁY và xác nhận ở Tool Framework.";
+      "Tiêu đề cửa sổ có thể chứa dữ liệu nhạy cảm. Chuyển cửa sổ, di chuyển chuột và nhấp trái cần bật điều khiển và xác nhận riêng trong mục Công cụ. Nút Dừng không hoàn tác thao tác đã thực hiện.";
 
     const feedback = document.createElement("div");
     feedback.id = "computerUseFeedback";
@@ -306,9 +306,10 @@
       "screen-info": "Thông tin màn hình",
       "cursor-position": "Đọc vị trí con trỏ",
       "window-list": "Danh sách cửa sổ",
-      "active-window": "Cửa sổ active",
-      "focus-window": "Chuyển focus",
-      "move-cursor": "Di chuyển con trỏ"
-    }[value] || value || "Capability";
+      "active-window": "Cửa sổ đang sử dụng",
+      "focus-window": "Chuyển cửa sổ",
+      "move-cursor": "Di chuyển con trỏ",
+      "click-left": "Nhấp chuột trái một lần"
+    }[value] || value || "Chức năng";
   }
 })();

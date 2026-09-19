@@ -9,7 +9,7 @@ namespace PersonalAI.Web.Services;
 /// Bản xem trước chỉ mô tả cấu hình do người dùng nhập; không gọi agent hay AI.
 /// Dấu kiểm tra cấu hình chỉ chống việc vô tình thay đổi sau khi xem trước,
 /// không phải mã xác thực hoặc quyền thực thi.
-</summary>
+/// </summary>
 public static class WorkflowConfigurationPreview
 {
     public sealed record PreviewStep(

@@ -56,18 +56,18 @@ jobs:
             exit 1
           fi
 
-          curl -fsS http://127.0.0.1:5077/api/status | jq -e '.version == "2.1.1"' >/dev/null
+          curl -fsS http://127.0.0.1:5077/api/status | jq -e '.version == "2.1.2"' >/dev/null
 
           curl -fsS -D /tmp/status-headers http://127.0.0.1:5077/api/status -o /tmp/status-body.json
           grep -Eiq '^X-PersonalAI-Request-Id: [a-f0-9]{32}' /tmp/status-headers
           grep -Eiq '^X-PersonalAI-Api-Version: 1' /tmp/status-headers
           grep -Eiq '^X-Content-Type-Options: nosniff' /tmp/status-headers
-          jq -e '.version == "2.1.1" and .apiContractVersion == "1" and .channel == "controlled"' /tmp/status-body.json >/dev/null
+          jq -e '.version == "2.1.2" and .apiContractVersion == "1" and .channel == "controlled"' /tmp/status-body.json >/dev/null
 
           capabilities=$(curl -fsS http://127.0.0.1:5077/api/system/capabilities)
           echo "$capabilities" | jq -e '
             . as $caps
-            | .version == "2.1.1"
+            | .version == "2.1.2"
             and .apiContractVersion == "1"
             and .channel == "controlled"
             and .workspaceHeader == "X-PersonalAI-Workspace"
@@ -179,7 +179,7 @@ jobs:
 
           core_health=$(curl -fsS http://127.0.0.1:5077/api/system/health)
           echo "$core_health" | jq -e '
-            .version == "2.1.1"
+            .version == "2.1.2"
             and .apiContractVersion == "1"
             and .channel == "controlled"
             and .ready == true
@@ -208,7 +208,7 @@ jobs:
 
           hardening_status=$(curl -fsS http://127.0.0.1:5077/api/hardening/status)
           echo "$hardening_status" | jq -e '
-            .version == "2.1.1"
+            .version == "2.1.2"
             and (.status == "healthy" or .status == "degraded")
             and .runtime.running == true
             and .permissionAudit.violationCount == 0
@@ -234,7 +234,7 @@ jobs:
 
           hardening_backup=$(curl -fsS -X POST http://127.0.0.1:5077/api/hardening/backups -H 'Content-Type: application/json' -d '{"confirmed":true}')
           echo "$hardening_backup" | jq -e '.backupId | endswith(".zip")' >/dev/null
-          echo "$hardening_backup" | jq -e '.sizeBytes > 0 and .fileCount >= 0 and .version == "2.1.1"' >/dev/null
+          echo "$hardening_backup" | jq -e '.sizeBytes > 0 and .fileCount >= 0 and .version == "2.1.2"' >/dev/null
           hardening_backup_id=$(echo "$hardening_backup" | jq -r '.backupId')
           hardening_backups=$(curl -fsS http://127.0.0.1:5077/api/hardening/backups)
           echo "$hardening_backups" | jq -e '.maximum == 5 and .pendingRestore == false and any(.backups[]; .backupId == "'"$hardening_backup_id"'")' >/dev/null
@@ -247,10 +247,10 @@ jobs:
 
           os_status=$(curl -fsS http://127.0.0.1:5077/api/os/status)
           echo "$os_status" | jq -e '
-            .version == "2.1.1"
+            .version == "2.1.2"
             and .apiContractVersion == "1"
             and .edition == "Personal AI OS"
-            and .stage == "v2.1.1"
+            and .stage == "v2.1.2"
             and .workspaceId == "personal"
             and .readiness.osContractReady == true
             and .readiness.readyForV21Foundation == true
@@ -266,7 +266,7 @@ jobs:
             and .governance.parallelToolCalls == false
             and .governance.multiAgentFramework == true
             and .governance.agentOrchestration == false
-            and .nextStage == "v2.1.2-research-agent"
+            and .nextStage == "v2.1.3-developer-agent"
             and any(.capabilities[]; .id == "memory" and .state == "ready")
             and any(.capabilities[]; .id == "browser" and .state == "controlled")
             and any(.capabilities[]; .id == "email" and .state == "foundation")
@@ -277,9 +277,9 @@ jobs:
 
           os_manifest=$(curl -fsS http://127.0.0.1:5077/api/os/manifest)
           echo "$os_manifest" | jq -e '
-            .version == "2.1.1"
+            .version == "2.1.2"
             and .edition == "Personal AI OS"
-            and .stage == "v2.1.1"
+            and .stage == "v2.1.2"
             and (.layers | length) == 6
             and (.capabilities | length) == 19
             and any(.layers[]; .id == "knowledge" and (.capabilityIds | index("memory")) != null and (.capabilityIds | index("knowledge")) != null)
@@ -291,13 +291,13 @@ jobs:
           ' >/dev/null
 
           custom_os_status=$(curl -fsS -H 'X-PersonalAI-Workspace: work' http://127.0.0.1:5077/api/os/status)
-          echo "$custom_os_status" | jq -e '.workspaceId == "work" and .version == "2.1.1"' >/dev/null
+          echo "$custom_os_status" | jq -e '.workspaceId == "work" and .version == "2.1.2"' >/dev/null
 
           agent_status=$(curl -fsS http://127.0.0.1:5077/api/agents/status)
           echo "$agent_status" | jq -e '
-            .version == "2.1.1"
-            and .frameworkVersion == "2.1.1"
-            and .registeredAgents == 2
+            .version == "2.1.2"
+            and .frameworkVersion == "2.1.2"
+            and .registeredAgents == 3
             and .maximumGoalCharacters == 4000
             and .maximumConversationMessages == 20
             and .maximumConcurrentExecutions == 1
@@ -306,14 +306,14 @@ jobs:
             and .sharedTaskQueueEnabled == false
             and .parallelAgentExecutionEnabled == false
             and .toolExecutionEnabled == false
-            and .nextStage == "v2.1.2-research-agent"
+            and .nextStage == "v2.1.3-developer-agent"
           ' >/dev/null
 
           agent_catalog=$(curl -fsS http://127.0.0.1:5077/api/agents)
           echo "$agent_catalog" | jq -e '
-            .version == "2.1.1"
-            and .frameworkVersion == "2.1.1"
-            and (.agents | length) == 2
+            .version == "2.1.2"
+            and .frameworkVersion == "2.1.2"
+            and (.agents | length) == 3
             and any(.agents[];
               .id == "core.personal-assistant"
               and .role == "general-assistant"
@@ -335,11 +335,65 @@ jobs:
               and any(.capabilities[]; . == "risk-identification")
               and (.contextKinds | sort) == (["memory","knowledge","tasks","life-context"] | sort)
             )
+            and any(.agents[];
+              .id == "research.researcher"
+              and .role == "research"
+              and .usesAiProvider == true
+              and .toolExecutionEnabled == false
+              and .requiresExplicitInvocation == true
+              and .tools == []
+              and .contextKinds == ["knowledge"]
+              and any(.capabilities[]; . == "citation-index-validation")
+            )
+          ' >/dev/null
+
+          research_status=$(curl -fsS http://127.0.0.1:5077/api/research/status)
+          echo "$research_status" | jq -e '
+            .version == "2.1.2"
+            and .agentId == "research.researcher"
+            and .evidenceScope == "workspace-documents-only"
+            and .maximumSources == 4
+            and .maximumFindings == 8
+            and .citationIndicesValidated == true
+            and .parserSelfTestPassed == true
+            and .externalWebSearchEnabled == false
+            and .toolExecutionEnabled == false
+            and .createsTasks == false
+            and .dispatchesAgents == false
+            and .requiresExplicitInvocation == true
+            and .nextStage == "v2.1.3-developer-agent"
+          ' >/dev/null
+
+          research_agent=$(curl -fsS http://127.0.0.1:5077/api/agents/research.researcher)
+          echo "$research_agent" | jq -e '
+            .id == "research.researcher"
+            and .role == "research"
+            and .toolExecutionEnabled == false
+            and .requiresExplicitInvocation == true
+            and .tools == []
+          ' >/dev/null
+
+          research_no_source=$(curl -fsS -X POST http://127.0.0.1:5077/api/agents/research.researcher/execute \
+            -H 'Content-Type: application/json' \
+            -d '{"goal":"Tóm tắt nguồn chưa tồn tại","useKnowledge":false}')
+          echo "$research_no_source" | jq -e '
+            .agentId == "research.researcher"
+            and .status == "succeeded"
+            and .workspaceId == "personal"
+            and .provider == "local"
+            and .toolExecutionEnabled == false
+            and .research.status == "insufficient-evidence"
+            and .research.evidence == []
+            and .research.findings == []
+            and .research.externalWebSearchPerformed == false
+            and .research.createsTasks == false
+            and .research.dispatchesAgents == false
+            and .sources == []
           ' >/dev/null
 
           planner_status=$(curl -fsS http://127.0.0.1:5077/api/planner/status)
           echo "$planner_status" | jq -e '
-            .version == "2.1.1"
+            .version == "2.1.2"
             and .agentId == "planning.planner"
             and .minimumSteps == 2
             and .maximumSteps == 12
@@ -353,7 +407,7 @@ jobs:
             and .persistsPlans == false
             and .toolExecutionEnabled == false
             and .requiresExplicitInvocation == true
-            and .nextStage == "v2.1.2-research-agent"
+            and .nextStage == "v2.1.3-developer-agent"
             and any(.suggestedRoles[]; . == "research")
             and any(.suggestedRoles[]; . == "developer")
             and any(.suggestedRoles[]; . == "reviewer")
@@ -392,7 +446,7 @@ jobs:
           echo "$custom_workspace" | jq -e '.isBuiltIn == false and (.activeModules | sort) == (["memory","documents","tasks","files","conversations","agents"] | sort) and (.reservedModules | sort) == (["policies"] | sort)' >/dev/null
 
           custom_status=$(curl -fsS -H "X-PersonalAI-Workspace: $custom_workspace_id" http://127.0.0.1:5077/api/status)
-          echo "$custom_status" | jq -e '.version == "2.1.1" and .workspaceName == "CI Workspace"' >/dev/null
+          echo "$custom_status" | jq -e '.version == "2.1.2" and .workspaceName == "CI Workspace"' >/dev/null
 
           custom_core_health=$(curl -fsS -H "X-PersonalAI-Workspace: $custom_workspace_id" http://127.0.0.1:5077/api/system/health)
           echo "$custom_core_health" | jq -e '.ready == true and .workspaceId == "'"$custom_workspace_id"'" and any(.modules[]; .module == "files" and .status == "healthy")' >/dev/null
@@ -438,7 +492,7 @@ jobs:
           echo "$personal_tasks" | jq -e 'all(.tasks[]; .id != "'"$custom_task_id"'")' >/dev/null
 
           companion_status=$(curl -fsS http://127.0.0.1:5077/api/companion/status)
-          echo "$companion_status" | jq -e '.version == "2.1.1" and .enabled == true and .secureTransportRequired == false and .maximumDevicesPerWorkspace == 10 and .pairingLifetimeMinutes == 5 and any(.capabilities[]; . == "chat") and any(.capabilities[]; . == "tasks-read")' >/dev/null
+          echo "$companion_status" | jq -e '.version == "2.1.2" and .enabled == true and .secureTransportRequired == false and .maximumDevicesPerWorkspace == 10 and .pairingLifetimeMinutes == 5 and any(.capabilities[]; . == "chat") and any(.capabilities[]; . == "tasks-read")' >/dev/null
 
           companion_no_token_code=$(curl -sS -o /tmp/companion-no-token.json -w '%{http_code}' http://127.0.0.1:5077/api/companion/client/me)
           test "$companion_no_token_code" = "401"
@@ -471,12 +525,12 @@ jobs:
 
           personal_me=$(curl -fsS http://127.0.0.1:5077/api/companion/client/me \
             -H "Authorization: Bearer $personal_companion_token")
-          echo "$personal_me" | jq -e '.device.id == "'"$personal_companion_device_id"'" and .device.workspaceId == "personal" and .version == "2.1.1" and any(.capabilities[]; . == "chat")' >/dev/null
+          echo "$personal_me" | jq -e '.device.id == "'"$personal_companion_device_id"'" and .device.workspaceId == "personal" and .version == "2.1.2" and any(.capabilities[]; . == "chat")' >/dev/null
 
           personal_core_override=$(curl -fsS http://127.0.0.1:5077/api/companion/client/core \
             -H "Authorization: Bearer $personal_companion_token" \
             -H "X-PersonalAI-Workspace: $custom_workspace_id")
-          echo "$personal_core_override" | jq -e '.workspaceId == "personal" and .version == "2.1.1"' >/dev/null
+          echo "$personal_core_override" | jq -e '.workspaceId == "personal" and .version == "2.1.2"' >/dev/null
 
           personal_companion_tasks=$(curl -fsS http://127.0.0.1:5077/api/companion/client/tasks \
             -H "Authorization: Bearer $personal_companion_token")
@@ -533,7 +587,7 @@ jobs:
           ! echo "$companion_audit" | grep -Fq "$custom_pairing_code"
 
           life_status=$(curl -fsS http://127.0.0.1:5077/api/life-context/status)
-          echo "$life_status" | jq -e '.version == "2.1.1" and .supported == true and .automaticCollectionEnabled == false and .contentEncrypted == true and .maximumSourcesPerWorkspace == 20 and .maximumEntriesPerWorkspace == 1000 and .maximumContentCharacters == 2000 and .minimumRetentionDays == 1 and .maximumRetentionDays == 365 and any(.supportedSourceKinds[]; . == "calendar") and any(.supportedSourceKinds[]; . == "location")' >/dev/null
+          echo "$life_status" | jq -e '.version == "2.1.2" and .supported == true and .automaticCollectionEnabled == false and .contentEncrypted == true and .maximumSourcesPerWorkspace == 20 and .maximumEntriesPerWorkspace == 1000 and .maximumContentCharacters == 2000 and .minimumRetentionDays == 1 and .maximumRetentionDays == 365 and any(.supportedSourceKinds[]; . == "calendar") and any(.supportedSourceKinds[]; . == "location")' >/dev/null
 
           life_unconfirmed_code=$(curl -sS -o /tmp/life-unconfirmed.json -w '%{http_code}' -X POST http://127.0.0.1:5077/api/life-context/sources \
             -H "X-PersonalAI-Workspace: $custom_workspace_id" \
@@ -591,7 +645,7 @@ jobs:
           ! echo "$context_preview" | grep -Fq 'life-context-secret-160'
 
           decision_status=$(curl -fsS http://127.0.0.1:5077/api/decisions/status)
-          echo "$decision_status" | jq -e '.version == "2.1.1" and .supported == true and .requiresUserDecision == true and .autoActionEnabled == false and .toolExecutionEnabled == false and .persistsAnalyses == false and .contextGroundingEnabled == true and .maximumQuestionCharacters == 4000 and .maximumOptions == 8 and .maximumCriteria == 8 and any(.contextKinds[]; . == "life-context")' >/dev/null
+          echo "$decision_status" | jq -e '.version == "2.1.2" and .supported == true and .requiresUserDecision == true and .autoActionEnabled == false and .toolExecutionEnabled == false and .persistsAnalyses == false and .contextGroundingEnabled == true and .maximumQuestionCharacters == 4000 and .maximumOptions == 8 and .maximumCriteria == 8 and any(.contextKinds[]; . == "life-context")' >/dev/null
 
           decision_invalid_code=$(curl -sS -o /tmp/decision-invalid.json -w '%{http_code}' -X POST http://127.0.0.1:5077/api/decisions/preview \
             -H "X-PersonalAI-Workspace: $custom_workspace_id" \
@@ -624,7 +678,7 @@ jobs:
           fi
 
           automation_status=$(curl -fsS http://127.0.0.1:5077/api/automations/status)
-          echo "$automation_status" | jq -e '.version == "2.1.1" and .supported == true and .backgroundSchedulerEnabled == true and .autoConfirmationEnabled == false and .decisionRecommendationAutoExecutionEnabled == false and .maximumAutomationsPerWorkspace == 50 and .minimumIntervalMinutes == 5 and .maximumIntervalMinutes == 10080 and .schedulerPollSeconds == 30 and .maximumDueBatchSize == 1' >/dev/null
+          echo "$automation_status" | jq -e '.version == "2.1.2" and .supported == true and .backgroundSchedulerEnabled == true and .autoConfirmationEnabled == false and .decisionRecommendationAutoExecutionEnabled == false and .maximumAutomationsPerWorkspace == 50 and .minimumIntervalMinutes == 5 and .maximumIntervalMinutes == 10080 and .schedulerPollSeconds == 30 and .maximumDueBatchSize == 1' >/dev/null
 
           automation_future=$(date -u -d '+30 minutes' '+%Y-%m-%dT%H:%M:%SZ')
 
@@ -989,7 +1043,7 @@ jobs:
           test -n "$persistent_undo_id"
 
           tools=$(curl -fsS http://127.0.0.1:5077/api/tools)
-          echo "$tools" | jq -e '.frameworkVersion == "2.1.1" and (.permissionTypes | sort) == (["BROWSER","COMPUTER","CONNECTOR","DELETE","DEVELOPMENT","EXTERNAL","READ","SENSITIVE","WRITE"] | sort)' >/dev/null
+          echo "$tools" | jq -e '.frameworkVersion == "2.1.2" and (.permissionTypes | sort) == (["BROWSER","COMPUTER","CONNECTOR","DELETE","DEVELOPMENT","EXTERNAL","READ","SENSITIVE","WRITE"] | sort)' >/dev/null
           echo "$tools" | jq -e '(.tools | length) == 32
             and any(.tools[]; .name == "local.clock" and .localOnly == true and .requiredPermissions == ["READ"])
             and any(.tools[]; .name == "local.text_stats" and .timeoutMs == 2000)
@@ -1025,7 +1079,7 @@ jobs:
             and any(.tools[]; .name == "dev.dotnet.test" and .requiredPermissions == ["READ","WRITE","SENSITIVE","DEVELOPMENT"] and .requiresConfirmation == true)' >/dev/null
 
           computer_status=$(curl -fsS http://127.0.0.1:5077/api/computer/status)
-          echo "$computer_status" | jq -e '.version == "2.1.1" and .supported == false and .interactiveSession == false and .availableCapabilities == [] and any(.limitations[]; contains("Windows"))' >/dev/null
+          echo "$computer_status" | jq -e '.version == "2.1.2" and .supported == false and .interactiveSession == false and .availableCapabilities == [] and any(.limitations[]; contains("Windows"))' >/dev/null
 
           computer_sensitive_denied_code=$(curl -sS -o /tmp/computer-sensitive-denied.json -w '%{http_code}' -X POST http://127.0.0.1:5077/api/tools/execute \
             -H 'Content-Type: application/json' \
@@ -1046,7 +1100,7 @@ jobs:
           jq -e '.status == "invalid-input" and (.error | contains("Windows"))' /tmp/computer-unsupported.json >/dev/null
 
           browser_status=$(curl -fsS http://127.0.0.1:5077/api/browser/status)
-          echo "$browser_status" | jq -e '.version == "2.1.1" and .engine == "http-html" and .supported == true and .javaScriptEnabled == false and .cookiesEnabled == false and .downloadsEnabled == false and .formSubmissionEnabled == false and .maximumResponseBytes == 1048576 and .maximumPageTextCharacters == 24000 and .maximumLinks == 100 and .maximumRedirects == 5' >/dev/null
+          echo "$browser_status" | jq -e '.version == "2.1.2" and .engine == "http-html" and .supported == true and .javaScriptEnabled == false and .cookiesEnabled == false and .downloadsEnabled == false and .formSubmissionEnabled == false and .maximumResponseBytes == 1048576 and .maximumPageTextCharacters == 24000 and .maximumLinks == 100 and .maximumRedirects == 5' >/dev/null
 
           browser_unconfirmed_code=$(curl -sS -o /tmp/browser-unconfirmed.json -w '%{http_code}' -X POST http://127.0.0.1:5077/api/tools/execute \
             -H 'Content-Type: application/json' \
@@ -1088,7 +1142,7 @@ jobs:
           echo "$browser_personal_session" | jq -e '.status == "succeeded" and .output.workspaceId == "personal" and .output.hasPage == true and (.output.url | startswith("https://example.com"))' >/dev/null
 
           connector_status=$(curl -fsS http://127.0.0.1:5077/api/connectors/status)
-          echo "$connector_status" | jq -e '.version == "2.1.1" and .supported == true and .availableKinds == ["http-bearer"] and .maximumConnectionsPerWorkspace == 20 and .maximumResponseBytes == 524288 and .maximumReturnedCharacters == 32000 and .maximumRedirects == 3 and .secretsEncrypted == true and .writeActionsEnabled == false' >/dev/null
+          echo "$connector_status" | jq -e '.version == "2.1.2" and .supported == true and .availableKinds == ["http-bearer"] and .maximumConnectionsPerWorkspace == 20 and .maximumResponseBytes == 524288 and .maximumReturnedCharacters == 32000 and .maximumRedirects == 3 and .secretsEncrypted == true and .writeActionsEnabled == false' >/dev/null
 
           connector_unconfirmed_code=$(curl -sS -o /tmp/connector-unconfirmed.json -w '%{http_code}' -X POST http://127.0.0.1:5077/api/connectors \
             -H 'Content-Type: application/json' \
@@ -1162,7 +1216,7 @@ jobs:
           ! echo "$connector_audit" | grep -Fq 'ci-connector-secret-130'
 
           development_status=$(curl -fsS http://127.0.0.1:5077/api/development/status)
-          echo "$development_status" | jq -e '.version == "2.1.1" and .workspaceId == "personal" and .gitAvailable == true and .dotnetAvailable == true and .arbitraryShellEnabled == false and .arbitraryProcessEnabled == false and .gitWriteActionsEnabled == false and .maximumScannedFiles == 2000 and .maximumSearchHits == 100 and .maximumProcessOutputCharacters == 48000' >/dev/null
+          echo "$development_status" | jq -e '.version == "2.1.2" and .workspaceId == "personal" and .gitAvailable == true and .dotnetAvailable == true and .arbitraryShellEnabled == false and .arbitraryProcessEnabled == false and .gitWriteActionsEnabled == false and .maximumScannedFiles == 2000 and .maximumSearchHits == 100 and .maximumProcessOutputCharacters == 48000' >/dev/null
 
           mkdir -p /tmp/personalai-workspace/dev-ci
           printf '%s\n' '<Project Sdk="Microsoft.NET.Sdk">' '  <PropertyGroup>' '    <OutputType>Exe</OutputType>' '    <TargetFramework>net8.0</TargetFramework>' '    <ImplicitUsings>enable</ImplicitUsings>' '    <Nullable>enable</Nullable>' '  </PropertyGroup>' '  <Target Name="RejectInheritedPersonalAiSecret" BeforeTargets="Build">' '    <Error Condition="&apos;$(PERSONALAI_DEV_SECRET)&apos; != &apos;&apos;" Text="PersonalAI parent secret leaked into development process." />' '  </Target>' '</Project>' > /tmp/personalai-workspace/dev-ci/DevCi.csproj
@@ -1970,7 +2024,7 @@ jobs:
 
           companion_me_after_restart=$(curl -fsS http://127.0.0.1:5077/api/companion/client/me \
             -H "Authorization: Bearer $custom_companion_token")
-          echo "$companion_me_after_restart" | jq -e '.device.id == "'"$custom_companion_device_id"'" and .device.workspaceId == "'"$custom_workspace_id"'" and .version == "2.1.1"' >/dev/null
+          echo "$companion_me_after_restart" | jq -e '.device.id == "'"$custom_companion_device_id"'" and .device.workspaceId == "'"$custom_workspace_id"'" and .version == "2.1.2"' >/dev/null
 
           life_sources_after_restart=$(curl -fsS -H "X-PersonalAI-Workspace: $custom_workspace_id" http://127.0.0.1:5077/api/life-context/sources)
           echo "$life_sources_after_restart" | jq -e 'any(.sources[]; .id == "'"$life_source_id"'" and .consentGranted == true and .enabled == true and .entryCount == 1)' >/dev/null
@@ -2208,9 +2262,9 @@ jobs:
           grep -Fq 'v097.js' src/PersonalAI.Web/wwwroot/index.html
           ! grep -Fq 'MapDelete("/api/undo' src/PersonalAI.Web/Services/UndoEndpoints.cs
           grep -Fq 'Stable Personal AI Core' docs/releases/v1.0.0.md
-          grep -Fq '# AI Cá Nhân — Planner Agent v2.1.1' README.md
+          grep -Fq '# AI Cá Nhân — Research Agent v2.1.2' README.md
           ! grep -Fq '# AI Cá Nhân — MVP v0.5.3' README.md
-          grep -Fq 'public const string Version = "2.1.1"' src/PersonalAI.Web/Models/SystemModels.cs
+          grep -Fq 'public const string Version = "2.1.2"' src/PersonalAI.Web/Models/SystemModels.cs
           grep -Fq 'public const string ApiContractVersion = "1"' src/PersonalAI.Web/Models/SystemModels.cs
           grep -Fq 'public const string Channel = "controlled"' src/PersonalAI.Web/Models/SystemModels.cs
           grep -Fq '/api/system/health' src/PersonalAI.Web/Services/SystemEndpoints.cs
@@ -2224,6 +2278,12 @@ jobs:
           grep -Fq 'Personal AI OS' docs/releases/v2.0.0.md
           grep -Fq 'Agent Framework' docs/releases/v2.1.0.md
           grep -Fq 'Planner Agent' docs/releases/v2.1.1.md
+          grep -Fq 'Research Agent' docs/releases/v2.1.2.md
+          grep -Fq 'ResearchFrameworkAgent' src/PersonalAI.Web/Services/AgentFrameworkEndpoints.cs
+          grep -Fq '/api/research/status' src/PersonalAI.Web/Services/AgentFrameworkEndpoints.cs
+          grep -Fq 'ResearchReportParser' src/PersonalAI.Web/Services/ResearchAgentService.cs
+          grep -Fq 'ExternalWebSearchEnabled: false' src/PersonalAI.Web/Services/ResearchAgentService.cs
+          grep -Fq 'renderResearchReport' src/PersonalAI.Web/wwwroot/v210.js
           grep -Fq 'class PlannerFrameworkAgent' src/PersonalAI.Web/Services/PlannerAgentService.cs
           grep -Fq 'MinimumSteps = 2' src/PersonalAI.Web/Services/PlannerAgentService.cs
           grep -Fq 'RunSelfTest' src/PersonalAI.Web/Services/PlannerAgentService.cs

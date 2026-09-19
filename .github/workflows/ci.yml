@@ -215,6 +215,16 @@ jobs:
           backup_denied_code=$(curl -sS -o /tmp/hardening-backup-denied.json -w '%{http_code}' -X POST http://127.0.0.1:5077/api/hardening/backups             -H 'Content-Type: application/json'             -d '{"confirmed":false}')
           test "$backup_denied_code" = "403"
 
+          hardening_backup=$(curl -fsS -X POST http://127.0.0.1:5077/api/hardening/backups -H 'Content-Type: application/json' -d '{"confirmed":true}')
+          echo "$hardening_backup" | jq -e '.backupId | endswith(".zip")' >/dev/null
+          echo "$hardening_backup" | jq -e '.sizeBytes > 0 and .fileCount >= 0 and .version == "1.9.0"' >/dev/null
+          hardening_backup_id=$(echo "$hardening_backup" | jq -r '.backupId')
+          hardening_backups=$(curl -fsS http://127.0.0.1:5077/api/hardening/backups)
+          echo "$hardening_backups" | jq -e '.maximum == 5 and .pendingRestore == false and any(.backups[]; .backupId == "'"$hardening_backup_id"'")' >/dev/null
+
+          restore_missing_code=$(curl -sS -o /tmp/hardening-restore-missing.json -w '%{http_code}' -X POST http://127.0.0.1:5077/api/hardening/restore -H 'Content-Type: application/json' -d '{"backupId":"missing.zip","confirmed":true}')
+          test "$restore_missing_code" = "400"
+
           restore_denied_code=$(curl -sS -o /tmp/hardening-restore-denied.json -w '%{http_code}' -X POST http://127.0.0.1:5077/api/hardening/restore             -H 'Content-Type: application/json'             -d '{"backupId":"missing.zip","confirmed":false}')
           test "$restore_denied_code" = "403"
 
@@ -2053,6 +2063,16 @@ jobs:
           grep -Fq '/api/system/health' src/PersonalAI.Web/Services/SystemEndpoints.cs
           grep -Fq '/api/system/capabilities' src/PersonalAI.Web/Services/SystemEndpoints.cs
           grep -Fq 'UseSystemHardening' src/PersonalAI.Web/Program.cs
+          grep -Fq 'AddHardeningFoundation' src/PersonalAI.Web/Program.cs
+          grep -Fq 'UseV19Hardening' src/PersonalAI.Web/Program.cs
+          grep -Fq 'MapHardeningFoundation' src/PersonalAI.Web/Program.cs
+          grep -Fq 'MaximumApiRequestsPerMinute = 600' src/PersonalAI.Web/Services/HardeningService.cs
+          grep -Fq 'MaximumConcurrentApiRequests = 16' src/PersonalAI.Web/Services/HardeningService.cs
+          grep -Fq 'BackupDatabase' src/PersonalAI.Web/Services/HardeningService.cs
+          grep -Fq 'FileShare.None' src/PersonalAI.Web/Services/HardeningService.cs
+          grep -Fq '/api/hardening/status' src/PersonalAI.Web/Services/HardeningEndpoints.cs
+          grep -Fq '/api/hardening/restore' src/PersonalAI.Web/Services/HardeningEndpoints.cs
+          grep -Fq 'Reliability & Security Hardening' docs/releases/v1.9.0.md
           grep -Fq 'app.MapStableCore();' src/PersonalAI.Web/Program.cs
           grep -Fq 'PersonalAiRelease.Version' src/PersonalAI.Web/Program.cs
           grep -Fq 'PersonalAiRelease.Version' src/PersonalAI.Web/Services/ToolFrameworkEndpoints.cs

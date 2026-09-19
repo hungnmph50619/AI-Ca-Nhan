@@ -17,6 +17,7 @@ builder.Services.Configure<FormOptions>(options => options.MultipartBodyLengthLi
 builder.Services.AddDataProtection().SetApplicationName("PersonalAI");
 builder.Services.AddWorkspaceFoundation();
 builder.Services.AddStableCore();
+builder.Services.AddHardeningFoundation();
 builder.Services.AddSingleton<IAiSettingsStore, AiSettingsStore>();
 builder.Services.AddSingleton<KnowledgeDocumentExtractor>();
 builder.Services.AddSingleton<IKnowledgeDocumentStore, SqliteKnowledgeDocumentStore>();
@@ -70,6 +71,7 @@ app.Use(async (context, next) =>
 });
 
 app.UseSystemHardening();
+app.UseV19Hardening();
 app.UseCompanionAuthentication();
 app.UseWorkspaceValidation();
 app.UseDefaultFiles();
@@ -87,6 +89,7 @@ app.MapLifeContext();
 app.MapDecisionEngine();
 app.MapAutomationFoundation();
 app.MapStableCore();
+app.MapHardeningFoundation();
 
 app.MapGet("/api/status", (
     IAiProviderResolver providerResolver,

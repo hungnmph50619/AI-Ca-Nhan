@@ -27,6 +27,7 @@ public sealed class SystemCoreService(
     ICompanionService companion,
     ILifeContextService lifeContext,
     IAutomationStore automationStore,
+    IHardeningStatusService hardening,
     IAiProviderResolver providerResolver,
     ILogger<SystemCoreService> logger) : ISystemCoreService
 {
@@ -42,6 +43,7 @@ public sealed class SystemCoreService(
         "tools",
         "audit",
         "undo",
+        "hardening",
         "conversations"
     ];
 
@@ -165,6 +167,28 @@ public sealed class SystemCoreService(
                     "Undo store đọc được trong workspace hiện tại.",
                     response.Items.Count);
             }));
+
+        modules.Add(Check(
+            "hardening",
+            () =>
+            {
+                var hardeningStatus = hardening.GetStatus();
+                var moduleStatus = hardeningStatus.PermissionAudit.ViolationCount > 0
+                    ? CoreHealthStatuses.Unavailable
+                    : hardeningStatus.Status == HardeningStatuses.Healthy
+                        ? CoreHealthStatuses.Healthy
+                        : CoreHealthStatuses.Degraded;
+                return new CoreModuleHealth(
+                    "hardening",
+                    moduleStatus,
+                    hardeningStatus.PendingRestore
+                        ? "Hardening đang chờ restore ở lần khởi động tiếp theo."
+                        : hardeningStatus.Runtime.PreviousUncleanShutdown
+                            ? "Hardening phát hiện lần chạy trước kết thúc không sạch; dữ liệu vẫn được kiểm tra trước khi tiếp tục."
+                            : "Rate/resource guard, permission audit, crash marker và backup/restore foundation đang hoạt động.",
+                    hardeningStatus.Backups.Count);
+            },
+            CoreHealthStatuses.Degraded));
 
         modules.Add(Check(
             "computer-use",

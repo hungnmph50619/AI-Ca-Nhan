@@ -1,10 +1,42 @@
-# AI Cá Nhân — Controlled Automation v1.8.0
+# AI Cá Nhân — Reliability & Security Hardening v1.9.0
 
-PersonalAI là trợ lý AI cá nhân chạy bằng ASP.NET Core 8, ưu tiên dữ liệu cục bộ, có thể dùng Gemini hoặc OpenAI cho phần sinh câu trả lời. v1.0.0 vẫn là **Stable Personal AI Core**; v1.1 thêm Controlled Computer Use, v1.2 Browser Agent, v1.3 Connector Foundation, v1.4 Software Development Agent, v1.5 Android Companion, v1.6 Life Context Foundation, v1.7 Decision Engine và v1.8 thêm **Automation có kiểm soát** với scheduler nền nhưng không auto-confirm side effect.
+PersonalAI là trợ lý AI cá nhân chạy bằng ASP.NET Core 8, ưu tiên dữ liệu cục bộ, có thể dùng Gemini hoặc OpenAI cho phần sinh câu trả lời. v1.0.0 là **Stable Personal AI Core**; từ v1.1 đến v1.8 bổ sung dần Computer Use, Browser, Connectors, Development Agent, Android, Life Context, Decision Engine và Automation. v1.9 tập trung **Reliability & Security Hardening** trước mốc v2.0, không mở thêm quyền tự trị.
 
-> Đây vẫn là ứng dụng thiết kế cho một người dùng trên máy cá nhân. Không đưa trực tiếp lên Internet hoặc dùng như hệ thống nhiều người dùng nếu chưa bổ sung authentication, authorization và hardening triển khai phù hợp.
+> Đây vẫn là ứng dụng thiết kế cho một người dùng trên máy cá nhân. v1.9 bổ sung hardening vận hành cục bộ nhưng **không thay thế authentication/authorization** cần có khi triển khai Internet hoặc môi trường nhiều người dùng.
 
-## Có gì trong v1.8.0?
+## Có gì trong v1.9.0?
+
+### Reliability & Security Hardening
+
+v1.9 bổ sung lớp bảo vệ vận hành trước v2.0:
+
+- API rate guard mặc định 600 request/phút cho mỗi IP + workspace;
+- giới hạn tối đa 16 API request xử lý đồng thời;
+- chặn API request lớn hơn 12 MB trước khi đi sâu vào pipeline;
+- runtime heartbeat và crash marker để phát hiện lần chạy trước kết thúc không sạch;
+- permission audit chạy trên **policy thật** của Tool Framework để phát hiện công cụ rủi ro có thể bypass confirmation;
+- backup toàn bộ cây dữ liệu PersonalAI mặc định với giới hạn 20.000 file / 512 MB nguồn;
+- SQLite được snapshot bằng SQLite backup API thay vì copy file database đang mở;
+- giữ tối đa 5 backup gần nhất;
+- restore theo cơ chế **queue → restart → staging → pre-restore backup → apply → rollback khi lỗi**;
+- maintenance lock cross-process để hai thao tác backup/restore không chạy chồng nhau;
+- Hardening được đưa vào `/api/system/health` và có status API riêng.
+
+API mới:
+
+```http
+GET  /api/hardening/status
+GET  /api/hardening/permissions
+GET  /api/hardening/backups
+POST /api/hardening/backups
+POST /api/hardening/restore
+```
+
+Tạo backup và xếp hàng restore đều yêu cầu xác nhận rõ ràng. Restore không thay dữ liệu ngay trong process đang chạy; nó chỉ được áp dụng ở lần khởi động tiếp theo.
+
+> Phạm vi backup v1.9 là cây dữ liệu mặc định dưới `%LOCALAPPDATA%\\PersonalAI`. Store được redirect sang đường dẫn ngoài bằng các cấu hình `*:Root` chưa được tự động gom vào archive này.
+
+### Nền tảng chức năng từ v1.8 vẫn được giữ nguyên
 
 ### Chat và AI provider
 
@@ -543,9 +575,9 @@ Undo khả dụng 7 ngày, tối đa 500 record, snapshot tối đa 512 KB.
 
 ## Stable Core contract
 
-v1.8.0 giữ API contract của Stable Core và mở rộng controlled capability layer:
+v1.9.0 giữ API contract của Stable Core, harden runtime và tiếp tục controlled capability layer:
 
-- Version: `1.8.0`
+- Version: `1.9.0`
 - API contract: `1`
 - Channel: `controlled`
 - Stable Core: v1.0 semantics
@@ -576,7 +608,7 @@ Unhandled API exception được sanitize; stack trace và đường dẫn local
 
 ## Guardrails hiện tại
 
-v1.8.0 **không phải autonomous agent**.
+v1.9.0 **không phải autonomous agent**.
 
 Hiện tại:
 
@@ -748,6 +780,7 @@ ASP.NET Core
   ├── Life Context
   ├── Decision Engine
   ├── Automation
+  ├── Hardening / Backup / Recovery
   │
   ├── Context Manager
   │      ├── Memory selection
@@ -810,6 +843,7 @@ GitHub Actions hiện kiểm tra regression cho các nền chính, gồm:
 - Context Manager Life Context selection/opt-out;
 - Decision Engine validation/context preview/no-auto-action contract;
 - Automation persistence/workspace isolation/one-step scheduler/no-auto-confirm;
+- v1.9 hardening health/permission audit/rate-resource guards/confirmation boundaries;
 - JavaScript syntax;
 - UI guardrails tiếng Việt.
 
@@ -838,10 +872,11 @@ docs/releases/v1.5.0.md
 docs/releases/v1.6.0.md
 docs/releases/v1.7.0.md
 docs/releases/v1.8.0.md
+docs/releases/v1.9.0.md
 ```
 
-## Hướng phát triển sau v1.8
+## Hướng phát triển sau v1.9
 
 Computer Use, Browser Agent, Connector Foundation, Software Development Agent, Android Companion, Life Context, Decision Engine và Automation hiện nằm trong controlled capability layer.
 
-Theo roadmap gốc, mốc kế tiếp là **v1.9 — Reliability / Security**, sau đó là **v2.0 — Personal AI OS**.
+Sau v1.9, roadmap chuyển sang **v2.0 — Personal AI OS**; trước khi trao thêm quyền cho multi-agent, các guardrail, audit, recovery và rollback của v1.9 phải tiếp tục được giữ làm nền.

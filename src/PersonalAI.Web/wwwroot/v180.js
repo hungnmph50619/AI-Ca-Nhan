@@ -1,5 +1,5 @@
 (() => {
-  const VERSION = "1.8.0";
+  const VERSION = "1.9.0";
   let loading = false;
   let tasksById = new Map();
 
@@ -75,7 +75,7 @@
 
     const title = document.createElement("h2");
     title.id = "automationTitle";
-    title.textContent = "Automation v1.8";
+    title.textContent = "Automation";
     heading.append(eyebrow, title);
 
     const close = document.createElement("button");

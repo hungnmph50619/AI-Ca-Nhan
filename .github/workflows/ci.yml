@@ -1616,6 +1616,21 @@ jobs:
           test "$desktop_enable_unsupported_code" = "400"
           curl -fsS http://127.0.0.1:5077/api/computer/status | jq -e '.desktopActionsPaused == true' >/dev/null
 
+          # Nhập Notepad không phải công cụ chung: từ chối khi thiếu xác nhận hoặc đang dừng.
+          keyboard_no_confirm=$(curl -sS -o /tmp/keyboard-no-confirm.json -w '%{http_code}' -X POST http://127.0.0.1:5077/api/computer/keyboard/type-notepad \
+            -H 'Content-Type: application/json' \
+            -d '{"windowId":"0x0","text":"thu nghiem"}')
+          test "$keyboard_no_confirm" = "403"
+          keyboard_paused=$(curl -sS -o /tmp/keyboard-paused.json -w '%{http_code}' -X POST http://127.0.0.1:5077/api/computer/keyboard/type-notepad \
+            -H 'Content-Type: application/json' -H 'X-PersonalAI-Manual-Approval: dong-y' \
+            -d '{"windowId":"0x0","text":"thu nghiem"}')
+          test "$keyboard_paused" = "400"
+          jq -e '.error | contains("tạm dừng")' /tmp/keyboard-paused.json >/dev/null
+          keyboard_list_denied=$(curl -sS -o /tmp/keyboard-list-denied.json -w '%{http_code}' http://127.0.0.1:5077/api/computer/keyboard/notepad-windows)
+          test "$keyboard_list_denied" = "403"
+          keyboard_list_unsupported=$(curl -sS -o /tmp/keyboard-list-unsupported.json -w '%{http_code}' -H 'X-PersonalAI-Manual-Approval: dong-y' http://127.0.0.1:5077/api/computer/keyboard/notepad-windows)
+          test "$keyboard_list_unsupported" = "400"
+
           computer_sensitive_denied_code=$(curl -sS -o /tmp/computer-sensitive-denied.json -w '%{http_code}' -X POST http://127.0.0.1:5077/api/tools/execute \
             -H 'Content-Type: application/json' \
             -d '{"toolName":"computer.windows.list","arguments":{"limit":5},"approvedPermissions":["READ","SENSITIVE"],"confirmed":false}')
@@ -2998,6 +3013,14 @@ jobs:
           grep -Fq 'SendInput((uint)inputs.Length, inputs' src/PersonalAI.Web/Services/ComputerUseService.cs
           grep -Fq 'target != GetForegroundWindow()' src/PersonalAI.Web/Services/ComputerUseService.cs
           grep -Fq 'ComputerClickLeftTool' src/PersonalAI.Web/Services/ComputerUseEndpoints.cs
+          grep -Fq 'TypeNotepadTextCore' src/PersonalAI.Web/Services/ComputerUseService.cs
+          grep -Fq 'MaximumNotepadTextLength = 32' src/PersonalAI.Web/Services/ComputerUseService.cs
+          grep -Fq 'processName, "notepad"' src/PersonalAI.Web/Services/ComputerUseService.cs
+          grep -Fq '/api/computer/keyboard/type-notepad' src/PersonalAI.Web/Services/ComputerUseEndpoints.cs
+          grep -Fq '/api/computer/keyboard/notepad-windows' src/PersonalAI.Web/Services/ComputerUseEndpoints.cs
+          grep -Fq 'scheduleNotepadTyping' src/PersonalAI.Web/wwwroot/v110.js
+          grep -Fq '#computerUseDialog' src/PersonalAI.Web/wwwroot/v110.css
+
           grep -Fq 'RequiresConfirmation: true' src/PersonalAI.Web/Services/ComputerClickLeftTool.cs
           ! grep -Fq '"computer.keyboard' src/PersonalAI.Web/Services/ComputerClickLeftTool.cs
           ! grep -Fq 'Process.Start' src/PersonalAI.Web/Services/ComputerUseService.cs

@@ -1,8 +1,21 @@
-# AI Cá Nhân — Office Agent v2.1.4
+# AI Cá Nhân — Operator Agent v2.1.5
 
-PersonalAI là trợ lý AI cá nhân chạy bằng ASP.NET Core 8, ưu tiên dữ liệu cục bộ, có thể dùng Gemini hoặc OpenAI cho phần sinh câu trả lời. v2.0.0 đã tạo **Personal AI OS**; v2.1.0 thêm Agent Framework; v2.1.1 thêm **Planner Agent**; v2.1.2 bổ sung **Research Agent**; v2.1.3 có **Developer Agent**; v2.1.4 bổ sung **Office Agent** soạn nháp email, memo, agenda, minutes và summary. Office không gửi email, tạo lịch/task hay sửa/lưu tài liệu.
+PersonalAI là trợ lý AI cá nhân chạy bằng ASP.NET Core 8, ưu tiên dữ liệu cục bộ, có thể dùng Gemini hoặc OpenAI cho phần sinh câu trả lời. v2.0.0 đã tạo **Personal AI OS**; v2.1.0 thêm Agent Framework; v2.1.1 thêm **Planner Agent**; v2.1.2 bổ sung **Research Agent**; v2.1.3 có **Developer Agent**; v2.1.4 bổ sung **Office Agent**; v2.1.5 thêm **Operator Agent** chuẩn bị kế hoạch thao tác gồm rủi ro, phụ thuộc và điểm cần xác nhận. Operator không chạy tool, điều khiển máy/browser, gửi tin hoặc làm thay đổi trạng thái bên ngoài.
 
 > Đây vẫn là ứng dụng thiết kế cho một người dùng trên máy cá nhân. Personal AI OS v2.0 giữ toàn bộ hardening của v1.9 nhưng **không thay thế authentication/authorization** cần có khi triển khai Internet hoặc môi trường nhiều người dùng.
+
+## Có gì trong v2.1.5?
+
+### Operator Agent
+
+Executable agent thứ sáu `operations.operator` nhận mục tiêu và tạo một kế hoạch thao tác **chưa thực thi** gồm 1–10 bước: channel (browser/computer/connector/manual), riskLevel, dependsOn, requiresUserConfirmation, kết quả mong đợi và cách kiểm chứng. Những checkpoint cần xác nhận chỉ là metadata để người dùng xem, **không cấp quyền thực thi**.
+
+- API: `GET /api/operator-agent/status`, `GET /api/agents/operations.operator`, `POST /api/agents/operations.operator/execute`.
+- Parser từ chối dependency vòng/trỏ về bước sau, channel/risk không hợp lệ và bước high-risk không có checkpoint.
+- Không tự dùng browser/computer/connector/tool, không sửa file, gửi tin, tạo task, ghi kế hoạch hoặc dispatch agent.
+- Context bật bởi người dùng có thể được gửi đến AI provider; tuyệt đối không nhập password/token/OTP vào mục tiêu.
+
+### Office Agent v2.1.4 vẫn được giữ nguyên
 
 ## Có gì trong v2.1.4?
 
@@ -972,6 +985,7 @@ GitHub Actions hiện kiểm tra regression cho các nền chính, gồm:
 - v2.1.2 Research Agent source-bound reporting, insufficient-evidence fallback và citation-index validation;
 - v2.1.3 Developer Agent workspace-only snippet review, no-write/no-command policy và evidence-index validation;
 - v2.1.4 Office Agent structured draft-only output, parser validation và no-send/no-write/no-task policy;
+- v2.1.5 Operator Agent risk-aware plan-only output, dependency validation và no-execution policy;
 - JavaScript syntax;
 - UI guardrails tiếng Việt.
 
@@ -1007,10 +1021,11 @@ docs/releases/v2.1.1.md
 docs/releases/v2.1.2.md
 docs/releases/v2.1.3.md
 docs/releases/v2.1.4.md
+docs/releases/v2.1.5.md
 ```
 
-## Hướng phát triển sau v2.1.4
+## Hướng phát triển sau v2.1.5
 
 Computer Use, Browser Agent, Connector Foundation, Software Development Agent, Android Companion, Life Context, Decision Engine và Automation hiện nằm trong controlled capability layer.
 
-Sau v2.1.4, mốc kế tiếp là **v2.1.5 — Operator Agent**. Web/email research ở đây chưa tích hợp tự động; trước khi mở cần luồng cấp quyền, provenance và connector provider-specific. Agent Orchestration vẫn thuộc giai đoạn v2.2.
+Sau v2.1.5, mốc kế tiếp là **v2.1.6 — Reviewer Agent**. Web/email research ở đây chưa tích hợp tự động; trước khi mở cần luồng cấp quyền, provenance và connector provider-specific. Agent Orchestration vẫn thuộc giai đoạn v2.2.

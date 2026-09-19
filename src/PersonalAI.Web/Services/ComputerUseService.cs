@@ -23,7 +23,8 @@ public interface IComputerUseService
     ComputerActionResponse MoveCursor(int x, int y);
 }
 
-public sealed class WindowsComputerUseService : IComputerUseService
+public sealed class WindowsComputerUseService(
+    ComputerControlGate control) : IComputerUseService
 {
     public const int MaximumWindows = 50;
 
@@ -57,7 +58,8 @@ public sealed class WindowsComputerUseService : IComputerUseService
             "Không chụp ảnh màn hình trong v1.1.0.",
             "Không click chuột, gõ phím hoặc nhập văn bản trong v1.1.0.",
             "Không mở ứng dụng, chạy shell hoặc thực thi lệnh hệ thống.",
-            "Các hành động thay đổi focus/cursor phải đi qua Tool Framework và xác nhận."
+            "Các hành động thay đổi focus/cursor phải đi qua Tool Framework và xác nhận.",
+            "Điều khiển được khóa lúc khởi động; phải cho phép thủ công. Nút dừng chỉ chặn các lệnh mới qua dịch vụ, không phải phím dừng toàn hệ thống."
         };
 
         if (!windows)
@@ -79,7 +81,8 @@ public sealed class WindowsComputerUseService : IComputerUseService
             windows,
             interactive,
             capabilities,
-            limitations);
+            limitations,
+            DesktopActionsPaused: control.Paused);
     }
 
     public ComputerScreenInfo GetScreenInfo()
@@ -177,6 +180,10 @@ public sealed class WindowsComputerUseService : IComputerUseService
     }
 
     public ComputerActionResponse FocusWindow(
+        string windowId) =>
+        control.RunAllowed(() => FocusWindowCore(windowId));
+
+    private ComputerActionResponse FocusWindowCore(
         string windowId)
     {
         EnsureAvailable();
@@ -217,6 +224,11 @@ public sealed class WindowsComputerUseService : IComputerUseService
     }
 
     public ComputerActionResponse MoveCursor(
+        int x,
+        int y) =>
+        control.RunAllowed(() => MoveCursorCore(x, y));
+
+    private ComputerActionResponse MoveCursorCore(
         int x,
         int y)
     {

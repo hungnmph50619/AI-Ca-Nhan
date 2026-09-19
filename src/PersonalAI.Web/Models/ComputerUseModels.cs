@@ -16,7 +16,8 @@ public sealed record ComputerUseStatusResponse(
     bool Supported,
     bool InteractiveSession,
     IReadOnlyList<string> AvailableCapabilities,
-    IReadOnlyList<string> Limitations);
+    IReadOnlyList<string> Limitations,
+    bool DesktopActionsPaused = true);
 
 public sealed record ComputerScreenInfo(
     int PrimaryWidth,

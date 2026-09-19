@@ -1,0 +1,159 @@
+.v170-decision-card {
+  width: min(920px, calc(100vw - 32px));
+}
+
+.v170-decision-intro {
+  margin-bottom: 14px;
+  padding: 12px 14px;
+  border: 1px solid #dce4dd;
+  border-radius: 12px;
+  background: #f7faf6;
+}
+
+.v170-decision-intro strong {
+  display: block;
+  margin-bottom: 4px;
+  color: #455249;
+}
+
+.v170-decision-intro p,
+.v170-decision-status,
+.v170-decision-note,
+.v170-decision-result-meta,
+.v170-decision-context,
+.v170-decision-sources,
+.v170-decision-boundary {
+  color: #68756d;
+  font-size: 11px;
+  line-height: 1.55;
+}
+
+.v170-decision-intro p {
+  margin: 0;
+}
+
+.v170-decision-status {
+  margin-bottom: 10px;
+  font-weight: 700;
+}
+
+.v170-decision-form {
+  display: grid;
+  gap: 9px;
+}
+
+.v170-field {
+  display: grid;
+  gap: 4px;
+  color: #536159;
+  font-size: 11px;
+  font-weight: 700;
+}
+
+.v170-field textarea {
+  width: 100%;
+  box-sizing: border-box;
+  resize: vertical;
+  padding: 9px 10px;
+  border: 1px solid #d9e1da;
+  border-radius: 9px;
+  background: #fff;
+  color: #344038;
+  font: inherit;
+  font-weight: 400;
+}
+
+.v170-context-toggles {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px 14px;
+  padding: 8px 10px;
+  border: 1px solid #e1e6e1;
+  border-radius: 9px;
+  background: #fafbfa;
+}
+
+.v170-toggle {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  color: #59665e;
+  font-size: 11px;
+}
+
+.v170-decision-note {
+  margin: 0;
+}
+
+.v170-decision-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+}
+
+.v170-decision-result {
+  margin-top: 14px;
+  padding-top: 14px;
+  border-top: 1px solid #e1e6e1;
+}
+
+.v170-decision-result-meta,
+.v170-decision-context {
+  margin-bottom: 7px;
+}
+
+.v170-decision-analysis {
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  padding: 12px 13px;
+  border: 1px solid #dce4dd;
+  border-radius: 11px;
+  background: #fff;
+  color: #3f4b43;
+  font-size: 12px;
+  line-height: 1.6;
+}
+
+.v170-decision-sources {
+  margin-top: 10px;
+}
+
+.v170-decision-sources strong {
+  color: #455249;
+}
+
+.v170-decision-sources ul {
+  margin: 5px 0 0;
+  padding-left: 20px;
+}
+
+.v170-decision-boundary {
+  margin-top: 10px;
+  padding: 9px 11px;
+  border-radius: 9px;
+  background: #f5f6f4;
+}
+
+.v170-decision-badge.is-ready {
+  background: #edf5ef;
+  color: #536b58;
+}
+
+.v170-decision-badge.is-off {
+  background: #f3f1ec;
+  color: #756d5e;
+}
+
+@media (max-width: 680px) {
+  .v170-decision-card {
+    width: calc(100vw - 20px);
+  }
+
+  .v170-decision-actions {
+    flex-direction: column;
+  }
+
+  .v170-decision-actions button {
+    width: 100%;
+  }
+}

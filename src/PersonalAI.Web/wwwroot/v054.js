@@ -87,7 +87,7 @@
         </span>
       </label>
       <div class="knowledge-mode-group" aria-label="Chế độ trả lời">
-        <button type="button" data-knowledge-mode="normal">Chat thông thường</button>
+        <button type="button" data-knowledge-mode="normal">Trò chuyện thông thường</button>
         <button type="button" data-knowledge-mode="documents-only">Chỉ theo tài liệu</button>
       </div>`;
 

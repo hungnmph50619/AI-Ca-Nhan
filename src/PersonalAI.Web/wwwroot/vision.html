@@ -1,0 +1,47 @@
+<!doctype html>
+<html lang="vi">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Mắt nhìn AI · Xem lại ảnh minimap</title>
+  <style>
+    :root{font-family:Segoe UI,Arial,sans-serif;color-scheme:dark;background:#0b1521;color:#e8f0fc}
+    body{margin:0;padding:24px}main{max-width:850px;margin:auto}a{color:#9bd5fa}
+    h1{font-size:25px}p{line-height:1.55}.panel{background:#15243a;border:1px solid #33495c;border-radius:12px;padding:20px;margin:16px 0}
+    label{display:block;margin:14px 0 8px}input[type=file]{max-width:100%;padding:12px;border:1px solid #59738c;border-radius:8px}
+    button{border:0;background:#217b64;color:white;border-radius:8px;font-size:15px;padding:12px 18px;cursor:pointer}
+    button:disabled{opacity:.5;cursor:not-allowed}button:focus-visible,input:focus-visible{outline:3px solid #f9cf90;outline-offset:3px}
+    #preview{max-width:100%;max-height:390px;object-fit:contain;margin-top:14px;border:1px solid #59738c;border-radius:6px}
+    #result{white-space:pre-wrap;overflow-wrap:anywhere;line-height:1.55}
+    .warning{color:#f9cf90}.meta{color:#a9bdd2;font-size:13px}.checkbox-label{display:flex;gap:10px;align-items:flex-start}
+    input[type=checkbox]{width:20px;height:20px;flex-shrink:0}
+    @media(prefers-reduced-motion:reduce){*{scroll-behavior:auto!important}}
+  </style>
+  <script src="vision.js" defer></script>
+</head>
+<body>
+<main>
+  <nav><a href="/">← Trở lại AI Cá Nhân</a></nav>
+  <h1>Mắt nhìn AI · Xem lại ảnh minimap</h1>
+  <p>Chọn <strong>một ảnh PNG hoặc JPG đã lưu</strong> từ trận luyện tập để AI phân tích những biểu tượng hiện ra trong ảnh. Đây là chức năng xem lại, <strong>không quan sát trận trực tiếp và không báo vị trí địch đang bị khuất tầm nhìn</strong>.</p>
+  <section class="panel" aria-labelledby="visionHeading">
+    <h2 id="visionHeading">Đọc ảnh đã lưu</h2>
+    <p id="visionStatus" role="status" aria-live="polite">Đang kiểm tra cấu hình mô hình đọc ảnh…</p>
+    <label for="imageInput">Chọn ảnh minimap (PNG/JPG, tối đa 2 MB)</label>
+    <input id="imageInput" type="file" accept="image/png,image/jpeg,.png,.jpg,.jpeg">
+    <div><img id="preview" alt="Xem trước ảnh minimap đã chọn" hidden></div>
+    <label class="checkbox-label" for="consentCheck">
+      <input id="consentCheck" type="checkbox">
+      <span>Tôi đồng ý <strong>gửi ảnh này tới Google Gemini</strong> theo cấu hình của tôi để phân tích. Ảnh không được lưu vào kho dữ liệu AI Cá Nhân; nhà cung cấp AI bên ngoài có chính sách dữ liệu và hạn mức riêng.</span>
+    </label>
+    <button id="analyzeButton" type="button" disabled>Phân tích ảnh đã chọn</button>
+    <p class="warning">AI có thể nhận nhầm tướng hoặc vai trò. Chỉ dựa trên một ảnh, AI không thể biết chắc ai đi Rừng/Mid nếu thiếu danh sách vai trò của trận; kết quả chưa được dùng để phát cảnh báo trên HUD.</p>
+  </section>
+  <section class="panel" aria-labelledby="resultHeading">
+    <h2 id="resultHeading" tabindex="-1">Nhận xét của AI về ảnh</h2>
+    <div id="result" role="status" aria-live="polite">Chưa phân tích ảnh.</div>
+    <p id="resultMeta" class="meta"></p>
+  </section>
+</main>
+</body>
+</html>

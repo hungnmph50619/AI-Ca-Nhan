@@ -8,15 +8,46 @@ public sealed record KnowledgeDocumentResponse(
     int CharacterCount,
     int ChunkCount,
     string Status,
-    DateTimeOffset CreatedAt);
+    DateTimeOffset CreatedAt,
+    int? PageCount = null);
 
 public sealed record KnowledgeSearchResult(
     Guid DocumentId,
     string FileName,
     int ChunkIndex,
-    string Content);
+    string Content,
+    int? PageNumber = null,
+    string? Heading = null,
+    string? Section = null,
+    int? TokenEstimate = null,
+    double? SimilarityScore = null,
+    int? KeywordRank = null,
+    int? SemanticRank = null,
+    double? HybridScore = null,
+    string? MatchSource = null);
 
 public sealed record KnowledgeSearchResponse(
     string Query,
     int ResultCount,
     IReadOnlyList<KnowledgeSearchResult> Results);
+
+public sealed record KnowledgeSemanticSearchResponse(
+    string Query,
+    int ResultCount,
+    string EmbeddingModel,
+    int Dimensions,
+    IReadOnlyList<KnowledgeSearchResult> Results);
+
+public sealed record KnowledgeHybridSearchResponse(
+    string Query,
+    int ResultCount,
+    string Strategy,
+    IReadOnlyList<KnowledgeSearchResult> Results);
+
+public sealed record KnowledgeEmbeddingStatus(
+    string EmbeddingModel,
+    int Dimensions,
+    int TotalChunks,
+    int IndexedChunks,
+    int MissingChunks,
+    bool Local);

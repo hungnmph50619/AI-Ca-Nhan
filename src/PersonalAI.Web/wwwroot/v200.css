@@ -1,0 +1,135 @@
+.os-dialog {
+  width: min(980px, calc(100vw - 32px));
+  max-width: 980px;
+}
+
+.os-card {
+  max-height: min(820px, calc(100vh - 48px));
+  overflow: auto;
+}
+
+.os-summary {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 12px;
+  margin: 18px 0;
+}
+
+.os-summary-item {
+  border: 1px solid var(--border, #d9d9d9);
+  border-radius: 14px;
+  padding: 14px;
+  min-height: 86px;
+}
+
+.os-summary-item strong {
+  display: block;
+  font-size: 1.5rem;
+  margin-top: 6px;
+}
+
+.os-status-copy {
+  margin: 0 0 16px;
+  opacity: .78;
+}
+
+.os-layer-list {
+  display: grid;
+  gap: 16px;
+}
+
+.os-layer {
+  border: 1px solid var(--border, #d9d9d9);
+  border-radius: 16px;
+  padding: 16px;
+}
+
+.os-layer-heading {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 16px;
+  margin-bottom: 6px;
+}
+
+.os-layer-heading h3 {
+  margin: 0;
+}
+
+.os-layer-heading span {
+  font-size: .82rem;
+  opacity: .68;
+}
+
+.os-layer > p {
+  margin: 0 0 14px;
+  opacity: .72;
+}
+
+.os-capabilities {
+  display: grid;
+  gap: 10px;
+}
+
+.os-capability {
+  display: grid;
+  grid-template-columns: minmax(150px, .8fr) minmax(110px, .45fr) minmax(0, 2fr);
+  gap: 12px;
+  align-items: start;
+  padding: 12px;
+  border-radius: 12px;
+  background: rgba(127, 127, 127, .06);
+}
+
+.os-capability-name {
+  font-weight: 650;
+}
+
+.os-capability-state {
+  text-transform: uppercase;
+  letter-spacing: .04em;
+  font-size: .74rem;
+  font-weight: 700;
+}
+
+.os-capability-detail {
+  font-size: .9rem;
+  line-height: 1.45;
+  opacity: .82;
+}
+
+.os-boundaries {
+  margin-top: 18px;
+  padding: 16px;
+  border: 1px solid var(--border, #d9d9d9);
+  border-radius: 16px;
+}
+
+.os-boundaries h3 {
+  margin: 0 0 10px;
+}
+
+.os-boundaries ul {
+  margin: 0;
+  padding-left: 20px;
+}
+
+.os-boundaries li + li {
+  margin-top: 6px;
+}
+
+.os-loading,
+.os-error {
+  padding: 18px 0;
+}
+
+@media (max-width: 760px) {
+  .os-summary {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .os-capability {
+    grid-template-columns: 1fr;
+    gap: 5px;
+  }
+}

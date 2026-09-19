@@ -1,0 +1,254 @@
+.v075-management-enabled > .knowledge-list-header,
+.v075-management-enabled > #knowledgeList,
+.v075-management-enabled > #knowledgeEmpty {
+  display: none !important;
+}
+
+.v075-management {
+  margin-top: 18px;
+  border-top: 1px solid var(--line, #dfe5e1);
+  padding-top: 18px;
+}
+
+.v075-management-heading,
+.v075-selection-bar,
+.v075-document-card,
+.v075-document-actions,
+.v075-management-actions {
+  display: flex;
+  align-items: center;
+}
+
+.v075-management-heading {
+  justify-content: space-between;
+  gap: 14px;
+  margin-bottom: 12px;
+}
+
+.v075-management-heading > div:first-child {
+  display: grid;
+  gap: 4px;
+}
+
+.v075-management-heading span,
+.v075-selection-bar,
+.v075-document-meta,
+.v075-empty {
+  color: var(--muted, #6f7b74);
+  font-size: 0.82rem;
+}
+
+.v075-management-actions,
+.v075-document-actions {
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.v075-filters {
+  display: grid;
+  grid-template-columns: minmax(180px, 1.6fr) repeat(3, minmax(120px, 0.75fr));
+  gap: 8px;
+  margin-bottom: 10px;
+}
+
+.v075-filters input,
+.v075-filters select {
+  width: 100%;
+  min-height: 38px;
+  height: 38px;
+  border-radius: 10px;
+  border: 1px solid #cad3cd;
+  background: #fbfcfa;
+  color: var(--ink, #17221d);
+  padding: 8px 10px;
+  box-shadow: none;
+}
+
+.v075-filters input::placeholder {
+  color: #8b958f;
+}
+
+.v075-filters input:focus,
+.v075-filters select:focus {
+  border-color: #8e9d94;
+  box-shadow: 0 0 0 3px rgba(142, 157, 148, .12);
+  outline: 0;
+}
+
+.v075-selection-bar {
+  justify-content: space-between;
+  gap: 12px;
+  margin: 8px 0 10px;
+}
+
+.v075-selection-bar label {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  cursor: pointer;
+}
+
+/* The base settings dialog styles make every input 100% wide and 46px tall.
+   Explicitly reset management checkboxes so they do not consume the whole row. */
+.settings-card .v075-management input[type="checkbox"],
+.v075-document-check {
+  flex: 0 0 16px;
+  width: 16px;
+  min-width: 16px;
+  height: 16px;
+  min-height: 16px;
+  margin: 0;
+  padding: 0;
+  border-radius: 4px;
+  box-shadow: none;
+  accent-color: var(--accent-deep, #9fca00);
+}
+
+.v075-document-check {
+  margin-top: 4px;
+}
+
+.v075-management-feedback {
+  min-height: 20px;
+  margin-bottom: 8px;
+  font-size: 0.82rem;
+}
+
+.v075-management-feedback.success {
+  color: #387b58;
+}
+
+.v075-management-feedback.error {
+  color: var(--danger, #c45a4c);
+}
+
+.v075-document-list {
+  display: grid;
+  gap: 9px;
+}
+
+.v075-document-card {
+  align-items: flex-start;
+  gap: 10px;
+  border: 1px solid var(--line, #dfe5e1);
+  border-radius: 12px;
+  background: #fff;
+  padding: 11px;
+}
+
+.v075-document-card:hover {
+  border-color: #b7c5bd;
+  box-shadow: 0 6px 18px rgba(23, 34, 29, .04);
+}
+
+.v075-document-content {
+  flex: 1 1 auto;
+  min-width: 0;
+  display: grid;
+  gap: 5px;
+}
+
+.v075-document-title {
+  overflow-wrap: anywhere;
+  line-height: 1.35;
+}
+
+.v075-document-meta {
+  line-height: 1.45;
+}
+
+.v075-index-status {
+  justify-self: start;
+  border-radius: 999px;
+  padding: 3px 8px;
+  font-size: 0.72rem;
+  border: 1px solid #d5ddd8;
+}
+
+.v075-index-status.status-ready {
+  color: #387b58;
+  border-color: #b9dec9;
+  background: #eff9f3;
+}
+
+.v075-index-status.status-needs-indexing,
+.v075-index-status.status-indexing {
+  color: #8a6500;
+  border-color: #e8d79e;
+  background: #fff8df;
+}
+
+.v075-index-status.status-error,
+.v075-index-status.status-index-error {
+  color: var(--danger, #c45a4c);
+  border-color: #efc6c0;
+  background: #fff2f0;
+}
+
+.v075-document-actions {
+  flex: 0 0 auto;
+  justify-content: flex-end;
+  max-width: 220px;
+}
+
+.v075-action {
+  border: 1px solid #d6ded9;
+  background: #fff;
+  color: inherit;
+  border-radius: 8px;
+  padding: 6px 9px;
+  cursor: pointer;
+  font-size: 0.78rem;
+}
+
+.v075-action:hover:not(:disabled) {
+  border-color: #a9b9b0;
+  background: #f5f8f6;
+}
+
+.v075-action.danger,
+.danger-button {
+  color: var(--danger, #c45a4c);
+}
+
+.danger-button {
+  border: 1px solid #efc6c0;
+  background: #fff7f5;
+  border-radius: 9px;
+  padding: 8px 11px;
+  cursor: pointer;
+}
+
+.danger-button:disabled,
+.v075-action:disabled {
+  opacity: 0.45;
+  cursor: default;
+}
+
+.v075-empty {
+  padding: 18px 10px;
+  text-align: center;
+  border: 1px dashed var(--line, #dfe5e1);
+  border-radius: 10px;
+}
+
+@media (max-width: 760px) {
+  .v075-filters {
+    grid-template-columns: 1fr 1fr;
+  }
+
+  .v075-management-heading,
+  .v075-document-card {
+    align-items: stretch;
+    flex-direction: column;
+  }
+
+  .settings-card .v075-document-card .v075-document-check {
+    align-self: flex-start;
+  }
+
+  .v075-document-actions {
+    max-width: none;
+    justify-content: flex-start;
+  }
+}

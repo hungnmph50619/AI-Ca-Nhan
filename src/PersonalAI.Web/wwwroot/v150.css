@@ -1,0 +1,154 @@
+.v150-companion-card {
+  width: min(840px, calc(100vw - 32px));
+}
+
+.v150-companion-intro,
+.v150-companion-security {
+  margin-bottom: 14px;
+  padding: 12px 14px;
+  border: 1px solid #dce4dd;
+  border-radius: 12px;
+  background: #f7faf6;
+}
+
+.v150-companion-intro strong,
+.v150-companion-security strong {
+  display: block;
+  margin-bottom: 4px;
+  color: #455249;
+}
+
+.v150-companion-intro p,
+.v150-companion-security p,
+.v150-companion-summary,
+.v150-pairing-expiry {
+  color: #68756d;
+  font-size: 11px;
+  line-height: 1.55;
+}
+
+.v150-companion-intro p,
+.v150-companion-security p {
+  margin: 0;
+}
+
+.v150-companion-summary {
+  margin-bottom: 10px;
+  font-weight: 700;
+}
+
+.v150-pairing-box {
+  padding: 12px;
+  border: 1px solid #dce4dd;
+  border-radius: 12px;
+  background: #fff;
+}
+
+.v150-pairing-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.v150-pairing-header strong {
+  display: block;
+  color: #455249;
+  font-size: 12px;
+}
+
+.v150-pairing-header span {
+  display: block;
+  margin-top: 2px;
+  color: #79847c;
+  font-size: 10px;
+}
+
+.v150-pairing-code {
+  margin-top: 12px;
+  padding: 10px 12px;
+  border-radius: 10px;
+  background: #f3f6f2;
+  color: #3f4c43;
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  font-size: 22px;
+  font-weight: 700;
+  letter-spacing: 0.12em;
+  text-align: center;
+}
+
+.v150-pairing-expiry {
+  margin-top: 6px;
+  text-align: center;
+}
+
+.v150-section-title {
+  margin: 14px 0 8px;
+  color: #47534b;
+  font-size: 12px;
+}
+
+.v150-device-list {
+  display: grid;
+  gap: 8px;
+}
+
+.v150-device {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 10px 11px;
+  border: 1px solid #e0e6e0;
+  border-radius: 11px;
+  background: #fff;
+}
+
+.v150-device-main strong {
+  display: block;
+  color: #3f4b43;
+  font-size: 12px;
+}
+
+.v150-device-main span {
+  display: block;
+  margin-top: 3px;
+  color: #7a877e;
+  font-size: 10px;
+}
+
+.v150-device-empty {
+  padding: 18px 12px;
+  color: #7a867e;
+  text-align: center;
+  font-size: 11px;
+}
+
+.v150-companion-security {
+  margin-top: 14px;
+  margin-bottom: 0;
+}
+
+.v150-actions {
+  display: flex;
+  justify-content: flex-end;
+  margin-top: 12px;
+}
+
+@media (max-width: 640px) {
+  .v150-companion-card {
+    width: calc(100vw - 20px);
+  }
+
+  .v150-pairing-header,
+  .v150-device {
+    align-items: stretch;
+    flex-direction: column;
+  }
+
+  .v150-actions .secondary-button,
+  .v150-device .secondary-button,
+  .v150-pairing-header .secondary-button {
+    width: 100%;
+  }
+}

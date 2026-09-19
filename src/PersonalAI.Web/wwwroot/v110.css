@@ -1,0 +1,138 @@
+.v110-computer-card {
+  width: min(820px, calc(100vw - 32px));
+}
+
+.v110-computer-intro {
+  margin: 0 0 14px;
+  padding: 12px 14px;
+  border: 1px solid #dce4dd;
+  border-radius: 12px;
+  background: #f7faf6;
+}
+
+.v110-computer-intro strong {
+  display: block;
+  margin-bottom: 4px;
+  color: #455249;
+}
+
+.v110-computer-intro p {
+  margin: 0;
+  color: #68756d;
+  font-size: 12px;
+  line-height: 1.55;
+}
+
+.v110-computer-summary {
+  margin-bottom: 12px;
+  color: #56635b;
+  font-size: 12px;
+  font-weight: 700;
+}
+
+.v110-section-title {
+  margin: 12px 0 7px;
+  color: #47534b;
+  font-size: 12px;
+}
+
+.v110-capability-list {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 7px;
+}
+
+.v110-capability {
+  padding: 4px 8px;
+  border: 1px solid #dce4dd;
+  border-radius: 999px;
+  background: #fff;
+  color: #58665d;
+  font-size: 11px;
+}
+
+.v110-capability-empty {
+  color: #7b867f;
+  font-size: 11px;
+}
+
+.v110-limitations {
+  margin: 0;
+  padding-left: 20px;
+  color: #69766e;
+  font-size: 11px;
+  line-height: 1.55;
+}
+
+.v110-limitations li + li {
+  margin-top: 4px;
+}
+
+.v110-computer-safety {
+  margin-top: 13px;
+  padding: 10px 12px;
+  border: 1px solid #e2e7e1;
+  border-radius: 11px;
+  background: #fafbfa;
+  color: #657169;
+  font-size: 11px;
+  line-height: 1.5;
+}
+
+.v110-computer-actions {
+  display: flex;
+  justify-content: flex-end;
+  margin-top: 12px;
+}
+
+.v110-computer-badge.is-ready {
+  background: #edf5ef;
+  color: #536b58;
+}
+
+.v110-computer-badge.is-off {
+  background: #f3f1ec;
+  color: #756d5e;
+}
+
+@media (max-width: 640px) {
+  .v110-computer-card {
+    width: calc(100vw - 20px);
+  }
+
+  .v110-computer-actions .secondary-button {
+    width: 100%;
+  }
+}
+
+/* Đồng bộ khung hộp thoại với thẻ nội dung, tránh bị cắt mất bên trái. */
+#computerUseDialog {
+  box-sizing: border-box;
+  width: min(820px, calc(100vw - 32px));
+  max-width: calc(100vw - 32px);
+}
+#computerUseDialog > .v110-computer-card {
+  box-sizing: border-box;
+  width: 100%;
+  max-width: 100%;
+  min-width: 0;
+}
+#computerKeyboardPreview {
+  margin-top: 16px;
+}
+#computerKeyboardPreview .secondary-button {
+  margin-top: 8px;
+}
+#computerKeyboardPreview select,
+#computerKeyboardPreview input {
+  display: block;
+  max-width: 100%;
+}
+@media (max-width: 640px) {
+  #computerUseDialog {
+    width: calc(100vw - 20px);
+    max-width: calc(100vw - 20px);
+  }
+  #computerUseDialog > .v110-computer-card { padding: 16px; }
+  .v110-computer-actions { flex-wrap: wrap; gap: 8px; }
+}

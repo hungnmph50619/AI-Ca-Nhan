@@ -1,0 +1,124 @@
+.v140-development-card {
+  width: min(860px, calc(100vw - 32px));
+}
+
+.v140-development-intro {
+  margin: 0 0 14px;
+  padding: 12px 14px;
+  border: 1px solid #dce4dd;
+  border-radius: 12px;
+  background: #f7faf6;
+}
+
+.v140-development-intro strong {
+  display: block;
+  margin-bottom: 4px;
+  color: #455249;
+}
+
+.v140-development-intro p,
+.v140-development-summary,
+.v140-development-limits,
+.v140-development-safety,
+.v140-development-limitations {
+  color: #68756d;
+  font-size: 11px;
+  line-height: 1.55;
+}
+
+.v140-development-intro p {
+  margin: 0;
+}
+
+.v140-development-summary {
+  margin-bottom: 10px;
+  font-weight: 700;
+}
+
+.v140-development-runtime,
+.v140-development-capabilities {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 7px;
+}
+
+.v140-development-runtime {
+  margin-bottom: 10px;
+}
+
+.v140-runtime-badge,
+.v140-development-capability {
+  padding: 4px 8px;
+  border: 1px solid #dce4dd;
+  border-radius: 999px;
+  background: #fff;
+  color: #58665d;
+  font-size: 11px;
+}
+
+.v140-runtime-badge.is-on {
+  background: #edf5ef;
+  color: #536b58;
+}
+
+.v140-runtime-badge.is-off {
+  background: #f3f1ec;
+  color: #756d5e;
+}
+
+.v140-development-capabilities {
+  margin-bottom: 10px;
+}
+
+.v140-development-limits {
+  margin-bottom: 10px;
+}
+
+.v140-section-title {
+  margin: 12px 0 7px;
+  color: #47534b;
+  font-size: 12px;
+}
+
+.v140-development-limitations {
+  margin: 0;
+  padding-left: 20px;
+}
+
+.v140-development-limitations li + li {
+  margin-top: 4px;
+}
+
+.v140-development-safety {
+  margin-top: 12px;
+  padding: 10px 12px;
+  border: 1px solid #e2e7e1;
+  border-radius: 11px;
+  background: #fafbfa;
+}
+
+.v140-development-actions {
+  display: flex;
+  justify-content: flex-end;
+  margin-top: 12px;
+}
+
+.v140-development-badge.is-ready {
+  background: #edf5ef;
+  color: #536b58;
+}
+
+.v140-development-badge.is-off {
+  background: #f3f1ec;
+  color: #756d5e;
+}
+
+@media (max-width: 640px) {
+  .v140-development-card {
+    width: calc(100vw - 20px);
+  }
+
+  .v140-development-actions .secondary-button {
+    width: 100%;
+  }
+}

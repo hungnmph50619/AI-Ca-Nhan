@@ -1,0 +1,95 @@
+.v120-browser-card {
+  width: min(820px, calc(100vw - 32px));
+}
+
+.v120-browser-intro {
+  margin: 0 0 14px;
+  padding: 12px 14px;
+  border: 1px solid #dce4dd;
+  border-radius: 12px;
+  background: #f7faf6;
+}
+
+.v120-browser-intro strong {
+  display: block;
+  margin-bottom: 4px;
+  color: #455249;
+}
+
+.v120-browser-intro p,
+.v120-browser-summary,
+.v120-browser-limits,
+.v120-browser-safety,
+.v120-browser-limitations {
+  color: #68756d;
+  font-size: 11px;
+  line-height: 1.55;
+}
+
+.v120-browser-summary {
+  margin-bottom: 10px;
+  font-weight: 700;
+}
+
+.v120-browser-capabilities {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 7px;
+  margin-bottom: 10px;
+}
+
+.v120-browser-capability {
+  padding: 4px 8px;
+  border: 1px solid #dce4dd;
+  border-radius: 999px;
+  background: #fff;
+  color: #58665d;
+  font-size: 11px;
+}
+
+.v120-browser-limits {
+  margin-bottom: 9px;
+}
+
+.v120-browser-limitations {
+  margin: 0;
+  padding-left: 20px;
+}
+
+.v120-browser-limitations li + li {
+  margin-top: 4px;
+}
+
+.v120-browser-safety {
+  margin-top: 12px;
+  padding: 10px 12px;
+  border: 1px solid #e2e7e1;
+  border-radius: 11px;
+  background: #fafbfa;
+}
+
+.v120-browser-actions {
+  display: flex;
+  justify-content: flex-end;
+  margin-top: 12px;
+}
+
+.v120-browser-badge.is-ready {
+  background: #edf5ef;
+  color: #536b58;
+}
+
+.v120-browser-badge.is-off {
+  background: #f3f1ec;
+  color: #756d5e;
+}
+
+@media (max-width: 640px) {
+  .v120-browser-card {
+    width: calc(100vw - 20px);
+  }
+
+  .v120-browser-actions .secondary-button {
+    width: 100%;
+  }
+}

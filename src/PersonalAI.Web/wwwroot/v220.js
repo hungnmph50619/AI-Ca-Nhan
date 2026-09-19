@@ -25,8 +25,8 @@
       + '<label><input type="checkbox" id="wfMemory"> Thông tin đã ghi nhớ</label>'
       + '<label><input type="checkbox" id="wfTasks"> Công việc</label>'
       + '<label><input type="checkbox" id="wfLife"> Thông tin cuộc sống</label></fieldset>'
-      + '<label class="workflow-toggle"><input type="checkbox" id="wfConfirm" required>Tôi đã chọn và xác nhận toàn bộ các bước; các đầu ra có thể được gửi đến dịch vụ AI của agent được chọn.</label>'
-      + '<p class="workflow-boundary">Quy trình giới hạn tối đa 120 giây, mỗi bước tối đa 50 giây (cần provider hỗ trợ huỷ để dừng đúng hạn). Các bước có thể gửi nội dung tới dịch vụ AI; không nhập bí mật. Bộ lọc mẫu thông tin xác thực không thay thế kiểm tra dữ liệu thủ công. Chỉ chuyển dữ liệu sau khi người dùng xem và duyệt chính xác đầu ra của bước trước ở bước kiểm tra riêng. Không tự chọn agent, chạy song song hoặc thực thi tool.</p>'
+      + '<label class="workflow-toggle"><input type="checkbox" id="wfConfirm" required>Tôi đã chọn và xác nhận toàn bộ các bước; các đầu ra có thể được gửi đến dịch vụ AI của tác nhân được chọn.</label>'
+      + '<p class="workflow-boundary">Quy trình giới hạn tối đa 120 giây, mỗi bước tối đa 50 giây (dịch vụ AI cần hỗ trợ huỷ yêu cầu để dừng đúng hạn). Các bước có thể gửi nội dung tới dịch vụ AI; không nhập bí mật. Bộ lọc mẫu thông tin xác thực không thay thế kiểm tra dữ liệu thủ công. Chỉ chuyển dữ liệu sau khi người dùng xem và duyệt chính xác đầu ra của bước trước ở bước kiểm tra riêng. Không tự chọn tác nhân AI, chạy song song hoặc sử dụng công cụ.</p>'
       + '<button class="primary-button" id="wfRun" type="submit" disabled>Chạy quy trình đã xác nhận</button>'
       + '<p id="wfFeedback" role="status" aria-live="polite"></p>'
       + '</form><section id="wfResults" class="workflow-results" hidden></section>';
@@ -203,7 +203,7 @@
     panel.addEventListener("toggle", async () => {
       if (!panel.open || loaded) return;
       run.disabled = true;
-      feedback.textContent = "Đang đọc danh sách agent…";
+      feedback.textContent = "Đang tải danh sách tác nhân AI…";
       try {
         const response = await fetch("/api/agents", {
           headers: { "X-PersonalAI-Workspace": window.PersonalAiWorkspace?.currentId || "personal" }
@@ -230,7 +230,7 @@
         run.disabled = false;
         feedback.textContent = "Chọn các bước, kiểm tra nội dung và xác nhận trước khi chạy.";
       } catch (error) {
-        feedback.textContent = error instanceof Error ? error.message : "Không đọc được agent.";
+        feedback.textContent = error instanceof Error ? error.message : "Không tải được danh sách tác nhân AI.";
       }
     });
 

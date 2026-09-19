@@ -4,6 +4,7 @@ public static class AgentWorkflowStatuses
 {
     public const string Completed = "completed";
     public const string Stopped = "stopped";
+    public const string TimedOut = "timed-out";
 }
 
 public sealed record AgentWorkflowStepRequest(
@@ -38,7 +39,8 @@ public sealed record AgentWorkflowResponse(
     bool PersistedWorkflow,
     bool ParallelExecution,
     DateTimeOffset StartedAt,
-    DateTimeOffset CompletedAt);
+    DateTimeOffset CompletedAt,
+    string? StopReason = null);
 
 public sealed record AgentOrchestrationStatusResponse(
     string Version,
@@ -55,4 +57,9 @@ public sealed record AgentOrchestrationStatusResponse(
     bool PersistsWorkflows,
     bool AutonomousLoopEnabled,
     bool SelfTestPassed,
-    string NextStage);
+    string NextStage,
+    int MaximumWorkflowSeconds = 0,
+    int MaximumStepSeconds = 0,
+    bool StopsOnTimeout = false,
+    bool SensitiveHandoffScreeningEnabled = false,
+    bool HandoffGuardSelfTestPassed = false);

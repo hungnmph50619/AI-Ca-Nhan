@@ -1,8 +1,22 @@
-# AI Cá Nhân — Controlled Agent Orchestration v2.2.0
+# AI Cá Nhân — Workflow Hardening v2.2.1
 
-PersonalAI là trợ lý AI cá nhân chạy bằng ASP.NET Core 8, ưu tiên dữ liệu cục bộ, có thể dùng Gemini hoặc OpenAI cho phần sinh câu trả lời. v2.0.0 đã tạo **Personal AI OS**; v2.1.0 thêm Agent Framework; v2.1.1 thêm **Planner Agent**; v2.1.2 bổ sung **Research Agent**; v2.1.3 có **Developer Agent**; v2.1.4 bổ sung **Office Agent**; v2.1.5 thêm **Operator Agent**; v2.1.6 bổ sung **Reviewer Agent**; v2.1.7 thêm **Security Agent** rà soát rủi ro cục bộ; **v2.2.0 bổ sung workflow tuần tự có xác nhận** để gọi 2–3 agent đã được người dùng chọn trước và chỉ chuyển đầu ra giữa các bước khi người dùng đồng ý. Chưa có auto-delegation, agent tự chạy tool, shared queue, autonomous loop hoặc parallel agents.
+PersonalAI là trợ lý AI cá nhân chạy bằng ASP.NET Core 8, ưu tiên dữ liệu cục bộ, có thể dùng Gemini hoặc OpenAI cho phần sinh câu trả lời. v2.0.0 đã tạo **Personal AI OS**; v2.1.0 thêm Agent Framework; v2.1.1 thêm **Planner Agent**; v2.1.2 bổ sung **Research Agent**; v2.1.3 có **Developer Agent**; v2.1.4 bổ sung **Office Agent**; v2.1.5 thêm **Operator Agent**; v2.1.6 bổ sung **Reviewer Agent**; v2.1.7 thêm **Security Agent** rà soát rủi ro cục bộ; **v2.2.0 bổ sung workflow tuần tự có xác nhận** để gọi 2–3 agent đã được người dùng chọn trước và chuyển đầu ra khi có opt-in. **v2.2.1** thêm giới hạn thời gian từng bước/toàn workflow và bộ kiểm tra mẫu credential trước handoff. Chưa có auto-delegation, agent tự chạy tool, shared queue, autonomous loop hoặc parallel agents.
 
 > Đây vẫn là ứng dụng thiết kế cho một người dùng trên máy cá nhân. Personal AI OS v2.0 giữ toàn bộ hardening của v1.9 nhưng **không thay thế authentication/authorization** cần có khi triển khai Internet hoặc môi trường nhiều người dùng.
+
+## Có gì trong v2.2.1?
+
+### Workflow Hardening
+
+Workflow được giới hạn **120 giây tổng** và **50 giây cho từng bước** qua cancellation token; nếu timeout được phát hiện, workflow dừng, trả các bước đã hoàn tất và không chạy bước tiếp theo. Đây là giới hạn huỷ hợp tác; nếu AI provider không hỗ trợ cancellation thì không có bảo đảm dừng tức thì.
+
+Handoff vẫn cần checkbox của người dùng tại **mỗi bước nhận**. Trước khi chuyển, bộ quy tắc cục bộ kiểm tra toàn bộ đầu ra trước đó (kể cả ngoài cửa sổ 1.600 ký tự) và chặn khi phát hiện một số mẫu private key, bearer token hoặc credential assignment. Kết quả báo lỗi không chứa giá trị khớp. Bộ lọc **không bảo đảm phát hiện mọi bí mật** và không thay thế kiểm tra nội dung trước khi chia sẻ với AI provider.
+
+- API giữ nguyên `GET /api/agents/orchestration/status`, `POST /api/agents/orchestration/execute`; status bổ sung thời gian và cờ kiểm tra handoff, output có `stopReason` và trạng thái `timed-out`.
+- Không agent tự chọn nhiệm vụ/agent, không chạy tool, chỉnh sửa file, chia sẻ tự động, ghi workflow hoặc tự xác nhận side effects.
+- Tài liệu đầy đủ: `docs/releases/v2.2.1.md`. Mốc tiếp theo là **v2.2.2 — Orchestration Reliability**.
+
+### Controlled Agent Orchestration v2.2.0 vẫn được giữ nguyên
 
 ## Có gì trong v2.2.0?
 
@@ -1069,10 +1083,11 @@ docs/releases/v2.1.5.md
 docs/releases/v2.1.6.md
 docs/releases/v2.1.7.md
 docs/releases/v2.2.0.md
+docs/releases/v2.2.1.md
 ```
 
-## Hướng phát triển sau v2.2.0
+## Hướng phát triển sau v2.2.1
 
 Computer Use, Browser Agent, Connector Foundation, Software Development Agent, Android Companion, Life Context, Decision Engine và Automation hiện nằm trong controlled capability layer.
 
-Sau v2.2.0, mốc kế tiếp là **v2.2.1 — Workflow Hardening**. Web/email research và tự thực thi tool chưa được tích hợp vào điều phối; việc mở thêm quyền cần thiết kế độc lập, truy xuất nguồn và permission/confirmation rõ ràng.
+Sau v2.2.1, mốc kế tiếp là **v2.2.2 — Orchestration Reliability**. Web/email research và tự thực thi tool chưa được tích hợp vào điều phối; việc mở thêm quyền cần thiết kế độc lập, truy xuất nguồn và permission/confirmation rõ ràng.

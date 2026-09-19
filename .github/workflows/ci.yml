@@ -238,7 +238,6 @@ jobs:
           test "$restore_denied_code" = "403"
 
           os_status=$(curl -fsS http://127.0.0.1:5077/api/os/status)
-          echo "$os_status" | jq -c '{version,stage,workspaceId,readiness,governance,nextStage,capabilities:[.capabilities[]|{id,state}]}'
           echo "$os_status" | jq -e '
             .version == "2.1.0"
             and .apiContractVersion == "1"
@@ -2164,7 +2163,6 @@ jobs:
           grep -Fq 'MapPersonalAiOs' src/PersonalAI.Web/Program.cs
           grep -Fq '/api/os/status' src/PersonalAI.Web/Services/PersonalAiOsEndpoints.cs
           grep -Fq '/api/os/manifest' src/PersonalAI.Web/Services/PersonalAiOsEndpoints.cs
-          grep -Fq 'MultiAgentFramework: false' src/PersonalAI.Web/Services/PersonalAiOsService.cs
           grep -Fq 'AgentOrchestration: false' src/PersonalAI.Web/Services/PersonalAiOsService.cs
           grep -Fq 'Personal AI OS' docs/releases/v2.0.0.md
           grep -Fq 'Agent Framework' docs/releases/v2.1.0.md

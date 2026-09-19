@@ -1,5 +1,5 @@
 (() => {
-  const VERSION = "2.1.7";
+  const VERSION = "2.2.0";
   let dialog;
   let select;
   let goal;
@@ -64,7 +64,7 @@
     const heading = document.createElement("div");
     const eyebrow = document.createElement("p");
     eyebrow.className = "eyebrow";
-    eyebrow.textContent = "AGENT FRAMEWORK · v2.1";
+    eyebrow.textContent = "AGENT FRAMEWORK · v2.2";
     const title = document.createElement("h2");
     title.id = "agentTitle";
     title.textContent = "Chạy agent";
@@ -135,7 +135,7 @@
     const boundary = document.createElement("div");
     boundary.className = "agent-boundary";
     boundary.textContent =
-      "v2.1.7 chạy agent khi bạn chủ động bấm chạy. Security chỉ rà soát mẫu rủi ro cục bộ, không chuyển nội dung tới AI provider, không tự chặn hoặc thực thi thao tác. Các agent không tự giao việc.";
+      "v2.2 hỗ trợ workflow tuần tự gồm 2–3 agent do người dùng chọn trước và chuyển đầu ra khi được đồng ý; không cho agent tự chọn thêm agent, chạy tool hoặc thực hiện thao tác bên ngoài.";
 
     feedback = document.createElement("div");
     feedback.className = "agent-feedback";
@@ -420,7 +420,7 @@
     const boundary = document.createElement("p");
     boundary.className = "planner-plan-boundary";
     boundary.textContent =
-      "Plan này chỉ được chuẩn bị để bạn xem. v2.1.7 không tự tạo Task Engine task, không dispatch agent và không persist plan tự động.";
+      "Plan này chỉ được chuẩn bị để bạn xem. v2.2 không tự tạo Task Engine task, không dispatch agent ngoài workflow đã được người dùng chọn, và không persist plan tự động.";
     wrapper.append(boundary);
 
     result.append(wrapper);

@@ -347,6 +347,7 @@ jobs:
             and .maximumAssumptions == 8
             and .maximumRisks == 8
             and .structuredOutput == true
+            and .parserSelfTestPassed == true
             and .createsTasks == false
             and .dispatchesAgents == false
             and .persistsPlans == false
@@ -2225,6 +2226,7 @@ jobs:
           grep -Fq 'Planner Agent' docs/releases/v2.1.1.md
           grep -Fq 'class PlannerFrameworkAgent' src/PersonalAI.Web/Services/PlannerAgentService.cs
           grep -Fq 'MinimumSteps = 2' src/PersonalAI.Web/Services/PlannerAgentService.cs
+          grep -Fq 'RunSelfTest' src/PersonalAI.Web/Services/PlannerAgentService.cs
           grep -Fq 'MaximumSteps = 12' src/PersonalAI.Web/Services/PlannerAgentService.cs
           grep -Fq 'dependency >= currentStep' src/PersonalAI.Web/Services/PlannerAgentService.cs
           grep -Fq 'CreatesTasks: false' src/PersonalAI.Web/Services/PlannerAgentService.cs

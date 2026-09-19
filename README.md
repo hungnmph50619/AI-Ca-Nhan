@@ -1,30 +1,42 @@
-# AI Cá Nhân — Agent Framework v2.1.0
+# AI Cá Nhân — Planner Agent v2.1.1
 
-PersonalAI là trợ lý AI cá nhân chạy bằng ASP.NET Core 8, ưu tiên dữ liệu cục bộ, có thể dùng Gemini hoặc OpenAI cho phần sinh câu trả lời. v2.0.0 đã tạo **Personal AI OS**; v2.1.0 bắt đầu giai đoạn **Multi-Agent** bằng Agent Framework có registry, context envelope và explicit execution, nhưng chưa có Agent Orchestration, agent messaging hay autonomous agent loop.
+PersonalAI là trợ lý AI cá nhân chạy bằng ASP.NET Core 8, ưu tiên dữ liệu cục bộ, có thể dùng Gemini hoặc OpenAI cho phần sinh câu trả lời. v2.0.0 đã tạo **Personal AI OS**; v2.1.0 thêm Agent Framework; v2.1.1 thêm **Planner Agent** để nhận goal và chia thành plan có cấu trúc, nhưng chưa dispatch agent, chưa tạo task thật và chưa có Agent Orchestration.
 
 > Đây vẫn là ứng dụng thiết kế cho một người dùng trên máy cá nhân. Personal AI OS v2.0 giữ toàn bộ hardening của v1.9 nhưng **không thay thế authentication/authorization** cần có khi triển khai Internet hoặc môi trường nhiều người dùng.
 
-## Có gì trong v2.1.0?
+## Có gì trong v2.1.1?
 
-### Agent Framework
+### Planner Agent
 
-v2.1.0 đưa executable agent vào Personal AI OS nhưng giữ autonomy ở mức thấp:
+v2.1.1 triển khai agent thứ hai: `planning.planner`.
 
-- `IAgent` + `AgentDefinition` với Name, Role, Capabilities, Tools, Context và `ExecuteAsync`;
-- Agent Registry validate id, capability, context kind và tool binding;
-- agent đầu tiên: `core.personal-assistant`;
-- agent dùng Context Manager để đọc Memory, Knowledge/RAG, Tasks và Life Context;
-- bound tool metadata hiện gồm `local.clock` và `local.text_stats`;
-- tool binding **không đồng nghĩa tool execution**; v2.1.0 không cho agent tự chạy tool;
-- chỉ explicit user invocation;
-- tối đa 1 agent execution đồng thời;
-- goal tối đa 4.000 ký tự, lịch sử tối đa 20 message;
-- mọi execution được Audit;
-- `agents` đã chuyển từ reserved module sang controlled module;
-- OS manifest có layer/capability `Agent Framework`;
-- `MultiAgentFramework = true`, nhưng `AgentOrchestration = false`.
+Planner nhận một goal và trả về plan có cấu trúc gồm:
 
-API:
+- summary;
+- 2–12 steps;
+- dependency giữa các step;
+- suggested role;
+- required capabilities;
+- expected outcome;
+- open questions;
+- assumptions;
+- risks.
+
+Boundary của Planner:
+
+- `CreatesTasks = false`;
+- `DispatchesAgents = false`;
+- `PersistsAutomatically = false`;
+- `ToolExecutionEnabled = false`;
+- explicit invocation bắt buộc;
+- dependency chỉ được trỏ tới step trước, nên parser chặn dependency vòng ngay ở lớp plan.
+
+Agent Framework hiện có:
+
+- `core.personal-assistant`;
+- `planning.planner`.
+
+API chung:
 
 ```http
 GET  /api/agents/status
@@ -33,11 +45,15 @@ GET  /api/agents/{agentId}
 POST /api/agents/{agentId}/execute
 ```
 
-Sidebar có mục **Agents** để chọn agent, nhập mục tiêu, chọn nguồn context và chạy agent bằng thao tác người dùng.
+API Planner:
 
-v2.1.0 chưa có Planner/Research/Developer/Office/Operator/Reviewer/Security Agent riêng, chưa agent-to-agent messaging, chưa shared task queue, chưa automatic delegation và chưa parallel agent execution. Planner Agent bắt đầu ở v2.1.1.
+```http
+GET /api/planner/status
+```
 
-### Personal AI OS v2.0 vẫn là nền
+Trong sidebar **Agents**, khi chọn Planner Agent, nút chuyển thành **Lập kế hoạch** và kết quả được hiển thị theo step/dependency/role/outcome. Plan chỉ ở trạng thái `prepared`; hệ thống chưa tự biến plan thành Task Engine task và chưa phân phối step cho agent khác.
+
+### Agent Framework v2.1.0 vẫn là nền
 
 ### Personal AI OS
 
@@ -628,9 +644,9 @@ Undo khả dụng 7 ngày, tối đa 500 record, snapshot tối đa 512 KB.
 
 ## Stable Core contract
 
-v2.1.0 giữ API contract của Stable Core, Personal AI OS v2.0 và thêm controlled Agent Framework:
+v2.1.1 giữ API contract của Stable Core, Personal AI OS v2.0, Agent Framework v2.1.0 và thêm controlled Planner Agent:
 
-- Version: `2.1.0`
+- Version: `2.1.1`
 - API contract: `1`
 - Channel: `controlled`
 - Stable Core: v1.0 semantics
@@ -661,7 +677,7 @@ Unhandled API exception được sanitize; stack trace và đường dẫn local
 
 ## Guardrails hiện tại
 
-v2.1.0 **không phải autonomous agent**.
+v2.1.1 **không phải autonomous agent**.
 
 Hiện tại:
 
@@ -700,6 +716,10 @@ Hiện tại:
 - Automatic multi-step execution: tắt
 - Background scheduler: bật
 - Agent Framework: bật
+- Planner Agent: bật
+- Planner creates Task Engine tasks: tắt
+- Planner dispatches agents: tắt
+- Planner persists plans automatically: tắt
 - Agent explicit invocation: bắt buộc
 - Agent tool execution: tắt
 - Agent messaging: tắt
@@ -939,10 +959,11 @@ docs/releases/v1.8.0.md
 docs/releases/v1.9.0.md
 docs/releases/v2.0.0.md
 docs/releases/v2.1.0.md
+docs/releases/v2.1.1.md
 ```
 
-## Hướng phát triển sau v2.1.0
+## Hướng phát triển sau v2.1.1
 
 Computer Use, Browser Agent, Connector Foundation, Software Development Agent, Android Companion, Life Context, Decision Engine và Automation hiện nằm trong controlled capability layer.
 
-Sau v2.1.0, roadmap tiếp tục với **v2.1.1 — Planner Agent**: nhận goal và chia việc. Research/Developer/Office/Operator/Reviewer/Security Agent sẽ được thêm dần sau đó; Agent Orchestration vẫn là giai đoạn v2.2.
+Sau v2.1.1, roadmap tiếp tục với **v2.1.2 — Research Agent**: tìm kiếm web, documents, email và knowledge. Developer/Office/Operator/Reviewer/Security Agent sẽ được thêm dần sau đó; Agent Orchestration vẫn là giai đoạn v2.2.

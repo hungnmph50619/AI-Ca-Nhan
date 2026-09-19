@@ -345,7 +345,7 @@ public sealed class SystemCoreService(
                     ? new CoreModuleHealth(
                         "agents",
                         CoreHealthStatuses.Healthy,
-                        "Agent Framework v2.1.6 khả dụng; bảy agent gồm Reviewer đã đăng ký, chỉ chạy theo explicit invocation và chưa orchestration.",
+                        "Agent Framework v2.1.7 khả dụng; tám agent gồm Security đã đăng ký, chỉ chạy theo explicit invocation và chưa orchestration.",
                         status.RegisteredAgents)
                     : new CoreModuleHealth(
                         "agents",

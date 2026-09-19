@@ -18,7 +18,7 @@ public static class DeveloperAgentLimits
             EvidenceIndicesValidated: true, ParserSelfTestPassed: ParserTest.Value,
             ReadOnly: true, RunsCommands: false, ModifiesFiles: false,
             CreatesCommits: false, DispatchesAgents: false,
-            RequiresExplicitInvocation: true, NextStage: "v2.2.6-workflow-accessibility");
+            RequiresExplicitInvocation: true, NextStage: "v2.2.7-workflow-usability");
 }
 
 public sealed class DeveloperOutputException(string message) : InvalidOperationException(message);
@@ -45,7 +45,7 @@ public sealed class DeveloperFrameworkAgent(
 
     public AgentDefinition Definition { get; } = new(
         AgentId,
-        "Developer Agent",
+        "Tác nhân phân tích mã",
         "developer",
         "Đọc cấu trúc workspace và các đoạn mã khớp từ khóa để đề xuất thay đổi có dẫn vị trí; không tự chỉnh sửa hoặc chạy lệnh.",
         ["workspace-code-inspection", "source-search-review",

@@ -8,7 +8,7 @@ namespace PersonalAI.Web.Services;
 
 public static class HardeningLimits
 {
-    public const int MaximumApiRequestsPerMinute = 120;
+    public const int MaximumApiRequestsPerMinute = 600;
     public const int MaximumConcurrentApiRequests = 16;
     public const long MaximumApiRequestBytes = 12L * 1024 * 1024;
     public const int MaximumBackupCount = 5;
@@ -560,8 +560,7 @@ public sealed class HardeningBackupService : IHardeningBackupService
 
             var now = DateTimeOffset.UtcNow;
             var backupId =
-                $"personalai-{now:yyyyMMdd-HHmmss}-{Guid.NewGuid():N}"[..44]
-                + ".zip";
+                $"personalai-{now:yyyyMMdd-HHmmss}-{Guid.NewGuid():N}.zip";
             var temporaryArchive = Path.Combine(
                 _backupDirectory,
                 backupId + ".tmp");
@@ -1130,6 +1129,7 @@ public sealed class HardeningStatusService(
         var status = backups.HasPendingRestore
             ? HardeningStatuses.PendingRestart
             : audit.ViolationCount > 0
+                || runtimeStatus.PreviousUncleanShutdown
                 || runtimeStatus.LastRestoreStatus?.StartsWith(
                     "failed:",
                     StringComparison.OrdinalIgnoreCase) == true
@@ -1163,14 +1163,25 @@ public sealed class HardeningRuntimeHostedService(
     public async Task StartAsync(
         CancellationToken cancellationToken)
     {
-        var restore = await backups.ApplyPendingRestoreAsync(
-            cancellationToken);
-        if (!string.IsNullOrWhiteSpace(restore))
+        try
         {
-            runtime.RecordRestore(restore);
-            logger.LogWarning(
-                "Hardening startup restore result: {RestoreStatus}.",
-                restore);
+            var restore = await backups.ApplyPendingRestoreAsync(
+                cancellationToken);
+            if (!string.IsNullOrWhiteSpace(restore))
+            {
+                runtime.RecordRestore(restore);
+                logger.LogWarning(
+                    "Hardening startup restore result: {RestoreStatus}.",
+                    restore);
+            }
+        }
+        catch (Exception exception) when (
+            exception is not OperationCanceledException)
+        {
+            logger.LogError(
+                exception,
+                "Pending restore could not be applied during startup.");
+            runtime.RecordRestore("failed:startup-validation");
         }
 
         runtime.MarkStarted();

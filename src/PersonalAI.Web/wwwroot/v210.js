@@ -1,5 +1,5 @@
 (() => {
-  const VERSION = "2.1.6";
+  const VERSION = "2.1.7";
   let dialog;
   let select;
   let goal;
@@ -135,7 +135,7 @@
     const boundary = document.createElement("div");
     boundary.className = "agent-boundary";
     boundary.textContent =
-      "v2.1.6 chạy agent khi bạn chủ động bấm chạy. Reviewer chỉ rà soát nội dung được dán, không xác minh bên ngoài, chỉnh sửa hay phê duyệt. Các agent không tự giao việc.";
+      "v2.1.7 chạy agent khi bạn chủ động bấm chạy. Security chỉ rà soát mẫu rủi ro cục bộ, không chuyển nội dung tới AI provider, không tự chặn hoặc thực thi thao tác. Các agent không tự giao việc.";
 
     feedback = document.createElement("div");
     feedback.className = "agent-feedback";
@@ -233,7 +233,10 @@
     const isOffice = agent.role === "office";
     const isOperator = agent.role === "operator";
     const isReviewer = agent.role === "reviewer";
-    goal.placeholder = isReviewer
+    const isSecurity = agent.role === "security";
+    goal.placeholder = isSecurity
+      ? "Mô tả thao tác muốn đánh giá trước khi thực hiện; không nhập mật khẩu, token hoặc khóa thật."
+      : isReviewer
       ? "Dán toàn bộ đoạn văn, bản nháp hoặc kế hoạch cần rà soát (tối thiểu 80 ký tự). Chỉ nội dung bạn dán được đánh giá; có thể gửi tới AI provider đã cấu hình."
       : isOperator
       ? "Ví dụ: Lập kế hoạch kiểm tra một website và đề xuất các bước cần người dùng xác nhận; không thực hiện thao tác."
@@ -246,7 +249,7 @@
       : isPlanner
         ? "Ví dụ: Phát triển AI Cá Nhân từ v2.1.2 đến v2.2 theo từng bước an toàn."
         : "Ví dụ: Phân tích những việc tôi đang làm và đề xuất bước tiếp theo.";
-    runButton.textContent = isReviewer ? "Rà soát nội dung" : isOperator ? "Chuẩn bị thao tác" : isOffice ? "Soạn bản nháp" : isDeveloper ? "Phân tích mã" : isResearch ? "Nghiên cứu tài liệu" : isPlanner ? "Lập kế hoạch" : "Chạy agent";
+    runButton.textContent = isSecurity ? "Kiểm tra mẫu rủi ro" : isReviewer ? "Rà soát nội dung" : isOperator ? "Chuẩn bị thao tác" : isOffice ? "Soạn bản nháp" : isDeveloper ? "Phân tích mã" : isResearch ? "Nghiên cứu tài liệu" : isPlanner ? "Lập kế hoạch" : "Chạy agent";
 
     [
       ["Role", agent.role],
@@ -311,7 +314,9 @@
   function renderExecutionResult(payload) {
     result.replaceChildren();
 
-    if (payload.reviewer) {
+    if (payload.security) {
+      renderSecurityReview(payload.security);
+    } else if (payload.reviewer) {
       renderReviewerReport(payload.reviewer);
     } else if (payload.operator) {
       renderOperatorPlan(payload.operator);
@@ -415,7 +420,7 @@
     const boundary = document.createElement("p");
     boundary.className = "planner-plan-boundary";
     boundary.textContent =
-      "Plan này chỉ được chuẩn bị để bạn xem. v2.1.6 không tự tạo Task Engine task, không dispatch agent và không persist plan tự động.";
+      "Plan này chỉ được chuẩn bị để bạn xem. v2.1.7 không tự tạo Task Engine task, không dispatch agent và không persist plan tự động.";
     wrapper.append(boundary);
 
     result.append(wrapper);
@@ -626,6 +631,37 @@
     appendPlannerList(root, "Giới hạn", report.limitations);
     const boundary = document.createElement("p");
     boundary.textContent = "Chỉ kiểm tra trích đoạn có trong nội dung dán; chưa xác minh sự thật bên ngoài, chạy test, chỉnh sửa tài liệu hoặc phê duyệt kết quả.";
+    root.append(boundary);
+    result.append(root);
+  }
+
+  function renderSecurityReview(review) {
+    const root = document.createElement("section");
+    root.className = "security-review";
+    const heading = document.createElement("h3");
+    heading.textContent = "Rà soát mẫu bảo mật · không phải phê duyệt";
+    const summary = document.createElement("p");
+    summary.textContent = review.summary || "";
+    root.append(heading, summary);
+
+    (review.findings || []).forEach(item => {
+      const card = document.createElement("article");
+      card.className = "security-finding";
+      const title = document.createElement("h4");
+      title.textContent = (item.title || "") + " (" + (item.severity || "") + ")";
+      const rule = document.createElement("p");
+      rule.textContent = "Mẫu: " + (item.ruleId || "");
+      const explanation = document.createElement("p");
+      explanation.textContent = item.explanation || "";
+      const check = document.createElement("p");
+      check.textContent = "Cần kiểm tra thủ công: " + (item.suggestedCheck || "");
+      card.append(title, rule, explanation, check);
+      root.append(card);
+    });
+
+    appendPlannerList(root, "Giới hạn", review.limitations);
+    const boundary = document.createElement("p");
+    boundary.textContent = "Kết quả chỉ dựa trên mẫu trong nội dung nhập, không echo nội dung hoặc gửi tới AI provider. Không phát hiện mẫu không có nghĩa an toàn. Không thay đổi quyền, thực thi hoặc chặn thao tác.";
     root.append(boundary);
     result.append(root);
   }

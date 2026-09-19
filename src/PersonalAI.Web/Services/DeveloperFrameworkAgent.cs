@@ -18,7 +18,7 @@ public static class DeveloperAgentLimits
             EvidenceIndicesValidated: true, ParserSelfTestPassed: ParserTest.Value,
             ReadOnly: true, RunsCommands: false, ModifiesFiles: false,
             CreatesCommits: false, DispatchesAgents: false,
-            RequiresExplicitInvocation: true, NextStage: "v2.1.7-security-agent");
+            RequiresExplicitInvocation: true, NextStage: "v2.2-agent-orchestration");
 }
 
 public sealed class DeveloperOutputException(string message) : InvalidOperationException(message);

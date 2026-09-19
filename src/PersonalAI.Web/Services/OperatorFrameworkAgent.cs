@@ -27,7 +27,7 @@ public static class OperatorAgentLimits
             PersistsPlans: false,
             DispatchesAgents: false,
             RequiresExplicitInvocation: true,
-            NextStage: "v2.1.7-security-agent");
+            NextStage: "v2.2-agent-orchestration");
 }
 
 public sealed class OperatorOutputException(string message)

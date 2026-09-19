@@ -84,7 +84,7 @@ public sealed class ComputerControlGate
             finally
             {
                 if (_remainingActions <= 0
-                    || DateTimeOffset.UtcNow >= _expiresAt)
+                    || DateTimeOffset.UtcNow >= _expiresAt!.Value)
                 {
                     PauseInternal();
                 }

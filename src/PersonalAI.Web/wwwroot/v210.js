@@ -1,5 +1,5 @@
 (() => {
-  const VERSION = "2.2.3";
+  const VERSION = "2.2.4";
   let dialog;
   let select;
   let goal;
@@ -8,6 +8,24 @@
   let meta;
   let runButton;
   let agents = [];
+  const translatedNames = {
+    "core.personal-assistant":"Trợ lý cá nhân",
+    "planning.planner":"Tác nhân lập kế hoạch",
+    "research.researcher":"Tác nhân nghiên cứu",
+    "development.developer":"Tác nhân phân tích mã",
+    "office.office-assistant":"Tác nhân văn phòng",
+    "operations.operator":"Tác nhân lập kế hoạch thao tác",
+    "quality.reviewer":"Tác nhân rà soát",
+    "security.security-reviewer":"Tác nhân kiểm tra bảo mật"
+  };
+  const translatedRoles = {
+    "general-assistant":"Trợ lý tổng hợp",planner:"Lập kế hoạch",
+    research:"Nghiên cứu",developer:"Phân tích mã",office:"Văn phòng",
+    operator:"Lập kế hoạch thao tác",reviewer:"Rà soát",security:"Bảo mật"
+  };
+  const translatedName = agent => translatedNames[agent.id] || "Tác nhân AI";
+  const translatedRole = agent => translatedRoles[agent.role] || "Chức năng chuyên biệt";
+
 
   document.addEventListener("DOMContentLoaded", () => {
     updateVersion();
@@ -34,7 +52,7 @@
     icon.textContent = "◉";
 
     const label = document.createElement("span");
-    label.textContent = "Agents";
+    label.textContent = "Các tác nhân AI";
 
     const badge = document.createElement("span");
     badge.className = "tool-count";
@@ -64,10 +82,10 @@
     const heading = document.createElement("div");
     const eyebrow = document.createElement("p");
     eyebrow.className = "eyebrow";
-    eyebrow.textContent = "AGENT FRAMEWORK · v2.2.1";
+    eyebrow.textContent = "HỆ THỐNG TÁC NHÂN AI · v2.2.4";
     const title = document.createElement("h2");
     title.id = "agentTitle";
-    title.textContent = "Chạy agent";
+    title.textContent = "Sử dụng tác nhân AI";
     heading.append(eyebrow, title);
 
     const close = document.createElement("button");
@@ -81,7 +99,7 @@
     const status = document.createElement("p");
     status.className = "agent-status";
     status.id = "agentStatus";
-    status.textContent = "Đang đọc Agent Framework…";
+    status.textContent = "Đang tải danh sách tác nhân AI…";
 
     const grid = document.createElement("div");
     grid.className = "agent-grid";
@@ -89,7 +107,7 @@
     const labelSelect = document.createElement("label");
     labelSelect.className = "field-label";
     labelSelect.setAttribute("for", "agentSelect");
-    labelSelect.textContent = "Agent";
+    labelSelect.textContent = "Chọn tác nhân AI";
 
     select = document.createElement("select");
     select.id = "agentSelect";
@@ -116,10 +134,10 @@
     const options = document.createElement("div");
     options.className = "agent-context-options";
     [
-      ["agentUseKnowledge", "Knowledge", true],
-      ["agentUseMemory", "Memory", true],
-      ["agentUseTasks", "Tasks", true],
-      ["agentUseLife", "Life Context", true]
+      ["agentUseKnowledge", "Tài liệu của bạn", true],
+      ["agentUseMemory", "Thông tin đã ghi nhớ", true],
+      ["agentUseTasks", "Công việc", true],
+      ["agentUseLife", "Thông tin cuộc sống", true]
     ].forEach(([id, text, checked]) => {
       const option = document.createElement("label");
       const input = document.createElement("input");
@@ -135,7 +153,7 @@
     const boundary = document.createElement("div");
     boundary.className = "agent-boundary";
     boundary.textContent =
-      "v2.2.1 giới hạn thời gian từng bước/workflow và chặn chuyển đầu ra khớp một số mẫu credential. Không bảo đảm phát hiện mọi bí mật; agent không tự chọn thêm agent hoặc chạy tool.";
+      "v2.2.4: Bạn chọn tác nhân và dữ liệu muốn dùng. Quy trình nhiều bước cần bạn duyệt nội dung trước khi chuyển. Bộ lọc dữ liệu nhạy cảm không bảo đảm phát hiện mọi bí mật. Các tác nhân không tự chạy công cụ.";
 
     feedback = document.createElement("div");
     feedback.className = "agent-feedback";
@@ -145,7 +163,7 @@
     runButton = document.createElement("button");
     runButton.className = "primary-button";
     runButton.type = "submit";
-    runButton.textContent = "Chạy agent";
+    runButton.textContent = "Chạy tác nhân";
     runButton.disabled = true;
 
     form.append(
@@ -190,7 +208,7 @@
       ]);
 
       if (!statusResponse.ok || !catalogResponse.ok) {
-        throw new Error("Không đọc được Agent Framework.");
+        throw new Error("Không tải được danh sách tác nhân AI.");
       }
 
       const status = await statusResponse.json();
@@ -198,13 +216,13 @@
       agents = Array.isArray(catalog.agents) ? catalog.agents : [];
 
       statusNode.textContent =
-        `${agents.length} agent · explicit invocation · tool execution: ${status.toolExecutionEnabled ? "bật" : "tắt"} · tiếp theo: ${status.nextStage}`;
+        `${agents.length} tác nhân AI · chỉ chạy khi bạn yêu cầu · quyền chạy công cụ: ${status.toolExecutionEnabled ? "đã bật" : "đang tắt"}`;
 
       select.replaceChildren();
       agents.forEach(agent => {
         const option = document.createElement("option");
         option.value = agent.id;
-        option.textContent = `${agent.name} · ${agent.role}`;
+        option.textContent = `${translatedName(agent)} · ${translatedRole(agent)}`;
         select.append(option);
       });
 
@@ -216,7 +234,7 @@
     } catch (error) {
       statusNode.textContent = error instanceof Error
         ? error.message
-        : "Không đọc được Agent Framework.";
+        : "Không tải được danh sách tác nhân AI.";
       select.disabled = true;
       runButton.disabled = true;
     }
@@ -252,9 +270,9 @@
     runButton.textContent = isSecurity ? "Kiểm tra mẫu rủi ro" : isReviewer ? "Rà soát nội dung" : isOperator ? "Chuẩn bị thao tác" : isOffice ? "Soạn bản nháp" : isDeveloper ? "Phân tích mã" : isResearch ? "Nghiên cứu tài liệu" : isPlanner ? "Lập kế hoạch" : "Chạy agent";
 
     [
-      ["Role", agent.role],
-      ["Capabilities", (agent.capabilities || []).join(", ")],
-      ["Bound tools", (agent.tools || []).join(", ") || "Không có"]
+      ["Vai trò", translatedRole(agent)],
+      ["Khả năng", "Xem mô tả chức năng và giới hạn của tác nhân ở phần hướng dẫn"],
+      ["Quyền chạy công cụ", agent.toolExecutionEnabled ? "Đã bật" : "Đang tắt"]
     ].forEach(([label, value]) => {
       const item = document.createElement("div");
       const small = document.createElement("span");
@@ -296,16 +314,16 @@
 
       const payload = await response.json();
       if (!response.ok) {
-        throw new Error(payload.error || "Agent execution thất bại.");
+        throw new Error(payload.error || "Tác nhân không hoàn thành yêu cầu.");
       }
 
       feedback.textContent =
-        `${payload.agentName} · ${payload.provider || "local"} · ${payload.status}`;
+        `${translatedNames[payload.agentId] || "Tác nhân AI"} · ${payload.provider === "local" ? "Xử lý tại máy" : "Dịch vụ AI đã cấu hình"} · ${payload.status === "succeeded" ? "Đã hoàn thành" : "Chưa hoàn thành"}`;
       renderExecutionResult(payload);
     } catch (error) {
       feedback.textContent = error instanceof Error
         ? error.message
-        : "Agent execution thất bại.";
+        : "Tác nhân không hoàn thành yêu cầu.";
     } finally {
       runButton.disabled = agents.length === 0;
     }

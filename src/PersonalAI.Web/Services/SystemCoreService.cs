@@ -345,7 +345,7 @@ public sealed class SystemCoreService(
                     ? new CoreModuleHealth(
                         "agents",
                         CoreHealthStatuses.Healthy,
-                        "Agent Framework v2.2.1 khả dụng; tám agent, workflow tuần tự có giới hạn thời gian và kiểm tra mẫu bí mật khi handoff; tool execution và automatic delegation vẫn tắt.",
+                        "Agent Framework v2.2.2 khả dụng; tám agent, workflow tuần tự yêu cầu duyệt riêng từng handoff và có giới hạn thời gian; tool execution và automatic delegation vẫn tắt.",
                         status.RegisteredAgents)
                     : new CoreModuleHealth(
                         "agents",

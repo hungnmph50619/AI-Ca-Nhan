@@ -5,6 +5,7 @@ public static class AgentWorkflowStatuses
     public const string Completed = "completed";
     public const string Stopped = "stopped";
     public const string TimedOut = "timed-out";
+    public const string AwaitingReview = "awaiting-review";
 }
 
 public sealed record AgentWorkflowStepRequest(
@@ -19,6 +20,21 @@ public sealed record AgentWorkflowRequest(
     bool UseMemory = false,
     bool UseTaskContext = false,
     bool UseLifeContext = false);
+
+public sealed record AgentHandoffCheckpoint(
+    Guid WorkflowId,
+    int ReceivingStep,
+    string ReceivingAgentId,
+    string Preview,
+    string PreviewDigest,
+    string ReviewToken,
+    DateTimeOffset ExpiresAt);
+
+public sealed record AgentWorkflowReviewRequest(
+    Guid WorkflowId,
+    string? ReviewToken,
+    string? PreviewDigest,
+    bool ApproveTransfer);
 
 public sealed record AgentWorkflowStepResult(
     int Step,
@@ -40,7 +56,8 @@ public sealed record AgentWorkflowResponse(
     bool ParallelExecution,
     DateTimeOffset StartedAt,
     DateTimeOffset CompletedAt,
-    string? StopReason = null);
+    string? StopReason = null,
+    AgentHandoffCheckpoint? HandoffCheckpoint = null);
 
 public sealed record AgentOrchestrationStatusResponse(
     string Version,
@@ -62,4 +79,8 @@ public sealed record AgentOrchestrationStatusResponse(
     int MaximumStepSeconds = 0,
     bool StopsOnTimeout = false,
     bool SensitiveHandoffScreeningEnabled = false,
-    bool HandoffGuardSelfTestPassed = false);
+    bool HandoffGuardSelfTestPassed = false,
+    bool MandatoryContentReviewEnabled = false,
+    int MaximumPendingReviewMinutes = 0,
+    int MaximumPendingWorkflows = 0,
+    bool ResumableAcrossServerRestart = false);

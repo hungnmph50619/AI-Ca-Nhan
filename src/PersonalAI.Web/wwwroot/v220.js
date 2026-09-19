@@ -1,5 +1,5 @@
 (() => {
-  const VERSION = "2.2.1";
+  const VERSION = "2.2.2";
 
   document.addEventListener("DOMContentLoaded", () => {
     const card = document.querySelector("#agentDialog .agent-card");
@@ -26,7 +26,7 @@
       + '<label><input type="checkbox" id="wfTasks"> Tasks</label>'
       + '<label><input type="checkbox" id="wfLife"> Life context</label></fieldset>'
       + '<label class="workflow-toggle"><input type="checkbox" id="wfConfirm" required>Tôi đã chọn và xác nhận toàn bộ các bước; các đầu ra có thể được gửi đến AI provider của agent được chọn.</label>'
-      + '<p class="workflow-boundary">Workflow giới hạn tối đa 120 giây, mỗi bước tối đa 50 giây (cần provider hỗ trợ huỷ để dừng đúng hạn). Các bước có thể gửi nội dung tới AI provider; không nhập bí mật. Bộ lọc mẫu credential không thay thế kiểm tra dữ liệu thủ công. Handoff chỉ khi người dùng tích chọn. Không tự chọn agent, chạy song song hoặc thực thi tool.</p>'
+      + '<p class="workflow-boundary">Workflow giới hạn tối đa 120 giây, mỗi bước tối đa 50 giây (cần provider hỗ trợ huỷ để dừng đúng hạn). Các bước có thể gửi nội dung tới AI provider; không nhập bí mật. Bộ lọc mẫu credential không thay thế kiểm tra dữ liệu thủ công. Handoff chỉ sau khi người dùng xem và duyệt chính xác đầu ra của bước trước ở checkpoint riêng. Không tự chọn agent, chạy song song hoặc thực thi tool.</p>'
       + '<button class="primary-button" id="wfRun" type="submit" disabled>Chạy workflow đã xác nhận</button>'
       + '<p id="wfFeedback" role="status" aria-live="polite"></p>'
       + '</form><section id="wfResults" class="workflow-results" hidden></section>';
@@ -42,6 +42,111 @@
 
     const field = id => panel.querySelector("#" + id);
     const bool = id => field(id).checked;
+
+    let pendingReview = false;
+
+    async function presentWorkflow(payload) {
+      results.replaceChildren();
+      pendingReview = payload.status === "awaiting-review";
+      run.disabled = !loaded || pendingReview;
+      feedback.textContent = pendingReview
+        ? "Workflow đã tạm dừng: xem đúng dữ liệu trước khi đồng ý chuyển sang agent tiếp theo."
+        : payload.status === "completed"
+          ? "Đã hoàn tất " + payload.completedSteps.length + " bước. Không có tool execution."
+          : payload.status === "timed-out"
+            ? "Workflow dừng vì hết thời gian ở bước " + (payload.failedStep || "?") + "."
+            : "Workflow dừng tại bước " + (payload.failedStep || "?") + "; không chạy các bước sau.";
+
+      (payload.completedSteps || []).forEach(item => {
+        const section = document.createElement("article");
+        section.className = "workflow-step-result";
+        const heading = document.createElement("h4");
+        heading.textContent = "Bước " + item.step + " · " + item.agentId
+          + (item.previousOutputTransferred ? " · Đã duyệt và chuyển đầu ra trước" : "");
+        const body = document.createElement("pre");
+        body.className = "workflow-step-output";
+        body.textContent = item.result?.message || "Không có nội dung trả về.";
+        section.append(heading, body);
+        results.append(section);
+      });
+
+      if (payload.error) {
+        const error = document.createElement("p");
+        error.textContent = payload.error;
+        results.append(error);
+      }
+
+      const checkpoint = payload.handoffCheckpoint;
+      if (pendingReview && checkpoint) {
+        const section = document.createElement("section");
+        section.className = "workflow-step-result";
+        const heading = document.createElement("h4");
+        heading.textContent = "Duyệt dữ liệu trước khi chuyển đến bước "
+          + checkpoint.receivingStep + " · " + checkpoint.receivingAgentId;
+        const warning = document.createElement("p");
+        warning.textContent = "Đây là chính xác nội dung (tối đa 1.600 ký tự) sẽ chuyển sang bước tiếp theo. Nội dung có thể được gửi tới AI provider đã cấu hình. Bộ lọc mẫu không nhận diện được mọi bí mật. Chỉ tiếp tục sau khi bạn đã đọc và đồng ý chia sẻ.";
+        const preview = document.createElement("pre");
+        preview.className = "workflow-step-output";
+        preview.textContent = checkpoint.preview || "";
+        const consent = document.createElement("label");
+        consent.className = "workflow-toggle";
+        const checkbox = document.createElement("input");
+        checkbox.type = "checkbox";
+        consent.append(checkbox, document.createTextNode(
+          " Tôi đã xem đúng nội dung ở trên và đồng ý chuyển nội dung này sang bước kế tiếp."));
+        const approve = document.createElement("button");
+        approve.type = "button";
+        approve.textContent = "Duyệt và chạy bước kế tiếp";
+        approve.disabled = true;
+        const decline = document.createElement("button");
+        decline.type = "button";
+        decline.textContent = "Dừng workflow, không chuyển dữ liệu";
+        checkbox.addEventListener("change", () => {
+          approve.disabled = !checkbox.checked;
+        });
+
+        async function decide(approved) {
+          approve.disabled = true;
+          decline.disabled = true;
+          feedback.textContent = approved
+            ? "Đang chạy bước đã được bạn duyệt…"
+            : "Đang dừng workflow…";
+          try {
+            const response = await fetch("/api/agents/orchestration/resume", {
+              method: "POST",
+              headers: {
+                "Content-Type": "application/json",
+                "X-PersonalAI-Workspace": window.PersonalAiWorkspace?.currentId || "personal"
+              },
+              body: JSON.stringify({
+                workflowId: checkpoint.workflowId,
+                reviewToken: checkpoint.reviewToken,
+                previewDigest: checkpoint.previewDigest,
+                approveTransfer: approved
+              })
+            });
+            const next = await response.json();
+            if (!response.ok) throw new Error(next.error || "Không thể duyệt checkpoint.");
+            await presentWorkflow(next);
+          } catch (error) {
+            feedback.textContent = error instanceof Error ? error.message : "Không thể duyệt.";
+            decline.disabled = false;
+            approve.disabled = !checkbox.checked;
+          }
+        }
+
+        approve.addEventListener("click", () => { if (checkbox.checked) void decide(true); });
+        decline.addEventListener("click", () => { void decide(false); });
+        section.append(heading, warning, preview, consent, approve, decline);
+        results.append(section);
+      } else if (pendingReview) {
+        pendingReview = false;
+        feedback.textContent = "Thiếu dữ liệu checkpoint: workflow không được tiếp tục.";
+      }
+
+      results.hidden = false;
+      run.disabled = !loaded || pendingReview;
+    }
 
     thirdCheckbox.addEventListener("change", () => {
       third.hidden = !thirdCheckbox.checked;
@@ -119,34 +224,11 @@
         const payload = await response.json();
         if (!response.ok) throw new Error(payload.error || "Workflow không hoàn tất.");
 
-        feedback.textContent = payload.status === "completed"
-          ? "Đã hoàn tất " + payload.completedSteps.length + " bước. Không có tool execution."
-          : payload.status === "timed-out"
-            ? "Workflow dừng vì hết thời gian ở bước " + (payload.failedStep || "?") + "; không chạy các bước sau."
-            : "Workflow đã dừng tại bước " + (payload.failedStep || "?") + "; các bước sau không chạy.";
-
-        (payload.completedSteps || []).forEach(item => {
-          const section = document.createElement("article");
-          section.className = "workflow-step-result";
-          const heading = document.createElement("h4");
-          heading.textContent = "Bước " + item.step + " · " + item.agentId
-            + (item.previousOutputTransferred ? " · Đã chuyển đầu ra trước" : "");
-          const body = document.createElement("pre");
-          body.className = "workflow-step-output";
-          body.textContent = item.result?.message || "Không có nội dung trả về.";
-          section.append(heading, body);
-          results.append(section);
-        });
-        if (payload.error) {
-          const error = document.createElement("p");
-          error.textContent = payload.error;
-          results.append(error);
-        }
-        results.hidden = false;
+        await presentWorkflow(payload);
       } catch (error) {
         feedback.textContent = error instanceof Error ? error.message : "Không thể chạy workflow.";
       } finally {
-        run.disabled = !loaded;
+        run.disabled = !loaded || pendingReview;
       }
     });
   });

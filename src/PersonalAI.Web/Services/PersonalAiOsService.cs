@@ -16,8 +16,8 @@ public sealed class PersonalAiOsService(
     IWorkspaceContextAccessor workspaceContext) : IPersonalAiOsService
 {
     public const string Edition = "Personal AI OS";
-    public const string Stage = "v2.2.1";
-    public const string NextStage = "v2.2.2-orchestration-reliability";
+    public const string Stage = "v2.2.2";
+    public const string NextStage = "v2.2.3-workflow-observability";
 
     private static readonly PersonalAiOsLayer[] Layers =
     [
@@ -55,9 +55,9 @@ public sealed class PersonalAiOsService(
 
     private static readonly string[] Boundaries =
     [
-        "v2.2.1 giới hạn thời gian workflow/bước và kiểm tra mẫu bí mật trước khi chuyển kết quả; danh sách agent vẫn do người dùng xác nhận trước.",
+        "v2.2.2 yêu cầu người dùng duyệt chính xác nội dung handoff qua checkpoint một lần, có thời hạn và giới hạn số checkpoint đang chờ; danh sách agent vẫn do người dùng xác nhận trước.",
         "Planner chỉ lập kế hoạch; Research đọc tài liệu nội bộ; Developer đề xuất thay đổi; Office soạn nháp; Operator chuẩn bị thao tác; Reviewer không phê duyệt; Security không thay permission gate hay chứng nhận an toàn.",
-        "v2.2.1 chỉ chuyển đầu ra khi người dùng đồng ý và dữ liệu qua kiểm tra mẫu; bộ kiểm tra giới hạn không bảo đảm phát hiện mọi bí mật, cũng không bật automatic delegation, shared task queue, autonomous loop hay parallel calls.",
+        "v2.2.2 chỉ chuyển đầu ra sau khi người dùng xem và duyệt từng checkpoint; workflow dừng khi từ chối/hết hạn, không bật automatic delegation, shared task queue, autonomous loop hay parallel calls.",
         "WRITE/DELETE/EXTERNAL/SENSITIVE/COMPUTER/BROWSER/CONNECTOR/DEVELOPMENT vẫn yêu cầu policy và confirmation tương ứng.",
         "Email vẫn là connector-backed foundation, chưa có Gmail/Outlook provider-specific OAuth.",
         "Calendar vẫn dùng Life Context snapshot + connector foundation, chưa có provider-specific auto-sync/write.",
@@ -391,7 +391,7 @@ public sealed class PersonalAiOsService(
                 "Agent Framework",
                 "coordination",
                 ControlledState("agents"),
-                "Tám agent, workflow tuần tự 2–3 bước có opt-in handoff, giới hạn thời gian và kiểm tra mẫu credential trước chuyển giao; tool execution và automatic delegation vẫn tắt.",
+                "Tám agent, workflow tuần tự có checkpoint duyệt nội dung từng handoff, giới hạn thời gian và bộ kiểm tra mẫu credential; tool execution và automatic delegation vẫn tắt.",
                 ["/api/agents/status", "/api/agents", "/api/agents/orchestration/status", "/api/agents/orchestration/execute"],
                 false,
                 true,

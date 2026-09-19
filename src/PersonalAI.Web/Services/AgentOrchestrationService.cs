@@ -1,3 +1,6 @@
+using System.Collections.Concurrent;
+using System.Security.Cryptography;
+using System.Text;
 using PersonalAI.Web.Models;
 
 namespace PersonalAI.Web.Services;
@@ -25,12 +28,16 @@ public static class AgentOrchestrationLimits
             PersistsWorkflows: false,
             AutonomousLoopEnabled: false,
             SelfTestPassed: SelfTest.Value,
-            NextStage: "v2.2.2-orchestration-reliability",
+            NextStage: "v2.2.3-workflow-observability",
             MaximumWorkflowSeconds: WorkflowHandoffGuard.MaximumWorkflowSeconds,
             MaximumStepSeconds: WorkflowHandoffGuard.MaximumStepSeconds,
             StopsOnTimeout: true,
             SensitiveHandoffScreeningEnabled: true,
-            HandoffGuardSelfTestPassed: WorkflowHandoffGuard.RunSelfTest());
+            HandoffGuardSelfTestPassed: WorkflowHandoffGuard.RunSelfTest(),
+            MandatoryContentReviewEnabled: true,
+            MaximumPendingReviewMinutes: 10,
+            MaximumPendingWorkflows: 8,
+            ResumableAcrossServerRestart: false);
 }
 
 public static class AgentWorkflowValidation
@@ -149,6 +156,10 @@ public interface IAgentOrchestrationService
     Task<AgentWorkflowResponse> RunAsync(
         AgentWorkflowRequest request,
         CancellationToken cancellationToken = default);
+
+    Task<AgentWorkflowResponse> ResumeAsync(
+        AgentWorkflowReviewRequest request,
+        CancellationToken cancellationToken = default);
 }
 
 public sealed class AgentOrchestrationService(
@@ -157,6 +168,27 @@ public sealed class AgentOrchestrationService(
     IAuditRecorder audit) : IAgentOrchestrationService
 {
     private static readonly SemaphoreSlim WorkflowGate = new(1, 1);
+    private static readonly ConcurrentDictionary<Guid, PendingWorkflow> Pending = new();
+    private const int PendingReviewMinutes = 10;
+    private const int MaximumPendingWorkflows = 8;
+
+    // Server-local, short-lived checkpoint: never persisted to disk or queue.
+    // The opaque review token is scoped to the workflow, step, workspace and
+    // exact preview digest. A server restart invalidates all pending checkpoints.
+    private sealed record PendingWorkflow(
+        Guid Id,
+        string WorkspaceId,
+        AgentWorkflowRequest Request,
+        IReadOnlyList<AgentWorkflowStepRequest> Steps,
+        IReadOnlyList<AgentWorkflowStepResult> Completed,
+        int NextIndex,
+        DateTimeOffset StartedAt,
+        DateTimeOffset ExpiresAt,
+        DateTimeOffset PausedAt,
+        TimeSpan AccumulatedReviewWait,
+        string Token,
+        string PreviewDigest,
+        string Preview);
 
     public AgentOrchestrationStatusResponse GetStatus() =>
         AgentOrchestrationLimits.GetStatus();
@@ -166,57 +198,145 @@ public sealed class AgentOrchestrationService(
         CancellationToken cancellationToken = default)
     {
         ArgumentNullException.ThrowIfNull(request);
-        // Validate the *whole* user-declared chain before invoking the first agent.
+        // Validate every selected agent and goal BEFORE any agent runs.
         var steps = AgentWorkflowValidation.Validate(
             request, id => agents.GetAgent(id) is not null);
 
         if (!await WorkflowGate.WaitAsync(0, cancellationToken))
-            throw new AgentBusyException("Một workflow khác đang chạy. Chưa hỗ trợ workflow song song.");
+            throw new AgentBusyException("Một workflow khác đang chạy.");
 
-        var workflowId = Guid.NewGuid();
+        var id = Guid.NewGuid();
         var startedAt = DateTimeOffset.UtcNow;
-        var workspaceId = workspace.CurrentWorkspaceId;
-        var completed = new List<AgentWorkflowStepResult>();
-        var failedStep = (int?)null;
-        string? error = null;
+        try
+        {
+            RemoveExpired();
+            audit.Record("orchestration", "agent.workflow",
+                $"agent-workflow:{id:D}", "explicit-workflow-approval",
+                AuditResults.Prepared);
 
-        audit.Record(
-            "orchestration", "agent.workflow",
-            $"agent-workflow:{workflowId:D}",
-            "explicit-workflow-approval",
-            AuditResults.Prepared);
+            return await ExecuteSegmentAsync(
+                id, workspace.CurrentWorkspaceId, request, steps,
+                [], 0, startedAt, TimeSpan.Zero, cancellationToken);
+        }
+        finally
+        {
+            WorkflowGate.Release();
+        }
+    }
 
-        using var workflowDeadline = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
-        workflowDeadline.CancelAfter(TimeSpan.FromSeconds(WorkflowHandoffGuard.MaximumWorkflowSeconds));
-        string? stopReason = null;
+    public async Task<AgentWorkflowResponse> ResumeAsync(
+        AgentWorkflowReviewRequest request,
+        CancellationToken cancellationToken = default)
+    {
+        ArgumentNullException.ThrowIfNull(request);
+        if (!await WorkflowGate.WaitAsync(0, cancellationToken))
+            throw new AgentBusyException("Một workflow khác đang chạy.");
 
         try
         {
-            for (var i = 0; i < steps.Count; i++)
+            RemoveExpired();
+            if (!Pending.TryGetValue(request.WorkflowId, out var pending))
+                throw new AgentValidationException(
+                    "Checkpoint đã hết hạn hoặc không tồn tại; không chạy thêm bước nào.");
+
+            if (!string.Equals(pending.WorkspaceId,
+                    workspace.CurrentWorkspaceId, StringComparison.Ordinal))
+                throw new AgentValidationException("Workflow không thuộc workspace hiện tại.");
+
+            if (!FixedEquals(pending.Token, request.ReviewToken)
+                || !FixedEquals(pending.PreviewDigest, request.PreviewDigest))
+                throw new AgentValidationException(
+                    "Mã xác nhận nội dung chuyển giao không hợp lệ; không chạy thêm bước nào.");
+
+            // Single-use checkpoint. Only one request can consume this grant.
+            if (!Pending.TryRemove(pending.Id, out _))
+                throw new AgentValidationException("Checkpoint đã được dùng; không thể thực hiện lại.");
+
+            if (!request.ApproveTransfer)
+            {
+                audit.Record("orchestration", "agent.workflow",
+                    $"agent-workflow:{pending.Id:D}", "handoff-declined",
+                    AuditResults.Cancelled);
+                return Response(pending.Id, pending.WorkspaceId,
+                    AgentWorkflowStatuses.Stopped, pending.Completed,
+                    pending.Steps.Count, pending.NextIndex + 1,
+                    "Người dùng đã từ chối chuyển dữ liệu; không chạy bước tiếp theo.",
+                    pending.StartedAt, "review-declined");
+            }
+
+            // The user reviewed the exact preview bound to this one-time grant.
+            audit.Record("orchestration", "agent.workflow",
+                $"agent-workflow:{pending.Id:D}", "handoff-reviewed-and-approved",
+                AuditResults.Prepared);
+            return await ExecuteSegmentAsync(
+                pending.Id, pending.WorkspaceId, pending.Request,
+                pending.Steps, pending.Completed.ToList(), pending.NextIndex,
+                pending.StartedAt,
+                pending.AccumulatedReviewWait + (DateTimeOffset.UtcNow - pending.PausedAt),
+                cancellationToken);
+        }
+        finally
+        {
+            WorkflowGate.Release();
+        }
+    }
+
+    private async Task<AgentWorkflowResponse> ExecuteSegmentAsync(
+        Guid id,
+        string workspaceId,
+        AgentWorkflowRequest request,
+        IReadOnlyList<AgentWorkflowStepRequest> steps,
+        IReadOnlyList<AgentWorkflowStepResult> completedBefore,
+        int firstIndex,
+        DateTimeOffset startedAt,
+        TimeSpan accumulatedReviewWait,
+        CancellationToken cancellationToken)
+    {
+        var completed = new List<AgentWorkflowStepResult>(completedBefore);
+        using var deadline = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
+        // Review pause is not active execution time. Count all previous active
+        // segments while allowing the user to use the advertised review window.
+        var remaining = TimeSpan.FromSeconds(WorkflowHandoffGuard.MaximumWorkflowSeconds)
+            - ((DateTimeOffset.UtcNow - startedAt) - accumulatedReviewWait);
+        if (remaining <= TimeSpan.Zero)
+            return Response(id, workspaceId, AgentWorkflowStatuses.TimedOut,
+                completed, steps.Count, firstIndex + 1,
+                "Workflow đã hết giới hạn thời gian tổng; không chạy bước tiếp theo.",
+                startedAt, "timeout");
+        deadline.CancelAfter(remaining);
+        string? stopReason = null;
+        string? error = null;
+        int? failedStep = null;
+
+        try
+        {
+            for (var i = firstIndex; i < steps.Count; i++)
             {
                 cancellationToken.ThrowIfCancellationRequested();
-                if (workflowDeadline.IsCancellationRequested)
+                if (deadline.IsCancellationRequested)
                 {
                     failedStep = i + 1;
                     stopReason = "timeout";
-                    error = "Workflow vượt giới hạn thời gian và đã dừng; các bước sau không chạy.";
+                    error = "Workflow đã hết thời gian và dừng trước bước tiếp theo.";
                     break;
                 }
 
                 var step = steps[i];
                 try
                 {
-                    // Keep workspace identity and the explicitly approved handoff
-                    // inside the per-step failure boundary so later steps never run.
                     if (!string.Equals(workspace.CurrentWorkspaceId,
                         workspaceId, StringComparison.Ordinal))
-                        throw new AgentValidationException("Workspace đã thay đổi trong khi workflow đang chạy.");
+                        throw new AgentValidationException("Workspace đã đổi.");
 
-                    var previous = i > 0 ? completed[^1].Result.Message : null;
-                    var goal = WorkflowHandoffGuard.Prepare(step, previous);
+                    // Transfer was explicitly approved via a single-use checkpoint
+                    // before entering a receiving step. All input is re-screened.
+                    var prior = i > 0 ? completed[^1].Result.Message : null;
+                    var goal = WorkflowHandoffGuard.Prepare(step, prior);
                     using var stepDeadline = CancellationTokenSource.CreateLinkedTokenSource(
-                        workflowDeadline.Token);
-                    stepDeadline.CancelAfter(TimeSpan.FromSeconds(WorkflowHandoffGuard.MaximumStepSeconds));
+                        deadline.Token);
+                    stepDeadline.CancelAfter(TimeSpan.FromSeconds(
+                        WorkflowHandoffGuard.MaximumStepSeconds));
+
                     var result = await agents.ExecuteAsync(
                         step.AgentId!,
                         new AgentExecutionRequest(
@@ -226,13 +346,25 @@ public sealed class AgentOrchestrationService(
                             UseTaskContext: request.UseTaskContext,
                             UseLifeContext: request.UseLifeContext),
                         stepDeadline.Token);
+                    stepDeadline.Token.ThrowIfCancellationRequested();
 
-                    // No agent can select another agent or change this step list.
                     completed.Add(new AgentWorkflowStepResult(
-                        i + 1,
-                        step.AgentId!,
-                        step.IncludePreviousOutput,
-                        result));
+                        i + 1, step.AgentId!, step.IncludePreviousOutput, result));
+
+                    if (i + 1 < steps.Count && steps[i + 1].IncludePreviousOutput)
+                    {
+                        // Fail closed before a human sees a proposed handoff.
+                        WorkflowHandoffGuard.Prepare(steps[i + 1], result.Message);
+                        var checkpoint = CreateCheckpoint(id, workspaceId,
+                            request, steps, completed, i + 1, startedAt,
+                            accumulatedReviewWait, result.Message);
+                        audit.Record("orchestration", "agent.workflow",
+                            $"agent-workflow:{id:D}", "handoff-awaiting-user-review",
+                            AuditResults.Prepared);
+                        return Response(id, workspaceId,
+                            AgentWorkflowStatuses.AwaitingReview, completed,
+                            steps.Count, null, null, startedAt, null, checkpoint);
+                    }
                 }
                 catch (OperationCanceledException)
                     when (cancellationToken.IsCancellationRequested)
@@ -240,69 +372,111 @@ public sealed class AgentOrchestrationService(
                     throw;
                 }
                 catch (OperationCanceledException)
-                    when (!cancellationToken.IsCancellationRequested)
                 {
                     failedStep = i + 1;
                     stopReason = "timeout";
-                    error = "Bước này đã dừng vì hết thời gian; các bước sau không chạy.";
+                    error = "Bước này hết thời gian; không chạy bước tiếp theo.";
                     break;
                 }
                 catch (AgentValidationException)
                 {
                     failedStep = i + 1;
                     stopReason = "validation-blocked";
-                    error = "Không thể thực hiện bước tiếp theo vì workspace hoặc dữ liệu chuyển giao không hợp lệ; các bước sau không chạy.";
+                    error = "Workspace hoặc dữ liệu chuyển giao không hợp lệ; đã dừng workflow.";
                     break;
                 }
                 catch (Exception)
                 {
-                    // Avoid returning exception details potentially containing
-                    // credentials or model/provider text.
                     failedStep = i + 1;
                     stopReason = "step-failed";
-                    error = "Bước này không hoàn tất; workflow đã dừng và không chạy các bước sau.";
+                    error = "Bước này không hoàn tất; không chạy bước tiếp theo.";
                     break;
                 }
             }
 
-            var succeeded = failedStep is null;
-            audit.Record(
-                "orchestration", "agent.workflow",
-                $"agent-workflow:{workflowId:D}",
-                succeeded ? "workflow-completed" : "workflow-stopped",
-                succeeded ? AuditResults.Succeeded : AuditResults.Failed);
+            var success = failedStep is null;
+            audit.Record("orchestration", "agent.workflow",
+                $"agent-workflow:{id:D}",
+                success ? "workflow-completed" : "workflow-stopped",
+                success ? AuditResults.Succeeded : AuditResults.Failed);
 
-            return new AgentWorkflowResponse(
-                workflowId,
-                workspaceId,
-                succeeded ? AgentWorkflowStatuses.Completed
+            return Response(id, workspaceId,
+                success ? AgentWorkflowStatuses.Completed
                     : stopReason == "timeout" ? AgentWorkflowStatuses.TimedOut
                     : AgentWorkflowStatuses.Stopped,
-                completed,
-                steps.Count,
-                failedStep,
-                error,
-                ExecutedTools: false,
-                AutomaticallySelectedAgents: false,
-                PersistedWorkflow: false,
-                ParallelExecution: false,
-                StartedAt: startedAt,
-                CompletedAt: DateTimeOffset.UtcNow,
-                StopReason: stopReason);
+                completed, steps.Count, failedStep, error, startedAt, stopReason);
         }
         catch (OperationCanceledException)
             when (cancellationToken.IsCancellationRequested)
         {
-            audit.Record(
-                "orchestration", "agent.workflow",
-                $"agent-workflow:{workflowId:D}",
-                "request-cancelled",
+            audit.Record("orchestration", "agent.workflow",
+                $"agent-workflow:{id:D}", "request-cancelled",
                 AuditResults.Cancelled);
             throw;
         }
-        finally
+    }
+
+    private static AgentHandoffCheckpoint CreateCheckpoint(
+        Guid id,
+        string workspaceId,
+        AgentWorkflowRequest request,
+        IReadOnlyList<AgentWorkflowStepRequest> steps,
+        IReadOnlyList<AgentWorkflowStepResult> completed,
+        int nextIndex,
+        DateTimeOffset startedAt,
+        TimeSpan accumulatedReviewWait,
+        string priorOutput)
+    {
+        RemoveExpired();
+        if (Pending.Count >= MaximumPendingWorkflows)
+            throw new AgentValidationException(
+                "Quá nhiều checkpoint đang chờ duyệt; workflow đã dừng.");
+
+        var preview = priorOutput[..Math.Min(
+            WorkflowHandoffGuard.MaximumHandoffCharacters, priorOutput.Length)];
+        var digest = Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(preview)));
+        var token = Convert.ToHexString(RandomNumberGenerator.GetBytes(32));
+        var pausedAt = DateTimeOffset.UtcNow;
+        var expiry = pausedAt.AddMinutes(PendingReviewMinutes);
+        var state = new PendingWorkflow(id, workspaceId, request, steps,
+            completed.ToArray(), nextIndex, startedAt, expiry, pausedAt,
+            accumulatedReviewWait, token, digest, preview);
+
+        if (!Pending.TryAdd(id, state))
+            throw new AgentValidationException("Checkpoint workflow đã tồn tại.");
+
+        return new AgentHandoffCheckpoint(
+            id, nextIndex + 1, steps[nextIndex].AgentId!,
+            preview, digest, token, expiry);
+    }
+
+    private static bool FixedEquals(string expected, string? actual)
+    {
+        if (string.IsNullOrWhiteSpace(actual)) return false;
+        var a = Encoding.UTF8.GetBytes(expected);
+        var b = Encoding.UTF8.GetBytes(actual);
+        return a.Length == b.Length && CryptographicOperations.FixedTimeEquals(a, b);
+    }
+
+    private static void RemoveExpired()
+    {
+        foreach (var pair in Pending)
         {
-            WorkflowGate.Release();
+            if (pair.Value.ExpiresAt <= DateTimeOffset.UtcNow)
+                Pending.TryRemove(pair.Key, out _);
         }
     }
+
+    private static AgentWorkflowResponse Response(
+        Guid id, string workspaceId, string status,
+        IReadOnlyList<AgentWorkflowStepResult> completed,
+        int requestedSteps, int? failedStep, string? error,
+        DateTimeOffset startedAt, string? stopReason,
+        AgentHandoffCheckpoint? checkpoint = null) =>
+        new(id, workspaceId, status, completed.ToArray(), requestedSteps,
+            failedStep, error,
+            ExecutedTools: false, AutomaticallySelectedAgents: false,
+            PersistedWorkflow: false, ParallelExecution: false,
+            StartedAt: startedAt, CompletedAt: DateTimeOffset.UtcNow,
+            StopReason: stopReason, HandoffCheckpoint: checkpoint);
 }

@@ -27,7 +27,7 @@ public static class OperatorAgentLimits
             PersistsPlans: false,
             DispatchesAgents: false,
             RequiresExplicitInvocation: true,
-            NextStage: "v2.2.2-orchestration-reliability");
+            NextStage: "v2.2.3-workflow-observability");
 }
 
 public sealed class OperatorOutputException(string message)

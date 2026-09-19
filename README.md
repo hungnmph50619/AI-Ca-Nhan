@@ -1,8 +1,21 @@
-# AI Cá Nhân — Workflow Hardening v2.2.1
+# AI Cá Nhân — Orchestration Reliability v2.2.2
 
 PersonalAI là trợ lý AI cá nhân chạy bằng ASP.NET Core 8, ưu tiên dữ liệu cục bộ, có thể dùng Gemini hoặc OpenAI cho phần sinh câu trả lời. v2.0.0 đã tạo **Personal AI OS**; v2.1.0 thêm Agent Framework; v2.1.1 thêm **Planner Agent**; v2.1.2 bổ sung **Research Agent**; v2.1.3 có **Developer Agent**; v2.1.4 bổ sung **Office Agent**; v2.1.5 thêm **Operator Agent**; v2.1.6 bổ sung **Reviewer Agent**; v2.1.7 thêm **Security Agent** rà soát rủi ro cục bộ; **v2.2.0 bổ sung workflow tuần tự có xác nhận** để gọi 2–3 agent đã được người dùng chọn trước và chuyển đầu ra khi có opt-in. **v2.2.1** thêm giới hạn thời gian từng bước/toàn workflow và bộ kiểm tra mẫu credential trước handoff. Chưa có auto-delegation, agent tự chạy tool, shared queue, autonomous loop hoặc parallel agents.
 
 > Đây vẫn là ứng dụng thiết kế cho một người dùng trên máy cá nhân. Personal AI OS v2.0 giữ toàn bộ hardening của v1.9 nhưng **không thay thế authentication/authorization** cần có khi triển khai Internet hoặc môi trường nhiều người dùng.
+
+## Có gì trong v2.2.2?
+
+### Orchestration Reliability
+
+Trước khi chuyển đầu ra có opt-in sang agent tiếp theo, workflow tạm dừng tại **checkpoint cần người dùng xem đúng nội dung sẽ chuyển** (tối đa 1.600 ký tự) rồi đồng ý hoặc từ chối. Đồng ý mới gọi bước nhận; từ chối thì dừng workflow. Checkpoint có token dùng một lần và digest của nội dung, ràng buộc vào workflow/workspace; checkpoint chờ tối đa 10 phút, lưu tạm trong bộ nhớ server, mất khi server khởi động lại.
+
+- API: `POST /api/agents/orchestration/resume` bổ sung cho execute/status. Kết quả có trạng thái `awaiting-review` và thông tin checkpoint để giao diện xác nhận riêng.
+- Workflow giữ 120 giây **thời gian thực thi chủ động** qua các lần resume, không tính thời gian người dùng đang đọc checkpoint; mỗi bước vẫn giới hạn 50 giây theo cơ chế huỷ hợp tác.
+- Bộ lọc mẫu credential không nhận ra mọi bí mật hoặc prompt injection; cần tự kiểm tra nội dung trước khi chấp thuận gửi đến AI provider đã cấu hình. Không chạy tool, tự chọn agent, tự phê duyệt hay lưu workflow bền vững.
+- Xem `docs/releases/v2.2.2.md` để biết giới hạn và hợp đồng API.
+
+### Workflow Hardening v2.2.1 vẫn được giữ nguyên
 
 ## Có gì trong v2.2.1?
 
@@ -1084,10 +1097,11 @@ docs/releases/v2.1.6.md
 docs/releases/v2.1.7.md
 docs/releases/v2.2.0.md
 docs/releases/v2.2.1.md
+docs/releases/v2.2.2.md
 ```
 
-## Hướng phát triển sau v2.2.1
+## Hướng phát triển sau v2.2.2
 
 Computer Use, Browser Agent, Connector Foundation, Software Development Agent, Android Companion, Life Context, Decision Engine và Automation hiện nằm trong controlled capability layer.
 
-Sau v2.2.1, mốc kế tiếp là **v2.2.2 — Orchestration Reliability**. Web/email research và tự thực thi tool chưa được tích hợp vào điều phối; việc mở thêm quyền cần thiết kế độc lập, truy xuất nguồn và permission/confirmation rõ ràng.
+Sau v2.2.2, mốc kế tiếp là **v2.2.3 — Workflow Observability**. Web/email research và tự thực thi tool chưa được tích hợp vào điều phối; việc mở thêm quyền cần thiết kế độc lập, truy xuất nguồn và permission/confirmation rõ ràng.

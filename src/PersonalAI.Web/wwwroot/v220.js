@@ -1,5 +1,5 @@
 (() => {
-  const VERSION = "2.2.0";
+  const VERSION = "2.2.1";
 
   document.addEventListener("DOMContentLoaded", () => {
     const card = document.querySelector("#agentDialog .agent-card");
@@ -9,7 +9,7 @@
     panel.id = "workflowPanel";
     panel.className = "workflow-panel";
     panel.innerHTML = '<summary>Workflows · v' + VERSION + ' · Điều phối tuần tự</summary>'
-      + '<p>Chọn trước 2–3 agent và mục tiêu của từng bước. Chỉ chuyển kết quả khi bạn tích chọn ở bước nhận. Không tự gọi tool hoặc thực hiện thao tác bên ngoài.</p>'
+      + '<p>Chọn trước 2–3 agent và mục tiêu từng bước. Handoff tối đa 1.600 ký tự và sẽ bị chặn nếu phát hiện mẫu credential. Mỗi bước giới hạn thời gian, không tự gọi tool.</p>'
       + '<form id="workflowForm">'
       + '<div class="workflow-step"><label for="wfAgent1">Bước 1 · Agent</label><select id="wfAgent1" required></select>'
       + '<label for="wfGoal1">Mục tiêu bước 1</label><textarea id="wfGoal1" maxlength="4000" required></textarea></div>'
@@ -26,7 +26,7 @@
       + '<label><input type="checkbox" id="wfTasks"> Tasks</label>'
       + '<label><input type="checkbox" id="wfLife"> Life context</label></fieldset>'
       + '<label class="workflow-toggle"><input type="checkbox" id="wfConfirm" required>Tôi đã chọn và xác nhận toàn bộ các bước; các đầu ra có thể được gửi đến AI provider của agent được chọn.</label>'
-      + '<p class="workflow-boundary">Các bước có thể dùng AI provider đã cấu hình; không nhập bí mật. Chuyển đầu ra chỉ được thực hiện khi bạn bật checkbox ở từng bước. Không có agent tự chọn, task queue, chạy song song hay tool execution.</p>'
+      + '<p class="workflow-boundary">Workflow giới hạn tối đa 120 giây, mỗi bước tối đa 50 giây (cần provider hỗ trợ huỷ để dừng đúng hạn). Các bước có thể gửi nội dung tới AI provider; không nhập bí mật. Bộ lọc mẫu credential không thay thế kiểm tra dữ liệu thủ công. Handoff chỉ khi người dùng tích chọn. Không tự chọn agent, chạy song song hoặc thực thi tool.</p>'
       + '<button class="primary-button" id="wfRun" type="submit" disabled>Chạy workflow đã xác nhận</button>'
       + '<p id="wfFeedback" role="status" aria-live="polite"></p>'
       + '</form><section id="wfResults" class="workflow-results" hidden></section>';
@@ -121,7 +121,9 @@
 
         feedback.textContent = payload.status === "completed"
           ? "Đã hoàn tất " + payload.completedSteps.length + " bước. Không có tool execution."
-          : "Workflow đã dừng tại bước " + (payload.failedStep || "?") + "; các bước sau không chạy.";
+          : payload.status === "timed-out"
+            ? "Workflow dừng vì hết thời gian ở bước " + (payload.failedStep || "?") + "; không chạy các bước sau."
+            : "Workflow đã dừng tại bước " + (payload.failedStep || "?") + "; các bước sau không chạy.";
 
         (payload.completedSteps || []).forEach(item => {
           const section = document.createElement("article");

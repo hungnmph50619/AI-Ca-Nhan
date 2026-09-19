@@ -1567,7 +1567,7 @@ jobs:
 
           tools=$(curl -fsS http://127.0.0.1:5077/api/tools)
           echo "$tools" | jq -e '.frameworkVersion == "2.2.6" and (.permissionTypes | sort) == (["BROWSER","COMPUTER","CONNECTOR","DELETE","DEVELOPMENT","EXTERNAL","READ","SENSITIVE","WRITE"] | sort)' >/dev/null
-          echo "$tools" | jq -e '(.tools | length) == 32
+          echo "$tools" | jq -e '(.tools | length) == 33
             and any(.tools[]; .name == "local.clock" and .localOnly == true and .requiredPermissions == ["READ"])
             and any(.tools[]; .name == "local.text_stats" and .timeoutMs == 2000)
             and any(.tools[]; .name == "memory.search")
@@ -1587,6 +1587,7 @@ jobs:
             and any(.tools[]; .name == "computer.window.active" and .requiredPermissions == ["READ","SENSITIVE"] and .requiresConfirmation == true)
             and any(.tools[]; .name == "computer.window.focus" and .requiredPermissions == ["WRITE","COMPUTER","SENSITIVE"] and .requiresConfirmation == true)
             and any(.tools[]; .name == "computer.cursor.move" and .requiredPermissions == ["WRITE","COMPUTER"] and .requiresConfirmation == true)
+            and any(.tools[]; .name == "computer.mouse.click-left" and .requiredPermissions == ["WRITE","COMPUTER","SENSITIVE"] and .requiresConfirmation == true)
             and any(.tools[]; .name == "browser.session.info" and .requiredPermissions == ["READ","BROWSER"] and .requiresConfirmation == true)
             and any(.tools[]; .name == "browser.navigate" and .requiredPermissions == ["READ","EXTERNAL","BROWSER"] and .requiresConfirmation == true)
             and any(.tools[]; .name == "browser.page.observe" and .requiredPermissions == ["READ","BROWSER"] and .requiresConfirmation == true)
@@ -1626,6 +1627,23 @@ jobs:
             -d '{"toolName":"computer.cursor.move","arguments":{"x":10,"y":10},"approvedPermissions":["WRITE"],"confirmed":true}')
           test "$computer_missing_permission_code" = "403"
           jq -e '.status == "denied" and (.error | contains("ĐIỀU KHIỂN MÁY"))' /tmp/computer-missing-permission.json >/dev/null
+
+          # Không cho phép nhấp khi thiếu xác nhận hay quyền; không gửi sự kiện chuột trên CI Linux.
+          mouse_without_confirm_code=$(curl -sS -o /tmp/mouse-without-confirm.json -w '%{http_code}' -X POST http://127.0.0.1:5077/api/tools/execute \
+            -H 'Content-Type: application/json' \
+            -d '{"toolName":"computer.mouse.click-left","arguments":{"windowId":"0x1234","x":10,"y":10},"approvedPermissions":["WRITE","COMPUTER","SENSITIVE"],"confirmed":false}')
+          test "$mouse_without_confirm_code" = "403"
+          jq -e '.status == "denied" and (.error | contains("xác nhận"))' /tmp/mouse-without-confirm.json >/dev/null
+          mouse_without_sensitive_code=$(curl -sS -o /tmp/mouse-without-sensitive.json -w '%{http_code}' -X POST http://127.0.0.1:5077/api/tools/execute \
+            -H 'Content-Type: application/json' \
+            -d '{"toolName":"computer.mouse.click-left","arguments":{"windowId":"0x1234","x":10,"y":10},"approvedPermissions":["WRITE","COMPUTER"],"confirmed":true}')
+          test "$mouse_without_sensitive_code" = "403"
+          jq -e '.status == "denied" and (.error | contains("NHẠY CẢM"))' /tmp/mouse-without-sensitive.json >/dev/null
+          mouse_paused_code=$(curl -sS -o /tmp/mouse-paused.json -w '%{http_code}' -X POST http://127.0.0.1:5077/api/tools/execute \
+            -H 'Content-Type: application/json' \
+            -d '{"toolName":"computer.mouse.click-left","arguments":{"windowId":"0x1234","x":10,"y":10},"approvedPermissions":["WRITE","COMPUTER","SENSITIVE"],"confirmed":true}')
+          test "$mouse_paused_code" = "400"
+          jq -e '.status == "invalid-input" and (.error | contains("tạm dừng"))' /tmp/mouse-paused.json >/dev/null
 
           computer_unsupported_code=$(curl -sS -o /tmp/computer-unsupported.json -w '%{http_code}' -X POST http://127.0.0.1:5077/api/tools/execute \
             -H 'Content-Type: application/json' \
@@ -2966,7 +2984,12 @@ jobs:
           grep -Fq 'CONTROLLED CAPABILITY · WINDOWS' src/PersonalAI.Web/wwwroot/v110.js
           ! grep -Fq '"computer.mouse.click"' src/PersonalAI.Web/Services/ComputerUseTools.cs
           ! grep -Fq '"computer.keyboard' src/PersonalAI.Web/Services/ComputerUseTools.cs
-          ! grep -Fq 'SendInput' src/PersonalAI.Web/Services/ComputerUseService.cs
+          grep -Fq 'control.RunAllowed(() => ClickLeftCore' src/PersonalAI.Web/Services/ComputerUseService.cs
+          grep -Fq 'SendInput((uint)inputs.Length, inputs' src/PersonalAI.Web/Services/ComputerUseService.cs
+          grep -Fq 'target != GetForegroundWindow()' src/PersonalAI.Web/Services/ComputerUseService.cs
+          grep -Fq 'ComputerClickLeftTool' src/PersonalAI.Web/Services/ComputerUseEndpoints.cs
+          grep -Fq 'RequiresConfirmation: true' src/PersonalAI.Web/Services/ComputerClickLeftTool.cs
+          ! grep -Fq '"computer.keyboard' src/PersonalAI.Web/Services/ComputerClickLeftTool.cs
           ! grep -Fq 'Process.Start' src/PersonalAI.Web/Services/ComputerUseService.cs
           grep -Fq 'Controlled Browser Agent' docs/releases/v1.2.0.md
           grep -Fq 'public const string Browser = "BROWSER"' src/PersonalAI.Web/Models/ToolModels.cs

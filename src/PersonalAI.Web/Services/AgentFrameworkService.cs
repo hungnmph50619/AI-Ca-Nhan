@@ -279,8 +279,8 @@ public sealed class AgentFrameworkService(
     IAuditRecorder audit,
     ILogger<AgentFrameworkService> logger) : IAgentFrameworkService
 {
-    public const string FrameworkVersion = "2.1.4";
-    public const string NextStage = "v2.1.5-operator-agent";
+    public const string FrameworkVersion = "2.1.5";
+    public const string NextStage = "v2.1.6-reviewer-agent";
 
     private static readonly SemaphoreSlim ExecutionGate =
         new(
@@ -390,7 +390,8 @@ public sealed class AgentFrameworkService(
                 Plan: result.Plan,
                 Research: result.Research,
                 Developer: result.Developer,
-                Office: result.Office);
+                Office: result.Office,
+                Operator: result.Operator);
         }
         catch (OperationCanceledException)
             when (cancellationToken.IsCancellationRequested)

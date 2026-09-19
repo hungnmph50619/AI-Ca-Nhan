@@ -250,10 +250,10 @@
       payload.desktopActionsPaused !== false);
   }
 
-  async function loadComputerStatus() {
+  async function loadComputerStatus(clearFeedback = true) {
     if (loading) return;
     loading = true;
-    setFeedback("");
+    if (clearFeedback) setFeedback("");
 
     try {
       const response = await fetch("/api/computer/status", { cache: "no-store" });
@@ -419,7 +419,7 @@
       } catch (error) {
         setFeedback(error.message || "Không nhập được văn bản.", true);
       } finally {
-        await loadComputerStatus();
+        await loadComputerStatus(false);
       }
     }, 5000);
   }

@@ -83,6 +83,62 @@ public static class ComputerUseEndpoints
             });
         });
 
+        // Văn bản chỉ nhập vào Notepad, không đi qua công cụ chung vì công cụ
+        // chung ghi tham số vào nhật ký. Không ghi nội dung văn bản vào audit.
+        app.MapGet("/api/computer/keyboard/notepad-windows", (
+            HttpContext context,
+            IComputerUseService computer) =>
+        {
+            if (!IsLocalRequest(context)
+                || context.Request.Headers["X-PersonalAI-Manual-Approval"] != "dong-y")
+                return Results.StatusCode(StatusCodes.Status403Forbidden);
+
+            try
+            {
+                var windows = computer.GetWindows(50).Windows
+                    .Where(window => string.Equals(
+                        window.ProcessName, "notepad",
+                        StringComparison.OrdinalIgnoreCase))
+                    .Select(window => new
+                    {
+                        windowId = window.WindowId,
+                        title = window.Title
+                    })
+                    .ToArray();
+                return Results.Ok(new { windows });
+            }
+            catch (ToolExecutionInputException exception)
+            {
+                return Results.BadRequest(new ApiError(exception.Message));
+            }
+        });
+
+        app.MapPost("/api/computer/keyboard/type-notepad", (
+            HttpContext context,
+            ComputerNotepadTextRequest request,
+            IComputerUseService computer,
+            IAuditRecorder audit) =>
+        {
+            if (!IsLocalRequest(context)
+                || context.Request.Headers["X-PersonalAI-Manual-Approval"] != "dong-y")
+                return Results.StatusCode(StatusCodes.Status403Forbidden);
+
+            try
+            {
+                var result = computer.TypeNotepadText(
+                    request.WindowId, request.Text);
+                audit.Record(AuditAgents.User, "computer.keyboard.type-notepad",
+                    "computer:desktop", "manual-local-confirmed",
+                    AuditResults.Succeeded,
+                    "Đã nhập văn bản vào Notepad. Nội dung không được ghi vào nhật ký.");
+                return Results.Ok(result);
+            }
+            catch (ToolExecutionInputException exception)
+            {
+                return Results.BadRequest(new ApiError(exception.Message));
+            }
+        });
+
         return app;
     }
 

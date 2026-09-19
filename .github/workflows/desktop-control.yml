@@ -105,7 +105,7 @@ jobs:
               # Dùng ID cửa sổ không tồn tại: mỗi thao tác tiêu tốn một lượt mà không nhấp máy thật.
               $badWindow = @{
                 toolName = "computer.window.focus"
-                arguments = @{ windowId = "0x1234" }
+                arguments = @{ windowId = "0x0" }
                 approvedPermissions = @("WRITE", "COMPUTER", "SENSITIVE")
                 confirmed = $true
               } | ConvertTo-Json -Depth 5

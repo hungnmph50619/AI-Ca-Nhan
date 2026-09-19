@@ -2730,7 +2730,7 @@ jobs:
           grep -Fq 'Security Agent' docs/releases/v2.1.7.md
           grep -Fq 'Controlled Agent Orchestration' docs/releases/v2.2.0.md
           grep -Fq 'Workflow Hardening' docs/releases/v2.2.1.md
-          grep -Fq 'Orchestration Reliability' docs/releases/v2.2.3.md
+          grep -Fq 'Orchestration Reliability' docs/releases/v2.2.2.md
           grep -Fq 'Workflow Observability' docs/releases/v2.2.3.md
           grep -Fq 'WorkflowObservability' src/PersonalAI.Web/Services/AgentFrameworkEndpoints.cs
           grep -Fq 'AccumulatedReviewWait' src/PersonalAI.Web/Services/AgentOrchestrationService.cs

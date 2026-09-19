@@ -33,7 +33,7 @@ public static class PlannerAgentLimits
             PersistsPlans: false,
             ToolExecutionEnabled: false,
             RequiresExplicitInvocation: true,
-            NextStage: "v2.2.6-workflow-accessibility");
+            NextStage: "v2.2.7-workflow-usability");
 }
 
 public sealed class PlannerOutputException : InvalidOperationException
@@ -104,7 +104,7 @@ public sealed class PlannerFrameworkAgent(
 
     public AgentDefinition Definition { get; } = new(
         AgentId,
-        "Planner Agent",
+        "Tác nhân lập kế hoạch",
         "planner",
         "Nhận goal và chia thành các bước có dependency, outcome và role/capability gợi ý; không tự dispatch hoặc tạo task.",
         [

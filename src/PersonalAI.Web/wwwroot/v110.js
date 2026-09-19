@@ -142,6 +142,24 @@
     refresh.addEventListener("click", () => loadComputerStatus());
     actions.appendChild(refresh);
 
+    const stop = document.createElement("button");
+    stop.type = "button";
+    stop.id = "computerControlStop";
+    stop.className = "secondary-button";
+    stop.textContent = "Dừng điều khiển";
+    stop.addEventListener("click", () => changeControl("stop"));
+
+    const enable = document.createElement("button");
+    enable.type = "button";
+    enable.id = "computerControlEnable";
+    enable.className = "secondary-button";
+    enable.textContent = "Cho phép điều khiển";
+    enable.addEventListener("click", () => {
+      if (!window.confirm("Chỉ cho phép chuyển cửa sổ và di chuyển con trỏ. Mỗi thao tác vẫn cần xác nhận riêng. Bạn có đồng ý không?")) return;
+      changeControl("enable");
+    });
+    actions.append(stop, enable);
+
     card.append(
       header,
       intro,
@@ -176,7 +194,8 @@
       return;
     }
 
-    updateBadge(payload.supported === true && payload.interactiveSession === true);
+    updateBadge(payload.supported === true && payload.interactiveSession === true,
+      payload.desktopActionsPaused !== false);
   }
 
   async function loadComputerStatus() {
@@ -192,7 +211,8 @@
       }
 
       renderStatus(payload);
-      updateBadge(payload.supported === true && payload.interactiveSession === true);
+      updateBadge(payload.supported === true && payload.interactiveSession === true,
+        payload.desktopActionsPaused !== false);
     } catch (error) {
       setFeedback(error.message || "Không đọc được trạng thái Computer Use.", true);
       updateBadge(false);
@@ -209,7 +229,11 @@
 
     const usable = status.supported === true && status.interactiveSession === true;
     summary.textContent =
-      `${usable ? "Sẵn sàng" : "Chưa khả dụng"} · ${status.platform || "không rõ nền tảng"} · v${status.version || VERSION}`;
+      `${usable ? (status.desktopActionsPaused === false ? "Đã cho phép điều khiển giới hạn" : "Điều khiển đang tạm dừng") : "Chưa khả dụng"} · ${status.platform || "không rõ nền tảng"} · v${status.version || VERSION}`;
+    const stop = document.getElementById("computerControlStop");
+    const enable = document.getElementById("computerControlEnable");
+    if (stop) stop.disabled = !usable || status.desktopActionsPaused !== false;
+    if (enable) enable.disabled = !usable || status.desktopActionsPaused !== true;
 
     capabilities.replaceChildren();
     const items = Array.isArray(status.availableCapabilities)
@@ -239,12 +263,33 @@
     });
   }
 
-  function updateBadge(available) {
+  function updateBadge(available, paused = true) {
     const badge = document.querySelector("#computerUseBadge");
     if (!badge) return;
-    badge.textContent = available ? "ON" : "OFF";
+    badge.textContent = available ? (paused ? "DỪNG" : "BẬT") : "TẮT";
     badge.className =
-      `tool-count v110-computer-badge ${available ? "is-ready" : "is-off"}`;
+      `tool-count v110-computer-badge ${available && !paused ? "is-ready" : "is-off"}`;
+  }
+
+  async function changeControl(action) {
+    const stop = document.getElementById("computerControlStop");
+    const enable = document.getElementById("computerControlEnable");
+    if (stop) stop.disabled = true;
+    if (enable) enable.disabled = true;
+    try {
+      const response = await fetch("/api/computer/control/" + action, {
+        method: "POST",
+        headers: { "X-PersonalAI-Manual-Approval": "dong-y" },
+        cache: "no-store"
+      });
+      const payload = await response.json().catch(() => ({}));
+      if (!response.ok) throw new Error(payload.error || "Không thay đổi được trạng thái điều khiển máy.");
+      setFeedback(payload.message || "Đã cập nhật trạng thái điều khiển máy.");
+    } catch (error) {
+      setFeedback(error.message || "Không thay đổi được trạng thái điều khiển máy.", true);
+    } finally {
+      await loadComputerStatus();
+    }
   }
 
   function setFeedback(message, isError = false) {

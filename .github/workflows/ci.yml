@@ -1606,7 +1606,7 @@ jobs:
           echo "$computer_status" | jq -e '.version == "2.2.6" and .supported == false and .interactiveSession == false and .availableCapabilities == [] and any(.limitations[]; contains("Windows"))' >/dev/null
 
           # Khởi động mặc định khóa điều khiển; thử dừng lại và từ chối cho phép trên Linux.
-          echo "$computer_status" | jq -e '.desktopActionsPaused == true' >/dev/null
+          echo "$computer_status" | jq -e '.desktopActionsPaused == true and .stopHotkeyAvailable == false and .stopHotkey == "Ctrl + Shift + F12"' >/dev/null
           desktop_stop_code=$(curl -sS -o /tmp/desktop-stop.json -w '%{http_code}' -X POST http://127.0.0.1:5077/api/computer/control/stop)
           test "$desktop_stop_code" = "200"
           jq -e '.paused == true' /tmp/desktop-stop.json >/dev/null
@@ -2965,6 +2965,13 @@ jobs:
           grep -Fq 'Controlled Computer Use' docs/releases/v1.1.0.md
           grep -Fq 'public const string Computer = "COMPUTER"' src/PersonalAI.Web/Models/ToolModels.cs
           grep -Fq 'DesktopActionsPaused: session.Paused' src/PersonalAI.Web/Services/ComputerUseService.cs
+          grep -Fq 'StopHotkeyAvailable: session.StopHotkeyAvailable' src/PersonalAI.Web/Services/ComputerUseService.cs
+          grep -Fq 'AddHostedService<WindowsStopHotkeyService>()' src/PersonalAI.Web/Services/ComputerUseEndpoints.cs
+          grep -Fq 'RegisterHotKey(' src/PersonalAI.Web/Services/WindowsStopHotkeyService.cs
+          grep -Fq 'UnregisterHotKey(' src/PersonalAI.Web/Services/WindowsStopHotkeyService.cs
+          grep -Fq 'control.SetStopHotkeyAvailable(false)' src/PersonalAI.Web/Services/WindowsStopHotkeyService.cs
+          grep -Fq 'if (!_stopHotkeyAvailable)' src/PersonalAI.Web/Services/ComputerControlGate.cs
+          grep -Fq 'status.stopHotkeyAvailable !== true' src/PersonalAI.Web/wwwroot/v110.js
           grep -Fq 'DesktopRemainingActions: session.RemainingActions' src/PersonalAI.Web/Services/ComputerUseService.cs
           grep -Fq 'MaximumSessionSeconds = 60' src/PersonalAI.Web/Services/ComputerControlGate.cs
           grep -Fq 'MaximumActionsPerSession = 5' src/PersonalAI.Web/Services/ComputerControlGate.cs

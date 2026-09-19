@@ -12,3 +12,5 @@
 .workflow-step-result{padding:12px;border:1px solid #8887;border-radius:8px;margin-top:10px}
 .workflow-step-output{white-space:pre-wrap;overflow-wrap:anywhere;font:inherit;max-height:320px;overflow:auto}
 .workflow-results{margin-top:12px}
+
+.workflow-step[hidden]{display:none}

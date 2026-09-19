@@ -8,6 +8,7 @@ public static class ComputerUseCapabilities
     public const string ActiveWindow = "active-window";
     public const string FocusWindow = "focus-window";
     public const string MoveCursor = "move-cursor";
+    public const string ClickLeft = "click-left";
 }
 
 public sealed record ComputerUseStatusResponse(

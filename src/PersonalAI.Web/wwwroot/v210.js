@@ -1,5 +1,5 @@
 (() => {
-  const VERSION = "2.1.3";
+  const VERSION = "2.1.4";
   let dialog;
   let select;
   let goal;
@@ -135,7 +135,7 @@
     const boundary = document.createElement("div");
     boundary.className = "agent-boundary";
     boundary.textContent =
-      "v2.1.3 chạy agent khi bạn chủ động bấm chạy. Developer chỉ đọc đoạn mã và đề xuất sửa, không tự chạy lệnh hoặc chỉnh sửa file; các agent không tự giao việc.";
+      "v2.1.4 chạy agent khi bạn chủ động bấm chạy. Office chỉ soạn nháp; không gửi email, tạo lịch/task, chỉnh sửa hay tự lưu tài liệu. Các agent không tự giao việc.";
 
     feedback = document.createElement("div");
     feedback.className = "agent-feedback";
@@ -230,14 +230,17 @@
     const isPlanner = agent.role === "planner";
     const isResearch = agent.role === "research";
     const isDeveloper = agent.role === "developer";
-    goal.placeholder = isDeveloper
+    const isOffice = agent.role === "office";
+    goal.placeholder = isOffice
+      ? "Ví dụ: Soạn email nháp cập nhật tiến độ dự án, chưa gửi; liệt kê thông tin còn thiếu."
+      : isDeveloper
       ? "Ví dụ: search: ExecuteAsync — xem các đoạn mã liên quan và đề xuất cải tiến. Các snippet có thể được gửi đến AI provider đã cấu hình."
       : isResearch
       ? "Ví dụ: Từ các tài liệu trong workspace, tổng hợp ưu nhược điểm của phương án này và dẫn nguồn cho từng nhận định."
       : isPlanner
         ? "Ví dụ: Phát triển AI Cá Nhân từ v2.1.2 đến v2.2 theo từng bước an toàn."
         : "Ví dụ: Phân tích những việc tôi đang làm và đề xuất bước tiếp theo.";
-    runButton.textContent = isDeveloper ? "Phân tích mã" : isResearch ? "Nghiên cứu tài liệu" : isPlanner ? "Lập kế hoạch" : "Chạy agent";
+    runButton.textContent = isOffice ? "Soạn bản nháp" : isDeveloper ? "Phân tích mã" : isResearch ? "Nghiên cứu tài liệu" : isPlanner ? "Lập kế hoạch" : "Chạy agent";
 
     [
       ["Role", agent.role],
@@ -302,7 +305,9 @@
   function renderExecutionResult(payload) {
     result.replaceChildren();
 
-    if (payload.developer) {
+    if (payload.office) {
+      renderOfficeDraft(payload.office);
+    } else if (payload.developer) {
       renderDeveloperReport(payload.developer);
     } else if (payload.research) {
       renderResearchReport(payload.research);
@@ -400,7 +405,7 @@
     const boundary = document.createElement("p");
     boundary.className = "planner-plan-boundary";
     boundary.textContent =
-      "Plan này chỉ được chuẩn bị để bạn xem. v2.1.3 không tự tạo Task Engine task, không dispatch agent và không persist plan tự động.";
+      "Plan này chỉ được chuẩn bị để bạn xem. v2.1.4 không tự tạo Task Engine task, không dispatch agent và không persist plan tự động.";
     wrapper.append(boundary);
 
     result.append(wrapper);
@@ -511,6 +516,26 @@
     note.textContent = "Chưa sửa file, chạy build/test hay tạo commit. Mã nguồn chỉ được tìm theo từ khóa; trích dẫn vị trí không chứng minh mọi diễn giải của AI là đúng.";
     section.append(note);
     result.append(section);
+  }
+
+  function renderOfficeDraft(draft) {
+    const root = document.createElement("section");
+    root.className = "office-draft";
+    const title = document.createElement("h3");
+    title.textContent = "Bản nháp văn phòng · " + (draft.kind || "");
+    const subject = document.createElement("h4");
+    subject.textContent = draft.title || "";
+    const body = document.createElement("div");
+    body.className = "agent-result-copy";
+    body.style.whiteSpace = "pre-wrap";
+    body.textContent = draft.body || "";
+    root.append(title, subject, body);
+    appendPlannerList(root, "Việc đề xuất (chưa thực hiện)", draft.actionItems);
+    appendPlannerList(root, "Thông tin cần xác nhận", draft.missingInformation);
+    const boundary = document.createElement("p");
+    boundary.textContent = "Đây chỉ là bản nháp; hệ thống chưa gửi email, tạo lịch/task, chỉnh sửa hoặc tự lưu tài liệu. Hãy rà soát nội dung trước khi dùng.";
+    root.append(boundary);
+    result.append(root);
   }
 
   function appendPlannerList(parent, title, values) {

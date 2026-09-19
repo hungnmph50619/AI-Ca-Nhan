@@ -1,5 +1,5 @@
 (() => {
-  const VERSION = "2.1.3";
+  const VERSION = "2.1.4";
   let dialog;
   let content;
   let statusText;

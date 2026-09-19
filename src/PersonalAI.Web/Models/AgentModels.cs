@@ -74,6 +74,7 @@ public sealed record AgentExecutionResponse(
     PlannerPlan? Plan = null,
     ResearchReport? Research = null,
     DeveloperReport? Developer = null,
+    OfficeDraft? Office = null,
     string? Error = null);
 
 public sealed record AgentExecutionContext(
@@ -89,4 +90,5 @@ public sealed record AgentResult(
     ContextSelectionReport? Context,
     PlannerPlan? Plan = null,
     ResearchReport? Research = null,
-    DeveloperReport? Developer = null);
+    DeveloperReport? Developer = null,
+    OfficeDraft? Office = null);

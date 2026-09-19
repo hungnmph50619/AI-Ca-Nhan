@@ -9,6 +9,7 @@ public static class AgentFrameworkEndpoints
         this IServiceCollection services)
     {
         services.AddScoped<IAgent, PersonalAssistantFrameworkAgent>();
+        services.AddScoped<IAgent, PlannerFrameworkAgent>();
         services.AddScoped<IAgentRegistry, AgentRegistry>();
         services.AddScoped<IAgentFrameworkService, AgentFrameworkService>();
         return services;
@@ -24,6 +25,9 @@ public static class AgentFrameworkEndpoints
         app.MapGet("/api/agents", (
             IAgentFrameworkService framework) =>
             Results.Ok(framework.GetCatalog()));
+
+        app.MapGet("/api/planner/status", () =>
+            Results.Ok(PlannerAgentLimits.GetStatus()));
 
         app.MapGet("/api/agents/{agentId}", (
             string agentId,
@@ -55,6 +59,12 @@ public static class AgentFrameworkEndpoints
             {
                 return Results.BadRequest(
                     new ApiError(exception.Message));
+            }
+            catch (PlannerOutputException exception)
+            {
+                return Results.Json(
+                    new ApiError(exception.Message),
+                    statusCode: StatusCodes.Status502BadGateway);
             }
             catch (KeyNotFoundException exception)
             {

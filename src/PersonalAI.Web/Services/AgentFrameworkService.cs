@@ -182,7 +182,7 @@ public sealed class PersonalAssistantFrameworkAgent(
         "core.personal-assistant",
         "Personal Assistant",
         "general-assistant",
-        "Agent nền v2.1.0 dùng Context Manager để phân tích và trả lời theo mục tiêu người dùng, không tự chạy tool.",
+        "Agent nền v2.1.x dùng Context Manager để phân tích và trả lời theo mục tiêu người dùng, không tự chạy tool.",
         [
             "conversation",
             "memory-grounding",
@@ -231,7 +231,7 @@ public sealed class PersonalAssistantFrameworkAgent(
                 UseLifeContext: request.UseLifeContext),
             allowToolProposal: false,
             auditAgent: Definition.Id,
-            auditReason: "agent-framework-v2.1-explicit-invocation",
+            auditReason: "agent-framework-v2.1.1-explicit-invocation",
             cancellationToken);
 
         return new AgentResult(
@@ -244,7 +244,7 @@ public sealed class PersonalAssistantFrameworkAgent(
 
     private string BuildGoalPrompt(string goal) =>
         $"""
-        AGENT FRAMEWORK v2.1.0
+        AGENT FRAMEWORK v2.1.1
 
         Agent: {Definition.Name}
         Role: {Definition.Role}
@@ -279,8 +279,8 @@ public sealed class AgentFrameworkService(
     IAuditRecorder audit,
     ILogger<AgentFrameworkService> logger) : IAgentFrameworkService
 {
-    public const string FrameworkVersion = "2.1.0";
-    public const string NextStage = "v2.1.1-planner-agent";
+    public const string FrameworkVersion = "2.1.1";
+    public const string NextStage = "v2.1.2-research-agent";
 
     private static readonly SemaphoreSlim ExecutionGate =
         new(
@@ -340,7 +340,7 @@ public sealed class AgentFrameworkService(
                 AuditResults.Blocked);
 
             throw new AgentBusyException(
-                "Một agent execution khác đang chạy. v2.1.0 chưa cho phép chạy agent song song.");
+                "Một agent execution khác đang chạy. v2.1.1 chưa cho phép chạy agent song song.");
         }
 
         var executionId = Guid.NewGuid();
@@ -386,7 +386,8 @@ public sealed class AgentFrameworkService(
                 result.Sources,
                 result.Context,
                 agent.Definition.Tools,
-                ToolExecutionEnabled: false);
+                ToolExecutionEnabled: false,
+                Plan: result.Plan);
         }
         catch (OperationCanceledException)
             when (cancellationToken.IsCancellationRequested)

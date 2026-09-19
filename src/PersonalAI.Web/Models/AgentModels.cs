@@ -71,6 +71,7 @@ public sealed record AgentExecutionResponse(
     ContextSelectionReport? Context,
     IReadOnlyList<string> BoundTools,
     bool ToolExecutionEnabled,
+    PlannerPlan? Plan = null,
     string? Error = null);
 
 public sealed record AgentExecutionContext(
@@ -83,4 +84,5 @@ public sealed record AgentResult(
     string Provider,
     string Model,
     IReadOnlyList<ChatSource> Sources,
-    ContextSelectionReport? Context);
+    ContextSelectionReport? Context,
+    PlannerPlan? Plan = null);

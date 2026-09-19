@@ -345,7 +345,7 @@ public sealed class SystemCoreService(
                     ? new CoreModuleHealth(
                         "agents",
                         CoreHealthStatuses.Healthy,
-                        "Agent Framework v2.1 khả dụng; explicit invocation bắt buộc, tool execution/delegation/messaging vẫn tắt.",
+                        "Agent Framework v2.1.1 khả dụng; Personal Assistant + Planner đã đăng ký, explicit invocation bắt buộc và orchestration vẫn tắt.",
                         status.RegisteredAgents)
                     : new CoreModuleHealth(
                         "agents",
@@ -450,6 +450,9 @@ public sealed class SystemCoreService(
                 AutomaticAgentDelegationEnabled: false,
                 AgentMessagingEnabled: false,
                 ParallelAgentExecutionEnabled: false,
+                PlannerCreatesTasks: false,
+                PlannerDispatchesAgents: false,
+                PlannerPersistsPlans: false,
                 AutomaticMultiStepExecution: false,
                 BackgroundScheduler: true,
                 AutonomousAgentLoop: false,
@@ -490,7 +493,12 @@ public sealed class SystemCoreService(
                 AutomationService.SchedulerPollSeconds,
                 AgentFrameworkLimits.MaximumGoalCharacters,
                 AgentFrameworkLimits.MaximumConversationMessages,
-                AgentFrameworkLimits.MaximumConcurrentExecutions),
+                AgentFrameworkLimits.MaximumConcurrentExecutions,
+                PlannerAgentLimits.MinimumSteps,
+                PlannerAgentLimits.MaximumSteps,
+                PlannerAgentLimits.MaximumOpenQuestions,
+                PlannerAgentLimits.MaximumAssumptions,
+                PlannerAgentLimits.MaximumRisks),
             WorkspaceEndpoints.WorkspaceHeaderName,
             SystemHardeningMiddleware.RequestIdHeaderName);
 

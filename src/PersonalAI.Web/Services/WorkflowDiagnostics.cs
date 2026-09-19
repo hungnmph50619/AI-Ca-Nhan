@@ -18,7 +18,7 @@ public static class WorkflowDiagnostics
             ContainsTokens: false,
             GrantsExecutionRights: false,
             SelfTestPassed: RunSelfTest(),
-            NextStage: "v2.2.6-workflow-accessibility");
+            NextStage: "v2.2.7-workflow-usability");
 
     public static WorkflowDiagnosis Explain(WorkflowObservation observation)
     {

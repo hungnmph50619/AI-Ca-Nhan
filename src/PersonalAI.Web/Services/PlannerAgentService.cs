@@ -33,7 +33,7 @@ public static class PlannerAgentLimits
             PersistsPlans: false,
             ToolExecutionEnabled: false,
             RequiresExplicitInvocation: true,
-            NextStage: "v2.2.5-workflow-usability");
+            NextStage: "v2.2.6-workflow-accessibility");
 }
 
 public sealed class PlannerOutputException : InvalidOperationException

@@ -27,7 +27,7 @@ public static class OperatorAgentLimits
             PersistsPlans: false,
             DispatchesAgents: false,
             RequiresExplicitInvocation: true,
-            NextStage: "v2.2.6-workflow-accessibility");
+            NextStage: "v2.2.7-workflow-usability");
 }
 
 public sealed class OperatorOutputException(string message)
@@ -76,7 +76,7 @@ public sealed class OperatorFrameworkAgent(IChatTurnService chat) : IAgent
 
     public AgentDefinition Definition { get; } = new(
         AgentId,
-        "Operator Agent",
+        "Tác nhân lập kế hoạch thao tác",
         "operator",
         "Chuẩn bị kế hoạch thao tác theo bước, nêu rủi ro và điểm cần xác nhận; không tự điều khiển máy, browser hoặc connector.",
         [

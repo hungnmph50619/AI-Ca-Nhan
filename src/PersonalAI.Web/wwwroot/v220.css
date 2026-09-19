@@ -14,3 +14,18 @@
 .workflow-results{margin-top:12px}
 
 .workflow-step[hidden]{display:none}
+
+/* Bàn phím và trình đọc màn hình: tiêu điểm rõ, vùng chạm đủ rộng, không che nội dung. */
+.workflow-panel :is(button, select, textarea, input, summary, [tabindex]):focus-visible{
+  outline:3px solid Highlight;
+  outline-offset:3px;
+}
+.workflow-panel :is(button, select, textarea){min-height:44px}
+.workflow-panel .workflow-toggle{min-height:44px;align-items:center}
+.workflow-panel .workflow-toggle input{inline-size:20px;block-size:20px;flex:none}
+.workflow-panel :is(#wfFeedback, #wfPreviewResult, #wfResults){overflow-wrap:anywhere}
+.workflow-panel [aria-busy="true"]{cursor:progress}
+.workflow-panel #wfFeedback[role="alert"]{font-weight:700}
+.workflow-panel :is(h4, #wfFeedback)[tabindex="-1"]:focus{outline:3px solid Highlight;outline-offset:3px}
+@media (forced-colors:active){.workflow-panel .workflow-step{border:1px solid CanvasText}}
+@media (prefers-reduced-motion:reduce){.workflow-panel *, .workflow-panel *::before, .workflow-panel *::after{scroll-behavior:auto!important;transition:none!important}}

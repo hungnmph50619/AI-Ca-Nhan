@@ -26,7 +26,7 @@ public static class OfficeAgentLimits
             PersistsDrafts: false,
             ToolExecutionEnabled: false,
             RequiresExplicitInvocation: true,
-            NextStage: "v2.2.6-workflow-accessibility");
+            NextStage: "v2.2.7-workflow-usability");
 }
 
 public sealed class OfficeOutputException(string message)
@@ -60,7 +60,7 @@ public sealed class OfficeFrameworkAgent(IChatTurnService chat) : IAgent
 
     public AgentDefinition Definition { get; } = new(
         AgentId,
-        "Office Agent",
+        "Tác nhân văn phòng",
         "office",
         "Soạn bản nháp email, memo, agenda, minutes hoặc summary; không gửi email, tạo lịch/task hay sửa/lưu tài liệu.",
         ["email-drafting", "memo-drafting", "meeting-agenda-drafting",

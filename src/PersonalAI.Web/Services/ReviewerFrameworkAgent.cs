@@ -31,7 +31,7 @@ public static class ReviewerAgentLimits
             ExecutesTools: false,
             DispatchesAgents: false,
             RequiresExplicitInvocation: true,
-            NextStage: "v2.2.6-workflow-accessibility");
+            NextStage: "v2.2.7-workflow-usability");
 }
 
 public sealed class ReviewerOutputException(string message)
@@ -77,7 +77,7 @@ public sealed class ReviewerFrameworkAgent(IAiProviderResolver providers) : IAge
 
     public AgentDefinition Definition { get; } = new(
         AgentId,
-        "Reviewer Agent",
+        "Tác nhân rà soát",
         "reviewer",
         "Rà soát văn bản được dán trực tiếp theo các trích đoạn nguyên văn; không tự kiểm chứng bên ngoài, sửa nội dung hay phê duyệt.",
         [

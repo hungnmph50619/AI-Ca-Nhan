@@ -1,8 +1,21 @@
-# AI Cá Nhân — Xem trước quy trình v2.2.5
+# AI Cá Nhân — Giao diện quy trình tiếng Việt v2.2.6
 
 PersonalAI là trợ lý AI cá nhân chạy bằng ASP.NET Core 8, ưu tiên dữ liệu cục bộ, có thể dùng Gemini hoặc OpenAI cho phần sinh câu trả lời. v2.0.0 đã tạo **Personal AI OS**; v2.1.0 thêm Agent Framework; v2.1.1 thêm **Planner Agent**; v2.1.2 bổ sung **Research Agent**; v2.1.3 có **Developer Agent**; v2.1.4 bổ sung **Office Agent**; v2.1.5 thêm **Operator Agent**; v2.1.6 bổ sung **Reviewer Agent**; v2.1.7 thêm **Security Agent** rà soát rủi ro cục bộ; **v2.2.0 bổ sung workflow tuần tự có xác nhận** để gọi 2–3 agent đã được người dùng chọn trước và chuyển đầu ra khi có opt-in. **v2.2.1** thêm giới hạn thời gian từng bước/toàn workflow và bộ kiểm tra mẫu credential trước handoff. Chưa có auto-delegation, agent tự chạy tool, shared queue, autonomous loop hoặc parallel agents.
 
 > Đây vẫn là ứng dụng thiết kế cho một người dùng trên máy cá nhân. Personal AI OS v2.0 giữ toàn bộ hardening của v1.9 nhưng **không thay thế authentication/authorization** cần có khi triển khai Internet hoặc môi trường nhiều người dùng.
+
+## Có gì trong v2.2.6?
+
+### Giao diện dễ thao tác bằng bàn phím và trình đọc màn hình
+
+Trong **Các tác nhân AI → Quy trình nhiều bước**, bạn có thể dùng phím **Tab** để chọn tác nhân, nhập mục tiêu, xem trước cấu hình và duyệt hoặc từ chối chuyển dữ liệu. Khi kết quả mới xuất hiện, tiêu điểm chuyển đến tiêu đề tương ứng; thông báo lỗi có thể nhận tiêu điểm để dễ nhận biết. Các ô nhập, nút và ô đánh dấu có vùng thao tác lớn hơn và chỉ báo vị trí rõ ràng, kể cả trong chế độ tương phản cao.
+
+- Tên tám tác nhân AI do máy chủ trả về được hiển thị bằng **tiếng Việt**. Hướng dẫn, thông báo lỗi và các nút trong giao diện quy trình cũng dùng tiếng Việt. Tên mã định danh và địa chỉ API không đổi để bảo đảm tương thích.
+- Khi bấm xem trước lần nữa, chỉ kiểm tra các mục tiêu và tác nhân cần nhập, **không buộc phải xác nhận trước rồi mới được xem trước**.
+- Các tiêu đề vùng xem trước, kết quả và duyệt nội dung chuyển giao có nhãn rõ cho trình đọc màn hình. Người dùng vẫn phải tự xem nội dung trước khi đồng ý chuyển.
+- Không có thêm quyền tự chạy công cụ hay tự quyết định hành động. Phạm vi và giới hạn: `docs/releases/v2.2.6.md`.
+
+### Xem trước quy trình v2.2.5 vẫn được giữ nguyên
 
 ## Có gì trong v2.2.5?
 
@@ -1142,10 +1155,11 @@ docs/releases/v2.2.2.md
 docs/releases/v2.2.3.md
 docs/releases/v2.2.4.md
 docs/releases/v2.2.5.md
+docs/releases/v2.2.6.md
 ```
 
-## Hướng phát triển sau v2.2.5
+## Hướng phát triển sau v2.2.6
 
 Computer Use, Browser Agent, Connector Foundation, Software Development Agent, Android Companion, Life Context, Decision Engine và Automation hiện nằm trong controlled capability layer.
 
-Sau v2.2.5, mốc tiếp theo dự kiến là **v2.2.6 — Cải thiện khả năng tiếp cận giao diện tiếng Việt**. Web/email research và tự thực thi tool chưa được tích hợp vào điều phối; việc mở thêm quyền cần thiết kế độc lập, truy xuất nguồn và permission/confirmation rõ ràng.
+Sau v2.2.6, mốc tiếp theo dự kiến là **v2.2.7 — Cải thiện trải nghiệm sử dụng quy trình**. Web/email research và tự thực thi tool chưa được tích hợp vào điều phối; việc mở thêm quyền cần thiết kế độc lập, truy xuất nguồn và permission/confirmation rõ ràng.

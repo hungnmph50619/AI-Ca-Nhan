@@ -324,7 +324,7 @@ jobs:
             -d '{"name":"CI Workspace","description":"Không gian thử nghiệm v0.9.4"}')
           custom_workspace_id=$(echo "$custom_workspace" | jq -r '.id')
           test -n "$custom_workspace_id"
-          echo "$custom_workspace" | jq -e '.isBuiltIn == false and (.activeModules | sort) == (["memory","documents","tasks","files","conversations"] | sort) and (.reservedModules | sort) == (["agents","policies"] | sort)' >/dev/null
+          echo "$custom_workspace" | jq -e '.isBuiltIn == false and (.activeModules | sort) == (["memory","documents","tasks","files","conversations","agents"] | sort) and (.reservedModules | sort) == (["policies"] | sort)' >/dev/null
 
           custom_status=$(curl -fsS -H "X-PersonalAI-Workspace: $custom_workspace_id" http://127.0.0.1:5077/api/status)
           echo "$custom_status" | jq -e '.version == "2.1.0" and .workspaceName == "CI Workspace"' >/dev/null
@@ -2159,6 +2159,7 @@ jobs:
           grep -Fq 'AgentOrchestration: false' src/PersonalAI.Web/Services/PersonalAiOsService.cs
           grep -Fq 'Personal AI OS' docs/releases/v2.0.0.md
           grep -Fq 'Agent Framework' docs/releases/v2.1.0.md
+          grep -Fq '"agents"' src/PersonalAI.Web/Services/WorkspaceFoundation.cs
           grep -Fq 'AddAgentFramework' src/PersonalAI.Web/Program.cs
           grep -Fq 'MapAgentFramework' src/PersonalAI.Web/Program.cs
           grep -Fq '/api/agents/status' src/PersonalAI.Web/Services/AgentFrameworkEndpoints.cs

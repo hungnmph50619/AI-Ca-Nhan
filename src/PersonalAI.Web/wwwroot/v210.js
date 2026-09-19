@@ -1,5 +1,5 @@
 (() => {
-  const VERSION = "2.1.1";
+  const VERSION = "2.1.2";
   let dialog;
   let select;
   let goal;
@@ -135,7 +135,7 @@
     const boundary = document.createElement("div");
     boundary.className = "agent-boundary";
     boundary.textContent =
-      "v2.1.1 chỉ chạy agent khi bạn chủ động bấm chạy. Planner chỉ chia goal thành plan; không tạo task thật, không dispatch agent, không tự chạy tool và không tự xác nhận side effect.";
+      "v2.1.2 chỉ chạy agent khi bạn chủ động bấm chạy. Research chỉ tổng hợp tài liệu trong workspace, không tự duyệt web; Planner không tạo task, các agent không tự chạy tool hay giao việc.";
 
     feedback = document.createElement("div");
     feedback.className = "agent-feedback";
@@ -390,7 +390,7 @@
     const boundary = document.createElement("p");
     boundary.className = "planner-plan-boundary";
     boundary.textContent =
-      "Plan này chỉ được chuẩn bị để bạn xem. v2.1.1 không tự tạo Task Engine task, không dispatch agent và không persist plan tự động.";
+      "Plan này chỉ được chuẩn bị để bạn xem. v2.1.2 không tự tạo Task Engine task, không dispatch agent và không persist plan tự động.";
     wrapper.append(boundary);
 
     result.append(wrapper);

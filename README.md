@@ -1,8 +1,22 @@
-# AI Cá Nhân — Planner Agent v2.1.1
+# AI Cá Nhân — Research Agent v2.1.2
 
-PersonalAI là trợ lý AI cá nhân chạy bằng ASP.NET Core 8, ưu tiên dữ liệu cục bộ, có thể dùng Gemini hoặc OpenAI cho phần sinh câu trả lời. v2.0.0 đã tạo **Personal AI OS**; v2.1.0 thêm Agent Framework; v2.1.1 thêm **Planner Agent** để nhận goal và chia thành plan có cấu trúc, nhưng chưa dispatch agent, chưa tạo task thật và chưa có Agent Orchestration.
+PersonalAI là trợ lý AI cá nhân chạy bằng ASP.NET Core 8, ưu tiên dữ liệu cục bộ, có thể dùng Gemini hoặc OpenAI cho phần sinh câu trả lời. v2.0.0 đã tạo **Personal AI OS**; v2.1.0 thêm Agent Framework; v2.1.1 thêm **Planner Agent**; v2.1.2 bổ sung **Research Agent** tổng hợp bằng chứng từ tài liệu trong workspace, dẫn nguồn nội bộ và ghi rõ giới hạn kiểm chứng. Không tự tìm web/email, chạy tool, tạo task hay điều phối agent.
 
 > Đây vẫn là ứng dụng thiết kế cho một người dùng trên máy cá nhân. Personal AI OS v2.0 giữ toàn bộ hardening của v1.9 nhưng **không thay thế authentication/authorization** cần có khi triển khai Internet hoặc môi trường nhiều người dùng.
+
+## Có gì trong v2.1.2?
+
+### Research Agent
+
+Research Agent thứ ba: `research.researcher`, hoạt động trên tập tài liệu trong workspace hiện tại. Context Manager truy xuất tối đa 4 đoạn Knowledge/RAG; nếu không tìm được đoạn phù hợp, agent trả `insufficient-evidence` mà không gọi AI provider. Khi có nguồn, agent tạo báo cáo có `summary`, `findings`, `sourceNumbers`, `unansweredQuestions`, `limitations` và siêu dữ liệu các đoạn tài liệu đã truy xuất.
+
+- API: `GET /api/research/status`, `GET /api/agents/research.researcher`, `POST /api/agents/research.researcher/execute`.
+- Parser chặn chỉ số nguồn không tồn tại; nhận định `sourced` phải tham chiếu một nguồn trong tập truy xuất.
+- UI Agents hiển thị findings, chỉ số trích dẫn và tên tài liệu/đoạn/trang khi có.
+- Không tự duyệt web/email, chạy browser/connector/tool, tạo task, persist báo cáo hay dispatch agent.
+- Kiểm tra chỉ số nguồn **không bảo đảm nhận định của mô hình thật sự được văn bản hỗ trợ**; cần đối chiếu đoạn nguồn trước khi sử dụng.
+
+### Planner Agent v2.1.1 vẫn được giữ nguyên
 
 ## Có gì trong v2.1.1?
 
@@ -928,6 +942,7 @@ GitHub Actions hiện kiểm tra regression cho các nền chính, gồm:
 - v1.9 hardening health/permission audit/rate-resource guards/confirmation boundaries;
 - v2.0 Personal AI OS manifest/readiness/governance/capability-state contract;
 - v2.1 Agent Framework registry/explicit execution/context isolation/no-tool-execution contract;
+- v2.1.2 Research Agent source-bound reporting, insufficient-evidence fallback và citation-index validation;
 - JavaScript syntax;
 - UI guardrails tiếng Việt.
 
@@ -960,10 +975,11 @@ docs/releases/v1.9.0.md
 docs/releases/v2.0.0.md
 docs/releases/v2.1.0.md
 docs/releases/v2.1.1.md
+docs/releases/v2.1.2.md
 ```
 
-## Hướng phát triển sau v2.1.1
+## Hướng phát triển sau v2.1.2
 
 Computer Use, Browser Agent, Connector Foundation, Software Development Agent, Android Companion, Life Context, Decision Engine và Automation hiện nằm trong controlled capability layer.
 
-Sau v2.1.1, roadmap tiếp tục với **v2.1.2 — Research Agent**: tìm kiếm web, documents, email và knowledge. Developer/Office/Operator/Reviewer/Security Agent sẽ được thêm dần sau đó; Agent Orchestration vẫn là giai đoạn v2.2.
+Sau v2.1.2, mốc kế tiếp là **v2.1.3 — Developer Agent**. Web/email research ở đây chưa tích hợp tự động; trước khi mở cần luồng cấp quyền, provenance và connector provider-specific. Agent Orchestration vẫn thuộc giai đoạn v2.2.

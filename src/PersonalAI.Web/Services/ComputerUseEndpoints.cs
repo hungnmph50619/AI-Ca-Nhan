@@ -62,13 +62,15 @@ public static class ComputerUseEndpoints
                 return Results.BadRequest(new ApiError(
                     "Điều khiển máy tính chỉ khả dụng trong phiên Windows đang tương tác."));
 
-            gate.Enable();
+            var session = gate.Enable();
             audit.Record(AuditAgents.User, "computer.control.enable",
                 "computer:desktop", "manual-local-request", AuditResults.Succeeded);
             return Results.Ok(new
             {
-                paused = gate.Paused,
-                message = "Đã cho phép trở lại hai thao tác giới hạn: chuyển cửa sổ và di chuyển con trỏ. Mỗi công cụ vẫn cần xác nhận riêng."
+                paused = session.Paused,
+                expiresAt = session.ExpiresAt,
+                remainingActions = session.RemainingActions,
+                message = "Đã cho phép chuyển cửa sổ, di chuyển chuột và nhấp trái đơn lẻ trong 60 giây hoặc tối đa 5 thao tác. Mỗi công cụ vẫn cần xác nhận riêng."
             });
         });
 

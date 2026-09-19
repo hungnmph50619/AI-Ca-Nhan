@@ -19,7 +19,8 @@ public sealed record AgentWorkflowRequest(
     bool UseKnowledge = false,
     bool UseMemory = false,
     bool UseTaskContext = false,
-    bool UseLifeContext = false);
+    bool UseLifeContext = false,
+    string? ReviewedConfigurationDigest = null);
 
 public sealed record AgentHandoffCheckpoint(
     Guid WorkflowId,
@@ -83,4 +84,7 @@ public sealed record AgentOrchestrationStatusResponse(
     bool MandatoryContentReviewEnabled = false,
     int MaximumPendingReviewMinutes = 0,
     int MaximumPendingWorkflows = 0,
-    bool ResumableAcrossServerRestart = false);
+    bool ResumableAcrossServerRestart = false,
+    bool ConfigurationPreviewEnabled = false,
+    bool ConfigurationDigestValidationEnabled = false,
+    bool ConfigurationPreviewSelfTestPassed = false);

@@ -67,7 +67,8 @@ public sealed class WindowsComputerUseService(
             "Các hành động thay đổi focus/cursor phải đi qua Tool Framework và xác nhận.",
             "Điều khiển được khóa lúc khởi động; phải cho phép thủ công. Nút dừng chỉ chặn các lệnh mới qua dịch vụ, không phải phím dừng toàn hệ thống.",
             "Nhấp chuột có thể kích hoạt hành động trong ứng dụng khác; chỉ thử trên cửa sổ thử nghiệm không chứa dữ liệu quan trọng.",
-            "Mỗi lần bật chỉ có tối đa 60 giây và 5 thao tác, tính cả thao tác bị Windows từ chối."
+            "Mỗi lần bật chỉ có tối đa 60 giây và 5 thao tác, tính cả thao tác bị Windows từ chối.",
+            "Nhấn Ctrl + Shift + F12 để khóa lại các thao tác máy tính khi phím dừng đã đăng ký; nếu phím bị ứng dụng khác sử dụng, ứng dụng không cho phép bật điều khiển."
         };
 
         if (!windows)
@@ -93,7 +94,8 @@ public sealed class WindowsComputerUseService(
             limitations,
             DesktopActionsPaused: session.Paused,
             DesktopSessionExpiresAt: session.ExpiresAt,
-            DesktopRemainingActions: session.RemainingActions);
+            DesktopRemainingActions: session.RemainingActions,
+            StopHotkeyAvailable: session.StopHotkeyAvailable);
     }
 
     public ComputerScreenInfo GetScreenInfo()

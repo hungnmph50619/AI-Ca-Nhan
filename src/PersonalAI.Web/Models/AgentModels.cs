@@ -41,7 +41,9 @@ public sealed record AgentFrameworkStatusResponse(
     bool SharedTaskQueueEnabled,
     bool ParallelAgentExecutionEnabled,
     bool ToolExecutionEnabled,
-    string NextStage);
+    string NextStage,
+    bool UserApprovedSequentialWorkflowsEnabled = false,
+    bool ExplicitResultHandoffEnabled = false);
 
 public sealed record AgentCatalogResponse(
     string Version,

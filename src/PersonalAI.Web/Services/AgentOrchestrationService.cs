@@ -187,17 +187,17 @@ public sealed class AgentOrchestrationService(
             {
                 cancellationToken.ThrowIfCancellationRequested();
 
-                // Never re-read workspace selection mid-chain. A workflow cannot
-                // silently switch workspaces if the caller changes headers/state.
-                if (!string.Equals(workspace.CurrentWorkspaceId,
-                    workspaceId, StringComparison.Ordinal))
-                    throw new AgentValidationException("Workspace đã thay đổi trong khi workflow đang chạy.");
-
                 var step = steps[i];
-                var previous = i > 0 ? completed[^1].Result.Message : null;
-                var goal = AgentWorkflowValidation.BuildGoal(step, previous);
                 try
                 {
+                    // Keep workspace identity and the explicitly approved handoff
+                    // inside the per-step failure boundary so later steps never run.
+                    if (!string.Equals(workspace.CurrentWorkspaceId,
+                        workspaceId, StringComparison.Ordinal))
+                        throw new AgentValidationException("Workspace đã thay đổi trong khi workflow đang chạy.");
+
+                    var previous = i > 0 ? completed[^1].Result.Message : null;
+                    var goal = AgentWorkflowValidation.BuildGoal(step, previous);
                     var result = await agents.ExecuteAsync(
                         step.AgentId!,
                         new AgentExecutionRequest(

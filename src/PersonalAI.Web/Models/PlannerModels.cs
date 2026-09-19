@@ -54,6 +54,7 @@ public sealed record PlannerAgentStatusResponse(
     int MaximumRisks,
     IReadOnlyList<string> SuggestedRoles,
     bool StructuredOutput,
+    bool ParserSelfTestPassed,
     bool CreatesTasks,
     bool DispatchesAgents,
     bool PersistsPlans,

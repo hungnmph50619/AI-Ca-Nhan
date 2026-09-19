@@ -1,5 +1,5 @@
 (() => {
-  const VERSION = "2.2.3";
+  const VERSION = "2.2.4";
   let dialog;
   let select;
   let goal;
@@ -8,6 +8,36 @@
   let meta;
   let runButton;
   let agents = [];
+  const translatedNames = {
+    "core.personal-assistant":"Trợ lý cá nhân",
+    "planning.planner":"Tác nhân lập kế hoạch",
+    "research.researcher":"Tác nhân nghiên cứu",
+    "development.developer":"Tác nhân phân tích mã",
+    "office.office-assistant":"Tác nhân văn phòng",
+    "operations.operator":"Tác nhân lập kế hoạch thao tác",
+    "quality.reviewer":"Tác nhân rà soát",
+    "security.security-reviewer":"Tác nhân kiểm tra bảo mật"
+  };
+  const translatedRoles = {
+    "general-assistant":"Trợ lý tổng hợp",planner:"Lập kế hoạch",
+    research:"Nghiên cứu",developer:"Phân tích mã",office:"Văn phòng",
+    operator:"Lập kế hoạch thao tác",reviewer:"Rà soát",security:"Bảo mật"
+  };
+
+  const vietnameseKinds = {
+    email: "Thư điện tử", memo: "Bản ghi nhớ", agenda: "Chương trình họp",
+    minutes: "Biên bản họp", summary: "Bản tóm tắt",
+    ambiguity: "Nội dung chưa rõ", inconsistency: "Nội dung chưa nhất quán",
+    "unsupported-claim": "Nhận định chưa có bằng chứng",
+    "missing-information": "Thiếu thông tin", clarity: "Cần diễn đạt rõ hơn",
+    browser: "Trình duyệt", computer: "Máy tính",
+    connector: "Dịch vụ kết nối", manual: "Thao tác thủ công",
+    low: "Thấp", medium: "Trung bình", high: "Cao"
+  };
+  const translatedValue = value => vietnameseKinds[value] || "Chưa xác định";
+  const translatedName = agent => translatedNames[agent.id] || "Tác nhân AI";
+  const translatedRole = agent => translatedRoles[agent.role] || "Chức năng chuyên biệt";
+
 
   document.addEventListener("DOMContentLoaded", () => {
     updateVersion();
@@ -34,7 +64,7 @@
     icon.textContent = "◉";
 
     const label = document.createElement("span");
-    label.textContent = "Agents";
+    label.textContent = "Các tác nhân AI";
 
     const badge = document.createElement("span");
     badge.className = "tool-count";
@@ -64,10 +94,10 @@
     const heading = document.createElement("div");
     const eyebrow = document.createElement("p");
     eyebrow.className = "eyebrow";
-    eyebrow.textContent = "AGENT FRAMEWORK · v2.2.1";
+    eyebrow.textContent = "HỆ THỐNG TÁC NHÂN AI · v2.2.4";
     const title = document.createElement("h2");
     title.id = "agentTitle";
-    title.textContent = "Chạy agent";
+    title.textContent = "Sử dụng tác nhân AI";
     heading.append(eyebrow, title);
 
     const close = document.createElement("button");
@@ -81,7 +111,7 @@
     const status = document.createElement("p");
     status.className = "agent-status";
     status.id = "agentStatus";
-    status.textContent = "Đang đọc Agent Framework…";
+    status.textContent = "Đang tải danh sách tác nhân AI…";
 
     const grid = document.createElement("div");
     grid.className = "agent-grid";
@@ -89,7 +119,7 @@
     const labelSelect = document.createElement("label");
     labelSelect.className = "field-label";
     labelSelect.setAttribute("for", "agentSelect");
-    labelSelect.textContent = "Agent";
+    labelSelect.textContent = "Chọn tác nhân AI";
 
     select = document.createElement("select");
     select.id = "agentSelect";
@@ -116,10 +146,10 @@
     const options = document.createElement("div");
     options.className = "agent-context-options";
     [
-      ["agentUseKnowledge", "Knowledge", true],
-      ["agentUseMemory", "Memory", true],
-      ["agentUseTasks", "Tasks", true],
-      ["agentUseLife", "Life Context", true]
+      ["agentUseKnowledge", "Tài liệu của bạn", true],
+      ["agentUseMemory", "Thông tin đã ghi nhớ", true],
+      ["agentUseTasks", "Công việc", true],
+      ["agentUseLife", "Thông tin cuộc sống", true]
     ].forEach(([id, text, checked]) => {
       const option = document.createElement("label");
       const input = document.createElement("input");
@@ -135,7 +165,7 @@
     const boundary = document.createElement("div");
     boundary.className = "agent-boundary";
     boundary.textContent =
-      "v2.2.1 giới hạn thời gian từng bước/workflow và chặn chuyển đầu ra khớp một số mẫu credential. Không bảo đảm phát hiện mọi bí mật; agent không tự chọn thêm agent hoặc chạy tool.";
+      "v2.2.4: Bạn chọn tác nhân và dữ liệu muốn dùng. Quy trình nhiều bước cần bạn duyệt nội dung trước khi chuyển. Bộ lọc dữ liệu nhạy cảm không bảo đảm phát hiện mọi bí mật. Các tác nhân không tự chạy công cụ.";
 
     feedback = document.createElement("div");
     feedback.className = "agent-feedback";
@@ -145,7 +175,7 @@
     runButton = document.createElement("button");
     runButton.className = "primary-button";
     runButton.type = "submit";
-    runButton.textContent = "Chạy agent";
+    runButton.textContent = "Chạy tác nhân";
     runButton.disabled = true;
 
     form.append(
@@ -190,7 +220,7 @@
       ]);
 
       if (!statusResponse.ok || !catalogResponse.ok) {
-        throw new Error("Không đọc được Agent Framework.");
+        throw new Error("Không tải được danh sách tác nhân AI.");
       }
 
       const status = await statusResponse.json();
@@ -198,13 +228,13 @@
       agents = Array.isArray(catalog.agents) ? catalog.agents : [];
 
       statusNode.textContent =
-        `${agents.length} agent · explicit invocation · tool execution: ${status.toolExecutionEnabled ? "bật" : "tắt"} · tiếp theo: ${status.nextStage}`;
+        `${agents.length} tác nhân AI · chỉ chạy khi bạn yêu cầu · quyền chạy công cụ: ${status.toolExecutionEnabled ? "đã bật" : "đang tắt"}`;
 
       select.replaceChildren();
       agents.forEach(agent => {
         const option = document.createElement("option");
         option.value = agent.id;
-        option.textContent = `${agent.name} · ${agent.role}`;
+        option.textContent = `${translatedName(agent)} · ${translatedRole(agent)}`;
         select.append(option);
       });
 
@@ -216,7 +246,7 @@
     } catch (error) {
       statusNode.textContent = error instanceof Error
         ? error.message
-        : "Không đọc được Agent Framework.";
+        : "Không tải được danh sách tác nhân AI.";
       select.disabled = true;
       runButton.disabled = true;
     }
@@ -249,12 +279,12 @@
       : isPlanner
         ? "Ví dụ: Phát triển AI Cá Nhân từ v2.1.2 đến v2.2 theo từng bước an toàn."
         : "Ví dụ: Phân tích những việc tôi đang làm và đề xuất bước tiếp theo.";
-    runButton.textContent = isSecurity ? "Kiểm tra mẫu rủi ro" : isReviewer ? "Rà soát nội dung" : isOperator ? "Chuẩn bị thao tác" : isOffice ? "Soạn bản nháp" : isDeveloper ? "Phân tích mã" : isResearch ? "Nghiên cứu tài liệu" : isPlanner ? "Lập kế hoạch" : "Chạy agent";
+    runButton.textContent = isSecurity ? "Kiểm tra mẫu rủi ro" : isReviewer ? "Rà soát nội dung" : isOperator ? "Chuẩn bị thao tác" : isOffice ? "Soạn bản nháp" : isDeveloper ? "Phân tích mã" : isResearch ? "Nghiên cứu tài liệu" : isPlanner ? "Lập kế hoạch" : "Chạy tác nhân";
 
     [
-      ["Role", agent.role],
-      ["Capabilities", (agent.capabilities || []).join(", ")],
-      ["Bound tools", (agent.tools || []).join(", ") || "Không có"]
+      ["Vai trò", translatedRole(agent)],
+      ["Khả năng", "Xem mô tả chức năng và giới hạn của tác nhân ở phần hướng dẫn"],
+      ["Quyền chạy công cụ", agent.toolExecutionEnabled ? "Đã bật" : "Đang tắt"]
     ].forEach(([label, value]) => {
       const item = document.createElement("div");
       const small = document.createElement("span");
@@ -272,7 +302,7 @@
     const text = goal.value.trim();
     if (!agentId || !text) return;
 
-    feedback.textContent = "Agent đang xử lý…";
+    feedback.textContent = "Tác nhân đang xử lý…";
     result.hidden = true;
     runButton.disabled = true;
 
@@ -296,16 +326,16 @@
 
       const payload = await response.json();
       if (!response.ok) {
-        throw new Error(payload.error || "Agent execution thất bại.");
+        throw new Error(payload.error || "Tác nhân không hoàn thành yêu cầu.");
       }
 
       feedback.textContent =
-        `${payload.agentName} · ${payload.provider || "local"} · ${payload.status}`;
+        `${translatedNames[payload.agentId] || "Tác nhân AI"} · ${payload.provider === "local" ? "Xử lý tại máy" : "Dịch vụ AI đã cấu hình"} · ${payload.status === "succeeded" ? "Đã hoàn thành" : "Chưa hoàn thành"}`;
       renderExecutionResult(payload);
     } catch (error) {
       feedback.textContent = error instanceof Error
         ? error.message
-        : "Agent execution thất bại.";
+        : "Tác nhân không hoàn thành yêu cầu.";
     } finally {
       runButton.disabled = agents.length === 0;
     }
@@ -331,7 +361,7 @@
     } else {
       const copy = document.createElement("div");
       copy.className = "agent-result-copy";
-      copy.textContent = payload.message || "Agent không trả về nội dung.";
+      copy.textContent = payload.message || "Tác nhân chưa trả về nội dung.";
       result.append(copy);
     }
 
@@ -350,7 +380,7 @@
 
     const status = document.createElement("span");
     status.className = "planner-plan-status";
-    status.textContent = plan.status || "prepared";
+    status.textContent = plan.status === "prepared" ? "Đã chuẩn bị, chưa thực hiện" : "Chưa xác định";
 
     heading.append(title, status);
 
@@ -373,7 +403,7 @@
 
       const role = document.createElement("span");
       role.className = "planner-step-role";
-      role.textContent = step.suggestedRole || "general-assistant";
+      role.textContent = translatedRoles[step.suggestedRole] || "Trợ lý tổng hợp";
 
       stepHeading.append(stepTitle, role);
 
@@ -405,7 +435,7 @@
       if (step.requiresUserInput) {
         const userInput = document.createElement("p");
         userInput.className = "planner-step-user-input";
-        userInput.textContent = "Cần người dùng cung cấp thêm thông tin.";
+        userInput.textContent = "Cần bạn cung cấp thêm thông tin.";
         card.append(userInput);
       }
 
@@ -537,7 +567,7 @@
     const root = document.createElement("section");
     root.className = "office-draft";
     const title = document.createElement("h3");
-    title.textContent = "Bản nháp văn phòng · " + (draft.kind || "");
+    title.textContent = "Bản nháp văn phòng · " + translatedValue(draft.kind);
     const subject = document.createElement("h4");
     subject.textContent = draft.title || "";
     const body = document.createElement("div");
@@ -548,7 +578,7 @@
     appendPlannerList(root, "Việc đề xuất (chưa thực hiện)", draft.actionItems);
     appendPlannerList(root, "Thông tin cần xác nhận", draft.missingInformation);
     const boundary = document.createElement("p");
-    boundary.textContent = "Đây chỉ là bản nháp; hệ thống chưa gửi email, tạo lịch/task, chỉnh sửa hoặc tự lưu tài liệu. Hãy rà soát nội dung trước khi dùng.";
+    boundary.textContent = "Đây chỉ là bản nháp; hệ thống chưa gửi thư, tạo lịch hoặc công việc, chỉnh sửa hay tự lưu tài liệu. Hãy kiểm tra nội dung trước khi dùng.";
     root.append(boundary);
     result.append(root);
   }
@@ -568,8 +598,8 @@
       const heading = document.createElement("h4");
       heading.textContent = step.step + ". " + (step.title || "");
       const channel = document.createElement("p");
-      channel.textContent = "Kênh đề xuất: " + (step.channel || "manual")
-        + " · Mức rủi ro: " + (step.riskLevel || "");
+      channel.textContent = "Kênh đề xuất: " + translatedValue(step.channel)
+        + " · Mức rủi ro: " + translatedValue(step.riskLevel);
       const description = document.createElement("p");
       description.textContent = step.description || "";
       const expected = document.createElement("p");
@@ -594,7 +624,7 @@
     appendPlannerList(root, "Cần làm rõ", plan.openQuestions);
     appendPlannerList(root, "Giới hạn", plan.limitations);
     const boundary = document.createElement("p");
-    boundary.textContent = "Bản kế hoạch này không có nút thực thi. Không điều khiển máy/browser, gọi connector, gửi tin, lưu kế hoạch hoặc dispatch agent.";
+    boundary.textContent = "Bản kế hoạch này không có nút thực thi. Không điều khiển máy hoặc trình duyệt, gọi dịch vụ kết nối, gửi tin, lưu kế hoạch hoặc giao việc cho tác nhân khác.";
     root.append(boundary);
     result.append(root);
   }
@@ -616,7 +646,7 @@
       const card = document.createElement("article");
       card.className = "reviewer-finding";
       const title = document.createElement("h4");
-      title.textContent = (item.kind || "review") + " — " + (item.observation || "");
+      title.textContent = translatedValue(item.kind) + " — " + (item.observation || "");
       const excerpt = document.createElement("p");
       excerpt.textContent = "Trích nguyên văn: “" + (item.evidenceExcerpt || "") + "”";
       const suggestion = document.createElement("p");
@@ -648,9 +678,9 @@
       const card = document.createElement("article");
       card.className = "security-finding";
       const title = document.createElement("h4");
-      title.textContent = (item.title || "") + " (" + (item.severity || "") + ")";
+      title.textContent = (item.title || "") + " (Mức cảnh báo: " + translatedValue(item.severity) + ")";
       const rule = document.createElement("p");
-      rule.textContent = "Mẫu: " + (item.ruleId || "");
+      rule.textContent = "Quy tắc kiểm tra: " + (item.title || "");
       const explanation = document.createElement("p");
       explanation.textContent = item.explanation || "";
       const check = document.createElement("p");
@@ -661,7 +691,7 @@
 
     appendPlannerList(root, "Giới hạn", review.limitations);
     const boundary = document.createElement("p");
-    boundary.textContent = "Kết quả chỉ dựa trên mẫu trong nội dung nhập, không echo nội dung hoặc gửi tới AI provider. Không phát hiện mẫu không có nghĩa an toàn. Không thay đổi quyền, thực thi hoặc chặn thao tác.";
+    boundary.textContent = "Kết quả chỉ dựa trên một số mẫu kiểm tra; không lặp lại nội dung bạn nhập hoặc gửi sang dịch vụ AI. Không phát hiện mẫu không có nghĩa là an toàn. Hệ thống không thay đổi quyền hay tự thực hiện hoặc chặn thao tác.";
     root.append(boundary);
     result.append(root);
   }

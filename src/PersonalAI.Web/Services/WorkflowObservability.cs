@@ -26,7 +26,7 @@ public static class WorkflowObservability
             ContainsReviewTokens: false,
             ContainsCredentialValues: false,
             GrantsExecutionRights: false,
-            NextStage: "v2.2.4-workflow-diagnostics");
+            NextStage: "v2.2.5-workflow-usability");
 
     public static WorkflowObservation Capture(AgentWorkflowResponse response)
     {

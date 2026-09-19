@@ -1,8 +1,22 @@
-# AI Cá Nhân — Workflow Observability v2.2.3
+# AI Cá Nhân — Chẩn đoán quy trình v2.2.4
 
 PersonalAI là trợ lý AI cá nhân chạy bằng ASP.NET Core 8, ưu tiên dữ liệu cục bộ, có thể dùng Gemini hoặc OpenAI cho phần sinh câu trả lời. v2.0.0 đã tạo **Personal AI OS**; v2.1.0 thêm Agent Framework; v2.1.1 thêm **Planner Agent**; v2.1.2 bổ sung **Research Agent**; v2.1.3 có **Developer Agent**; v2.1.4 bổ sung **Office Agent**; v2.1.5 thêm **Operator Agent**; v2.1.6 bổ sung **Reviewer Agent**; v2.1.7 thêm **Security Agent** rà soát rủi ro cục bộ; **v2.2.0 bổ sung workflow tuần tự có xác nhận** để gọi 2–3 agent đã được người dùng chọn trước và chuyển đầu ra khi có opt-in. **v2.2.1** thêm giới hạn thời gian từng bước/toàn workflow và bộ kiểm tra mẫu credential trước handoff. Chưa có auto-delegation, agent tự chạy tool, shared queue, autonomous loop hoặc parallel agents.
 
 > Đây vẫn là ứng dụng thiết kế cho một người dùng trên máy cá nhân. Personal AI OS v2.0 giữ toàn bộ hardening của v1.9 nhưng **không thay thế authentication/authorization** cần có khi triển khai Internet hoặc môi trường nhiều người dùng.
+
+## Có gì trong v2.2.4?
+
+### Chẩn đoán trạng thái quy trình bằng tiếng Việt
+
+Sau khi bạn chạy một quy trình, ứng dụng sẽ hiển thị **Giải thích trạng thái** bằng tiếng Việt: đã hoàn tất, đang chờ bạn duyệt, đã dừng hoặc hết thời gian. Phần này đưa ra các bước kiểm tra thích hợp dựa trên trạng thái, số bước và mã lý do dừng, **không tự đọc nội dung đầu ra hay sửa lỗi**.
+
+- Truy cập từ **Các tác nhân AI → Quy trình nhiều bước**; phần chẩn đoán xuất hiện sau kết quả chạy hoặc sau bước duyệt.
+- API chỉ đọc: `GET /api/agents/orchestration/diagnostics/status` và `GET /api/agents/orchestration/diagnostics/{workflowId}`.
+- Chỉ xem thông tin của không gian làm việc hiện tại. Không chứa mục tiêu, kết quả tác nhân, nội dung chuyển giao hay mã xác nhận. Không có quyền chạy lại hoặc phê duyệt thay bạn.
+- Giao diện lựa chọn tác nhân, tên vai trò, nguồn dữ liệu và thông báo kết quả được Việt hóa. Tên biến, tên hàm và đường dẫn API giữ nguyên để không làm hỏng khả năng tương thích.
+- Tài liệu giải thích: `docs/releases/v2.2.4.md`. Mốc tiếp theo dự kiến: **v2.2.5 — Cải thiện trải nghiệm sử dụng quy trình**.
+
+### Theo dõi quy trình v2.2.3 vẫn được giữ nguyên
 
 ## Có gì trong v2.2.3?
 
@@ -1112,10 +1126,11 @@ docs/releases/v2.2.0.md
 docs/releases/v2.2.1.md
 docs/releases/v2.2.2.md
 docs/releases/v2.2.3.md
+docs/releases/v2.2.4.md
 ```
 
-## Hướng phát triển sau v2.2.3
+## Hướng phát triển sau v2.2.4
 
 Computer Use, Browser Agent, Connector Foundation, Software Development Agent, Android Companion, Life Context, Decision Engine và Automation hiện nằm trong controlled capability layer.
 
-Sau v2.2.3, mốc kế tiếp dự kiến là **v2.2.4 — Workflow Diagnostics**. Web/email research và tự thực thi tool chưa được tích hợp vào điều phối; việc mở thêm quyền cần thiết kế độc lập, truy xuất nguồn và permission/confirmation rõ ràng.
+Sau v2.2.4, mốc tiếp theo dự kiến là **v2.2.5 — Cải thiện trải nghiệm sử dụng quy trình**. Web/email research và tự thực thi tool chưa được tích hợp vào điều phối; việc mở thêm quyền cần thiết kế độc lập, truy xuất nguồn và permission/confirmation rõ ràng.

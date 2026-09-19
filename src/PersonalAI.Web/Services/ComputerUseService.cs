@@ -21,6 +21,8 @@ public interface IComputerUseService
     ComputerActionResponse FocusWindow(string windowId);
 
     ComputerActionResponse MoveCursor(int x, int y);
+
+    ComputerActionResponse ClickLeft(string windowId, int x, int y);
 }
 
 public sealed class WindowsComputerUseService(
@@ -35,6 +37,9 @@ public sealed class WindowsComputerUseService(
     private const int SmCxVirtualScreen = 78;
     private const int SmCyVirtualScreen = 79;
     private const int SmCMonitors = 80;
+    private const uint InputMouse = 0;
+    private const uint MouseLeftDown = 0x0002;
+    private const uint MouseLeftUp = 0x0004;
 
     public ComputerUseStatusResponse GetStatus()
     {
@@ -49,17 +54,19 @@ public sealed class WindowsComputerUseService(
                 ComputerUseCapabilities.WindowList,
                 ComputerUseCapabilities.ActiveWindow,
                 ComputerUseCapabilities.FocusWindow,
-                ComputerUseCapabilities.MoveCursor
+                ComputerUseCapabilities.MoveCursor,
+                ComputerUseCapabilities.ClickLeft
             }
             : Array.Empty<string>();
 
         var limitations = new List<string>
         {
             "Không chụp ảnh màn hình trong v1.1.0.",
-            "Không click chuột, gõ phím hoặc nhập văn bản trong v1.1.0.",
+            "Chỉ hỗ trợ một lần nhấp trái có xác nhận và khóa mặc định; chưa có nhấp phải, nhấp đúp, kéo thả, cuộn, gõ phím hoặc nhập văn bản.",
             "Không mở ứng dụng, chạy shell hoặc thực thi lệnh hệ thống.",
             "Các hành động thay đổi focus/cursor phải đi qua Tool Framework và xác nhận.",
-            "Điều khiển được khóa lúc khởi động; phải cho phép thủ công. Nút dừng chỉ chặn các lệnh mới qua dịch vụ, không phải phím dừng toàn hệ thống."
+            "Điều khiển được khóa lúc khởi động; phải cho phép thủ công. Nút dừng chỉ chặn các lệnh mới qua dịch vụ, không phải phím dừng toàn hệ thống.",
+            "Nhấp chuột có thể kích hoạt hành động trong ứng dụng khác; chỉ thử trên cửa sổ thử nghiệm không chứa dữ liệu quan trọng."
         };
 
         if (!windows)
@@ -268,6 +275,67 @@ public sealed class WindowsComputerUseService(
             $"Đã di chuyển con trỏ tới ({x}, {y}).");
     }
 
+    public ComputerActionResponse ClickLeft(
+        string windowId,
+        int x,
+        int y) =>
+        control.RunAllowed(() => ClickLeftCore(windowId, x, y));
+
+    private ComputerActionResponse ClickLeftCore(
+        string windowId,
+        int x,
+        int y)
+    {
+        EnsureAvailable();
+        var screen = GetScreenInfo();
+        var right = checked(screen.VirtualLeft + screen.VirtualWidth);
+        var bottom = checked(screen.VirtualTop + screen.VirtualHeight);
+        if (x < screen.VirtualLeft || x >= right
+            || y < screen.VirtualTop || y >= bottom)
+            throw new ToolExecutionInputException("Tọa độ nhấp nằm ngoài màn hình hiện tại.");
+
+        var target = ParseWindowId(windowId);
+        if (!IsWindow(target) || !IsWindowVisible(target)
+            || target != GetForegroundWindow()
+            || !GetWindowRect(target, out var rect)
+            || x < rect.Left || x >= rect.Right
+            || y < rect.Top || y >= rect.Bottom)
+            throw new ToolExecutionInputException(
+                "Cửa sổ đích không còn ở phía trước hoặc tọa độ nằm ngoài cửa sổ. Hãy kiểm tra lại trước khi xác nhận.");
+
+        // Không tự chọn cửa sổ, không di chuyển chuột tới nơi khác nếu cửa sổ đã đổi.
+        if (!SetCursorPos(x, y) || GetForegroundWindow() != target)
+            throw new ToolExecutionInputException(
+                "Không thể xác nhận vị trí con trỏ và cửa sổ đích trước khi nhấp.");
+
+        var inputs = new[]
+        {
+            new MouseInputEvent { Type = InputMouse,
+                Mouse = new MouseInputData { Flags = MouseLeftDown } },
+            new MouseInputEvent { Type = InputMouse,
+                Mouse = new MouseInputData { Flags = MouseLeftUp } }
+        };
+        var count = SendInput((uint)inputs.Length, inputs,
+            Marshal.SizeOf<MouseInputEvent>());
+        if (count != (uint)inputs.Length)
+        {
+            // Nếu Windows chỉ phát được sự kiện nhấn, thử nhả ngay để tránh giữ nút.
+            var release = new[]
+            {
+                new MouseInputEvent { Type = InputMouse,
+                    Mouse = new MouseInputData { Flags = MouseLeftUp } }
+            };
+            _ = SendInput(1, release, Marshal.SizeOf<MouseInputEvent>());
+            throw new ToolExecutionInputException(
+                "Windows không xác nhận đủ sự kiện nhấp và nhả chuột.");
+        }
+
+        return new ComputerActionResponse(
+            ComputerUseCapabilities.ClickLeft,
+            true,
+            "Đã gửi một lần nhấp chuột trái tại tọa độ đã xác nhận.");
+    }
+
     private static ComputerWindowInfo BuildWindowInfo(
         IntPtr handle,
         string title,
@@ -436,6 +504,30 @@ public sealed class WindowsComputerUseService(
         public int Right;
         public int Bottom;
     }
+
+    [StructLayout(LayoutKind.Sequential)]
+    private struct MouseInputEvent
+    {
+        public uint Type;
+        public MouseInputData Mouse;
+    }
+
+    [StructLayout(LayoutKind.Sequential)]
+    private struct MouseInputData
+    {
+        public int Dx;
+        public int Dy;
+        public uint MouseData;
+        public uint Flags;
+        public uint Time;
+        public IntPtr ExtraInfo;
+    }
+
+    [DllImport("user32.dll", SetLastError = true)]
+    private static extern uint SendInput(
+        uint numberOfInputs,
+        [In] MouseInputEvent[] inputs,
+        int inputSize);
 
     [DllImport("user32.dll")]
     [return: MarshalAs(UnmanagedType.Bool)]

@@ -55,7 +55,7 @@ public sealed class PersonalAiOsService(
 
     private static readonly string[] Boundaries =
     [
-        "v2.1 bật Agent Framework nhưng mỗi agent chỉ chạy khi người dùng gọi rõ ràng.",
+        "v2.1 bật Agent Framework nhưng mỗi agent chỉ chạy bằng explicit invocation do người dùng chủ động gọi.",
         "v2.1 chưa bật agent-to-agent messaging, automatic delegation, shared task queue hoặc Agent Orchestration.",
         "v2.1 không bật autonomous agent loop, parallel agent execution hoặc parallel tool calls.",
         "WRITE/DELETE/EXTERNAL/SENSITIVE/COMPUTER/BROWSER/CONNECTOR/DEVELOPMENT vẫn yêu cầu policy và confirmation tương ứng.",

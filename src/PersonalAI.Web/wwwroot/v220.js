@@ -1,5 +1,5 @@
 (() => {
-  const VERSION = "2.2.5";
+  const VERSION = "2.2.6";
 
   document.addEventListener("DOMContentLoaded", () => {
     const card = document.querySelector("#agentDialog .agent-card");
@@ -8,9 +8,11 @@
     const panel = document.createElement("details");
     panel.id = "workflowPanel";
     panel.className = "workflow-panel";
-    panel.innerHTML = '<summary>Quy trình nhiều bước · v' + VERSION + ' · Thực hiện theo thứ tự</summary>'
-      + '<p>Chọn trước 2–3 tác nhân AI và mục tiêu từng bước. Dữ liệu chuyển giao tối đa 1.600 ký tự và sẽ bị chặn nếu phát hiện mẫu thông tin xác thực. Mỗi bước giới hạn thời gian, không tự chạy công cụ.</p>'
-      + '<form id="workflowForm">'
+    panel.lang = "vi";
+    panel.setAttribute("aria-label", "Thiết lập quy trình nhiều bước");
+    panel.innerHTML = '<summary id="wfSummary" aria-controls="workflowForm">Quy trình nhiều bước · v' + VERSION + ' · Thực hiện theo thứ tự</summary>'
+      + '<p id="wfInstructions">Chọn trước 2–3 tác nhân AI và mục tiêu từng bước. Dùng phím Tab để di chuyển giữa các ô. Dữ liệu chuyển giao tối đa 1.600 ký tự và sẽ bị chặn nếu phát hiện mẫu thông tin xác thực. Mỗi bước giới hạn thời gian, không tự chạy công cụ.</p>'
+      + '<form id="workflowForm" aria-describedby="wfInstructions wfBoundary">'
       + '<div class="workflow-step"><label for="wfAgent1">Bước 1 · Tác nhân AI</label><select id="wfAgent1" required></select>'
       + '<label for="wfGoal1">Mục tiêu bước 1</label><textarea id="wfGoal1" maxlength="4000" required></textarea></div>'
       + '<div class="workflow-step"><label for="wfAgent2">Bước 2 · Tác nhân AI</label><select id="wfAgent2" required></select>'
@@ -28,10 +30,10 @@
       + '<button type="button" id="wfPreview">Xem trước các bước và nguồn dữ liệu</button>'
       + '<section id="wfPreviewResult" class="workflow-step-result" aria-live="polite" hidden></section>'
       + '<label class="workflow-toggle"><input type="checkbox" id="wfConfirm" required disabled>Tôi đã đọc bản xem trước và đồng ý chạy đúng các bước, mục tiêu và nguồn dữ liệu được hiển thị.</label>'
-      + '<p class="workflow-boundary">Quy trình giới hạn tối đa 120 giây, mỗi bước tối đa 50 giây (dịch vụ AI cần hỗ trợ huỷ yêu cầu để dừng đúng hạn). Các bước có thể gửi nội dung tới dịch vụ AI; không nhập bí mật. Bộ lọc mẫu thông tin xác thực không thay thế kiểm tra dữ liệu thủ công. Chỉ chuyển dữ liệu sau khi người dùng xem và duyệt chính xác đầu ra của bước trước ở bước kiểm tra riêng. Không tự chọn tác nhân AI, chạy song song hoặc sử dụng công cụ.</p>'
+      + '<p class="workflow-boundary" id="wfBoundary">Quy trình giới hạn tối đa 120 giây, mỗi bước tối đa 50 giây (dịch vụ AI cần hỗ trợ huỷ yêu cầu để dừng đúng hạn). Các bước có thể gửi nội dung tới dịch vụ AI; không nhập bí mật. Bộ lọc mẫu thông tin xác thực không thay thế kiểm tra dữ liệu thủ công. Chỉ chuyển dữ liệu sau khi người dùng xem và duyệt chính xác đầu ra của bước trước ở bước kiểm tra riêng. Không tự chọn tác nhân AI, chạy song song hoặc sử dụng công cụ.</p>'
       + '<button class="primary-button" id="wfRun" type="submit" disabled>Chạy quy trình đã xác nhận</button>'
-      + '<p id="wfFeedback" role="status" aria-live="polite"></p>'
-      + '</form><section id="wfResults" class="workflow-results" hidden></section>';
+      + '<p id="wfFeedback" role="status" aria-live="polite" aria-atomic="true" tabindex="-1"></p>'
+      + '</form><section id="wfResults" class="workflow-results" role="region" aria-label="Kết quả quy trình" hidden></section>';
 
     card.append(panel);
     const form = panel.querySelector("#workflowForm");
@@ -42,6 +44,8 @@
     const previewResult = panel.querySelector("#wfPreviewResult");
     const third = panel.querySelector("#wfThird");
     const thirdCheckbox = panel.querySelector("#wfStep3");
+    panel.querySelector("#wfPreviewResult").setAttribute("aria-label", "Bản xem trước các bước");
+    panel.querySelector("#wfPreviewResult").setAttribute("role", "region");
     let loaded = false;
     const vietnameseAgents = {
       "core.personal-assistant": "Trợ lý cá nhân",
@@ -57,6 +61,26 @@
 
     const field = id => panel.querySelector("#" + id);
     const bool = id => field(id).checked;
+
+    // Thông báo lỗi có thể nhận tiêu điểm để người dùng dùng bàn phím và trình đọc màn hình biết lý do.
+    function showError(message) {
+      feedback.setAttribute("role", "alert");
+      feedback.textContent = message;
+      feedback.focus();
+    }
+    function showStatus(message) {
+      feedback.setAttribute("role", "status");
+      feedback.textContent = message;
+    }
+
+    form.addEventListener("invalid", event => {
+      const control = event.target;
+      if (control instanceof HTMLSelectElement) control.setCustomValidity("Hãy chọn tác nhân AI cho bước này.");
+      else if (control instanceof HTMLTextAreaElement) control.setCustomValidity("Hãy nhập mục tiêu cho bước này.");
+      else if (control.id === "wfConfirm") control.setCustomValidity("Hãy xem trước và xác nhận cấu hình trước khi chạy.");
+    }, true);
+    form.addEventListener("input", event => event.target.setCustomValidity?.(""), true);
+    form.addEventListener("change", event => event.target.setCustomValidity?.(""), true);
 
     let pendingReview = false;
     let checkedConfiguration = null;
@@ -100,10 +124,15 @@
     });
 
     previewButton.addEventListener("click", async () => {
-      if (!loaded || pendingReview || !form.reportValidity()) return;
+      if (!loaded || pendingReview) return;
+      // Không bắt buộc xác nhận lại mới được xem trước; chỉ kiểm tra các ô nhập mục tiêu và tác nhân.
+      for (const control of form.querySelectorAll("select[required], textarea[required]")) {
+        if (!control.reportValidity()) return;
+      }
       previewButton.disabled = true;
       invalidatePreview();
-      feedback.textContent = "Đang kiểm tra cấu hình, chưa chạy tác nhân AI…";
+      showStatus("Đang kiểm tra cấu hình, chưa chạy tác nhân AI…");
+      panel.setAttribute("aria-busy", "true");
       try {
         const workspaceId = currentWorkspace();
         const config = currentConfiguration();
@@ -122,6 +151,7 @@
           throw new Error("Cấu hình đã thay đổi trong lúc kiểm tra. Hãy xem trước lại.");
         checkedConfiguration = { workspaceId, snapshot, digest: preview.configurationDigest };
         const title = document.createElement("h4");
+        title.tabIndex = -1;
         title.textContent = "Bản xem trước — chưa chạy tác nhân AI";
         previewResult.append(title);
         (preview.steps || []).forEach(item => {
@@ -143,11 +173,13 @@
         previewResult.append(sources, warning);
         previewResult.hidden = false;
         field("wfConfirm").disabled = false;
-        feedback.textContent = "Đã tạo bản xem trước. Hãy đọc kỹ rồi tích xác nhận để chạy.";
+        showStatus("Đã tạo bản xem trước. Hãy đọc kỹ rồi tích xác nhận để chạy.");
+        title.focus();
       } catch (error) {
-        feedback.textContent = error instanceof Error ? error.message : "Không xem trước được quy trình.";
+        showError(error instanceof Error ? error.message : "Không xem trước được quy trình.");
       } finally {
         previewButton.disabled = !loaded;
+        panel.removeAttribute("aria-busy");
       }
     });
 
@@ -155,13 +187,13 @@
       results.replaceChildren();
       pendingReview = payload.status === "awaiting-review";
       run.disabled = !loaded || pendingReview || !checkedConfiguration || !bool("wfConfirm");
-      feedback.textContent = pendingReview
+      showStatus(pendingReview
         ? "Quy trình đã tạm dừng: xem đúng dữ liệu trước khi đồng ý chuyển sang tác nhân tiếp theo."
         : payload.status === "completed"
           ? "Đã hoàn tất " + payload.completedSteps.length + " bước. Không có tự chạy công cụ."
           : payload.status === "timed-out"
             ? "Quy trình dừng vì hết thời gian ở bước " + (payload.failedStep || "?") + "."
-            : "Quy trình dừng tại bước " + (payload.failedStep || "?") + "; không chạy các bước sau.";
+            : "Quy trình dừng tại bước " + (payload.failedStep || "?") + "; không chạy các bước sau.");
 
       (payload.completedSteps || []).forEach(item => {
         const section = document.createElement("article");
@@ -183,27 +215,35 @@
       }
 
       const checkpoint = payload.handoffCheckpoint;
+      let reviewHeading = null;
       if (pendingReview && checkpoint) {
         const section = document.createElement("section");
         section.className = "workflow-step-result";
         const heading = document.createElement("h4");
         heading.textContent = "Duyệt dữ liệu trước khi chuyển đến bước "
           + checkpoint.receivingStep + " · " + displayAgent(checkpoint.receivingAgentId);
+        heading.tabIndex = -1;
+        reviewHeading = heading;
         const warning = document.createElement("p");
         warning.textContent = "Đây là đúng nội dung (tối đa 1.600 ký tự) sẽ chuyển sang bước tiếp theo. Nội dung có thể được gửi tới dịch vụ AI đã cấu hình. Bộ lọc mẫu không nhận diện được mọi bí mật. Chỉ tiếp tục sau khi bạn đã đọc và đồng ý chia sẻ.";
         const preview = document.createElement("pre");
+        preview.tabIndex = 0;
+        preview.setAttribute("role", "region");
+        preview.setAttribute("aria-label", "Nội dung cụ thể chuẩn bị chuyển cho tác nhân tiếp theo");
         preview.className = "workflow-step-output";
         preview.textContent = checkpoint.preview || "";
         const consent = document.createElement("label");
         consent.className = "workflow-toggle";
         const checkbox = document.createElement("input");
         checkbox.type = "checkbox";
+        checkbox.id = "wfReviewConsent";
         consent.append(checkbox, document.createTextNode(
           " Tôi đã xem đúng nội dung ở trên và đồng ý chuyển nội dung này sang bước kế tiếp."));
         const approve = document.createElement("button");
         approve.type = "button";
         approve.textContent = "Duyệt và chạy bước kế tiếp";
         approve.disabled = true;
+        approve.setAttribute("aria-describedby", "wfReviewConsent");
         const decline = document.createElement("button");
         decline.type = "button";
         decline.textContent = "Dừng quy trình, không chuyển dữ liệu";
@@ -214,9 +254,10 @@
         async function decide(approved) {
           approve.disabled = true;
           decline.disabled = true;
-          feedback.textContent = approved
+          showStatus(approved
             ? "Đang chạy bước đã được bạn duyệt…"
-            : "Đang dừng quy trình…";
+            : "Đang dừng quy trình…");
+          panel.setAttribute("aria-busy", "true");
           try {
             const response = await fetch("/api/agents/orchestration/resume", {
               method: "POST",
@@ -235,9 +276,11 @@
             if (!response.ok) throw new Error(next.error || "Không thể duyệt dữ liệu chuyển giao.");
             await presentWorkflow(next);
           } catch (error) {
-            feedback.textContent = error instanceof Error ? error.message : "Không thể duyệt.";
+            showError(error instanceof Error ? error.message : "Không thể duyệt.");
             decline.disabled = false;
             approve.disabled = !checkbox.checked;
+          } finally {
+            panel.removeAttribute("aria-busy");
           }
         }
 
@@ -247,7 +290,7 @@
         results.append(section);
       } else if (pendingReview) {
         pendingReview = false;
-        feedback.textContent = "Thiếu dữ liệu xác nhận: quy trình không được tiếp tục.";
+        showError("Thiếu dữ liệu xác nhận: quy trình không được tiếp tục.");
       }
 
       // Chẩn đoán chỉ đọc siêu dữ liệu thuộc không gian làm việc hiện tại.
@@ -286,6 +329,11 @@
 
       results.hidden = false;
       run.disabled = !loaded || pendingReview;
+      const focusHeading = reviewHeading || results.querySelector("h4");
+      if (focusHeading) {
+        focusHeading.tabIndex = -1;
+        focusHeading.focus();
+      }
     }
 
     thirdCheckbox.addEventListener("change", () => {
@@ -298,7 +346,7 @@
     panel.addEventListener("toggle", async () => {
       if (!panel.open || loaded) return;
       run.disabled = true;
-      feedback.textContent = "Đang tải danh sách tác nhân AI…";
+      showStatus("Đang tải danh sách tác nhân AI…");
       try {
         const response = await fetch("/api/agents", {
           headers: { "X-PersonalAI-Workspace": window.PersonalAiWorkspace?.currentId || "personal" }
@@ -323,9 +371,9 @@
         });
         loaded = true;
         run.disabled = true;
-        feedback.textContent = "Hãy chọn các bước, xem trước cấu hình rồi xác nhận trước khi chạy.";
+        showStatus("Hãy chọn các bước, xem trước cấu hình rồi xác nhận trước khi chạy.");
       } catch (error) {
-        feedback.textContent = error instanceof Error ? error.message : "Không tải được danh sách tác nhân AI.";
+        showError(error instanceof Error ? error.message : "Không tải được danh sách tác nhân AI.");
       }
     });
 
@@ -336,7 +384,7 @@
       if (checkedConfiguration.snapshot !== JSON.stringify(configuration)
           || checkedConfiguration.workspaceId !== currentWorkspace()) {
         invalidatePreview();
-        feedback.textContent = "Cấu hình hoặc không gian làm việc đã đổi. Hãy xem trước và xác nhận lại.";
+        showError("Cấu hình hoặc không gian làm việc đã đổi. Hãy xem trước và xác nhận lại.");
         return;
       }
       const approvedDigest = checkedConfiguration.digest;
@@ -345,7 +393,8 @@
       run.disabled = true;
       results.hidden = true;
       results.replaceChildren();
-      feedback.textContent = "Đang chạy các bước đã xác nhận theo thứ tự…";
+      showStatus("Đang chạy các bước đã xác nhận theo thứ tự…");
+      panel.setAttribute("aria-busy", "true");
       try {
         const response = await fetch("/api/agents/orchestration/execute", {
           method: "POST",
@@ -368,9 +417,10 @@
         previewResult.hidden = true;
         await presentWorkflow(payload);
       } catch (error) {
-        feedback.textContent = error instanceof Error ? error.message : "Không thể chạy quy trình.";
+        showError(error instanceof Error ? error.message : "Không thể chạy quy trình.");
       } finally {
         run.disabled = !loaded || pendingReview || !checkedConfiguration || !bool("wfConfirm");
+        panel.removeAttribute("aria-busy");
       }
     });
   });

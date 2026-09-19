@@ -1,6 +1,7 @@
 (() => {
   const VERSION = "1.1.0";
   let loading = false;
+  let pendingKeyboardTimer = null;
 
   if (document.readyState === "loading") {
     document.addEventListener("DOMContentLoaded", initialize, { once: true });
@@ -97,7 +98,7 @@
     introTitle.textContent = "Quan sát trước, hành động có xác nhận";
     const introCopy = document.createElement("p");
     introCopy.textContent =
-      "Bản thử nghiệm hỗ trợ đọc thông tin máy, chuyển cửa sổ, di chuyển chuột và nhấp trái từng lần có xác nhận. Mỗi lần bật chỉ có 60 giây và tối đa 5 thao tác, kể cả thao tác thất bại. Chưa hỗ trợ gõ phím, chụp ảnh màn hình hay AI tự điều khiển liên tục. Chỉ nhấp trên cửa sổ thử nghiệm không chứa dữ liệu quan trọng.";
+      "Bản thử nghiệm hỗ trợ di chuyển chuột, nhấp trái và nhập một dòng tối đa 32 ký tự vào Notepad. Mỗi lần bật có tối đa 60 giây và 5 thao tác. Chưa hỗ trợ tổ hợp phím, chụp màn hình hay AI tự thao tác liên tục. Chỉ dùng trên dữ liệu thử nghiệm.";
     intro.append(introTitle, introCopy);
 
     const summary = document.createElement("div");
@@ -160,6 +161,50 @@
     });
     actions.append(stop, enable);
 
+    const keyboard = document.createElement("section");
+    keyboard.id = "computerKeyboardPreview";
+    keyboard.className = "v110-computer-intro";
+    const keyboardTitle = document.createElement("strong");
+    keyboardTitle.textContent = "Nhập văn bản thử nghiệm vào Notepad";
+    const keyboardDescription = document.createElement("p");
+    keyboardDescription.textContent =
+      "Chỉ dùng trên Notepad trống, không nhập mật khẩu hoặc dữ liệu nhạy cảm. Sau khi xác nhận, bạn có 5 giây để chuyển sang đúng cửa sổ Notepad đã chọn. Bản thử nghiệm không ghi nội dung nhập vào nhật ký công cụ.";
+    const choose = document.createElement("button");
+    choose.type = "button";
+    choose.className = "secondary-button";
+    choose.textContent = "Tìm cửa sổ Notepad";
+    choose.addEventListener("click", loadNotepadWindows);
+
+    const selector = document.createElement("select");
+    selector.id = "computerNotepadWindow";
+    selector.setAttribute("aria-label", "Cửa sổ Notepad thử nghiệm");
+    selector.style.width = "100%";
+    selector.style.marginTop = "8px";
+    const emptyOption = document.createElement("option");
+    emptyOption.value = "";
+    emptyOption.textContent = "Nhấn Tìm cửa sổ Notepad";
+    selector.append(emptyOption);
+
+    const line = document.createElement("input");
+    line.id = "computerNotepadText";
+    line.type = "text";
+    line.maxLength = 32;
+    line.autocomplete = "off";
+    line.spellcheck = false;
+    line.placeholder = "Một dòng thử nghiệm, tối đa 32 ký tự";
+    line.setAttribute("aria-label", "Văn bản thử nghiệm");
+    line.style.boxSizing = "border-box";
+    line.style.width = "100%";
+    line.style.marginTop = "8px";
+
+    const typeButton = document.createElement("button");
+    typeButton.type = "button";
+    typeButton.className = "secondary-button";
+    typeButton.textContent = "Xác nhận nhập sau 5 giây";
+    typeButton.addEventListener("click", scheduleNotepadTyping);
+
+    keyboard.append(keyboardTitle, keyboardDescription, choose, selector, line, typeButton);
+
     card.append(
       header,
       intro,
@@ -170,8 +215,15 @@
       limitations,
       safety,
       feedback,
-      actions);
+      actions,
+      keyboard);
     dialog.appendChild(card);
+    dialog.addEventListener("close", () => {
+      if (pendingKeyboardTimer !== null) clearTimeout(pendingKeyboardTimer);
+      pendingKeyboardTimer = null;
+      line.value = "";
+      selector.replaceChildren();
+    });
     dialog.addEventListener("click", event => {
       if (event.target === dialog) dialog.close();
     });
@@ -302,6 +354,76 @@
     }
   }
 
+  async function loadNotepadWindows() {
+    const select = document.getElementById("computerNotepadWindow");
+    if (!select) return;
+    select.replaceChildren();
+    try {
+      const response = await fetch("/api/computer/keyboard/notepad-windows", {
+        headers: { "X-PersonalAI-Manual-Approval": "dong-y" },
+        cache: "no-store"
+      });
+      const payload = await response.json().catch(() => ({}));
+      if (!response.ok) throw new Error(payload.error || "Không đọc được danh sách Notepad.");
+      const windows = Array.isArray(payload.windows) ? payload.windows : [];
+      const blank = document.createElement("option");
+      blank.value = "";
+      blank.textContent = windows.length ? "Chọn cửa sổ Notepad" : "Chưa tìm thấy cửa sổ Notepad";
+      select.append(blank);
+      windows.forEach(item => {
+        const option = document.createElement("option");
+        option.value = item.windowId;
+        option.textContent = item.title || "Notepad";
+        select.append(option);
+      });
+      setFeedback(windows.length
+        ? "Hãy chọn cửa sổ Notepad thử nghiệm và nhập một dòng văn bản."
+        : "Hãy mở Notepad trống rồi nhấn Tìm cửa sổ Notepad.");
+    } catch (error) {
+      setFeedback(error.message || "Không tìm được cửa sổ Notepad.", true);
+    }
+  }
+
+  async function scheduleNotepadTyping() {
+    if (pendingKeyboardTimer !== null) {
+      setFeedback("Đã có lệnh nhập đang chờ. Hãy dừng hoặc chờ lệnh hoàn tất.", true);
+      return;
+    }
+    const select = document.getElementById("computerNotepadWindow");
+    const input = document.getElementById("computerNotepadText");
+    const windowId = select?.value || "";
+    const text = input?.value || "";
+    if (!windowId || !text || text.length > 32 || /[\r\n\t]/.test(text)) {
+      setFeedback("Hãy chọn cửa sổ Notepad và nhập một dòng 1–32 ký tự.", true);
+      return;
+    }
+    if (!window.confirm(
+      "Sau 5 giây, AI Cá Nhân sẽ nhập đúng dòng bạn vừa viết vào cửa sổ Notepad đã chọn. Hãy chuyển sang Notepad trống ngay sau khi đồng ý. Bạn xác nhận không?")) return;
+    input.value = "";
+    setFeedback("Hãy chuyển sang đúng cửa sổ Notepad trong 5 giây. Ctrl + Shift + F12 để dừng.");
+    pendingKeyboardTimer = setTimeout(async () => {
+      pendingKeyboardTimer = null;
+      try {
+        const response = await fetch("/api/computer/keyboard/type-notepad", {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+            "X-PersonalAI-Manual-Approval": "dong-y"
+          },
+          body: JSON.stringify({ windowId, text }),
+          cache: "no-store"
+        });
+        const payload = await response.json().catch(() => ({}));
+        if (!response.ok) throw new Error(payload.error || "Windows đã từ chối nhập văn bản.");
+        setFeedback(payload.detail || "Đã gửi văn bản tới Notepad.");
+      } catch (error) {
+        setFeedback(error.message || "Không nhập được văn bản.", true);
+      } finally {
+        await loadComputerStatus();
+      }
+    }, 5000);
+  }
+
   function setFeedback(message, isError = false) {
     const node = document.querySelector("#computerUseFeedback");
     if (!node) return;
@@ -319,7 +441,8 @@
       "active-window": "Cửa sổ đang sử dụng",
       "focus-window": "Chuyển cửa sổ",
       "move-cursor": "Di chuyển con trỏ",
-      "click-left": "Nhấp chuột trái một lần"
+      "click-left": "Nhấp chuột trái một lần",
+      "type-notepad-text": "Nhập một dòng thử nghiệm vào Notepad"
     }[value] || value || "Chức năng";
   }
 })();

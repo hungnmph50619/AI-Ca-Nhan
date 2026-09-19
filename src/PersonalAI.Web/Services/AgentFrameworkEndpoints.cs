@@ -11,6 +11,7 @@ public static class AgentFrameworkEndpoints
         services.AddScoped<IAgent, PersonalAssistantFrameworkAgent>();
         services.AddScoped<IAgent, PlannerFrameworkAgent>();
         services.AddScoped<IAgent, ResearchFrameworkAgent>();
+        services.AddScoped<IAgent, DeveloperFrameworkAgent>();
         services.AddScoped<IAgentRegistry, AgentRegistry>();
         services.AddScoped<IAgentFrameworkService, AgentFrameworkService>();
         return services;
@@ -32,6 +33,9 @@ public static class AgentFrameworkEndpoints
 
         app.MapGet("/api/research/status", () =>
             Results.Ok(ResearchAgentLimits.GetStatus()));
+
+        app.MapGet("/api/developer-agent/status", () =>
+            Results.Ok(DeveloperAgentLimits.GetStatus()));
 
         app.MapGet("/api/agents/{agentId}", (
             string agentId,
@@ -63,6 +67,12 @@ public static class AgentFrameworkEndpoints
             {
                 return Results.BadRequest(
                     new ApiError(exception.Message));
+            }
+            catch (DeveloperOutputException exception)
+            {
+                return Results.Json(
+                    new ApiError(exception.Message),
+                    statusCode: StatusCodes.Status502BadGateway);
             }
             catch (ResearchOutputException exception)
             {

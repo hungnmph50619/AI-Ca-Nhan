@@ -31,7 +31,7 @@ public static class ReviewerAgentLimits
             ExecutesTools: false,
             DispatchesAgents: false,
             RequiresExplicitInvocation: true,
-            NextStage: "v2.2.5-workflow-usability");
+            NextStage: "v2.2.6-workflow-accessibility");
 }
 
 public sealed class ReviewerOutputException(string message)

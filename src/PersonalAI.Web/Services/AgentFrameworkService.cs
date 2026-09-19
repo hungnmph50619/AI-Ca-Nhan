@@ -279,8 +279,8 @@ public sealed class AgentFrameworkService(
     IAuditRecorder audit,
     ILogger<AgentFrameworkService> logger) : IAgentFrameworkService
 {
-    public const string FrameworkVersion = "2.2.1";
-    public const string NextStage = "v2.2.2-orchestration-reliability";
+    public const string FrameworkVersion = "2.2.2";
+    public const string NextStage = "v2.2.3-workflow-observability";
 
     private static readonly SemaphoreSlim ExecutionGate =
         new(

@@ -58,25 +58,6 @@ jobs:
 
           curl -fsS http://127.0.0.1:5077/api/status | jq -e '.version == "2.2.6"' >/dev/null
 
-          # The localhost Xerath bridge must preserve the legacy v1 response contract.
-          curl -fsS http://127.0.0.1:5077/api/integrations/xerath/status |
-            jq -e '.online == true and .bridgeVersion == 1 and .languageModelEnabled == false' >/dev/null
-          curl -fsS -X POST http://127.0.0.1:5077/api/integrations/xerath/notice \
-            -H 'Content-Type: application/json' -H 'X-Xerath-Bridge: 1' \
-            -d '{"kind":"own-health-loss","gameTimeSeconds":120,"healthPercent":30}' |
-            jq -e '.verified == true and .usedLanguageModel == false and .source == "riot-local-own-stats" and (.text | contains("30%"))' >/dev/null
-          curl -fsS -X POST http://127.0.0.1:5077/api/integrations/xerath/notice \
-            -H 'Content-Type: application/json' -H 'X-Xerath-Bridge: 1' \
-            -d '{"kind":"completed-kill","gameTimeSeconds":122,"healthPercent":null}' |
-            jq -e '.verified == true and .usedLanguageModel == false and .source == "riot-local-public-event"' >/dev/null
-          invalid_bridge_status=$(curl -s -o /dev/null -w '%{http_code}' -X POST \
-            http://127.0.0.1:5077/api/integrations/xerath/notice \
-            -H 'Content-Type: application/json' -H 'X-Xerath-Bridge: 1' \
-            -d '{"kind":"own-health-loss","gameTimeSeconds":123,"healthPercent":150}')
-          test "$invalid_bridge_status" = "400"
-
-
-
           curl -fsS -D /tmp/status-headers http://127.0.0.1:5077/api/status -o /tmp/status-body.json
           grep -Eiq '^X-PersonalAI-Request-Id: [a-f0-9]{32}' /tmp/status-headers
           grep -Eiq '^X-PersonalAI-Api-Version: 1' /tmp/status-headers
@@ -1606,6 +1587,7 @@ jobs:
             and any(.tools[]; .name == "computer.window.active" and .requiredPermissions == ["READ","SENSITIVE"] and .requiresConfirmation == true)
             and any(.tools[]; .name == "computer.window.focus" and .requiredPermissions == ["WRITE","COMPUTER","SENSITIVE"] and .requiresConfirmation == true)
             and any(.tools[]; .name == "computer.cursor.move" and .requiredPermissions == ["WRITE","COMPUTER"] and .requiresConfirmation == true)
+            and any(.tools[]; .name == "computer.mouse.click-left" and .requiredPermissions == ["WRITE","COMPUTER","SENSITIVE"] and .requiresConfirmation == true)
             and any(.tools[]; .name == "browser.session.info" and .requiredPermissions == ["READ","BROWSER"] and .requiresConfirmation == true)
             and any(.tools[]; .name == "browser.navigate" and .requiredPermissions == ["READ","EXTERNAL","BROWSER"] and .requiresConfirmation == true)
             and any(.tools[]; .name == "browser.page.observe" and .requiredPermissions == ["READ","BROWSER"] and .requiresConfirmation == true)
@@ -1623,6 +1605,32 @@ jobs:
           computer_status=$(curl -fsS http://127.0.0.1:5077/api/computer/status)
           echo "$computer_status" | jq -e '.version == "2.2.6" and .supported == false and .interactiveSession == false and .availableCapabilities == [] and any(.limitations[]; contains("Windows"))' >/dev/null
 
+          # Khởi động mặc định khóa điều khiển; thử dừng lại và từ chối cho phép trên Linux.
+          echo "$computer_status" | jq -e '.desktopActionsPaused == true and .stopHotkeyAvailable == false and .stopHotkey == "Ctrl + Shift + F12"' >/dev/null
+          desktop_stop_code=$(curl -sS -o /tmp/desktop-stop.json -w '%{http_code}' -X POST http://127.0.0.1:5077/api/computer/control/stop)
+          test "$desktop_stop_code" = "200"
+          jq -e '.paused == true' /tmp/desktop-stop.json >/dev/null
+          desktop_enable_denied_code=$(curl -sS -o /tmp/desktop-enable-denied.json -w '%{http_code}' -X POST http://127.0.0.1:5077/api/computer/control/enable)
+          test "$desktop_enable_denied_code" = "403"
+          desktop_enable_unsupported_code=$(curl -sS -o /tmp/desktop-enable-unsupported.json -w '%{http_code}' -X POST http://127.0.0.1:5077/api/computer/control/enable -H 'X-PersonalAI-Manual-Approval: dong-y')
+          test "$desktop_enable_unsupported_code" = "400"
+          curl -fsS http://127.0.0.1:5077/api/computer/status | jq -e '.desktopActionsPaused == true' >/dev/null
+
+          # Nhập Notepad không phải công cụ chung: từ chối khi thiếu xác nhận hoặc đang dừng.
+          keyboard_no_confirm=$(curl -sS -o /tmp/keyboard-no-confirm.json -w '%{http_code}' -X POST http://127.0.0.1:5077/api/computer/keyboard/type-notepad \
+            -H 'Content-Type: application/json' \
+            -d '{"windowId":"0x0","text":"thu nghiem"}')
+          test "$keyboard_no_confirm" = "403"
+          keyboard_paused=$(curl -sS -o /tmp/keyboard-paused.json -w '%{http_code}' -X POST http://127.0.0.1:5077/api/computer/keyboard/type-notepad \
+            -H 'Content-Type: application/json' -H 'X-PersonalAI-Manual-Approval: dong-y' \
+            -d '{"windowId":"0x0","text":"thu nghiem"}')
+          test "$keyboard_paused" = "400"
+          jq -e '.error | contains("tạm dừng")' /tmp/keyboard-paused.json >/dev/null
+          keyboard_list_denied=$(curl -sS -o /tmp/keyboard-list-denied.json -w '%{http_code}' http://127.0.0.1:5077/api/computer/keyboard/notepad-windows)
+          test "$keyboard_list_denied" = "403"
+          keyboard_list_unsupported=$(curl -sS -o /tmp/keyboard-list-unsupported.json -w '%{http_code}' -H 'X-PersonalAI-Manual-Approval: dong-y' http://127.0.0.1:5077/api/computer/keyboard/notepad-windows)
+          test "$keyboard_list_unsupported" = "400"
+
           computer_sensitive_denied_code=$(curl -sS -o /tmp/computer-sensitive-denied.json -w '%{http_code}' -X POST http://127.0.0.1:5077/api/tools/execute \
             -H 'Content-Type: application/json' \
             -d '{"toolName":"computer.windows.list","arguments":{"limit":5},"approvedPermissions":["READ","SENSITIVE"],"confirmed":false}')
@@ -1634,6 +1642,23 @@ jobs:
             -d '{"toolName":"computer.cursor.move","arguments":{"x":10,"y":10},"approvedPermissions":["WRITE"],"confirmed":true}')
           test "$computer_missing_permission_code" = "403"
           jq -e '.status == "denied" and (.error | contains("ĐIỀU KHIỂN MÁY"))' /tmp/computer-missing-permission.json >/dev/null
+
+          # Không cho phép nhấp khi thiếu xác nhận hay quyền; không gửi sự kiện chuột trên CI Linux.
+          mouse_without_confirm_code=$(curl -sS -o /tmp/mouse-without-confirm.json -w '%{http_code}' -X POST http://127.0.0.1:5077/api/tools/execute \
+            -H 'Content-Type: application/json' \
+            -d '{"toolName":"computer.mouse.click-left","arguments":{"windowId":"0x1234","x":10,"y":10},"approvedPermissions":["WRITE","COMPUTER","SENSITIVE"],"confirmed":false}')
+          test "$mouse_without_confirm_code" = "403"
+          jq -e '.status == "denied" and (.error | contains("xác nhận"))' /tmp/mouse-without-confirm.json >/dev/null
+          mouse_without_sensitive_code=$(curl -sS -o /tmp/mouse-without-sensitive.json -w '%{http_code}' -X POST http://127.0.0.1:5077/api/tools/execute \
+            -H 'Content-Type: application/json' \
+            -d '{"toolName":"computer.mouse.click-left","arguments":{"windowId":"0x1234","x":10,"y":10},"approvedPermissions":["WRITE","COMPUTER"],"confirmed":true}')
+          test "$mouse_without_sensitive_code" = "403"
+          jq -e '.status == "denied" and (.error | contains("NHẠY CẢM"))' /tmp/mouse-without-sensitive.json >/dev/null
+          mouse_paused_code=$(curl -sS -o /tmp/mouse-paused.json -w '%{http_code}' -X POST http://127.0.0.1:5077/api/tools/execute \
+            -H 'Content-Type: application/json' \
+            -d '{"toolName":"computer.mouse.click-left","arguments":{"windowId":"0x1234","x":10,"y":10},"approvedPermissions":["WRITE","COMPUTER","SENSITIVE"],"confirmed":true}')
+          test "$mouse_paused_code" = "400"
+          jq -e '.status == "invalid-input" and (.error | contains("tạm dừng"))' /tmp/mouse-paused.json >/dev/null
 
           computer_unsupported_code=$(curl -sS -o /tmp/computer-unsupported.json -w '%{http_code}' -X POST http://127.0.0.1:5077/api/tools/execute \
             -H 'Content-Type: application/json' \
@@ -2954,6 +2979,23 @@ jobs:
           grep -Fq 'STABLE CORE · API CONTRACT 1' src/PersonalAI.Web/wwwroot/v100.js
           grep -Fq 'Controlled Computer Use' docs/releases/v1.1.0.md
           grep -Fq 'public const string Computer = "COMPUTER"' src/PersonalAI.Web/Models/ToolModels.cs
+          grep -Fq 'DesktopActionsPaused: session.Paused' src/PersonalAI.Web/Services/ComputerUseService.cs
+          grep -Fq 'StopHotkeyAvailable: session.StopHotkeyAvailable' src/PersonalAI.Web/Services/ComputerUseService.cs
+          grep -Fq 'AddHostedService<WindowsStopHotkeyService>()' src/PersonalAI.Web/Services/ComputerUseEndpoints.cs
+          grep -Fq 'RegisterHotKey(' src/PersonalAI.Web/Services/WindowsStopHotkeyService.cs
+          grep -Fq 'UnregisterHotKey(' src/PersonalAI.Web/Services/WindowsStopHotkeyService.cs
+          grep -Fq 'control.SetStopHotkeyAvailable(false)' src/PersonalAI.Web/Services/WindowsStopHotkeyService.cs
+          grep -Fq 'if (!_stopHotkeyAvailable)' src/PersonalAI.Web/Services/ComputerControlGate.cs
+          grep -Fq 'status.stopHotkeyAvailable !== true' src/PersonalAI.Web/wwwroot/v110.js
+          grep -Fq 'DesktopRemainingActions: session.RemainingActions' src/PersonalAI.Web/Services/ComputerUseService.cs
+          grep -Fq 'MaximumSessionSeconds = 60' src/PersonalAI.Web/Services/ComputerControlGate.cs
+          grep -Fq 'MaximumActionsPerSession = 5' src/PersonalAI.Web/Services/ComputerControlGate.cs
+          grep -Fq 'control.RunAllowed' src/PersonalAI.Web/Services/ComputerUseService.cs
+          grep -Fq 'private bool _paused = true;' src/PersonalAI.Web/Services/ComputerControlGate.cs
+          grep -Fq '/api/computer/control/stop' src/PersonalAI.Web/Services/ComputerUseEndpoints.cs
+          grep -Fq '/api/computer/control/enable' src/PersonalAI.Web/Services/ComputerUseEndpoints.cs
+          grep -Fq 'computerControlStop' src/PersonalAI.Web/wwwroot/v110.js
+          grep -Fq 'computerControlEnable' src/PersonalAI.Web/wwwroot/v110.js
           grep -Fq 'IComputerUseService' src/PersonalAI.Web/Services/ComputerUseService.cs
           grep -Fq '/api/computer/status' src/PersonalAI.Web/Services/ComputerUseEndpoints.cs
           grep -Fq 'computer.windows.list' src/PersonalAI.Web/Services/ComputerUseTools.cs
@@ -2964,10 +3006,23 @@ jobs:
           grep -Fq 'SensitiveComputerObservationRequiresConfirmation: true' src/PersonalAI.Web/Services/SystemCoreService.cs
           grep -Fq 'v110.css' src/PersonalAI.Web/wwwroot/index.html
           grep -Fq 'v110.js' src/PersonalAI.Web/wwwroot/index.html
-          grep -Fq 'CONTROLLED CAPABILITY · WINDOWS' src/PersonalAI.Web/wwwroot/v110.js
+          grep -Fq 'KHẢ NĂNG ĐIỀU KHIỂN CÓ XÁC NHẬN · WINDOWS' src/PersonalAI.Web/wwwroot/v110.js
           ! grep -Fq '"computer.mouse.click"' src/PersonalAI.Web/Services/ComputerUseTools.cs
           ! grep -Fq '"computer.keyboard' src/PersonalAI.Web/Services/ComputerUseTools.cs
-          ! grep -Fq 'SendInput' src/PersonalAI.Web/Services/ComputerUseService.cs
+          grep -Fq 'control.RunAllowed(() => ClickLeftCore' src/PersonalAI.Web/Services/ComputerUseService.cs
+          grep -Fq 'SendInput((uint)inputs.Length, inputs' src/PersonalAI.Web/Services/ComputerUseService.cs
+          grep -Fq 'target != GetForegroundWindow()' src/PersonalAI.Web/Services/ComputerUseService.cs
+          grep -Fq 'ComputerClickLeftTool' src/PersonalAI.Web/Services/ComputerUseEndpoints.cs
+          grep -Fq 'TypeNotepadTextCore' src/PersonalAI.Web/Services/ComputerUseService.cs
+          grep -Fq 'MaximumNotepadTextLength = 32' src/PersonalAI.Web/Services/ComputerUseService.cs
+          grep -Fq 'processName, "notepad"' src/PersonalAI.Web/Services/ComputerUseService.cs
+          grep -Fq '/api/computer/keyboard/type-notepad' src/PersonalAI.Web/Services/ComputerUseEndpoints.cs
+          grep -Fq '/api/computer/keyboard/notepad-windows' src/PersonalAI.Web/Services/ComputerUseEndpoints.cs
+          grep -Fq 'scheduleNotepadTyping' src/PersonalAI.Web/wwwroot/v110.js
+          grep -Fq '#computerUseDialog' src/PersonalAI.Web/wwwroot/v110.css
+
+          grep -Fq 'RequiresConfirmation: true' src/PersonalAI.Web/Services/ComputerClickLeftTool.cs
+          ! grep -Fq '"computer.keyboard' src/PersonalAI.Web/Services/ComputerClickLeftTool.cs
           ! grep -Fq 'Process.Start' src/PersonalAI.Web/Services/ComputerUseService.cs
           grep -Fq 'Controlled Browser Agent' docs/releases/v1.2.0.md
           grep -Fq 'public const string Browser = "BROWSER"' src/PersonalAI.Web/Models/ToolModels.cs

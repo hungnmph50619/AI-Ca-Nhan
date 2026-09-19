@@ -1,0 +1,78 @@
+name: Kiểm tra chốt điều khiển máy tính trên Windows
+
+on:
+  push:
+    branches:
+      - feature/desktop-gap-audit-and-control-stop
+  pull_request:
+    paths:
+      - 'src/PersonalAI.Web/Services/ComputerUse*'
+      - 'src/PersonalAI.Web/Services/ComputerControlGate.cs'
+      - 'src/PersonalAI.Web/Models/ComputerUseModels.cs'
+      - '.github/workflows/desktop-control.yml'
+
+jobs:
+  kiem-tra-windows:
+    runs-on: windows-latest
+    steps:
+      - name: Tải mã nguồn
+        uses: actions/checkout@v4
+      - name: Cài đặt .NET 8
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: '8.0.x'
+      - name: Biên dịch ứng dụng
+        run: dotnet build PersonalAI.sln --configuration Release
+
+      - name: Kiểm tra khóa mặc định và dừng trên Windows
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = "Stop"
+          $base = "http://127.0.0.1:5099"
+          $app = Start-Process dotnet -ArgumentList @(
+            "run", "--project", "src/PersonalAI.Web/PersonalAI.Web.csproj",
+            "--configuration", "Release", "--no-build", "--no-launch-profile",
+            "--urls", $base
+          ) -PassThru -WindowStyle Hidden
+          try {
+            $ready = $false
+            for ($i = 0; $i -lt 40; $i++) {
+              Start-Sleep -Milliseconds 500
+              try {
+                $status = Invoke-RestMethod "$base/api/computer/status" -TimeoutSec 2
+                $ready = $true
+                break
+              } catch { }
+            }
+            if (-not $ready) { throw "Ứng dụng không khởi động trong thời gian chờ." }
+            if (-not $status.supported) { throw "Windows chưa được nhận diện." }
+            if ($status.desktopActionsPaused -ne $true) { throw "Điều khiển không khóa khi khởi động." }
+
+            $stop = Invoke-RestMethod "$base/api/computer/control/stop" -Method Post
+            if ($stop.paused -ne $true) { throw "Không tạm dừng được điều khiển." }
+
+            $notApproved = Invoke-WebRequest "$base/api/computer/control/enable" -Method Post -SkipHttpErrorCheck
+            if ($notApproved.StatusCode -ne 403) { throw "Thiếu xác nhận nhưng vẫn cho phép điều khiển." }
+
+            $toolBody = @{
+              toolName = "computer.cursor.move"
+              arguments = @{ x = 0; y = 0 }
+              approvedPermissions = @("WRITE", "COMPUTER")
+              confirmed = $true
+            } | ConvertTo-Json -Depth 5
+            $blockedTool = Invoke-WebRequest "$base/api/tools/execute" -Method Post -ContentType "application/json" -Body $toolBody -SkipHttpErrorCheck
+            $blocked = $blockedTool.Content | ConvertFrom-Json
+            if ($blockedTool.StatusCode -ne 400 -or $blocked.status -ne "invalid-input" -or $blocked.error -notmatch "tạm dừng") {
+              throw "Công cụ điều khiển không tuân thủ trạng thái dừng."
+            }
+
+            if ($status.interactiveSession) {
+              $enabled = Invoke-RestMethod "$base/api/computer/control/enable" -Method Post -Headers @{ "X-PersonalAI-Manual-Approval" = "dong-y" }
+              if ($enabled.paused -ne $false) { throw "Không cho phép lại trong phiên Windows tương tác." }
+              $stoppedAgain = Invoke-RestMethod "$base/api/computer/control/stop" -Method Post
+              if ($stoppedAgain.paused -ne $true) { throw "Không dừng lại được sau khi cho phép." }
+            }
+            Write-Host "Đạt: khóa mặc định, dừng, từ chối thiếu xác nhận và từ chối lệnh khi dừng."
+          } finally {
+            if ($app -and -not $app.HasExited) { Stop-Process -Id $app.Id -Force }
+          }

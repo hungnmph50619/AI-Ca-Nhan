@@ -328,7 +328,8 @@
       }
 
       results.hidden = false;
-      run.disabled = !loaded || pendingReview;
+      // Kết quả đã hiển thị không được mở lại nút chạy khi bản xem trước đã hết hiệu lực.
+      run.disabled = !loaded || pendingReview || !checkedConfiguration || !bool("wfConfirm");
       const focusHeading = reviewHeading || results.querySelector("h4");
       if (focusHeading) {
         focusHeading.tabIndex = -1;

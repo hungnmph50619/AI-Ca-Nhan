@@ -567,5 +567,7 @@ app.MapPost("/api/chat", async (
     }
 });
 
+app.MapXerathBridge();
+
 app.MapFallbackToFile("index.html");
 app.Run();

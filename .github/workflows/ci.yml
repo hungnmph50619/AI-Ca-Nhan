@@ -58,6 +58,25 @@ jobs:
 
           curl -fsS http://127.0.0.1:5077/api/status | jq -e '.version == "2.2.6"' >/dev/null
 
+          # The localhost Xerath bridge must preserve the legacy v1 response contract.
+          curl -fsS http://127.0.0.1:5077/api/integrations/xerath/status |
+            jq -e '.online == true and .bridgeVersion == 1 and .languageModelEnabled == false' >/dev/null
+          curl -fsS -X POST http://127.0.0.1:5077/api/integrations/xerath/notice \
+            -H 'Content-Type: application/json' -H 'X-Xerath-Bridge: 1' \
+            -d '{"kind":"own-health-loss","gameTimeSeconds":120,"healthPercent":30}' |
+            jq -e '.verified == true and .usedLanguageModel == false and .source == "riot-local-own-stats" and (.text | contains("30%"))' >/dev/null
+          curl -fsS -X POST http://127.0.0.1:5077/api/integrations/xerath/notice \
+            -H 'Content-Type: application/json' -H 'X-Xerath-Bridge: 1' \
+            -d '{"kind":"completed-kill","gameTimeSeconds":122,"healthPercent":null}' |
+            jq -e '.verified == true and .usedLanguageModel == false and .source == "riot-local-public-event"' >/dev/null
+          invalid_bridge_status=$(curl -s -o /dev/null -w '%{http_code}' -X POST \
+            http://127.0.0.1:5077/api/integrations/xerath/notice \
+            -H 'Content-Type: application/json' -H 'X-Xerath-Bridge: 1' \
+            -d '{"kind":"own-health-loss","gameTimeSeconds":123,"healthPercent":150}')
+          test "$invalid_bridge_status" = "400"
+
+
+
           curl -fsS -D /tmp/status-headers http://127.0.0.1:5077/api/status -o /tmp/status-body.json
           grep -Eiq '^X-PersonalAI-Request-Id: [a-f0-9]{32}' /tmp/status-headers
           grep -Eiq '^X-PersonalAI-Api-Version: 1' /tmp/status-headers

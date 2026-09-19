@@ -9,6 +9,7 @@ public static class ComputerUseEndpoints
         this IServiceCollection services)
     {
         services.AddSingleton<ComputerControlGate>();
+        services.AddHostedService<WindowsStopHotkeyService>();
         services.AddSingleton<IComputerUseService, WindowsComputerUseService>();
         services.AddSingleton<IPersonalAiTool, ComputerScreenInfoTool>();
         services.AddSingleton<IPersonalAiTool, ComputerCursorPositionTool>();
@@ -62,7 +63,15 @@ public static class ComputerUseEndpoints
                 return Results.BadRequest(new ApiError(
                     "Điều khiển máy tính chỉ khả dụng trong phiên Windows đang tương tác."));
 
-            var session = gate.Enable();
+            ComputerControlSessionStatus session;
+            try
+            {
+                session = gate.Enable();
+            }
+            catch (ToolExecutionInputException exception)
+            {
+                return Results.BadRequest(new ApiError(exception.Message));
+            }
             audit.Record(AuditAgents.User, "computer.control.enable",
                 "computer:desktop", "manual-local-request", AuditResults.Succeeded);
             return Results.Ok(new

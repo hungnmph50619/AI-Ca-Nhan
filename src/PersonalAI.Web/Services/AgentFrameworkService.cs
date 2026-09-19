@@ -180,7 +180,7 @@ public sealed class PersonalAssistantFrameworkAgent(
 {
     public AgentDefinition Definition { get; } = new(
         "core.personal-assistant",
-        "Personal Assistant",
+        "Trợ lý cá nhân",
         "general-assistant",
         "Agent nền v2.1.x dùng Context Manager để phân tích và trả lời theo mục tiêu người dùng, không tự chạy tool.",
         [
@@ -279,8 +279,8 @@ public sealed class AgentFrameworkService(
     IAuditRecorder audit,
     ILogger<AgentFrameworkService> logger) : IAgentFrameworkService
 {
-    public const string FrameworkVersion = "2.2.5";
-    public const string NextStage = "v2.2.6-workflow-accessibility";
+    public const string FrameworkVersion = "2.2.6";
+    public const string NextStage = "v2.2.7-workflow-usability";
 
     private static readonly SemaphoreSlim ExecutionGate =
         new(

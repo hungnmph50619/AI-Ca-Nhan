@@ -20,7 +20,9 @@ public sealed record ComputerUseStatusResponse(
     IReadOnlyList<string> Limitations,
     bool DesktopActionsPaused = true,
     DateTimeOffset? DesktopSessionExpiresAt = null,
-    int DesktopRemainingActions = 0);
+    int DesktopRemainingActions = 0,
+    bool StopHotkeyAvailable = false,
+    string StopHotkey = "Ctrl + Shift + F12");
 
 public sealed record ComputerScreenInfo(
     int PrimaryWidth,

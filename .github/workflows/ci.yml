@@ -2620,7 +2620,7 @@ jobs:
           grep -Fq 'MapPersonalAiOs' src/PersonalAI.Web/Program.cs
           grep -Fq '/api/os/status' src/PersonalAI.Web/Services/PersonalAiOsEndpoints.cs
           grep -Fq '/api/os/manifest' src/PersonalAI.Web/Services/PersonalAiOsEndpoints.cs
-          grep -Fq 'AgentOrchestration: false' src/PersonalAI.Web/Services/PersonalAiOsService.cs
+          grep -Fq 'AgentOrchestration: true' src/PersonalAI.Web/Services/PersonalAiOsService.cs
           grep -Fq 'Personal AI OS' docs/releases/v2.0.0.md
           grep -Fq 'Agent Framework' docs/releases/v2.1.0.md
           grep -Fq 'Planner Agent' docs/releases/v2.1.1.md
@@ -2683,7 +2683,7 @@ jobs:
           grep -Fq 'MaximumConcurrentExecutions = 1' src/PersonalAI.Web/Services/AgentFrameworkService.cs
           grep -Fq 'ToolExecutionEnabled: false' src/PersonalAI.Web/Services/AgentFrameworkService.cs
           grep -Fq 'MultiAgentFramework: true' src/PersonalAI.Web/Services/PersonalAiOsService.cs
-          grep -Fq 'AgentOrchestration: false' src/PersonalAI.Web/Services/PersonalAiOsService.cs
+          grep -Fq 'AgentOrchestration: true' src/PersonalAI.Web/Services/PersonalAiOsService.cs
           grep -Fq 'v200.css' src/PersonalAI.Web/wwwroot/index.html
           grep -Fq 'v200.js' src/PersonalAI.Web/wwwroot/index.html
           grep -Fq 'v210.css' src/PersonalAI.Web/wwwroot/index.html

@@ -1,8 +1,22 @@
-# AI Cá Nhân — Operator Agent v2.1.5
+# AI Cá Nhân — Reviewer Agent v2.1.6
 
-PersonalAI là trợ lý AI cá nhân chạy bằng ASP.NET Core 8, ưu tiên dữ liệu cục bộ, có thể dùng Gemini hoặc OpenAI cho phần sinh câu trả lời. v2.0.0 đã tạo **Personal AI OS**; v2.1.0 thêm Agent Framework; v2.1.1 thêm **Planner Agent**; v2.1.2 bổ sung **Research Agent**; v2.1.3 có **Developer Agent**; v2.1.4 bổ sung **Office Agent**; v2.1.5 thêm **Operator Agent** chuẩn bị kế hoạch thao tác gồm rủi ro, phụ thuộc và điểm cần xác nhận. Operator không chạy tool, điều khiển máy/browser, gửi tin hoặc làm thay đổi trạng thái bên ngoài.
+PersonalAI là trợ lý AI cá nhân chạy bằng ASP.NET Core 8, ưu tiên dữ liệu cục bộ, có thể dùng Gemini hoặc OpenAI cho phần sinh câu trả lời. v2.0.0 đã tạo **Personal AI OS**; v2.1.0 thêm Agent Framework; v2.1.1 thêm **Planner Agent**; v2.1.2 bổ sung **Research Agent**; v2.1.3 có **Developer Agent**; v2.1.4 bổ sung **Office Agent**; v2.1.5 thêm **Operator Agent**; v2.1.6 bổ sung **Reviewer Agent** để rà soát nội dung người dùng dán, gắn mỗi finding với trích đoạn nguyên văn, nhưng không tự xác minh bên ngoài, chỉnh sửa hay phê duyệt.
 
 > Đây vẫn là ứng dụng thiết kế cho một người dùng trên máy cá nhân. Personal AI OS v2.0 giữ toàn bộ hardening của v1.9 nhưng **không thay thế authentication/authorization** cần có khi triển khai Internet hoặc môi trường nhiều người dùng.
+
+## Có gì trong v2.1.6?
+
+### Reviewer Agent
+
+Executable agent thứ bảy `quality.reviewer` rà soát văn bản/bản nháp/kế hoạch người dùng **dán trực tiếp** (80–4.000 ký tự) và trả báo cáo `needs-user-review` có `summary`, tối đa 8 findings, questions và limitations.
+
+- API: `GET /api/reviewer-agent/status`, `GET /api/agents/quality.reviewer`, `POST /api/agents/quality.reviewer/execute`.
+- Mỗi finding có `evidenceExcerpt` khớp **nguyên văn** trong nội dung được dán, observation, suggestedRevision và verificationStep. Trích đoạn không tồn tại sẽ bị parser từ chối.
+- Nếu không đủ nội dung, trả `insufficient-material` mà không gọi AI provider.
+- Không tự đọc file, history, bản nháp agent khác, duyệt web, chạy test, sửa hoặc phê duyệt. Kiểm tra chuỗi excerpt không có nghĩa đã xác minh nhận định hay thông tin thực tế bên ngoài.
+- Văn bản dán có thể được gửi tới AI provider đã cấu hình. Không dán bí mật hoặc dữ liệu nhạy cảm nếu không muốn chia sẻ.
+
+### Operator Agent v2.1.5 vẫn được giữ nguyên
 
 ## Có gì trong v2.1.5?
 
@@ -986,6 +1000,7 @@ GitHub Actions hiện kiểm tra regression cho các nền chính, gồm:
 - v2.1.3 Developer Agent workspace-only snippet review, no-write/no-command policy và evidence-index validation;
 - v2.1.4 Office Agent structured draft-only output, parser validation và no-send/no-write/no-task policy;
 - v2.1.5 Operator Agent risk-aware plan-only output, dependency validation và no-execution policy;
+- v2.1.6 Reviewer Agent excerpt validation, no-external-verification và no-approval policy;
 - JavaScript syntax;
 - UI guardrails tiếng Việt.
 
@@ -1022,10 +1037,11 @@ docs/releases/v2.1.2.md
 docs/releases/v2.1.3.md
 docs/releases/v2.1.4.md
 docs/releases/v2.1.5.md
+docs/releases/v2.1.6.md
 ```
 
-## Hướng phát triển sau v2.1.5
+## Hướng phát triển sau v2.1.6
 
 Computer Use, Browser Agent, Connector Foundation, Software Development Agent, Android Companion, Life Context, Decision Engine và Automation hiện nằm trong controlled capability layer.
 
-Sau v2.1.5, mốc kế tiếp là **v2.1.6 — Reviewer Agent**. Web/email research ở đây chưa tích hợp tự động; trước khi mở cần luồng cấp quyền, provenance và connector provider-specific. Agent Orchestration vẫn thuộc giai đoạn v2.2.
+Sau v2.1.6, mốc kế tiếp là **v2.1.7 — Security Agent**. Web/email research ở đây chưa tích hợp tự động; trước khi mở cần luồng cấp quyền, provenance và connector provider-specific. Agent Orchestration vẫn thuộc giai đoạn v2.2.

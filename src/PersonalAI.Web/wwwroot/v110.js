@@ -124,7 +124,7 @@
     const safety = document.createElement("div");
     safety.className = "v110-computer-safety";
     safety.textContent =
-      "Tiêu đề cửa sổ có thể chứa dữ liệu nhạy cảm. Chuyển cửa sổ, di chuyển chuột và nhấp trái cần bật điều khiển và xác nhận riêng trong mục Công cụ. Nút Dừng không hoàn tác thao tác đã thực hiện.";
+      "Nhấn Ctrl + Shift + F12 để dừng điều khiển từ bất kỳ cửa sổ thông thường nào của Windows khi phím tắt đã sẵn sàng. Mỗi thao tác vẫn cần quyền và xác nhận riêng. Phím dừng không hoàn tác thao tác đã thực hiện và không hoạt động trên màn hình bảo mật Windows.";
 
     const feedback = document.createElement("div");
     feedback.id = "computerUseFeedback";
@@ -155,7 +155,7 @@
     enable.className = "secondary-button";
     enable.textContent = "Cho phép điều khiển";
     enable.addEventListener("click", () => {
-      if (!window.confirm("Cho phép tối đa 5 thao tác chuyển cửa sổ, di chuyển chuột hoặc nhấp trái trong 60 giây. Mỗi thao tác vẫn cần xác nhận riêng. Chỉ dùng trên cửa sổ thử nghiệm. Bạn đồng ý không?")) return;
+      if (!window.confirm("Bật tối đa 5 thao tác trong 60 giây? Dừng bằng Ctrl + Shift + F12 hoặc nút Dừng. Mỗi thao tác vẫn cần xác nhận riêng. Chỉ thử trên cửa sổ không chứa dữ liệu quan trọng. Bạn đồng ý không?")) return;
       changeControl("enable");
     });
     actions.append(stop, enable);
@@ -233,7 +233,11 @@
     const stop = document.getElementById("computerControlStop");
     const enable = document.getElementById("computerControlEnable");
     if (stop) stop.disabled = !usable || status.desktopActionsPaused !== false;
-    if (enable) enable.disabled = !usable || status.desktopActionsPaused !== true;
+    if (enable) enable.disabled =
+      !usable || status.desktopActionsPaused !== true || status.stopHotkeyAvailable !== true;
+    summary.textContent += status.stopHotkeyAvailable === true
+      ? " · Phím dừng Ctrl + Shift + F12 đã sẵn sàng."
+      : " · Không đăng ký được phím dừng Ctrl + Shift + F12; không thể bật điều khiển.";
     if (usable && status.desktopActionsPaused === false) {
       const expire = status.desktopSessionExpiresAt
         ? new Date(status.desktopSessionExpiresAt).toLocaleTimeString("vi-VN")

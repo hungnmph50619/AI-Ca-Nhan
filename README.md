@@ -1,8 +1,22 @@
-# AI Cá Nhân — Security Agent v2.1.7
+# AI Cá Nhân — Controlled Agent Orchestration v2.2.0
 
-PersonalAI là trợ lý AI cá nhân chạy bằng ASP.NET Core 8, ưu tiên dữ liệu cục bộ, có thể dùng Gemini hoặc OpenAI cho phần sinh câu trả lời. v2.0.0 đã tạo **Personal AI OS**; v2.1.0 thêm Agent Framework; v2.1.1 thêm **Planner Agent**; v2.1.2 bổ sung **Research Agent**; v2.1.3 có **Developer Agent**; v2.1.4 bổ sung **Office Agent**; v2.1.5 thêm **Operator Agent**; v2.1.6 bổ sung **Reviewer Agent**; v2.1.7 thêm **Security Agent** rà soát cục bộ một số mẫu rủi ro trong mô tả thao tác mà người dùng nhập. Không gửi nội dung đến AI provider, không tự quét toàn hệ thống, chạy tool, chặn thao tác hoặc chứng nhận an toàn.
+PersonalAI là trợ lý AI cá nhân chạy bằng ASP.NET Core 8, ưu tiên dữ liệu cục bộ, có thể dùng Gemini hoặc OpenAI cho phần sinh câu trả lời. v2.0.0 đã tạo **Personal AI OS**; v2.1.0 thêm Agent Framework; v2.1.1 thêm **Planner Agent**; v2.1.2 bổ sung **Research Agent**; v2.1.3 có **Developer Agent**; v2.1.4 bổ sung **Office Agent**; v2.1.5 thêm **Operator Agent**; v2.1.6 bổ sung **Reviewer Agent**; v2.1.7 thêm **Security Agent** rà soát rủi ro cục bộ; **v2.2.0 bổ sung workflow tuần tự có xác nhận** để gọi 2–3 agent đã được người dùng chọn trước và chỉ chuyển đầu ra giữa các bước khi người dùng đồng ý. Chưa có auto-delegation, agent tự chạy tool, shared queue, autonomous loop hoặc parallel agents.
 
 > Đây vẫn là ứng dụng thiết kế cho một người dùng trên máy cá nhân. Personal AI OS v2.0 giữ toàn bộ hardening của v1.9 nhưng **không thay thế authentication/authorization** cần có khi triển khai Internet hoặc môi trường nhiều người dùng.
+
+## Có gì trong v2.2.0?
+
+### Controlled Agent Orchestration
+
+Người dùng mở **Agents → Workflows · v2.2.0**, chọn agent và mục tiêu riêng cho từng bước (2–3 bước), chọn checkbox ở bước nhận nếu cho phép chuyển tối đa 1.600 ký tự đầu ra từ bước liền trước, rồi xác nhận toàn bộ workflow. Context bổ sung mặc định tắt. Backend gọi **thực sự từng executable agent theo thứ tự** qua Agent Framework, trả kết quả và dừng khi có bước lỗi.
+
+- API: `GET /api/agents/orchestration/status`, `POST /api/agents/orchestration/execute`.
+- Không xác nhận toàn bộ workflow → HTTP 400 trước khi agent nào chạy; handoff cần checkbox ở từng bước. Không tự chọn/thêm agent, chạy tool, sửa file, gửi tin, tạo task hoặc tự lưu workflow.
+- Agent sử dụng AI provider có thể nhận mục tiêu, context được người dùng bật và đầu ra đã được opt-in. Không nhập bí mật; nhãn "dữ liệu chỉ đọc" không bảo đảm mô hình tuyệt đối miễn nhiễm prompt injection.
+- Chỉ cho phép một workflow cùng lúc, tối đa một agent execution tại một thời điểm. **Không có** agent-initiated messaging, automatic delegation, shared queue, autonomous loop hoặc parallel execution.
+- Mốc tiếp theo là **v2.2.1 — Workflow Hardening**, chưa triển khai.
+
+### Security Agent v2.1.7 vẫn được giữ nguyên
 
 ## Có gì trong v2.1.7?
 
@@ -1015,6 +1029,7 @@ GitHub Actions hiện kiểm tra regression cho các nền chính, gồm:
 - v2.1.5 Operator Agent risk-aware plan-only output, dependency validation và no-execution policy;
 - v2.1.6 Reviewer Agent excerpt validation, no-external-verification và no-approval policy;
 - v2.1.7 Security Agent local pattern review, no-input-echo, no-enforcement và no-safety-certification policy;
+- v2.2.0 bounded sequential workflow, explicit user approval/handoff, stop-on-error và no-tool/no-autonomy policy;
 - JavaScript syntax;
 - UI guardrails tiếng Việt.
 
@@ -1053,10 +1068,11 @@ docs/releases/v2.1.4.md
 docs/releases/v2.1.5.md
 docs/releases/v2.1.6.md
 docs/releases/v2.1.7.md
+docs/releases/v2.2.0.md
 ```
 
-## Hướng phát triển sau v2.1.7
+## Hướng phát triển sau v2.2.0
 
 Computer Use, Browser Agent, Connector Foundation, Software Development Agent, Android Companion, Life Context, Decision Engine và Automation hiện nằm trong controlled capability layer.
 
-Sau v2.1.7, mốc kế tiếp là **v2.2 — Agent Orchestration**, chưa được bật trong bản này. Web/email research ở đây chưa tích hợp tự động; trước khi mở cần luồng cấp quyền, provenance và connector provider-specific. Agent Orchestration vẫn thuộc giai đoạn v2.2.
+Sau v2.2.0, mốc kế tiếp là **v2.2.1 — Workflow Hardening**. Web/email research và tự thực thi tool chưa được tích hợp vào điều phối; việc mở thêm quyền cần thiết kế độc lập, truy xuất nguồn và permission/confirmation rõ ràng.

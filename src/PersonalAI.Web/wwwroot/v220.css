@@ -1,0 +1,16 @@
+.workflow-panel{margin:20px 0 0;padding:14px;border:1px solid var(--border-color,#7a7a7a);border-radius:12px}
+.workflow-panel summary{cursor:pointer;font-weight:700}
+.workflow-panel form{display:grid;gap:12px;margin-top:12px}
+.workflow-step{display:grid;gap:8px;padding:12px;border:1px solid var(--border-color,#6666);border-radius:10px}
+.workflow-step select,.workflow-step textarea{width:100%;max-width:100%;box-sizing:border-box;padding:8px;border-radius:8px;border:1px solid #8d8d8d;background:var(--surface,#fff);color:var(--text-color,inherit)}
+.workflow-step textarea{min-height:78px;resize:vertical}
+.workflow-toggle{display:flex;align-items:flex-start;gap:8px}
+.workflow-toggle input{flex:none;margin-top:4px}
+.workflow-context{display:flex;flex-wrap:wrap;gap:10px;padding:10px;border:1px solid #8888;border-radius:8px}
+.workflow-context legend{font-weight:600}
+.workflow-boundary{font-size:.87rem;opacity:.9}
+.workflow-step-result{padding:12px;border:1px solid #8887;border-radius:8px;margin-top:10px}
+.workflow-step-output{white-space:pre-wrap;overflow-wrap:anywhere;font:inherit;max-height:320px;overflow:auto}
+.workflow-results{margin-top:12px}
+
+.workflow-step[hidden]{display:none}

@@ -13,6 +13,7 @@ public sealed class ComputerControlGate
 
     private readonly object _synchronization = new();
     private bool _paused = true;
+    private bool _stopHotkeyAvailable;
     private DateTimeOffset? _expiresAt;
     private int _remainingActions;
 
@@ -36,7 +37,22 @@ public sealed class ComputerControlGate
             return new ComputerControlSessionStatus(
                 _paused,
                 _paused ? null : _expiresAt,
-                _paused ? 0 : _remainingActions);
+                _paused ? 0 : _remainingActions,
+                _stopHotkeyAvailable);
+        }
+    }
+
+    /// <summary>
+    /// Chỉ được gọi bởi bộ đăng ký phím Windows. Khi phím dừng không hoạt
+    /// động, khóa ngay cả phiên đã được cấp trước đó.
+    /// </summary>
+    public void SetStopHotkeyAvailable(bool available)
+    {
+        lock (_synchronization)
+        {
+            _stopHotkeyAvailable = available;
+            if (!available)
+                PauseInternal();
         }
     }
 
@@ -52,11 +68,15 @@ public sealed class ComputerControlGate
     {
         lock (_synchronization)
         {
+            if (!_stopHotkeyAvailable)
+                throw new ToolExecutionInputException(
+                    "Không thể cho phép điều khiển: phím dừng Ctrl + Shift + F12 chưa sẵn sàng. Hãy chạy ứng dụng trong phiên Windows đang tương tác.");
             _paused = false;
             _expiresAt = DateTimeOffset.UtcNow + SessionDuration;
             _remainingActions = MaximumActionsPerSession;
             return new ComputerControlSessionStatus(
-                false, _expiresAt, _remainingActions);
+                false, _expiresAt, _remainingActions,
+                _stopHotkeyAvailable);
         }
     }
 
@@ -70,6 +90,8 @@ public sealed class ComputerControlGate
         lock (_synchronization)
         {
             ExpireIfNeeded();
+            if (!_stopHotkeyAvailable)
+                PauseInternal();
             if (_paused)
             {
                 throw new ToolExecutionInputException(
@@ -113,4 +135,5 @@ public sealed class ComputerControlGate
 public sealed record ComputerControlSessionStatus(
     bool Paused,
     DateTimeOffset? ExpiresAt,
-    int RemainingActions);
+    int RemainingActions,
+    bool StopHotkeyAvailable = false);

@@ -1,8 +1,21 @@
-# AI Cá Nhân — Orchestration Reliability v2.2.2
+# AI Cá Nhân — Workflow Observability v2.2.3
 
 PersonalAI là trợ lý AI cá nhân chạy bằng ASP.NET Core 8, ưu tiên dữ liệu cục bộ, có thể dùng Gemini hoặc OpenAI cho phần sinh câu trả lời. v2.0.0 đã tạo **Personal AI OS**; v2.1.0 thêm Agent Framework; v2.1.1 thêm **Planner Agent**; v2.1.2 bổ sung **Research Agent**; v2.1.3 có **Developer Agent**; v2.1.4 bổ sung **Office Agent**; v2.1.5 thêm **Operator Agent**; v2.1.6 bổ sung **Reviewer Agent**; v2.1.7 thêm **Security Agent** rà soát rủi ro cục bộ; **v2.2.0 bổ sung workflow tuần tự có xác nhận** để gọi 2–3 agent đã được người dùng chọn trước và chuyển đầu ra khi có opt-in. **v2.2.1** thêm giới hạn thời gian từng bước/toàn workflow và bộ kiểm tra mẫu credential trước handoff. Chưa có auto-delegation, agent tự chạy tool, shared queue, autonomous loop hoặc parallel agents.
 
 > Đây vẫn là ứng dụng thiết kế cho một người dùng trên máy cá nhân. Personal AI OS v2.0 giữ toàn bộ hardening của v1.9 nhưng **không thay thế authentication/authorization** cần có khi triển khai Internet hoặc môi trường nhiều người dùng.
+
+## Có gì trong v2.2.3?
+
+### Workflow Observability
+
+Bản này thêm API theo dõi **metadata cục bộ** sau mỗi lần gọi workflow thành công: workflow ID, workspace ID, trạng thái, số bước hoàn tất, bước lỗi, lý do dừng từ danh sách định sẵn và thời gian. Không lưu mục tiêu, đầu ra agent, nội dung chuyển giao, token duyệt hoặc thông báo lỗi thô trong observation.
+
+- `GET /api/agents/orchestration/observability/status` công bố giới hạn; `GET /api/agents/orchestration/observability/{workflowId}` chỉ trả metadata thuộc workspace hiện tại.
+- Giữ tối đa 100 bản ghi trong bộ nhớ server, thời hạn 60 phút, mất khi server khởi động lại. Không có API liệt kê toàn bộ hay tác vụ thực thi qua endpoint quan sát.
+- Đây không phải nhật ký đầy đủ: request lỗi trước khi trả workflow và một số lệnh hủy có thể không tạo observation. Thời gian hiển thị có thể bao gồm lúc chờ người dùng duyệt.
+- Workflow và checkpoint của v2.2.2 vẫn có thể chứa đầu ra/preview; không nhập dữ liệu bí mật. Xem `docs/releases/v2.2.3.md`.
+
+### Orchestration Reliability v2.2.2 vẫn được giữ nguyên
 
 ## Có gì trong v2.2.2?
 
@@ -1098,10 +1111,11 @@ docs/releases/v2.1.7.md
 docs/releases/v2.2.0.md
 docs/releases/v2.2.1.md
 docs/releases/v2.2.2.md
+docs/releases/v2.2.3.md
 ```
 
-## Hướng phát triển sau v2.2.2
+## Hướng phát triển sau v2.2.3
 
 Computer Use, Browser Agent, Connector Foundation, Software Development Agent, Android Companion, Life Context, Decision Engine và Automation hiện nằm trong controlled capability layer.
 
-Sau v2.2.2, mốc kế tiếp là **v2.2.3 — Workflow Observability**. Web/email research và tự thực thi tool chưa được tích hợp vào điều phối; việc mở thêm quyền cần thiết kế độc lập, truy xuất nguồn và permission/confirmation rõ ràng.
+Sau v2.2.3, mốc kế tiếp dự kiến là **v2.2.4 — Workflow Diagnostics**. Web/email research và tự thực thi tool chưa được tích hợp vào điều phối; việc mở thêm quyền cần thiết kế độc lập, truy xuất nguồn và permission/confirmation rõ ràng.

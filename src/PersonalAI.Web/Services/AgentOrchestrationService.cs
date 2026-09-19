@@ -28,7 +28,7 @@ public static class AgentOrchestrationLimits
             PersistsWorkflows: false,
             AutonomousLoopEnabled: false,
             SelfTestPassed: SelfTest.Value,
-            NextStage: "v2.2.3-workflow-observability",
+            NextStage: "v2.2.4-workflow-diagnostics",
             MaximumWorkflowSeconds: WorkflowHandoffGuard.MaximumWorkflowSeconds,
             MaximumStepSeconds: WorkflowHandoffGuard.MaximumStepSeconds,
             StopsOnTimeout: true,

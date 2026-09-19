@@ -28,7 +28,7 @@ public static class ResearchAgentLimits
             CreatesTasks: false,
             DispatchesAgents: false,
             RequiresExplicitInvocation: true,
-            NextStage: "v2.2.3-workflow-observability");
+            NextStage: "v2.2.4-workflow-diagnostics");
 }
 
 public sealed class ResearchOutputException(string message)

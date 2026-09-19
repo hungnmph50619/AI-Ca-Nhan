@@ -27,7 +27,7 @@ public static class SecurityAgentLimits
             ExecutesTools: false,
             DispatchesAgents: false,
             RequiresExplicitInvocation: true,
-            NextStage: "v2.2.6-workflow-accessibility");
+            NextStage: "v2.2.7-workflow-usability");
 }
 
 public sealed class SecurityFrameworkAgent : IAgent
@@ -36,7 +36,7 @@ public sealed class SecurityFrameworkAgent : IAgent
 
     public AgentDefinition Definition { get; } = new(
         AgentId,
-        "Security Agent",
+        "Tác nhân kiểm tra bảo mật",
         "security",
         "Rà soát mẫu rủi ro trong mô tả thao tác do người dùng nhập. Chạy cục bộ, không tự đọc dữ liệu, thực thi, chặn thao tác hoặc chứng nhận an toàn.",
         [

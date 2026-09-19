@@ -391,7 +391,7 @@ public sealed class PersonalAiOsService(
                 "Agent Framework",
                 "coordination",
                 ControlledState("agents"),
-                "Agent registry + explicit execution runtime; Personal Assistant và Planner đã có, tool execution/delegation/messaging vẫn tắt."
+                "Agent registry + explicit execution runtime; Personal Assistant và Planner đã có, tool execution/delegation/messaging vẫn tắt.",
                 ["/api/agents/status", "/api/agents"],
                 false,
                 true,

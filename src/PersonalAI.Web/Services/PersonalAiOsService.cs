@@ -16,8 +16,8 @@ public sealed class PersonalAiOsService(
     IWorkspaceContextAccessor workspaceContext) : IPersonalAiOsService
 {
     public const string Edition = "Personal AI OS";
-    public const string Stage = "v2.0";
-    public const string NextStage = "v2.1-multi-agent";
+    public const string Stage = "v2.1";
+    public const string NextStage = "v2.1.1-planner-agent";
 
     private static readonly PersonalAiOsLayer[] Layers =
     [
@@ -42,6 +42,11 @@ public sealed class PersonalAiOsService(
             "Các bề mặt tương tác với máy tính, web, tài khoản ngoài và thiết bị Android.",
             ["desktop", "browser", "connectors", "email", "calendar", "android"]),
         new(
+            "coordination",
+            "Agent Framework",
+            "Nền agent có registry, context envelope và explicit execution; chưa có delegation/orchestration.",
+            ["agent-framework"]),
+        new(
             "governance",
             "Governance & Recovery",
             "Audit, undo, hardening, backup và recovery bảo vệ toàn bộ hệ thống.",
@@ -50,11 +55,12 @@ public sealed class PersonalAiOsService(
 
     private static readonly string[] Boundaries =
     [
-        "v2.0 không bật Multi-Agent; Agent Framework bắt đầu ở v2.1.",
-        "v2.0 không bật autonomous agent loop hoặc parallel tool calls.",
+        "v2.1 bật Agent Framework nhưng mỗi agent chỉ chạy khi người dùng gọi rõ ràng.",
+        "v2.1 chưa bật agent-to-agent messaging, automatic delegation, shared task queue hoặc Agent Orchestration.",
+        "v2.1 không bật autonomous agent loop, parallel agent execution hoặc parallel tool calls.",
         "WRITE/DELETE/EXTERNAL/SENSITIVE/COMPUTER/BROWSER/CONNECTOR/DEVELOPMENT vẫn yêu cầu policy và confirmation tương ứng.",
-        "Email ở v2.0 là connector-backed foundation, chưa có Gmail/Outlook provider-specific OAuth.",
-        "Calendar ở v2.0 có Life Context calendar snapshot và connector foundation, chưa có provider-specific auto-sync/write.",
+        "Email vẫn là connector-backed foundation, chưa có Gmail/Outlook provider-specific OAuth.",
+        "Calendar vẫn dùng Life Context snapshot + connector foundation, chưa có provider-specific auto-sync/write.",
         "Decision Engine chỉ phân tích và recommendation; người dùng vẫn là người ra quyết định cuối cùng.",
         "Automation không tự xác nhận side effect và chỉ tiến tối đa một task step mỗi scheduler tick."
     ];
@@ -376,6 +382,16 @@ public sealed class PersonalAiOsService(
                 true,
                 false),
             new(
+                "agent-framework",
+                "Agent Framework",
+                "coordination",
+                ControlledState("agents"),
+                "Agent registry + explicit execution runtime; context grounding bật, tool execution/delegation/messaging vẫn tắt.",
+                ["/api/agents/status", "/api/agents"],
+                false,
+                true,
+                true),
+            new(
                 "hardening",
                 "Reliability / Security",
                 "governance",
@@ -399,6 +415,6 @@ public sealed class PersonalAiOsService(
             BackupRestore: true,
             AutonomousAgentLoop: false,
             ParallelToolCalls: false,
-            MultiAgentFramework: false,
+            MultiAgentFramework: true,
             AgentOrchestration: false);
 }

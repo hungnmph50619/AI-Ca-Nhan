@@ -26,7 +26,7 @@ public static class OfficeAgentLimits
             PersistsDrafts: false,
             ToolExecutionEnabled: false,
             RequiresExplicitInvocation: true,
-            NextStage: "v2.1.6-reviewer-agent");
+            NextStage: "v2.1.7-security-agent");
 }
 
 public sealed class OfficeOutputException(string message)

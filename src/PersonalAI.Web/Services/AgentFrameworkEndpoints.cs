@@ -14,6 +14,7 @@ public static class AgentFrameworkEndpoints
         services.AddScoped<IAgent, DeveloperFrameworkAgent>();
         services.AddScoped<IAgent, OfficeFrameworkAgent>();
         services.AddScoped<IAgent, OperatorFrameworkAgent>();
+        services.AddScoped<IAgent, ReviewerFrameworkAgent>();
         services.AddScoped<IAgentRegistry, AgentRegistry>();
         services.AddScoped<IAgentFrameworkService, AgentFrameworkService>();
         return services;
@@ -45,6 +46,9 @@ public static class AgentFrameworkEndpoints
         app.MapGet("/api/operator-agent/status", () =>
             Results.Ok(OperatorAgentLimits.GetStatus()));
 
+        app.MapGet("/api/reviewer-agent/status", () =>
+            Results.Ok(ReviewerAgentLimits.GetStatus()));
+
         app.MapGet("/api/agents/{agentId}", (
             string agentId,
             IAgentFrameworkService framework) =>
@@ -75,6 +79,12 @@ public static class AgentFrameworkEndpoints
             {
                 return Results.BadRequest(
                     new ApiError(exception.Message));
+            }
+            catch (ReviewerOutputException exception)
+            {
+                return Results.Json(
+                    new ApiError(exception.Message),
+                    statusCode: StatusCodes.Status502BadGateway);
             }
             catch (OperatorOutputException exception)
             {

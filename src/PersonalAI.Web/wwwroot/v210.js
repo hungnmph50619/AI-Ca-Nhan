@@ -1,5 +1,5 @@
 (() => {
-  const VERSION = "2.1.5";
+  const VERSION = "2.1.6";
   let dialog;
   let select;
   let goal;
@@ -135,7 +135,7 @@
     const boundary = document.createElement("div");
     boundary.className = "agent-boundary";
     boundary.textContent =
-      "v2.1.5 chạy agent khi bạn chủ động bấm chạy. Operator chỉ chuẩn bị kế hoạch thao tác, không điều khiển máy/browser, chạy tool hoặc tạo thay đổi. Các agent không tự giao việc.";
+      "v2.1.6 chạy agent khi bạn chủ động bấm chạy. Reviewer chỉ rà soát nội dung được dán, không xác minh bên ngoài, chỉnh sửa hay phê duyệt. Các agent không tự giao việc.";
 
     feedback = document.createElement("div");
     feedback.className = "agent-feedback";
@@ -232,7 +232,10 @@
     const isDeveloper = agent.role === "developer";
     const isOffice = agent.role === "office";
     const isOperator = agent.role === "operator";
-    goal.placeholder = isOperator
+    const isReviewer = agent.role === "reviewer";
+    goal.placeholder = isReviewer
+      ? "Dán toàn bộ đoạn văn, bản nháp hoặc kế hoạch cần rà soát (tối thiểu 80 ký tự). Chỉ nội dung bạn dán được đánh giá; có thể gửi tới AI provider đã cấu hình."
+      : isOperator
       ? "Ví dụ: Lập kế hoạch kiểm tra một website và đề xuất các bước cần người dùng xác nhận; không thực hiện thao tác."
       : isOffice
       ? "Ví dụ: Soạn email nháp cập nhật tiến độ dự án, chưa gửi; liệt kê thông tin còn thiếu."
@@ -243,7 +246,7 @@
       : isPlanner
         ? "Ví dụ: Phát triển AI Cá Nhân từ v2.1.2 đến v2.2 theo từng bước an toàn."
         : "Ví dụ: Phân tích những việc tôi đang làm và đề xuất bước tiếp theo.";
-    runButton.textContent = isOperator ? "Chuẩn bị thao tác" : isOffice ? "Soạn bản nháp" : isDeveloper ? "Phân tích mã" : isResearch ? "Nghiên cứu tài liệu" : isPlanner ? "Lập kế hoạch" : "Chạy agent";
+    runButton.textContent = isReviewer ? "Rà soát nội dung" : isOperator ? "Chuẩn bị thao tác" : isOffice ? "Soạn bản nháp" : isDeveloper ? "Phân tích mã" : isResearch ? "Nghiên cứu tài liệu" : isPlanner ? "Lập kế hoạch" : "Chạy agent";
 
     [
       ["Role", agent.role],
@@ -308,7 +311,9 @@
   function renderExecutionResult(payload) {
     result.replaceChildren();
 
-    if (payload.operator) {
+    if (payload.reviewer) {
+      renderReviewerReport(payload.reviewer);
+    } else if (payload.operator) {
       renderOperatorPlan(payload.operator);
     } else if (payload.office) {
       renderOfficeDraft(payload.office);
@@ -410,7 +415,7 @@
     const boundary = document.createElement("p");
     boundary.className = "planner-plan-boundary";
     boundary.textContent =
-      "Plan này chỉ được chuẩn bị để bạn xem. v2.1.5 không tự tạo Task Engine task, không dispatch agent và không persist plan tự động.";
+      "Plan này chỉ được chuẩn bị để bạn xem. v2.1.6 không tự tạo Task Engine task, không dispatch agent và không persist plan tự động.";
     wrapper.append(boundary);
 
     result.append(wrapper);
@@ -585,6 +590,42 @@
     appendPlannerList(root, "Giới hạn", plan.limitations);
     const boundary = document.createElement("p");
     boundary.textContent = "Bản kế hoạch này không có nút thực thi. Không điều khiển máy/browser, gọi connector, gửi tin, lưu kế hoạch hoặc dispatch agent.";
+    root.append(boundary);
+    result.append(root);
+  }
+
+  function renderReviewerReport(report) {
+    const root = document.createElement("section");
+    root.className = "reviewer-report";
+    const heading = document.createElement("h3");
+    heading.textContent = "Bản rà soát · chưa phê duyệt";
+    const status = document.createElement("p");
+    status.textContent = report.status === "insufficient-material"
+      ? "Chưa có đủ nội dung để rà soát. Hãy dán đoạn văn đầy đủ."
+      : "Đã rà soát nội dung được dán; vẫn cần người dùng đối chiếu.";
+    const summary = document.createElement("p");
+    summary.textContent = report.summary || "";
+    root.append(heading, status, summary);
+
+    (report.findings || []).forEach(item => {
+      const card = document.createElement("article");
+      card.className = "reviewer-finding";
+      const title = document.createElement("h4");
+      title.textContent = (item.kind || "review") + " — " + (item.observation || "");
+      const excerpt = document.createElement("p");
+      excerpt.textContent = "Trích nguyên văn: “" + (item.evidenceExcerpt || "") + "”";
+      const suggestion = document.createElement("p");
+      suggestion.textContent = "Đề xuất (chưa sửa): " + (item.suggestedRevision || "");
+      const verification = document.createElement("p");
+      verification.textContent = "Cách kiểm chứng: " + (item.verificationStep || "");
+      card.append(title, excerpt, suggestion, verification);
+      root.append(card);
+    });
+
+    appendPlannerList(root, "Câu hỏi cần làm rõ", report.questions);
+    appendPlannerList(root, "Giới hạn", report.limitations);
+    const boundary = document.createElement("p");
+    boundary.textContent = "Chỉ kiểm tra trích đoạn có trong nội dung dán; chưa xác minh sự thật bên ngoài, chạy test, chỉnh sửa tài liệu hoặc phê duyệt kết quả.";
     root.append(boundary);
     result.append(root);
   }

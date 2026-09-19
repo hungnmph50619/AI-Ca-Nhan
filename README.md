@@ -1,10 +1,30 @@
-# AI Cá Nhân — Reliability & Security Hardening v1.9.0
+# AI Cá Nhân — Personal AI OS v2.0.0
 
-PersonalAI là trợ lý AI cá nhân chạy bằng ASP.NET Core 8, ưu tiên dữ liệu cục bộ, có thể dùng Gemini hoặc OpenAI cho phần sinh câu trả lời. v1.0.0 là **Stable Personal AI Core**; từ v1.1 đến v1.8 bổ sung dần Computer Use, Browser, Connectors, Development Agent, Android, Life Context, Decision Engine và Automation. v1.9 tập trung **Reliability & Security Hardening** trước mốc v2.0, không mở thêm quyền tự trị.
+PersonalAI là trợ lý AI cá nhân chạy bằng ASP.NET Core 8, ưu tiên dữ liệu cục bộ, có thể dùng Gemini hoặc OpenAI cho phần sinh câu trả lời. v2.0.0 là mốc **Personal AI OS**: hợp nhất Memory, Knowledge, Tasks, Tools, Desktop, Browser, Connectors, Android, Life Context, Decision Engine, Automation, Audit và Hardening thành một capability contract thống nhất, nhưng vẫn chưa bật Multi-Agent hay autonomous agent loop.
 
-> Đây vẫn là ứng dụng thiết kế cho một người dùng trên máy cá nhân. v1.9 bổ sung hardening vận hành cục bộ nhưng **không thay thế authentication/authorization** cần có khi triển khai Internet hoặc môi trường nhiều người dùng.
+> Đây vẫn là ứng dụng thiết kế cho một người dùng trên máy cá nhân. Personal AI OS v2.0 giữ toàn bộ hardening của v1.9 nhưng **không thay thế authentication/authorization** cần có khi triển khai Internet hoặc môi trường nhiều người dùng.
 
-## Có gì trong v1.9.0?
+## Có gì trong v2.0.0?
+
+### Personal AI OS
+
+v2.0 thêm một lớp hệ thống thống nhất ở trên các subsystem đã có:
+
+- `/api/os/status` — readiness theo workspace hiện tại, capability state và governance gate;
+- `/api/os/manifest` — OS layers, capability map và các ranh giới autonomy;
+- 5 lớp: Knowledge & Context, Planning & Decision, Tools & Automation, Device & External Interfaces, Governance & Recovery;
+- 18 capability được phân loại `ready`, `controlled`, `foundation`, `unconfigured` hoặc `unavailable`;
+- readiness gate trước v2.1 yêu cầu Workspace, Tasks, Tools, Audit và Hardening không unavailable;
+- sidebar có bảng điều khiển **Personal AI OS** để xem trạng thái hệ thống.
+
+Email và Calendar được biểu diễn đúng mức triển khai hiện tại:
+
+- Email = connector-backed read foundation, chưa có Gmail/Outlook provider-specific OAuth hoặc send action;
+- Calendar = Life Context calendar snapshot + connector foundation, chưa có provider-specific auto-sync/write.
+
+v2.0 **không** bật Multi-Agent, Agent Orchestration, autonomous agent loop hay parallel tool calls. Các phần đó bắt đầu từ roadmap v2.1 trở đi.
+
+### Reliability & Security Hardening từ v1.9 vẫn được giữ nguyên
 
 ### Reliability & Security Hardening
 
@@ -575,9 +595,9 @@ Undo khả dụng 7 ngày, tối đa 500 record, snapshot tối đa 512 KB.
 
 ## Stable Core contract
 
-v1.9.0 giữ API contract của Stable Core, harden runtime và tiếp tục controlled capability layer:
+v2.0.0 giữ API contract của Stable Core, giữ hardening v1.9 và thêm Personal AI OS aggregation layer:
 
-- Version: `1.9.0`
+- Version: `2.0.0`
 - API contract: `1`
 - Channel: `controlled`
 - Stable Core: v1.0 semantics
@@ -608,7 +628,7 @@ Unhandled API exception được sanitize; stack trace và đường dẫn local
 
 ## Guardrails hiện tại
 
-v1.9.0 **không phải autonomous agent**.
+v2.0.0 **không phải autonomous agent**.
 
 Hiện tại:
 
@@ -781,6 +801,7 @@ ASP.NET Core
   ├── Decision Engine
   ├── Automation
   ├── Hardening / Backup / Recovery
+  ├── Personal AI OS Manifest / Readiness
   │
   ├── Context Manager
   │      ├── Memory selection
@@ -844,6 +865,7 @@ GitHub Actions hiện kiểm tra regression cho các nền chính, gồm:
 - Decision Engine validation/context preview/no-auto-action contract;
 - Automation persistence/workspace isolation/one-step scheduler/no-auto-confirm;
 - v1.9 hardening health/permission audit/rate-resource guards/confirmation boundaries;
+- v2.0 Personal AI OS manifest/readiness/governance/capability-state contract;
 - JavaScript syntax;
 - UI guardrails tiếng Việt.
 
@@ -873,10 +895,11 @@ docs/releases/v1.6.0.md
 docs/releases/v1.7.0.md
 docs/releases/v1.8.0.md
 docs/releases/v1.9.0.md
+docs/releases/v2.0.0.md
 ```
 
-## Hướng phát triển sau v1.9
+## Hướng phát triển sau v2.0
 
 Computer Use, Browser Agent, Connector Foundation, Software Development Agent, Android Companion, Life Context, Decision Engine và Automation hiện nằm trong controlled capability layer.
 
-Sau v1.9, roadmap chuyển sang **v2.0 — Personal AI OS**; trước khi trao thêm quyền cho multi-agent, các guardrail, audit, recovery và rollback của v1.9 phải tiếp tục được giữ làm nền.
+Sau v2.0, roadmap chuyển sang **v2.1 — Multi-Agent**. Multi-Agent chỉ được xây trên OS contract, permission, audit, hardening, recovery và readiness gate đã có; v2.0 không tự mở thêm quyền.

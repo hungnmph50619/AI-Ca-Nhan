@@ -1163,3 +1163,14 @@ docs/releases/v2.2.6.md
 Computer Use, Browser Agent, Connector Foundation, Software Development Agent, Android Companion, Life Context, Decision Engine và Automation hiện nằm trong controlled capability layer.
 
 Sau v2.2.6, mốc tiếp theo dự kiến là **v2.2.7 — Cải thiện trải nghiệm sử dụng quy trình**. Web/email research và tự thực thi tool chưa được tích hợp vào điều phối; việc mở thêm quyền cần thiết kế độc lập, truy xuất nguồn và permission/confirmation rõ ràng.
+
+
+## Kết nối Xerath Support Assistant với AI Cá Nhân v2.2.6
+
+Nhánh v2.2.6 đã tích hợp lại **cầu nối Xerath v1** mà trước đây chỉ có trên `main`. Hai endpoint tương thích với ứng dụng Xerath Support Assistant hiện tại: `GET /api/integrations/xerath/status` và `POST /api/integrations/xerath/notice`. Có thể thử trên cùng máy Windows bằng địa chỉ `http://127.0.0.1:5188/api/integrations/xerath/status`. Kết quả thành công có `online: true` và `bridgeVersion: 1`. Đường dẫn giao diện AI v2.2.6, bộ agent và quy trình nhiều bước không thay đổi vì tích hợp này.
+
+**Giới hạn:** endpoint chỉ nhận `own-health-loss` (HP của chính bạn giảm nhanh) và `completed-kill` (điểm hạ gục đã được công bố), trả về hai mẫu thông báo tiếng Việt có sẵn. Không chuyển ảnh màn hình, không gọi Gemini/OpenAI, không điều khiển game, không nhận diện giao tranh hoặc định vị rừng địch. Kết nối từ Xerath Support Assistant là **tùy chọn**, và HUD có thể tự phát cảnh báo không qua AI cá nhân khi không kết nối được.
+
+**Cách cập nhật mã nguồn v2.2.6 trên máy:** đóng tiến trình AI Cá Nhân đang chạy (nhấn Ctrl+C trong PowerShell dành cho máy chủ), chuyển vào thư mục clone `AI-Ca-Nhan-Live`, sau đó chạy `git fetch origin` và `git switch feature/v2.2.6-vietnamese-workflow-accessibility` (nếu nhánh đã có cục bộ thì dùng `git pull --ff-only origin feature/v2.2.6-vietnamese-workflow-accessibility`). Nếu có sửa đổi cục bộ, sao lưu hoặc commit trước khi chuyển nhánh; không chạy lệnh ép/xóa thay đổi. Khởi động bằng `dotnet run --project src/PersonalAI.Web/PersonalAI.Web.csproj --launch-profile PersonalAI.Web`. Mở Xerath Support Assistant, vào **Chỉ số trực tiếp & tổng hợp**, nhấn **Kiểm tra kết nối AI cá nhân**, sau đó mới tích bật tùy chọn kết nối.
+
+**An toàn:** cầu nối chỉ dành cho máy cá nhân: kiểm tra địa chỉ loopback và host `localhost` hoặc `127.0.0.1`. Header `X-Xerath-Bridge: 1` chỉ là dấu nhận dạng yêu cầu, **không phải xác thực**; tiến trình khác trên cùng máy vẫn có thể gọi endpoint. Không mở cổng 5188 ra mạng LAN/Internet và không cấu hình reverse proxy đến endpoint này. Nhánh v2.2.6 vẫn áp dụng middleware giới hạn kích thước và tần suất yêu cầu chung. CI bổ sung smoke test cho status, hai thông báo hợp lệ và giá trị HP không hợp lệ. Chưa có kiểm thử âm thanh/HUD trên máy Windows của bạn từ phía AI cá nhân.

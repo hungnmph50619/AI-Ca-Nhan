@@ -279,8 +279,8 @@ public sealed class AgentFrameworkService(
     IAuditRecorder audit,
     ILogger<AgentFrameworkService> logger) : IAgentFrameworkService
 {
-    public const string FrameworkVersion = "2.1.7";
-    public const string NextStage = "v2.2-agent-orchestration";
+    public const string FrameworkVersion = "2.2.0";
+    public const string NextStage = "v2.2.1-workflow-hardening";
 
     private static readonly SemaphoreSlim ExecutionGate =
         new(
@@ -296,11 +296,13 @@ public sealed class AgentFrameworkService(
             AgentFrameworkLimits.MaximumConversationMessages,
             AgentFrameworkLimits.MaximumConcurrentExecutions,
             AutomaticDelegationEnabled: false,
-            AgentMessagingEnabled: false,
+            AgentMessagingEnabled: true,
             SharedTaskQueueEnabled: false,
             ParallelAgentExecutionEnabled: false,
             ToolExecutionEnabled: false,
-            NextStage);
+            NextStage,
+            UserApprovedSequentialWorkflowsEnabled: true,
+            ExplicitResultHandoffEnabled: true);
 
     public AgentCatalogResponse GetCatalog() =>
         new(

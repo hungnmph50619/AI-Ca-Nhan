@@ -122,6 +122,11 @@ jobs:
             and .safety.automationAutoConfirmationEnabled == false
             and .safety.automationDecisionRecommendationAutoExecutionEnabled == false
             and .safety.automationRunsAtMostOneTaskStepPerTick == true
+            and .safety.agentFrameworkRequiresExplicitInvocation == true
+            and .safety.agentToolExecutionEnabled == false
+            and .safety.automaticAgentDelegationEnabled == false
+            and .safety.agentMessagingEnabled == false
+            and .safety.parallelAgentExecutionEnabled == false
             and .safety.automaticMultiStepExecution == false
             and .safety.backgroundScheduler == true
             and .safety.autonomousAgentLoop == false
@@ -159,6 +164,9 @@ jobs:
             and .limits.automationMinimumIntervalMinutes == 5
             and .limits.automationMaximumIntervalMinutes == 10080
             and .limits.automationSchedulerPollSeconds == 30
+            and .limits.maximumAgentGoalCharacters == 4000
+            and .limits.maximumAgentConversationMessages == 20
+            and .limits.maximumConcurrentAgentExecutions == 1
           ' >/dev/null
 
           core_health=$(curl -fsS http://127.0.0.1:5077/api/system/health)

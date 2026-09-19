@@ -1,5 +1,5 @@
 (() => {
-  const VERSION = "2.1.1";
+  const VERSION = "2.1.2";
   let dialog;
   let select;
   let goal;
@@ -135,7 +135,7 @@
     const boundary = document.createElement("div");
     boundary.className = "agent-boundary";
     boundary.textContent =
-      "v2.1.1 chỉ chạy agent khi bạn chủ động bấm chạy. Planner chỉ chia goal thành plan; không tạo task thật, không dispatch agent, không tự chạy tool và không tự xác nhận side effect.";
+      "v2.1.2 chỉ chạy agent khi bạn chủ động bấm chạy. Research chỉ tổng hợp tài liệu trong workspace, không tự duyệt web; Planner không tạo task, các agent không tự chạy tool hay giao việc.";
 
     feedback = document.createElement("div");
     feedback.className = "agent-feedback";
@@ -228,10 +228,13 @@
     if (!agent) return;
 
     const isPlanner = agent.role === "planner";
-    goal.placeholder = isPlanner
-      ? "Ví dụ: Phát triển AI Cá Nhân từ v2.1.1 đến v2.2 theo từng bước an toàn."
-      : "Ví dụ: Phân tích những việc tôi đang làm và đề xuất bước tiếp theo.";
-    runButton.textContent = isPlanner ? "Lập kế hoạch" : "Chạy agent";
+    const isResearch = agent.role === "research";
+    goal.placeholder = isResearch
+      ? "Ví dụ: Từ các tài liệu trong workspace, tổng hợp ưu nhược điểm của phương án này và dẫn nguồn cho từng nhận định."
+      : isPlanner
+        ? "Ví dụ: Phát triển AI Cá Nhân từ v2.1.2 đến v2.2 theo từng bước an toàn."
+        : "Ví dụ: Phân tích những việc tôi đang làm và đề xuất bước tiếp theo.";
+    runButton.textContent = isResearch ? "Nghiên cứu tài liệu" : isPlanner ? "Lập kế hoạch" : "Chạy agent";
 
     [
       ["Role", agent.role],
@@ -296,7 +299,9 @@
   function renderExecutionResult(payload) {
     result.replaceChildren();
 
-    if (payload.plan) {
+    if (payload.research) {
+      renderResearchReport(payload.research);
+    } else if (payload.plan) {
       renderPlannerPlan(payload.plan);
     } else {
       const copy = document.createElement("div");
@@ -390,10 +395,70 @@
     const boundary = document.createElement("p");
     boundary.className = "planner-plan-boundary";
     boundary.textContent =
-      "Plan này chỉ được chuẩn bị để bạn xem. v2.1.1 không tự tạo Task Engine task, không dispatch agent và không persist plan tự động.";
+      "Plan này chỉ được chuẩn bị để bạn xem. v2.1.2 không tự tạo Task Engine task, không dispatch agent và không persist plan tự động.";
     wrapper.append(boundary);
 
     result.append(wrapper);
+  }
+
+  function renderResearchReport(report) {
+    const root = document.createElement("section");
+    root.className = "research-report";
+    const title = document.createElement("h3");
+    title.textContent = "Báo cáo nghiên cứu tài liệu";
+    const status = document.createElement("p");
+    status.className = "research-status";
+    status.textContent = report.status === "grounded"
+      ? "Đã truy xuất tài liệu trong workspace"
+      : "Chưa đủ bằng chứng để đưa ra kết luận có nguồn";
+    const summary = document.createElement("p");
+    summary.textContent = report.summary || "";
+    root.append(title, status, summary);
+
+    const findings = document.createElement("div");
+    findings.className = "research-findings";
+    (report.findings || []).forEach(finding => {
+      const item = document.createElement("article");
+      item.className = "research-finding";
+      const statement = document.createElement("p");
+      statement.textContent = finding.statement || "";
+      const citations = document.createElement("p");
+      citations.className = "research-citations";
+      citations.textContent = finding.evidenceStatus === "sourced"
+        ? (finding.sourceNumbers || []).map(n => "[" + n + "]").join(" ")
+        : "Chưa được nguồn hỗ trợ — cần kiểm chứng";
+      item.append(statement, citations);
+      if (finding.limitation) {
+        const limitation = document.createElement("p");
+        limitation.textContent = "Giới hạn: " + finding.limitation;
+        item.append(limitation);
+      }
+      findings.append(item);
+    });
+    root.append(findings);
+
+    const evidence = document.createElement("section");
+    evidence.className = "research-evidence";
+    const evidenceTitle = document.createElement("h4");
+    evidenceTitle.textContent = "Nguồn tài liệu đã truy xuất";
+    evidence.append(evidenceTitle);
+    (report.evidence || []).forEach(source => {
+      const row = document.createElement("p");
+      row.textContent = "[" + source.sourceNumber + "] "
+        + source.fileName + " · đoạn " + source.chunkIndex
+        + (source.pageNumber ? " · trang " + source.pageNumber : "");
+      evidence.append(row);
+    });
+    root.append(evidence);
+    appendPlannerList(root, "Câu hỏi chưa có đáp án", report.unansweredQuestions);
+    appendPlannerList(root, "Giới hạn nghiên cứu", report.limitations);
+
+    const boundary = document.createElement("p");
+    boundary.className = "research-boundary";
+    boundary.textContent =
+      "Nguồn chỉ được lấy từ tài liệu workspace; không có web search. Chỉ số nguồn được kiểm tra sự tồn tại, không bảo đảm mọi diễn giải của mô hình đều chính xác. Không có tool execution hoặc agent dispatch.";
+    root.append(boundary);
+    result.append(root);
   }
 
   function appendPlannerList(parent, title, values) {

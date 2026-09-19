@@ -285,8 +285,8 @@ jobs:
             and any(.layers[]; .id == "knowledge" and (.capabilityIds | index("memory")) != null and (.capabilityIds | index("knowledge")) != null)
             and any(.layers[]; .id == "interfaces" and (.capabilityIds | index("email")) != null and (.capabilityIds | index("calendar")) != null)
             and any(.layers[]; .id == "coordination" and (.capabilityIds | index("agent-framework")) != null)
-            and any(.boundaries[]; contains("explicit"))
-            and any(.boundaries[]; contains("agent-to-agent"))
+            and any(.boundaries[]; contains("xác nhận trước"))
+            and any(.boundaries[]; contains("chuyển đầu ra"))
             and any(.boundaries[]; contains("Gmail/Outlook"))
           ' >/dev/null
 

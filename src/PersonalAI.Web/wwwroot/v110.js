@@ -66,13 +66,27 @@
     dialog = document.createElement("dialog");
     dialog.id = "computerUseDialog";
     dialog.className = "settings-dialog v110-computer-dialog";
+    // Đặt kích thước ngay trên dialog: CSS cũ có thể vẫn nằm trong bộ nhớ
+    // đệm trình duyệt và giữ khung ở 560px trong khi nội dung rộng 820px.
+    dialog.style.setProperty("box-sizing", "border-box");
+    dialog.style.setProperty("width", "min(820px, calc(100vw - 32px))", "important");
+    dialog.style.setProperty("max-width", "calc(100vw - 32px)", "important");
+    dialog.style.setProperty("max-height", "calc(100dvh - 24px)");
+    dialog.style.setProperty("overflow-x", "hidden");
+    dialog.style.setProperty("overflow-y", "auto");
     dialog.setAttribute("aria-labelledby", "computerUseTitle");
 
     const card = document.createElement("div");
     card.className = "settings-card v110-computer-card";
+    card.style.setProperty("box-sizing", "border-box");
+    card.style.setProperty("width", "100%", "important");
+    card.style.setProperty("max-width", "100%", "important");
+    card.style.setProperty("min-width", "0");
+    card.style.setProperty("overflow-wrap", "anywhere");
 
     const header = document.createElement("header");
     header.className = "settings-header";
+    header.style.minWidth = "0";
 
     const heading = document.createElement("div");
     const eyebrow = document.createElement("p");
@@ -82,6 +96,7 @@
     const title = document.createElement("h2");
     title.id = "computerUseTitle";
     title.textContent = "Điều khiển máy tính · Bản thử nghiệm";
+    heading.style.minWidth = "0";
     heading.append(eyebrow, title);
 
     const close = document.createElement("button");
@@ -135,6 +150,9 @@
 
     const actions = document.createElement("div");
     actions.className = "v110-computer-actions";
+    actions.style.flexWrap = "wrap";
+    actions.style.justifyContent = "flex-start";
+    actions.style.gap = "8px";
 
     const refresh = document.createElement("button");
     refresh.type = "button";

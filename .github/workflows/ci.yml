@@ -2427,4 +2427,5 @@ jobs:
           node --check src/PersonalAI.Web/wwwroot/v150.js
           node --check src/PersonalAI.Web/wwwroot/v160.js
           node --check src/PersonalAI.Web/wwwroot/v170.js
-          node --check src/PersonalAI.Web/wwwroot/v180.js\n          node --check src/PersonalAI.Web/wwwroot/v200.js
+          node --check src/PersonalAI.Web/wwwroot/v180.js
+          node --check src/PersonalAI.Web/wwwroot/v200.js

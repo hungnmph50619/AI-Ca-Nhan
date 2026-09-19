@@ -48,6 +48,26 @@ public static class AgentFrameworkEndpoints
             }
         });
 
+        app.MapPost("/api/agents/orchestration/resume", async (
+            AgentWorkflowReviewRequest request,
+            IAgentOrchestrationService orchestration,
+            CancellationToken cancellationToken) =>
+        {
+            try
+            {
+                return Results.Ok(await orchestration.ResumeAsync(request, cancellationToken));
+            }
+            catch (AgentValidationException exception)
+            {
+                return Results.BadRequest(new ApiError(exception.Message));
+            }
+            catch (AgentBusyException exception)
+            {
+                return Results.Json(new ApiError(exception.Message),
+                    statusCode: StatusCodes.Status409Conflict);
+            }
+        });
+
         app.MapGet("/api/agents/status", (
             IAgentFrameworkService framework) =>
             Results.Ok(framework.GetStatus()));

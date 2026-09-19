@@ -939,7 +939,7 @@ jobs:
           planner_agent=$(curl -fsS http://127.0.0.1:5077/api/agents/planning.planner)
           echo "$planner_agent" | jq -e '
             .id == "planning.planner"
-            and .name == "Planner Agent"
+            and .name == "Tác nhân lập kế hoạch"
             and .role == "planner"
             and .toolExecutionEnabled == false
             and .requiresExplicitInvocation == true

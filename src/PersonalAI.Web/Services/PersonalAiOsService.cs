@@ -16,8 +16,8 @@ public sealed class PersonalAiOsService(
     IWorkspaceContextAccessor workspaceContext) : IPersonalAiOsService
 {
     public const string Edition = "Personal AI OS";
-    public const string Stage = "v2.2.2";
-    public const string NextStage = "v2.2.3-workflow-observability";
+    public const string Stage = "v2.2.3";
+    public const string NextStage = "v2.2.4-workflow-diagnostics";
 
     private static readonly PersonalAiOsLayer[] Layers =
     [

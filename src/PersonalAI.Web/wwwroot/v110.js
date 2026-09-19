@@ -97,7 +97,7 @@
     introTitle.textContent = "Quan sát trước, hành động có xác nhận";
     const introCopy = document.createElement("p");
     introCopy.textContent =
-      "Bản thử nghiệm hỗ trợ đọc thông tin máy, chuyển cửa sổ, di chuyển con trỏ và một lần nhấp chuột trái được xác nhận riêng. Chưa hỗ trợ gõ phím, chụp ảnh màn hình hay AI tự điều khiển liên tục. Chỉ nhấp trên cửa sổ thử nghiệm không chứa dữ liệu quan trọng.";
+      "Bản thử nghiệm hỗ trợ đọc thông tin máy, chuyển cửa sổ, di chuyển chuột và nhấp trái từng lần có xác nhận. Mỗi lần bật chỉ có 60 giây và tối đa 5 thao tác, kể cả thao tác thất bại. Chưa hỗ trợ gõ phím, chụp ảnh màn hình hay AI tự điều khiển liên tục. Chỉ nhấp trên cửa sổ thử nghiệm không chứa dữ liệu quan trọng.";
     intro.append(introTitle, introCopy);
 
     const summary = document.createElement("div");
@@ -155,7 +155,7 @@
     enable.className = "secondary-button";
     enable.textContent = "Cho phép điều khiển";
     enable.addEventListener("click", () => {
-      if (!window.confirm("Chỉ cho phép chuyển cửa sổ và di chuyển con trỏ. Mỗi thao tác vẫn cần xác nhận riêng. Bạn có đồng ý không?")) return;
+      if (!window.confirm("Cho phép tối đa 5 thao tác chuyển cửa sổ, di chuyển chuột hoặc nhấp trái trong 60 giây. Mỗi thao tác vẫn cần xác nhận riêng. Chỉ dùng trên cửa sổ thử nghiệm. Bạn đồng ý không?")) return;
       changeControl("enable");
     });
     actions.append(stop, enable);
@@ -234,6 +234,12 @@
     const enable = document.getElementById("computerControlEnable");
     if (stop) stop.disabled = !usable || status.desktopActionsPaused !== false;
     if (enable) enable.disabled = !usable || status.desktopActionsPaused !== true;
+    if (usable && status.desktopActionsPaused === false) {
+      const expire = status.desktopSessionExpiresAt
+        ? new Date(status.desktopSessionExpiresAt).toLocaleTimeString("vi-VN")
+        : "không xác định";
+      summary.textContent += ` · Còn ${status.desktopRemainingActions ?? 0} thao tác · Hết hạn ${expire}. Nhấn Kiểm tra lại để cập nhật.`;
+    }
 
     capabilities.replaceChildren();
     const items = Array.isArray(status.availableCapabilities)

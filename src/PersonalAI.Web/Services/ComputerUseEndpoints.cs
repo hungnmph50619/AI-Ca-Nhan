@@ -80,7 +80,7 @@ public static class ComputerUseEndpoints
         if (remote is null || !IPAddress.IsLoopback(remote))
             return false;
 
-        var origin = context.Request.Headers.Origin.ToString();
+        var origin = context.Request.Headers["Origin"].ToString();
         if (string.IsNullOrWhiteSpace(origin))
             return true;
 

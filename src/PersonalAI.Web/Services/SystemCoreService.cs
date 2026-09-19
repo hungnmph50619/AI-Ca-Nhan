@@ -445,6 +445,11 @@ public sealed class SystemCoreService(
                 AutomationAutoConfirmationEnabled: false,
                 AutomationDecisionRecommendationAutoExecutionEnabled: false,
                 AutomationRunsAtMostOneTaskStepPerTick: true,
+                AgentFrameworkRequiresExplicitInvocation: true,
+                AgentToolExecutionEnabled: false,
+                AutomaticAgentDelegationEnabled: false,
+                AgentMessagingEnabled: false,
+                ParallelAgentExecutionEnabled: false,
                 AutomaticMultiStepExecution: false,
                 BackgroundScheduler: true,
                 AutonomousAgentLoop: false,
@@ -482,7 +487,10 @@ public sealed class SystemCoreService(
                 SqliteAutomationStore.MaximumAutomationsPerWorkspace,
                 AutomationService.MinimumIntervalMinutes,
                 AutomationService.MaximumIntervalMinutes,
-                AutomationService.SchedulerPollSeconds),
+                AutomationService.SchedulerPollSeconds,
+                AgentFrameworkLimits.MaximumGoalCharacters,
+                AgentFrameworkLimits.MaximumConversationMessages,
+                AgentFrameworkLimits.MaximumConcurrentExecutions),
             WorkspaceEndpoints.WorkspaceHeaderName,
             SystemHardeningMiddleware.RequestIdHeaderName);
 

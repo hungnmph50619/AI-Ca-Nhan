@@ -18,12 +18,36 @@ public static class AgentFrameworkEndpoints
         services.AddScoped<IAgent, SecurityFrameworkAgent>();
         services.AddScoped<IAgentRegistry, AgentRegistry>();
         services.AddScoped<IAgentFrameworkService, AgentFrameworkService>();
+        services.AddScoped<IAgentOrchestrationService, AgentOrchestrationService>();
         return services;
     }
 
     public static WebApplication MapAgentFramework(
         this WebApplication app)
     {
+        app.MapGet("/api/agents/orchestration/status", () =>
+            Results.Ok(AgentOrchestrationLimits.GetStatus()));
+
+        app.MapPost("/api/agents/orchestration/execute", async (
+            AgentWorkflowRequest request,
+            IAgentOrchestrationService orchestration,
+            CancellationToken cancellationToken) =>
+        {
+            try
+            {
+                return Results.Ok(await orchestration.RunAsync(request, cancellationToken));
+            }
+            catch (AgentValidationException exception)
+            {
+                return Results.BadRequest(new ApiError(exception.Message));
+            }
+            catch (AgentBusyException exception)
+            {
+                return Results.Json(new ApiError(exception.Message),
+                    statusCode: StatusCodes.Status409Conflict);
+            }
+        });
+
         app.MapGet("/api/agents/status", (
             IAgentFrameworkService framework) =>
             Results.Ok(framework.GetStatus()));

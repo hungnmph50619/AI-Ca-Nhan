@@ -9,6 +9,7 @@ public static class ComputerUseCapabilities
     public const string FocusWindow = "focus-window";
     public const string MoveCursor = "move-cursor";
     public const string ClickLeft = "click-left";
+    public const string TypeNotepadText = "type-notepad-text";
 }
 
 public sealed record ComputerUseStatusResponse(
@@ -56,3 +57,6 @@ public sealed record ComputerActionResponse(
     string Action,
     bool Applied,
     string Detail);
+
+/// <summary>Văn bản chỉ ở bộ nhớ trong lúc gửi yêu cầu; không ghi vào nhật ký hoạt động.</summary>
+public sealed record ComputerNotepadTextRequest(string WindowId, string Text);

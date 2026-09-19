@@ -6,6 +6,9 @@ namespace PersonalAI.Web.Services;
 
 public static class PlannerAgentLimits
 {
+    private static readonly Lazy<bool> ParserSelfTest =
+        new(PlannerPlanParser.RunSelfTest);
+
     public const int MinimumSteps = 2;
     public const int MaximumSteps = 12;
     public const int MaximumOpenQuestions = 8;
@@ -24,6 +27,7 @@ public static class PlannerAgentLimits
             MaximumRisks,
             PlannerSuggestedRoles.All,
             StructuredOutput: true,
+            ParserSelfTestPassed: ParserSelfTest.Value,
             CreatesTasks: false,
             DispatchesAgents: false,
             PersistsPlans: false,
@@ -185,6 +189,59 @@ public static class PlannerPlanParser
         new(
             PlannerSuggestedRoles.All,
             StringComparer.OrdinalIgnoreCase);
+
+    public static bool RunSelfTest()
+    {
+        const string sample = """
+            {
+              "summary": "Self-test plan",
+              "steps": [
+                {
+                  "step": 1,
+                  "title": "Inspect",
+                  "description": "Inspect context.",
+                  "dependsOn": [],
+                  "suggestedRole": "research",
+                  "requiredCapabilities": ["context-grounding"],
+                  "requiresUserInput": false,
+                  "expectedOutcome": "Context understood."
+                },
+                {
+                  "step": 2,
+                  "title": "Prepare",
+                  "description": "Prepare next work.",
+                  "dependsOn": [1],
+                  "suggestedRole": "developer",
+                  "requiredCapabilities": ["planning"],
+                  "requiresUserInput": false,
+                  "expectedOutcome": "Prepared work."
+                }
+              ],
+              "openQuestions": [],
+              "assumptions": [],
+              "risks": []
+            }
+            """;
+
+        try
+        {
+            var plan = Parse(
+                "planner-self-test",
+                sample,
+                DateTimeOffset.UnixEpoch);
+
+            return plan.Status == PlannerPlanStatuses.Prepared
+                && plan.Steps.Count == 2
+                && plan.Steps[1].DependsOn.SequenceEqual([1])
+                && !plan.CreatesTasks
+                && !plan.DispatchesAgents
+                && !plan.PersistsAutomatically;
+        }
+        catch
+        {
+            return false;
+        }
+    }
 
     public static PlannerPlan Parse(
         string goal,

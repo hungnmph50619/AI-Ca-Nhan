@@ -168,7 +168,7 @@ public static class ResearchReportParser
             ExternalWebSearchPerformed: false,
             CreatesTasks: false,
             DispatchesAgents: false,
-            createdAt);
+            CreatedAt: createdAt);
 
     public static ResearchReport Parse(
         string goal,
@@ -270,7 +270,7 @@ public static class ResearchReportParser
             ExternalWebSearchPerformed: false,
             CreatesTasks: false,
             DispatchesAgents: false,
-            createdAt);
+            CreatedAt: createdAt);
     }
 
     public static bool RunSelfTest()

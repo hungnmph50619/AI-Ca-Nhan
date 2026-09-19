@@ -1,8 +1,21 @@
-# AI Cá Nhân — Reviewer Agent v2.1.6
+# AI Cá Nhân — Security Agent v2.1.7
 
-PersonalAI là trợ lý AI cá nhân chạy bằng ASP.NET Core 8, ưu tiên dữ liệu cục bộ, có thể dùng Gemini hoặc OpenAI cho phần sinh câu trả lời. v2.0.0 đã tạo **Personal AI OS**; v2.1.0 thêm Agent Framework; v2.1.1 thêm **Planner Agent**; v2.1.2 bổ sung **Research Agent**; v2.1.3 có **Developer Agent**; v2.1.4 bổ sung **Office Agent**; v2.1.5 thêm **Operator Agent**; v2.1.6 bổ sung **Reviewer Agent** để rà soát nội dung người dùng dán, gắn mỗi finding với trích đoạn nguyên văn, nhưng không tự xác minh bên ngoài, chỉnh sửa hay phê duyệt.
+PersonalAI là trợ lý AI cá nhân chạy bằng ASP.NET Core 8, ưu tiên dữ liệu cục bộ, có thể dùng Gemini hoặc OpenAI cho phần sinh câu trả lời. v2.0.0 đã tạo **Personal AI OS**; v2.1.0 thêm Agent Framework; v2.1.1 thêm **Planner Agent**; v2.1.2 bổ sung **Research Agent**; v2.1.3 có **Developer Agent**; v2.1.4 bổ sung **Office Agent**; v2.1.5 thêm **Operator Agent**; v2.1.6 bổ sung **Reviewer Agent**; v2.1.7 thêm **Security Agent** rà soát cục bộ một số mẫu rủi ro trong mô tả thao tác mà người dùng nhập. Không gửi nội dung đến AI provider, không tự quét toàn hệ thống, chạy tool, chặn thao tác hoặc chứng nhận an toàn.
 
 > Đây vẫn là ứng dụng thiết kế cho một người dùng trên máy cá nhân. Personal AI OS v2.0 giữ toàn bộ hardening của v1.9 nhưng **không thay thế authentication/authorization** cần có khi triển khai Internet hoặc môi trường nhiều người dùng.
+
+## Có gì trong v2.1.7?
+
+### Security Agent
+
+Executable agent thứ tám `security.security-reviewer` rà soát **mẫu rủi ro cục bộ** trong mô tả thao tác do người dùng chủ động nhập (tối đa 4.000 ký tự). Bộ kiểm tra cố định cảnh báo một số mẫu chứa credential/private key, xóa dữ liệu khó hoàn tác, tải-và-chạy script, nới quyền hoặc chuyển dữ liệu ra bên ngoài.
+
+- API: `GET /api/security-agent/status`, `GET /api/agents/security.security-reviewer`, `POST /api/agents/security.security-reviewer/execute`.
+- Không gọi AI provider, không tự đọc file/repo/context, không lặp lại mô tả người dùng hoặc chuỗi khớp mẫu trong báo cáo.
+- Không phát hiện mẫu **không có nghĩa an toàn**. Kết quả không thay thế permission gate, human review, quét bảo mật toàn hệ thống hoặc pentest; có thể có false positives và false negatives.
+- Không tự thực thi, sửa permission, chặn hành động, gửi dữ liệu, tạo task hoặc dispatch agent. Không nhập mật khẩu/token thật vào ô yêu cầu.
+
+### Reviewer Agent v2.1.6 vẫn được giữ nguyên
 
 ## Có gì trong v2.1.6?
 
@@ -1001,6 +1014,7 @@ GitHub Actions hiện kiểm tra regression cho các nền chính, gồm:
 - v2.1.4 Office Agent structured draft-only output, parser validation và no-send/no-write/no-task policy;
 - v2.1.5 Operator Agent risk-aware plan-only output, dependency validation và no-execution policy;
 - v2.1.6 Reviewer Agent excerpt validation, no-external-verification và no-approval policy;
+- v2.1.7 Security Agent local pattern review, no-input-echo, no-enforcement và no-safety-certification policy;
 - JavaScript syntax;
 - UI guardrails tiếng Việt.
 
@@ -1038,10 +1052,11 @@ docs/releases/v2.1.3.md
 docs/releases/v2.1.4.md
 docs/releases/v2.1.5.md
 docs/releases/v2.1.6.md
+docs/releases/v2.1.7.md
 ```
 
-## Hướng phát triển sau v2.1.6
+## Hướng phát triển sau v2.1.7
 
 Computer Use, Browser Agent, Connector Foundation, Software Development Agent, Android Companion, Life Context, Decision Engine và Automation hiện nằm trong controlled capability layer.
 
-Sau v2.1.6, mốc kế tiếp là **v2.1.7 — Security Agent**. Web/email research ở đây chưa tích hợp tự động; trước khi mở cần luồng cấp quyền, provenance và connector provider-specific. Agent Orchestration vẫn thuộc giai đoạn v2.2.
+Sau v2.1.7, mốc kế tiếp là **v2.2 — Agent Orchestration**, chưa được bật trong bản này. Web/email research ở đây chưa tích hợp tự động; trước khi mở cần luồng cấp quyền, provenance và connector provider-specific. Agent Orchestration vẫn thuộc giai đoạn v2.2.

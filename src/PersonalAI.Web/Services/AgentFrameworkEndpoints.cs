@@ -25,6 +25,21 @@ public static class AgentFrameworkEndpoints
     public static WebApplication MapAgentFramework(
         this WebApplication app)
     {
+        app.MapGet("/api/agents/orchestration/diagnostics/status", () =>
+            Results.Ok(WorkflowDiagnostics.GetStatus()));
+
+        app.MapGet("/api/agents/orchestration/diagnostics/{workflowId:guid}", (
+            Guid workflowId,
+            IWorkspaceContextAccessor workspace) =>
+        {
+            var observation = WorkflowObservability.Find(
+                workflowId, workspace.CurrentWorkspaceId);
+            return observation is null
+                ? Results.NotFound(new ApiError(
+                    "Không tìm thấy thông tin chẩn đoán trong không gian làm việc hiện tại."))
+                : Results.Ok(WorkflowDiagnostics.Explain(observation));
+        });
+
         app.MapGet("/api/agents/orchestration/observability/status", () =>
             Results.Ok(WorkflowObservability.GetStatus()));
 

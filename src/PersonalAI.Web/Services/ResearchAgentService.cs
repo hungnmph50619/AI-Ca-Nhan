@@ -28,7 +28,7 @@ public static class ResearchAgentLimits
             CreatesTasks: false,
             DispatchesAgents: false,
             RequiresExplicitInvocation: true,
-            NextStage: "v2.1.5-operator-agent");
+            NextStage: "v2.1.6-reviewer-agent");
 }
 
 public sealed class ResearchOutputException(string message)

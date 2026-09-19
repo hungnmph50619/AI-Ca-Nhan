@@ -72,6 +72,7 @@ public sealed record AgentExecutionResponse(
     IReadOnlyList<string> BoundTools,
     bool ToolExecutionEnabled,
     PlannerPlan? Plan = null,
+    ResearchReport? Research = null,
     string? Error = null);
 
 public sealed record AgentExecutionContext(
@@ -85,4 +86,5 @@ public sealed record AgentResult(
     string Model,
     IReadOnlyList<ChatSource> Sources,
     ContextSelectionReport? Context,
-    PlannerPlan? Plan = null);
+    PlannerPlan? Plan = null,
+    ResearchReport? Research = null);

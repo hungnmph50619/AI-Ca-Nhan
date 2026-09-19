@@ -16,8 +16,8 @@ public sealed class PersonalAiOsService(
     IWorkspaceContextAccessor workspaceContext) : IPersonalAiOsService
 {
     public const string Edition = "Personal AI OS";
-    public const string Stage = "v2.1";
-    public const string NextStage = "v2.1.1-planner-agent";
+    public const string Stage = "v2.1.1";
+    public const string NextStage = "v2.1.2-research-agent";
 
     private static readonly PersonalAiOsLayer[] Layers =
     [
@@ -44,7 +44,7 @@ public sealed class PersonalAiOsService(
         new(
             "coordination",
             "Agent Framework",
-            "Nền agent có registry, context envelope và explicit execution; chưa có delegation/orchestration.",
+            "Agent Framework có Personal Assistant + Planner; Planner tạo plan có cấu trúc nhưng chưa dispatch hoặc orchestration.",
             ["agent-framework"]),
         new(
             "governance",
@@ -55,9 +55,9 @@ public sealed class PersonalAiOsService(
 
     private static readonly string[] Boundaries =
     [
-        "v2.1 bật Agent Framework nhưng mỗi agent chỉ chạy bằng explicit invocation do người dùng chủ động gọi.",
-        "v2.1 chưa bật agent-to-agent messaging, automatic delegation, shared task queue hoặc Agent Orchestration.",
-        "v2.1 không bật autonomous agent loop, parallel agent execution hoặc parallel tool calls.",
+        "v2.1.1 có Planner Agent nhưng mọi agent vẫn chỉ chạy bằng explicit invocation do người dùng chủ động gọi.",
+        "Planner v2.1.1 chỉ chia goal thành plan; không tạo Task Engine task, không dispatch agent, không persist plan tự động và chưa có Agent Orchestration.",
+        "v2.1.1 không bật agent-to-agent messaging, automatic delegation, shared task queue, autonomous loop, parallel agent execution hoặc parallel tool calls.",
         "WRITE/DELETE/EXTERNAL/SENSITIVE/COMPUTER/BROWSER/CONNECTOR/DEVELOPMENT vẫn yêu cầu policy và confirmation tương ứng.",
         "Email vẫn là connector-backed foundation, chưa có Gmail/Outlook provider-specific OAuth.",
         "Calendar vẫn dùng Life Context snapshot + connector foundation, chưa có provider-specific auto-sync/write.",
@@ -391,7 +391,7 @@ public sealed class PersonalAiOsService(
                 "Agent Framework",
                 "coordination",
                 ControlledState("agents"),
-                "Agent registry + explicit execution runtime; context grounding bật, tool execution/delegation/messaging vẫn tắt.",
+                "Agent registry + explicit execution runtime; Personal Assistant và Planner đã có, tool execution/delegation/messaging vẫn tắt."
                 ["/api/agents/status", "/api/agents"],
                 false,
                 true,

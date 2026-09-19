@@ -1,5 +1,5 @@
 (() => {
-  const VERSION = "2.1.2";
+  const VERSION = "2.1.3";
   let dialog;
   let select;
   let goal;
@@ -135,7 +135,7 @@
     const boundary = document.createElement("div");
     boundary.className = "agent-boundary";
     boundary.textContent =
-      "v2.1.2 chỉ chạy agent khi bạn chủ động bấm chạy. Research chỉ tổng hợp tài liệu trong workspace, không tự duyệt web; Planner không tạo task, các agent không tự chạy tool hay giao việc.";
+      "v2.1.3 chạy agent khi bạn chủ động bấm chạy. Developer chỉ đọc đoạn mã và đề xuất sửa, không tự chạy lệnh hoặc chỉnh sửa file; các agent không tự giao việc.";
 
     feedback = document.createElement("div");
     feedback.className = "agent-feedback";
@@ -229,12 +229,15 @@
 
     const isPlanner = agent.role === "planner";
     const isResearch = agent.role === "research";
-    goal.placeholder = isResearch
+    const isDeveloper = agent.role === "developer";
+    goal.placeholder = isDeveloper
+      ? "Ví dụ: search: ExecuteAsync — xem các đoạn mã liên quan và đề xuất cải tiến. Các snippet có thể được gửi đến AI provider đã cấu hình."
+      : isResearch
       ? "Ví dụ: Từ các tài liệu trong workspace, tổng hợp ưu nhược điểm của phương án này và dẫn nguồn cho từng nhận định."
       : isPlanner
         ? "Ví dụ: Phát triển AI Cá Nhân từ v2.1.2 đến v2.2 theo từng bước an toàn."
         : "Ví dụ: Phân tích những việc tôi đang làm và đề xuất bước tiếp theo.";
-    runButton.textContent = isResearch ? "Nghiên cứu tài liệu" : isPlanner ? "Lập kế hoạch" : "Chạy agent";
+    runButton.textContent = isDeveloper ? "Phân tích mã" : isResearch ? "Nghiên cứu tài liệu" : isPlanner ? "Lập kế hoạch" : "Chạy agent";
 
     [
       ["Role", agent.role],
@@ -299,7 +302,9 @@
   function renderExecutionResult(payload) {
     result.replaceChildren();
 
-    if (payload.research) {
+    if (payload.developer) {
+      renderDeveloperReport(payload.developer);
+    } else if (payload.research) {
       renderResearchReport(payload.research);
     } else if (payload.plan) {
       renderPlannerPlan(payload.plan);
@@ -395,7 +400,7 @@
     const boundary = document.createElement("p");
     boundary.className = "planner-plan-boundary";
     boundary.textContent =
-      "Plan này chỉ được chuẩn bị để bạn xem. v2.1.2 không tự tạo Task Engine task, không dispatch agent và không persist plan tự động.";
+      "Plan này chỉ được chuẩn bị để bạn xem. v2.1.3 không tự tạo Task Engine task, không dispatch agent và không persist plan tự động.";
     wrapper.append(boundary);
 
     result.append(wrapper);
@@ -459,6 +464,53 @@
       "Nguồn chỉ được lấy từ tài liệu workspace; không có web search. Chỉ số nguồn được kiểm tra sự tồn tại, không bảo đảm mọi diễn giải của mô hình đều chính xác. Không có tool execution hoặc agent dispatch.";
     root.append(boundary);
     result.append(root);
+  }
+
+  function renderDeveloperReport(report) {
+    const section = document.createElement("section");
+    section.className = "developer-report";
+    const heading = document.createElement("h3");
+    heading.textContent = "Đề xuất phân tích mã nguồn";
+    const status = document.createElement("p");
+    status.textContent = report.status === "reviewed"
+      ? "Đã phân tích các snippet tìm thấy"
+      : "Chưa có đoạn mã phù hợp để đánh giá";
+    const summary = document.createElement("p");
+    summary.textContent = report.summary || "";
+    section.append(heading, status, summary);
+
+    (report.findings || []).forEach(finding => {
+      const card = document.createElement("article");
+      card.className = "developer-finding";
+      const observation = document.createElement("p");
+      observation.textContent = finding.observation || "";
+      const citations = document.createElement("p");
+      citations.textContent = (finding.evidenceNumbers || [])
+        .map(n => "[" + n + "]").join(" ");
+      const suggested = document.createElement("p");
+      suggested.textContent = "Đề xuất (chưa thực hiện): " + (finding.suggestedChange || "");
+      const verification = document.createElement("p");
+      verification.textContent = "Cách kiểm chứng: " + (finding.verificationStep || "");
+      card.append(observation, citations, suggested, verification);
+      section.append(card);
+    });
+
+    const sources = document.createElement("div");
+    const sourceTitle = document.createElement("h4");
+    sourceTitle.textContent = "Vị trí mã đã tìm được";
+    sources.append(sourceTitle);
+    (report.evidence || []).forEach(item => {
+      const row = document.createElement("p");
+      row.textContent = "[" + item.evidenceNumber + "] "
+        + item.path + ":" + item.lineNumber + " — " + item.preview;
+      sources.append(row);
+    });
+    section.append(sources);
+    appendPlannerList(section, "Giới hạn", report.limitations);
+    const note = document.createElement("p");
+    note.textContent = "Chưa sửa file, chạy build/test hay tạo commit. Mã nguồn chỉ được tìm theo từ khóa; trích dẫn vị trí không chứng minh mọi diễn giải của AI là đúng.";
+    section.append(note);
+    result.append(section);
   }
 
   function appendPlannerList(parent, title, values) {

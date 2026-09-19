@@ -345,7 +345,7 @@ public sealed class SystemCoreService(
                     ? new CoreModuleHealth(
                         "agents",
                         CoreHealthStatuses.Healthy,
-                        "Agent Framework v2.1.1 khả dụng; Personal Assistant + Planner đã đăng ký, explicit invocation bắt buộc và orchestration vẫn tắt.",
+                        "Agent Framework v2.1.3 khả dụng; Personal Assistant, Planner, Research và Developer đã đăng ký, execution chỉ theo explicit invocation và chưa orchestration.",
                         status.RegisteredAgents)
                     : new CoreModuleHealth(
                         "agents",

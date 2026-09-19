@@ -7,6 +7,7 @@ on:
       - feature/desktop-manual-mouse-actions
       - feature/desktop-session-limits
       - feature/desktop-windows-stop-hotkey
+      - feature/desktop-notepad-keyboard-preview
   pull_request:
     paths:
       - 'src/PersonalAI.Web/Services/ComputerUse*'
@@ -52,6 +53,16 @@ jobs:
             if (-not $ready) { throw "Ứng dụng không khởi động trong thời gian chờ." }
             if (-not $status.supported) { throw "Windows chưa được nhận diện." }
             if ($status.desktopActionsPaused -ne $true) { throw "Điều khiển không khóa khi khởi động." }
+            # Lệnh nhập mẫu không được gửi khi đang tạm dừng; CI không gõ ký tự thật.
+            $keyboardBody = @{ windowId = "0x0"; text = "thu nghiem" } | ConvertTo-Json
+            $keyboardWithoutApproval = Invoke-WebRequest "$base/api/computer/keyboard/type-notepad" -Method Post -ContentType "application/json" -Body $keyboardBody -SkipHttpErrorCheck
+            if ($keyboardWithoutApproval.StatusCode -ne 403) { throw "Nhập Notepad chưa xác nhận không bị từ chối." }
+            $keyboardWhilePaused = Invoke-WebRequest "$base/api/computer/keyboard/type-notepad" -Method Post -ContentType "application/json" -Body $keyboardBody -Headers @{ "X-PersonalAI-Manual-Approval" = "dong-y" } -SkipHttpErrorCheck
+            $keyboardResult = $keyboardWhilePaused.Content | ConvertFrom-Json
+            if ($keyboardWhilePaused.StatusCode -ne 400 -or $keyboardResult.error -notmatch "tạm dừng") {
+              throw "Nhập Notepad vẫn hoạt động khi đang dừng."
+            }
+
             if ($status.stopHotkey -ne "Ctrl + Shift + F12") { throw "Thông báo tổ hợp phím dừng không đúng." }
             if ($status.desktopRemainingActions -ne 0 -or $null -ne $status.desktopSessionExpiresAt) {
               throw "Khi khởi động vẫn có lượt điều khiển hoặc thời hạn phiên."

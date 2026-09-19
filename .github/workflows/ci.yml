@@ -2964,7 +2964,10 @@ jobs:
           grep -Fq 'STABLE CORE · API CONTRACT 1' src/PersonalAI.Web/wwwroot/v100.js
           grep -Fq 'Controlled Computer Use' docs/releases/v1.1.0.md
           grep -Fq 'public const string Computer = "COMPUTER"' src/PersonalAI.Web/Models/ToolModels.cs
-          grep -Fq 'DesktopActionsPaused: control.Paused' src/PersonalAI.Web/Services/ComputerUseService.cs
+          grep -Fq 'DesktopActionsPaused: session.Paused' src/PersonalAI.Web/Services/ComputerUseService.cs
+          grep -Fq 'DesktopRemainingActions: session.RemainingActions' src/PersonalAI.Web/Services/ComputerUseService.cs
+          grep -Fq 'MaximumSessionSeconds = 60' src/PersonalAI.Web/Services/ComputerControlGate.cs
+          grep -Fq 'MaximumActionsPerSession = 5' src/PersonalAI.Web/Services/ComputerControlGate.cs
           grep -Fq 'control.RunAllowed' src/PersonalAI.Web/Services/ComputerUseService.cs
           grep -Fq 'private bool _paused = true;' src/PersonalAI.Web/Services/ComputerControlGate.cs
           grep -Fq '/api/computer/control/stop' src/PersonalAI.Web/Services/ComputerUseEndpoints.cs

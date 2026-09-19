@@ -16,6 +16,7 @@ public static class ComputerUseEndpoints
         services.AddSingleton<IPersonalAiTool, ComputerActiveWindowTool>();
         services.AddSingleton<IPersonalAiTool, ComputerFocusWindowTool>();
         services.AddSingleton<IPersonalAiTool, ComputerMoveCursorTool>();
+        services.AddSingleton<IPersonalAiTool, ComputerClickLeftTool>();
         return services;
     }
 

@@ -2981,7 +2981,7 @@ jobs:
           grep -Fq 'SensitiveComputerObservationRequiresConfirmation: true' src/PersonalAI.Web/Services/SystemCoreService.cs
           grep -Fq 'v110.css' src/PersonalAI.Web/wwwroot/index.html
           grep -Fq 'v110.js' src/PersonalAI.Web/wwwroot/index.html
-          grep -Fq 'CONTROLLED CAPABILITY · WINDOWS' src/PersonalAI.Web/wwwroot/v110.js
+          grep -Fq 'KHẢ NĂNG ĐIỀU KHIỂN CÓ XÁC NHẬN · WINDOWS' src/PersonalAI.Web/wwwroot/v110.js
           ! grep -Fq '"computer.mouse.click"' src/PersonalAI.Web/Services/ComputerUseTools.cs
           ! grep -Fq '"computer.keyboard' src/PersonalAI.Web/Services/ComputerUseTools.cs
           grep -Fq 'control.RunAllowed(() => ClickLeftCore' src/PersonalAI.Web/Services/ComputerUseService.cs

@@ -202,7 +202,7 @@ jobs:
             and any(.modules[]; .module == "life-context" and .status == "healthy")
             and any(.modules[]; .module == "decision-engine" and .status == "healthy")
             and any(.modules[]; .module == "automation" and .status == "healthy")
-            and any(.modules[]; .module == "agents" and .status == "healthy" and .itemCount == 2)
+            and any(.modules[]; .module == "agents" and .status == "healthy" and .itemCount == 3)
             and any(.modules[]; .module == "ai-provider" and (.status == "healthy" or .status == "unconfigured"))
           ' >/dev/null
 

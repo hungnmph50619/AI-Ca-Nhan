@@ -24,6 +24,10 @@
   const qualityThreshold = el("qualityThreshold");
   const qualitySummary = el("qualitySummary");
   const qualityErrors = el("qualityErrors");
+  const reviewSelect = el("sampleReviewSelect");
+  const reviewDetail = el("sampleReviewDetail");
+  const removeSampleButton = el("removeSampleButton");
+  const removeSampleStatus = el("removeSampleStatus");
   const fields = ["x1", "y1", "x2", "y2"].map(el);
 
   let image = null;
@@ -107,10 +111,65 @@
     reviewed.checked = false;
     fields.forEach(field => { field.value = ""; field.disabled = false; });
   }
+  function showSelectedReview() {
+    const item = records.find(record => record.id === reviewSelect.value);
+    removeSampleButton.disabled = !item;
+    if (!item) {
+      reviewDetail.textContent = "Chưa chọn mẫu.";
+      return;
+    }
+    const score = core.evaluateRecords([item], Number(qualityThreshold.value)).details[0];
+    const outcomes = {
+      true_positive: "Khung đề xuất khớp nhãn chuẩn theo ngưỡng",
+      true_negative: "Cả AI và nhãn chuẩn đều không có khung",
+      false_positive: "AI báo khung nhưng nhãn chuẩn không có",
+      false_negative: "AI bỏ sót khung có trong nhãn chuẩn",
+      mismatched_box: "Khung AI khác nhãn chuẩn theo ngưỡng"
+    };
+    const formatBox = value => value === null ? "không có" : value.join(", ");
+    reviewDetail.textContent =
+      `Mẫu ${item.id}: ${outcomes[score.outcome]}. ` +
+      `Khung đã xác minh: ${formatBox(item.truth_box)}. ` +
+      `Khung AI đề xuất: ${formatBox(item.predicted_box)}. ` +
+      `IoU: ${score.iou === null ? "không áp dụng" : score.iou.toFixed(3)}.`;
+  }
+  function refreshReview() {
+    const selectedBefore = reviewSelect.value;
+    reviewSelect.replaceChildren();
+    for (const item of records) {
+      const option = document.createElement("option");
+      option.value = item.id;
+      option.textContent = item.id;
+      reviewSelect.appendChild(option);
+    }
+    reviewSelect.disabled = !records.length;
+    if (records.some(item => item.id === selectedBefore)) {
+      reviewSelect.value = selectedBefore;
+    } else if (records.length) {
+      reviewSelect.value = records[0].id;
+    } else {
+      reviewSelect.value = "";
+    }
+    showSelectedReview();
+  }
+  reviewSelect.addEventListener("change", showSelectedReview);
+  removeSampleButton.addEventListener("click", () => {
+    const index = records.findIndex(record => record.id === reviewSelect.value);
+    if (index < 0) return;
+    const id = records[index].id;
+    if (!window.confirm(`Xóa riêng mẫu ${id}? Hãy kiểm tra lại nhãn trên ảnh nguồn nếu cần thêm mẫu thay thế.`)) {
+      removeSampleStatus.textContent = "Đã hủy xóa mẫu; dữ liệu không thay đổi.";
+      return;
+    }
+    records.splice(index, 1);
+    refreshSamples();
+    removeSampleStatus.textContent = `Đã xóa riêng mẫu ${id}. Nhớ tải JSON mới sau khi chỉnh sửa.`;
+  });
   function refreshQuality() {
     if (!records.length) {
       qualitySummary.textContent = "Chưa có mẫu để tính độ chính xác.";
       qualityErrors.textContent = "";
+      refreshReview();
       return;
     }
     try {
@@ -128,6 +187,7 @@
       qualitySummary.textContent = "Không thể tính kết quả: " + String(error.message || error);
       qualityErrors.textContent = "";
     }
+    refreshReview();
   }
   function refreshSamples() {
     samples.textContent = records.length

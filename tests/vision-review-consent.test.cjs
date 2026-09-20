@@ -163,3 +163,42 @@ test("Kết quả sai kích thước không ghi vào nhãn chuẩn", async () =>
   assert.equal(app.element("predictionBox").value, "");
   assert.match(app.element("locateStatus").textContent, /không phù hợp/);
 });
+
+
+test("Nhập JSON offline cập nhật bảng đánh giá, không dùng API và giữ mẫu khi tệp lỗi", async () => {
+  const app = setup(() => { throw new Error("Không được gọi API khi nhập JSON"); });
+  const importer = app.element("reviewImportFile");
+  app.element("reviewImportMode").value = "replace";
+  importer.files = [{name:"reviewed.json", size:512, text:async () => JSON.stringify([
+    {id:"mau-0007", reviewed:true, truth_box:[100,100,400,400], predicted_box:[100,100,400,400]}
+  ])}];
+  await app.element("reviewImportButton").emit("click");
+  assert.equal(app.calls.length, 0);
+  assert.match(app.element("qualitySummary").textContent, /Đã kiểm tra 1 mẫu/);
+  assert.match(app.element("samples").textContent, /mau-0007/);
+  importer.files = [{name:"invalid.json", size:512, text:async () => JSON.stringify([
+    {id:"mau-0007", reviewed:false, truth_box:null, predicted_box:null}
+  ])}];
+  await app.element("reviewImportButton").emit("click");
+  assert.match(app.element("reviewImportStatus").textContent, /không nhập/i);
+  assert.match(app.element("samples").textContent, /mau-0007/);
+  assert.equal(app.calls.length, 0);
+});
+
+test("Nhập thêm không được âm thầm ghi đè mã trùng", async () => {
+  const app = setup(() => { throw new Error("Không được gọi API khi nhập JSON"); });
+  const importer = app.element("reviewImportFile");
+  app.element("reviewImportMode").value = "replace";
+  importer.files = [{name:"first.json",size:256,text:async () => JSON.stringify([
+    {id:"mau-0001",reviewed:true,truth_box:null,predicted_box:null}
+  ])}];
+  await app.element("reviewImportButton").emit("click");
+  app.element("reviewImportMode").value = "append";
+  importer.files = [{name:"second.json",size:256,text:async () => JSON.stringify([
+    {id:"mau-0001",reviewed:true,truth_box:[10,10,100,100],predicted_box:null}
+  ])}];
+  await app.element("reviewImportButton").emit("click");
+  assert.match(app.element("reviewImportStatus").textContent, /không nhập/i);
+  assert.match(app.element("qualitySummary").textContent, /Đã kiểm tra 1 mẫu/);
+  assert.equal(app.calls.length, 0);
+});

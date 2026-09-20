@@ -120,8 +120,47 @@
     throw new Error("Dữ liệu tọa độ AI không hợp lệ; chưa cập nhật nhãn.");
   }
 
+  // Chỉ chấp nhận đúng schema do trang đánh giá xuất ra; không nâng cấp
+  // dự đoán thành nhãn đã kiểm tra hay đọc ảnh từ file JSON.
+  const MaximumReviewedSamples = 2000;
+  function importReviewedData(data, existing, mode = "append") {
+    if (!Array.isArray(existing) || !["append", "replace"].includes(mode)) {
+      throw new Error("Chế độ nhập dữ liệu không hợp lệ.");
+    }
+    if (!Array.isArray(data) || data.length === 0 ||
+        data.length > MaximumReviewedSamples ||
+        (mode === "append" && existing.length + data.length > MaximumReviewedSamples)) {
+      throw new Error("Tệp phải chứa 1–2000 mẫu; không vượt quá giới hạn tổng khi nhập thêm.");
+    }
+    const existingIds = new Set();
+    for (const item of existing) {
+      if (!item || typeof item.id !== "string" || existingIds.has(item.id)) {
+        throw new Error("Danh sách hiện tại có mã mẫu không hợp lệ hoặc trùng.");
+      }
+      existingIds.add(item.id);
+    }
+    const importedIds = new Set();
+    const imported = data.map(item => {
+      if (!item || typeof item !== "object" || Array.isArray(item) ||
+          Object.keys(item).sort().join("|") !==
+            "id|predicted_box|reviewed|truth_box" ||
+          typeof item.id !== "string" || !/^[a-zA-Z0-9_-]{1,64}$/.test(item.id) ||
+          item.reviewed !== true || importedIds.has(item.id) ||
+          (mode === "append" && existingIds.has(item.id))) {
+        throw new Error("Mẫu nhập phải có mã duy nhất, nhãn xác minh và chỉ bốn trường tọa độ.");
+      }
+      importedIds.add(item.id);
+      return record(item.id, item.truth_box, item.predicted_box, true);
+    });
+    const merged = mode === "replace" ? imported : [...existing, ...imported];
+    // Sử dụng chung quy tắc kiểm tra hình hộp và ID với bảng đánh giá.
+    evaluateRecords(merged);
+    return merged;
+  }
+
   const api = { box, parsePrediction, normalizeDrag, scaledPoint, record,
-    overlapScore, evaluateRecords, normalizeLocateResponse };
+    overlapScore, evaluateRecords, normalizeLocateResponse,
+    importReviewedData, MaximumReviewedSamples };
   root.MinimapReviewCore = api;
   if (typeof module !== "undefined" && module.exports) module.exports = api;
 })(typeof globalThis !== "undefined" ? globalThis : this);

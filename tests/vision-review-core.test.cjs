@@ -108,3 +108,41 @@ test("Chỉ chấp nhận khung đề xuất có trạng thái chưa xác minh v
     assert.throws(() => core.normalizeLocateResponse(modified, 960, 540));
   }
 });
+
+
+test("Khôi phục JSON chuẩn và nhập thêm không thay đổi dữ liệu gốc", () => {
+  const existing = [core.record("mau-0001", [100, 100, 400, 400], null, true)];
+  const restored = core.importReviewedData([
+    {id: "mau-0002", reviewed: true, truth_box: null, predicted_box: null}
+  ], existing, "append");
+  assert.equal(existing.length, 1);
+  assert.equal(restored.length, 2);
+  assert.equal(core.evaluateRecords(restored).samples, 2);
+  assert.deepEqual(core.importReviewedData([
+    {id: "mau-0002", reviewed: true, truth_box: null, predicted_box: null}
+  ], existing, "replace"), [
+    {id: "mau-0002", reviewed: true, truth_box: null, predicted_box: null}
+  ]);
+});
+
+test("Import nguyên khối: từ chối mẫu sai/trùng, giữ danh sách cũ", () => {
+  const existing = [core.record("mau-0001", [100, 100, 400, 400], null, true)];
+  const base = {id: "mau-0002", reviewed: true, truth_box: null, predicted_box: null};
+  const invalid = [
+    [base, {...base, id: "mau-0001"}],
+    [base, base],
+    [{...base, reviewed: false}],
+    [{...base, extra: "hidden"}],
+    [{...base, truth_box: [10, 10, 10, 100]}],
+    [{...base, predicted_box: "none"}],
+    [{...base, id: "x too long"}],
+    [base, {...base, id: "mau-0001", reviewed: false}]
+  ];
+  for (const candidate of invalid) {
+    assert.throws(() => core.importReviewedData(candidate, existing, "append"));
+    assert.equal(existing.length, 1);
+  }
+  assert.throws(() => core.importReviewedData([], existing));
+  assert.throws(() => core.importReviewedData([base], existing, "overwrite"));
+  assert.throws(() => core.importReviewedData(Array(2001).fill(base), [], "replace"));
+});

@@ -16,6 +16,11 @@
   const samples = el("samples");
   const exportButton = el("exportDataset");
   const resetButton = el("resetDataset");
+  const importFile = el("reviewImportFile");
+  const importMode = el("reviewImportMode");
+  const importButton = el("reviewImportButton");
+  const importStatus = el("reviewImportStatus");
+  let importing = false;
   const qualityThreshold = el("qualityThreshold");
   const qualitySummary = el("qualitySummary");
   const qualityErrors = el("qualityErrors");
@@ -306,12 +311,59 @@
         ? null : core.parsePrediction(predictionBox.value);
       const truth = truthAbsent.checked ? null : coordinates();
       if (!reviewed.checked) throw new Error("Hãy xác minh thủ công nhãn chuẩn của ảnh.");
-      const id = `mau-${String(++serial).padStart(4, "0")}`;
+      if (records.length >= core.MaximumReviewedSamples) {
+        throw new Error("Đã đạt giới hạn 2000 mẫu; hãy tải JSON về máy và mở bộ dữ liệu riêng.");
+      }
+      let id;
+      do { id = `mau-${String(++serial).padStart(4, "0")}`; }
+      while (records.some(item => item.id === id));
       records.push(core.record(id, truth, predicted, true));
       resetCurrent();
       refreshSamples();
       notify(`Đã thêm ${id}. Chọn ảnh tiếp theo hoặc tải tệp JSON.`);
     } catch (error) { notify(error.message || "Không thể thêm mẫu."); }
+  });
+
+  importButton.addEventListener("click", async () => {
+    if (importing) return;
+    const file = importFile.files && importFile.files[0];
+    if (!file || !/\.json$/i.test(file.name) || file.size < 2 || file.size > 1048576) {
+      importStatus.textContent = "Hãy chọn tệp .json đã xuất, dung lượng từ 2 byte đến 1 MB.";
+      return;
+    }
+    const mode = importMode.value;
+    if (!["append", "replace"].includes(mode)) {
+      importStatus.textContent = "Chế độ nhập không hợp lệ.";
+      return;
+    }
+    if (mode === "replace" && records.length &&
+        !window.confirm("Thay thế TOÀN BỘ mẫu hiện có trong trang bằng bộ dữ liệu đã chọn? Hãy tải bản sao JSON trước nếu cần.")) {
+      importStatus.textContent = "Đã hủy thao tác thay thế; dữ liệu hiện tại không đổi.";
+      return;
+    }
+    importing = true;
+    importButton.disabled = true;
+    importStatus.textContent = "Đang kiểm tra dữ liệu JSON cục bộ…";
+    try {
+      const text = await file.text();
+      // Không ghi vào records cho đến khi toàn bộ tệp đã qua xác thực.
+      const proposed = core.importReviewedData(JSON.parse(text), records, mode);
+      records = proposed;
+      // Không cấp lại mã mau-0001 nếu vừa khôi phục một tệp có mã tương tự.
+      serial = Math.max(serial, ...records.map(item => {
+        const match = /^mau-(\d+)$/.exec(item.id);
+        return match ? Number(match[1]) : 0;
+      }));
+      refreshSamples();
+      importStatus.textContent = `Đã ${mode === "replace" ? "thay thế bằng" : "nhập thêm"} ${proposed.length} mẫu tổng cộng. Các nhãn trước đó vẫn cần được tin cậy theo nguồn bạn đã tự kiểm tra.`;
+    } catch (error) {
+      importStatus.textContent = "Không nhập dữ liệu: " + String(error.message || error) +
+        " Danh sách hiện tại không thay đổi.";
+    } finally {
+      importFile.value = "";
+      importing = false;
+      importButton.disabled = false;
+    }
   });
 
   exportButton.addEventListener("click", () => {

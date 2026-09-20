@@ -32,12 +32,21 @@
     const indexA = new Map(checkedA.map(item => [item.id, item]));
     const resultA = review.evaluateRecords(ids.map(id => indexA.get(id)), threshold);
     const resultB = review.evaluateRecords(ids.map(id => indexB.get(id)), threshold);
+    const isMatching = outcome => outcome === "true_positive" || outcome === "true_negative";
     const rows = resultA.details.map((entry, i) => {
       const id = entry.id;
       const aBox = indexA.get(id).predicted_box;
       const bBox = indexB.get(id).predicted_box;
+      const bEntry = resultB.details[i];
+      const aMatches = isMatching(entry.outcome);
+      const bMatches = isMatching(bEntry.outcome);
+      const transition = aMatches && bMatches ? "both_match"
+        : !aMatches && bMatches ? "corrected"
+        : aMatches && !bMatches ? "regressed"
+        : "both_mismatch";
       return {
         id,
+        transition,
         prediction_changed: JSON.stringify(aBox) !== JSON.stringify(bBox),
         a_outcome: entry.outcome,
         b_outcome: resultB.details[i].outcome,
@@ -59,6 +68,12 @@
       samples: ids.length,
       minimum_iou: threshold,
       changed_predictions: rows.filter(item => item.prediction_changed).length,
+      transitions: {
+        corrected: rows.filter(item => item.transition === "corrected").length,
+        regressed: rows.filter(item => item.transition === "regressed").length,
+        both_match: rows.filter(item => item.transition === "both_match").length,
+        both_mismatch: rows.filter(item => item.transition === "both_mismatch").length
+      },
       a: summarize(resultA),
       b: summarize(resultB),
       per_sample: rows

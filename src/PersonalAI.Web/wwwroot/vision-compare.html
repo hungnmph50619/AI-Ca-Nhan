@@ -49,6 +49,16 @@
     <h2 id="resultsHeading">2. Kết quả so sánh</h2>
     <p id="comparisonSummary" aria-live="polite">Chưa có kết quả.</p>
     <p id="comparisonMetrics"></p>
+    <p id="comparisonTransitions" aria-live="polite">Chưa có số liệu chuyển trạng thái.</p>
+    <label for="comparisonFilter">Lọc mẫu theo thay đổi</label>
+    <select id="comparisonFilter" disabled>
+      <option value="all">Tất cả mẫu</option>
+      <option value="corrected">A sai, B khớp nhãn chuẩn</option>
+      <option value="regressed">A khớp nhãn chuẩn, B sai</option>
+      <option value="both_mismatch">Cả A và B đều sai</option>
+      <option value="both_match">Cả A và B đều khớp nhãn chuẩn</option>
+      <option value="changed">Chỉ mẫu thay đổi dự đoán</option>
+    </select>
     <label for="comparisonSample">Xem kết quả từng mã mẫu</label>
     <select id="comparisonSample" disabled><option value="">Chưa có mẫu</option></select>
     <p id="comparisonDetails">Chưa có mẫu để xem.</p>

@@ -63,14 +63,28 @@ def compare_datasets(before: object, after: object, minimum_iou: float = .5) -> 
     report_b = evaluate([b[key] for key in keys], minimum_iou)
     rows = []
     changed = 0
+    matching = {"true_positive", "true_negative"}
+    transitions = {"corrected": 0, "regressed": 0, "both_match": 0, "both_mismatch": 0}
     for result_a, result_b in zip(report_a["results"], report_b["results"]):
         sample_id = result_a["id"]
         assert result_b["id"] == sample_id
         prediction_changed = a[sample_id]["predicted_box"] != b[sample_id]["predicted_box"]
         if prediction_changed:
             changed += 1
+        a_matches = result_a["outcome"] in matching
+        b_matches = result_b["outcome"] in matching
+        if a_matches and b_matches:
+            transition = "both_match"
+        elif not a_matches and b_matches:
+            transition = "corrected"
+        elif a_matches and not b_matches:
+            transition = "regressed"
+        else:
+            transition = "both_mismatch"
+        transitions[transition] += 1
         rows.append({
             "id": sample_id,
+            "transition": transition,
             "prediction_changed": prediction_changed,
             "a_outcome": result_a["outcome"],
             "b_outcome": result_b["outcome"],
@@ -86,6 +100,7 @@ def compare_datasets(before: object, after: object, minimum_iou: float = .5) -> 
         "samples": len(keys),
         "minimum_iou": minimum_iou,
         "changed_predictions": changed,
+        "transitions": transitions,
         "a": summary(report_a),
         "b": summary(report_b),
         "per_sample": rows,

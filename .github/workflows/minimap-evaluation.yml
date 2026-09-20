@@ -11,6 +11,7 @@ on:
       - 'feature/v2.3.6-minimap-async-safety'
       - 'feature/v2.3.7-minimap-evaluation-compare'
       - 'feature/v2.3.8-minimap-compare-ui'
+      - 'feature/v2.3.9-minimap-paired-diagnostics'
   pull_request:
 
 jobs:
@@ -56,3 +57,5 @@ jobs:
           grep -Fq 'vision-compare.html' src/PersonalAI.Web/wwwroot/vision-review.html
           grep -Fq 'vision-compare-core.js' src/PersonalAI.Web/wwwroot/vision-compare.html
           grep -Fq 'vision-compare.js' src/PersonalAI.Web/wwwroot/vision-compare.html
+          grep -Fq 'comparisonFilter' src/PersonalAI.Web/wwwroot/vision-compare.html
+          grep -Fq 'transitions' src/PersonalAI.Web/wwwroot/vision-compare-core.js

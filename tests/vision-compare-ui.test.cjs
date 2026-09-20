@@ -48,6 +48,15 @@ test("Bấm so sánh mới tính, không gọi mạng, hiển thị A/B đúng I
   assert.match(ui.el("comparisonSummary").textContent,/dự đoán thay đổi ở 1 mẫu/);
   assert.match(ui.el("comparisonMetrics").textContent,/Bộ A.*Bộ B/);
   assert.match(ui.el("comparisonDetails").textContent,/false_negative.*true_positive/);
+  assert.match(ui.el("comparisonTransitions").textContent,/A sai.*1.*B sai: 0/);
+  ui.el("comparisonFilter").value="corrected";
+  ui.el("comparisonFilter").emit("change");
+  assert.equal(ui.el("comparisonSample").disabled,false);
+  assert.match(ui.el("comparisonDetails").textContent,/false_negative.*true_positive/);
+  ui.el("comparisonFilter").value="regressed";
+  ui.el("comparisonFilter").emit("change");
+  assert.equal(ui.el("comparisonSample").disabled,true);
+  assert.match(ui.el("comparisonDetails").textContent,/Không có mẫu/);
 });
 
 test("Dữ liệu A/B lệch nhãn không tạo báo cáo",async()=>{

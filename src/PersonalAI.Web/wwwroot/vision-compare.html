@@ -16,6 +16,9 @@
     button:disabled{opacity:.5;cursor:not-allowed}
     button:focus-visible,input:focus-visible,select:focus-visible{outline:3px solid #f9cf90;outline-offset:3px}
     .warning{color:#f9cf90} #comparisonDetails{overflow-wrap:anywhere}
+    #comparisonOverlay{display:block;box-sizing:border-box;max-width:100%;height:auto;
+      background:#0b1521;border:2px solid #748ca5;margin:12px 0}
+    #comparisonOverlay[hidden]{display:none}
   </style>
   <script src="vision-review-core.js" defer></script>
   <script src="vision-compare-core.js" defer></script>
@@ -64,6 +67,15 @@
     <label for="comparisonSample">Xem kết quả từng mã mẫu</label>
     <select id="comparisonSample" disabled><option value="">Chưa có mẫu</option></select>
     <p id="comparisonDetails">Chưa có mẫu để xem.</p>
+    <h3 id="overlayHeading">Sơ đồ khung tọa độ của mẫu đã chọn</h3>
+    <p>Ô vuông 0–1000 bên dưới là sơ đồ minh họa tọa độ, <strong>không phải ảnh gốc</strong>.
+      Viền xanh: nhãn chuẩn; viền vàng đứt: dự đoán A; viền hồng chấm: dự đoán B.
+      Nếu không có khung, dòng trạng thái sẽ ghi rõ. Mỗi khung được vẽ độc lập;
+      viền có thể chồng lên nhau.</p>
+    <canvas id="comparisonOverlay" width="500" height="500" hidden
+      role="img" aria-label="Sơ đồ tọa độ khung minimap của mẫu đã chọn; mô tả bằng chữ ở dưới."
+      aria-describedby="overlayText"></canvas>
+    <p id="overlayText" role="status" aria-live="polite">Chưa có sơ đồ tọa độ.</p>
     <p class="warning">Đây là đối chiếu tọa độ trên bộ JSON đã xác minh, không phải kết quả thử nghiệm tổng quát. Chỉ số có thể không xác định nếu thiếu mẫu dương hoặc dự đoán dương; không dùng kết quả này để tự chọn mô hình hoặc tự điều khiển trò chơi.</p>
   </section>
 </main>

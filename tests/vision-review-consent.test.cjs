@@ -224,3 +224,78 @@ test("Nhập thêm không được âm thầm ghi đè mã trùng", async () => 
   assert.match(app.element("qualitySummary").textContent, /Đã kiểm tra 1 mẫu/);
   assert.equal(app.calls.length, 0);
 });
+
+
+test("Rút đồng ý rồi tích lại trong khi kiểm tra trạng thái không hồi sinh lần bấm cũ", async () => {
+  let releaseStatus;
+  const waiting = new Promise(resolve => { releaseStatus = resolve; });
+  const app = setup(url => url.endsWith("/status") ? waiting : response(proposed));
+  app.selectImage("a");
+  app.consent();
+  const request = app.clickLocate();
+  app.element("locateConsent").checked = false;
+  app.element("locateConsent").emit("change");
+  app.consent();
+  releaseStatus(response(ready));
+  await request;
+  assert.equal(app.calls.filter(call => call.url === "/api/vision/minimap/locate").length, 0);
+  assert.equal(app.element("locateConsent").checked, false);
+});
+
+test("Đề xuất cũ hoàn tất không xóa sự đồng ý của ảnh mới", async () => {
+  let releasePrediction;
+  const waiting = new Promise(resolve => { releasePrediction = resolve; });
+  const app = setup(url => url.endsWith("/status") ? response(ready) : waiting);
+  app.selectImage("a");
+  app.consent();
+  const oldRequest = app.clickLocate();
+  for (let i = 0; i < 12 && app.calls.length < 2; i++) await Promise.resolve();
+  assert.equal(app.calls.length, 2);
+  app.selectImage("b");
+  app.consent();
+  releasePrediction(response(proposed));
+  await oldRequest;
+  assert.equal(app.element("locateConsent").checked, true);
+  assert.equal(app.element("locateButton").disabled, false);
+  assert.equal(app.element("predictionBox").value, "");
+});
+
+test("Nhập JSON đang đọc không được khôi phục dữ liệu sau khi người dùng xóa cả danh sách", async () => {
+  const app = setup(() => { throw new Error("Nhập JSON không được gọi API"); });
+  const importer = app.element("reviewImportFile");
+  app.element("reviewImportMode").value = "replace";
+  importer.files = [{name:"first.json",size:256,text:async () => JSON.stringify([
+    {id:"mau-0001",reviewed:true,truth_box:null,predicted_box:null}
+  ])}];
+  await app.element("reviewImportButton").emit("click");
+  let releaseRead;
+  const delayed = new Promise(resolve => { releaseRead = resolve; });
+  importer.files = [{name:"later.json",size:256,text:async () => delayed}];
+  const pendingImport = app.element("reviewImportButton").emit("click");
+  app.element("resetDataset").emit("click");
+  releaseRead(JSON.stringify([
+    {id:"mau-0002",reviewed:true,truth_box:null,predicted_box:null}
+  ]));
+  await pendingImport;
+  assert.match(app.element("samples").textContent, /Chưa có mẫu nào/);
+  assert.match(app.element("reviewImportStatus").textContent, /không nhập/i);
+  assert.equal(app.calls.length, 0);
+});
+
+test("Đổi file trong khi đang đọc JSON không được nhập file đã bỏ chọn", async () => {
+  const app = setup(() => { throw new Error("Nhập JSON không được gọi API"); });
+  const importer = app.element("reviewImportFile");
+  app.element("reviewImportMode").value = "append";
+  let releaseRead;
+  const delayed = new Promise(resolve => { releaseRead = resolve; });
+  importer.files = [{name:"old.json",size:256,text:async () => delayed}];
+  const pendingImport = app.element("reviewImportButton").emit("click");
+  importer.files = [{name:"new.json",size:256,text:async () => "[]"}];
+  releaseRead(JSON.stringify([
+    {id:"mau-0001",reviewed:true,truth_box:null,predicted_box:null}
+  ]));
+  await pendingImport;
+  assert.match(app.element("samples").textContent, /Chưa có mẫu nào/);
+  assert.match(app.element("reviewImportStatus").textContent, /không nhập/i);
+  assert.equal(app.calls.length, 0);
+});

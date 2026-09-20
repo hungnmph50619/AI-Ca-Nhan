@@ -8,6 +8,7 @@ on:
       - 'feature/v2.3.3-vision-opt-in-box-suggest'
       - 'feature/v2.3.4-minimap-evaluation-import'
       - 'feature/v2.3.5-minimap-sample-review'
+      - 'feature/v2.3.6-minimap-async-safety'
   pull_request:
 
 jobs:
@@ -44,3 +45,5 @@ jobs:
           grep -Fq 'importReviewedData' src/PersonalAI.Web/wwwroot/vision-review.js
           grep -Fq 'sampleReviewSelect' src/PersonalAI.Web/wwwroot/vision-review.html
           grep -Fq 'removeSampleButton' src/PersonalAI.Web/wwwroot/vision-review.js
+          grep -Fq 'datasetVersion' src/PersonalAI.Web/wwwroot/vision-review.js
+          grep -Fq 'approvedConsentVersion' src/PersonalAI.Web/wwwroot/vision-review.js

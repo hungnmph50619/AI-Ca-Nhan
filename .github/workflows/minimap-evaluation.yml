@@ -5,6 +5,7 @@ on:
     branches:
       - 'feature/v2.3.1-minimap-evaluation'
       - 'feature/v2.3.2-minimap-evaluation-dashboard'
+      - 'feature/v2.3.3-vision-opt-in-box-suggest'
   pull_request:
 
 jobs:
@@ -32,3 +33,7 @@ jobs:
           grep -Fq 'vision-review.js' src/PersonalAI.Web/wwwroot/vision-review.html
           grep -Fq 'qualitySummary' src/PersonalAI.Web/wwwroot/vision-review.html
           grep -Fq 'evaluateRecords' src/PersonalAI.Web/wwwroot/vision-review.js
+          grep -Fq 'locateConsent' src/PersonalAI.Web/wwwroot/vision-review.html
+          grep -Fq 'locateConsent.checked' src/PersonalAI.Web/wwwroot/vision-review.js
+          grep -Fq 'X-Xerath-Vision' src/PersonalAI.Web/wwwroot/vision-review.js
+          grep -Fq 'normalizeLocateResponse' src/PersonalAI.Web/wwwroot/vision-review-core.js

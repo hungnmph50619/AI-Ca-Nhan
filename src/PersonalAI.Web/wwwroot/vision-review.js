@@ -13,6 +13,9 @@
   const samples = el("samples");
   const exportButton = el("exportDataset");
   const resetButton = el("resetDataset");
+  const qualityThreshold = el("qualityThreshold");
+  const qualitySummary = el("qualitySummary");
+  const qualityErrors = el("qualityErrors");
   const fields = ["x1", "y1", "x2", "y2"].map(el);
 
   let image = null;
@@ -81,13 +84,37 @@
     reviewed.checked = false;
     fields.forEach(field => { field.value = ""; field.disabled = false; });
   }
+  function refreshQuality() {
+    if (!records.length) {
+      qualitySummary.textContent = "Chưa có mẫu để tính độ chính xác.";
+      qualityErrors.textContent = "";
+      return;
+    }
+    try {
+      const summary = core.evaluateRecords(records, Number(qualityThreshold.value));
+      const pct = n => n === null ? "không xác định" : (n * 100).toFixed(1) + "%";
+      qualitySummary.textContent = `Đã kiểm tra ${summary.samples} mẫu · IoU ≥ ${summary.threshold.toFixed(2)} · ` +
+        `Đúng khung (TP): ${summary.tp}; báo sai (FP): ${summary.fp}; bỏ sót (FN): ${summary.fn}; ` +
+        `đúng khi không có khung (TN): ${summary.tn}. Precision: ${pct(summary.precision)}; ` +
+        `Recall: ${pct(summary.recall)}; F1: ${pct(summary.f1)}.`;
+      const wrong = summary.details.filter(item => item.outcome !== "true_positive" && item.outcome !== "true_negative");
+      qualityErrors.textContent = wrong.length
+        ? `Cần xem lại ${wrong.length} mẫu: ${wrong.map(item => item.id).join(", ")}.`
+        : "Không có mẫu bị đánh dấu sai theo ngưỡng hiện tại; cần thêm ảnh độc lập để kiểm chứng.";
+    } catch (error) {
+      qualitySummary.textContent = "Không thể tính kết quả: " + String(error.message || error);
+      qualityErrors.textContent = "";
+    }
+  }
   function refreshSamples() {
     samples.textContent = records.length
       ? `Đã xác minh ${records.length} mẫu: ${records.map(item => item.id).join(", ")}.`
       : "Chưa có mẫu nào.";
     exportButton.disabled = !records.length;
     resetButton.disabled = !records.length;
+    refreshQuality();
   }
+  qualityThreshold.addEventListener("change", refreshQuality);
 
   fileInput.addEventListener("change", () => {
     const version = ++loadVersion;

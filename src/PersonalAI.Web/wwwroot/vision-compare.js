@@ -11,6 +11,7 @@
   const exportStatus = el("exportStatus");
   const summary = el("comparisonSummary");
   const metrics = el("comparisonMetrics");
+  const sensitivity = el("comparisonSensitivity");
   const transitions = el("comparisonTransitions");
   const filterSelect = el("comparisonFilter");
   const sampleSelect = el("comparisonSample");
@@ -25,9 +26,12 @@
   let busy = false;
   let selectionVersion = 0;
   let lastResult = null;
+  let lastSweep = null;
 
   function clearResults() {
     lastResult = null;
+    lastSweep = null;
+    sensitivity.textContent = "Chưa có kết quả theo ngưỡng.";
     exportButton.disabled = true;
     exportStatus.textContent = "Chưa có báo cáo để lưu.";
     summary.textContent = "Chưa có kết quả cho lựa chọn hiện tại.";
@@ -167,6 +171,8 @@
       b: lastResult.b,
       // Danh sách cho phép: sơ đồ có tọa độ chỉ ở bộ nhớ trình duyệt,
       // không đưa truth_box / a_box / b_box vào báo cáo thống kê.
+      // Cùng hai tệp và cùng nhãn chuẩn; chỉ gồm các số đếm và chỉ số.
+      threshold_sensitivity: lastSweep,
       per_sample: lastResult.per_sample.map(item => ({
         id: item.id,
         transition: item.transition,
@@ -220,8 +226,34 @@
           (inputB.files && inputB.files[0]) !== b) {
         throw new Error("Tệp hoặc ngưỡng đã thay đổi trong khi đọc. Hãy so sánh lại.");
       }
-      const result = core.comparePaired(JSON.parse(texts[0]), JSON.parse(texts[1]), minIou);
+      const dataA = JSON.parse(texts[0]);
+      const dataB = JSON.parse(texts[1]);
+      const result = core.comparePaired(dataA, dataB, minIou);
+      // Không lấy dữ liệu mới và không thay đổi cấu hình: đánh giá lại
+      // đúng các dự đoán A/B đang so sánh theo ba ngưỡng minh bạch.
+      const sweep = [0.5, 0.75, 0.9].map(value => {
+        const measured = value === minIou ? result : core.comparePaired(dataA, dataB, value);
+        return {
+          minimum_iou: value,
+          samples: measured.samples,
+          a: measured.a,
+          b: measured.b,
+          transitions: measured.transitions
+        };
+      });
       lastResult = result;
+      lastSweep = sweep;
+      const sweepPercent = value => value === null ? "không xác định" :
+        (value * 100).toFixed(1) + "%";
+      sensitivity.textContent = sweep.map(entry =>
+        "IoU " + entry.minimum_iou.toFixed(2) +
+        " — A: TP " + entry.a.tp + ", FP " + entry.a.fp +
+        ", FN " + entry.a.fn + ", F1 " + sweepPercent(entry.a.f1) +
+        " | B: TP " + entry.b.tp + ", FP " + entry.b.fp +
+        ", FN " + entry.b.fn + ", F1 " + sweepPercent(entry.b.f1) +
+        " | A sai/B khớp " + entry.transitions.corrected +
+        ", A khớp/B sai " + entry.transitions.regressed
+      ).join("\n");
       exportButton.disabled = false;
       summary.textContent = "Đã đối chiếu " + result.samples +
         " mã mẫu có cùng nhãn chuẩn; dự đoán thay đổi ở " +

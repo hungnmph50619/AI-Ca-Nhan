@@ -9,6 +9,7 @@ on:
       - 'feature/v2.3.4-minimap-evaluation-import'
       - 'feature/v2.3.5-minimap-sample-review'
       - 'feature/v2.3.6-minimap-async-safety'
+      - 'feature/v2.3.7-minimap-evaluation-compare'
   pull_request:
 
 jobs:
@@ -20,7 +21,7 @@ jobs:
         with:
           python-version: '3.11'
       - name: Kiểm thử bộ đánh giá tọa độ đã xác minh
-        run: python -m unittest discover -s tests -p test_minimap_eval.py -v
+        run: python -m unittest discover -s tests -p 'test_minimap_*.py' -v
       - uses: actions/setup-node@v4
         with:
           node-version: '22'

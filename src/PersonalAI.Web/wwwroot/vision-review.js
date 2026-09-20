@@ -21,6 +21,7 @@
   const importButton = el("reviewImportButton");
   const importStatus = el("reviewImportStatus");
   let importing = false;
+  let datasetVersion = 0; // Tăng khi danh sách thay đổi, để từ chối nhập JSON đã lỗi thời.
   const qualityThreshold = el("qualityThreshold");
   const qualitySummary = el("qualitySummary");
   const qualityErrors = el("qualityErrors");
@@ -35,6 +36,7 @@
   let loadVersion = 0;
   let editVersion = 0;
   let locateBusy = false;
+  let consentVersion = 0; // Lượt đồng ý riêng cho từng ảnh; rút lại rồi tích lại không hồi sinh lượt cũ.
 
   function updateLocateReady() {
     const file = fileInput.files && fileInput.files[0];
@@ -42,7 +44,10 @@
       !locateConsent.checked || file.size < 24 || file.size > 2 * 1024 * 1024 ||
       !["image/png", "image/jpeg"].includes(file.type);
   }
-  locateConsent.addEventListener("change", updateLocateReady);
+  locateConsent.addEventListener("change", () => {
+    consentVersion++;
+    updateLocateReady();
+  });
   let dragStart = null;
   let previewBox = null;
   let serial = 0;
@@ -99,6 +104,7 @@
   }
   function resetCurrent() {
     loadVersion++;
+    consentVersion++;
     fileInput.value = "";
     releaseImage();
     predictionMode.value = "";
@@ -162,6 +168,7 @@
       return;
     }
     records.splice(index, 1);
+    datasetVersion++;
     refreshSamples();
     removeSampleStatus.textContent = `Đã xóa riêng mẫu ${id}. Nhớ tải JSON mới sau khi chỉnh sửa.`;
   });
@@ -201,6 +208,7 @@
 
   fileInput.addEventListener("change", () => {
     const version = ++loadVersion;
+    consentVersion++;
     releaseImage();
     locateConsent.checked = false;
     locateStatus.textContent = "Chưa gửi ảnh đến Gemini.";
@@ -261,6 +269,7 @@
     if (locateBusy || !file || !image || !locateConsent.checked) return;
     const version = loadVersion;
     const originalEditVersion = editVersion;
+    const approvedConsentVersion = consentVersion;
     locateBusy = true;
     updateLocateReady();
     locateStatus.textContent = "Đang kiểm tra cấu hình Gemini…";
@@ -273,7 +282,7 @@
       if (!status.available) throw new Error("Hãy chọn Gemini hỗ trợ ảnh và lưu khóa trong Cài đặt AI.");
       if (version !== loadVersion || image !== selectedImage ||
           (fileInput.files && fileInput.files[0]) !== file ||
-          !locateConsent.checked) return;
+          !locateConsent.checked || approvedConsentVersion !== consentVersion) return;
 
       const form = new FormData();
       form.append("image", file, file.name);
@@ -311,8 +320,11 @@
       }
     } finally {
       locateBusy = false;
-      // Mỗi lần gửi cần tích xác nhận lại, kể cả khi mô hình báo lỗi.
-      locateConsent.checked = false;
+      // Kết quả của ảnh cũ không được xóa đồng ý vừa cấp cho ảnh mới.
+      if (version === loadVersion) {
+        locateConsent.checked = false;
+        consentVersion++;
+      }
       updateLocateReady();
     }
   });
@@ -378,6 +390,7 @@
       do { id = `mau-${String(++serial).padStart(4, "0")}`; }
       while (records.some(item => item.id === id));
       records.push(core.record(id, truth, predicted, true));
+      datasetVersion++;
       resetCurrent();
       refreshSamples();
       notify(`Đã thêm ${id}. Chọn ảnh tiếp theo hoặc tải tệp JSON.`);
@@ -401,14 +414,21 @@
       importStatus.textContent = "Đã hủy thao tác thay thế; dữ liệu hiện tại không đổi.";
       return;
     }
+    const startingDatasetVersion = datasetVersion;
     importing = true;
     importButton.disabled = true;
     importStatus.textContent = "Đang kiểm tra dữ liệu JSON cục bộ…";
     try {
       const text = await file.text();
+      // Không tự ghi đè các thao tác thêm/xóa/reset xảy ra trong khi đọc tệp.
+      if (datasetVersion !== startingDatasetVersion ||
+          (importFile.files && importFile.files[0]) !== file) {
+        throw new Error("Danh sách hoặc tệp đã thay đổi trong khi đọc; hãy chọn tệp và nhập lại.");
+      }
       // Không ghi vào records cho đến khi toàn bộ tệp đã qua xác thực.
       const proposed = core.importReviewedData(JSON.parse(text), records, mode);
       records = proposed;
+      datasetVersion++;
       // Không cấp lại mã mau-0001 nếu vừa khôi phục một tệp có mã tương tự.
       serial = Math.max(serial, ...records.map(item => {
         const match = /^mau-(\d+)$/.exec(item.id);
@@ -444,6 +464,7 @@
     if (!records.length || !window.confirm("Xóa tất cả mẫu chưa xuất trong trang này?")) return;
     records = [];
     serial = 0;
+    datasetVersion++;
     refreshSamples();
     notify("Đã xóa danh sách mẫu trong trang; không có ảnh nào được tải lên.");
   });

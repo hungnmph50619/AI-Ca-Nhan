@@ -82,3 +82,29 @@ test("Từ chối dữ liệu chưa kiểm tra, ID trùng, ngưỡng không hợ
   assert.throws(() => core.evaluateRecords([valid, valid]));
   assert.throws(() => core.evaluateRecords([{...valid, truth_box: [1, 1, 0, 0]}]));
 });
+
+
+test("Chỉ chấp nhận khung đề xuất có trạng thái chưa xác minh và đúng ảnh", () => {
+  const known = {
+    provider: "Gemini", verified: false, needsReview: true,
+    width: 960, height: 540, found: true, normalizedBox: [600, 100, 900, 400]
+  };
+  assert.deepEqual(core.normalizeLocateResponse(known, 960, 540), {
+    mode: "found", coordinates: [600, 100, 900, 400]
+  });
+  assert.deepEqual(core.normalizeLocateResponse({
+    ...known, found: false, normalizedBox: null
+  }, 960, 540), { mode: "absent", coordinates: null });
+  assert.throws(() => core.normalizeLocateResponse(known, 1920, 1080));
+  for (const modified of [
+    {...known, verified: true},
+    {...known, needsReview: false},
+    {...known, provider: "unknown"},
+    {...known, found: true, normalizedBox: null},
+    {...known, found: false, normalizedBox: known.normalizedBox},
+    {...known, found: true, normalizedBox: [-1, 0, 200, 200]},
+    {...known, found: true, normalizedBox: [20, 20, 20, 200]}
+  ]) {
+    assert.throws(() => core.normalizeLocateResponse(modified, 960, 540));
+  }
+});

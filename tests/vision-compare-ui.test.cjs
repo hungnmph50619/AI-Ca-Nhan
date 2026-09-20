@@ -191,7 +191,9 @@ test("Sơ đồ không có ảnh hiển thị ba khung khác nhau và chữ mô 
   assert.match(ui.el("overlayText").textContent,/Dự đoán A: 110, 205, 505, 605/);
   assert.match(ui.el("overlayText").textContent,/Dự đoán B: 300, 400, 800, 900/);
   assert.equal(ui.fetchCount(),0);
-  ui.el("comparisonFilter").value="regressed";
+  // A khớp/B lệch => nhóm "regressed" có chính mẫu này.
+  // Nhóm "corrected" trống nên sơ đồ phải được ẩn.
+  ui.el("comparisonFilter").value="corrected";
   ui.el("comparisonFilter").emit("change");
   assert.equal(ui.el("comparisonOverlay").hidden,true);
   ui.el("comparisonA").emit("change");

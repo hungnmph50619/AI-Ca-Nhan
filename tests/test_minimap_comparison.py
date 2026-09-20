@@ -37,12 +37,22 @@ class ComparisonTests(unittest.TestCase):
         self.assertEqual([row["id"] for row in result["per_sample"]], ["one", "three", "two"])
         self.assertEqual(result["per_sample"][0]["a_outcome"], "false_negative")
         self.assertEqual(result["per_sample"][0]["b_outcome"], "true_positive")
+        self.assertEqual(result["transitions"], {
+            "corrected": 1, "regressed": 1, "both_match": 1, "both_mismatch": 0
+        })
+        self.assertEqual(
+            [row["transition"] for row in result["per_sample"]],
+            ["corrected", "both_match", "regressed"]
+        )
 
     def test_identical_datasets_have_no_changes(self):
         a = [item("x", None, None)]
         report = comparison.compare_datasets(a, a)
         self.assertEqual(report["changed_predictions"], 0)
         self.assertEqual(report["a"], report["b"])
+        self.assertEqual(report["transitions"], {
+            "corrected": 0, "regressed": 0, "both_match": 1, "both_mismatch": 0
+        })
 
     def test_missing_samples_or_modified_reference_rejected(self):
         a = [item("x", [100, 100, 400, 400], None)]
@@ -72,7 +82,7 @@ class ComparisonTests(unittest.TestCase):
         b = [item("sample_01", [0, 0, 200, 200], [0, 0, 200, 200])]
         report = comparison.compare_datasets(a, b)
         self.assertEqual(set(report["per_sample"][0]), {
-            "id", "prediction_changed", "a_outcome", "b_outcome", "a_iou", "b_iou"
+            "id", "transition", "prediction_changed", "a_outcome", "b_outcome", "a_iou", "b_iou"
         })
 
 

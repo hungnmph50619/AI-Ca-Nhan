@@ -104,8 +104,24 @@
     return { samples: items.length, threshold, tp, fp, fn, tn, precision, recall, f1, details };
   }
 
+  // Kết quả Gemini chỉ là tọa độ đề xuất, không trở thành nhãn chuẩn.
+  function normalizeLocateResponse(data, width, height) {
+    if (!data || typeof data !== "object" || Array.isArray(data) ||
+        data.provider !== "Gemini" || data.verified !== false || data.needsReview !== true ||
+        data.width !== width || data.height !== height) {
+      throw new Error("Kết quả AI không phù hợp với ảnh đã chọn hoặc thiếu trạng thái cần xác minh.");
+    }
+    if (data.found === false && data.normalizedBox === null) {
+      return { mode: "absent", coordinates: null };
+    }
+    if (data.found === true) {
+      return { mode: "found", coordinates: box(data.normalizedBox) };
+    }
+    throw new Error("Dữ liệu tọa độ AI không hợp lệ; chưa cập nhật nhãn.");
+  }
+
   const api = { box, parsePrediction, normalizeDrag, scaledPoint, record,
-    overlapScore, evaluateRecords };
+    overlapScore, evaluateRecords, normalizeLocateResponse };
   root.MinimapReviewCore = api;
   if (typeof module !== "undefined" && module.exports) module.exports = api;
 })(typeof globalThis !== "undefined" ? globalThis : this);

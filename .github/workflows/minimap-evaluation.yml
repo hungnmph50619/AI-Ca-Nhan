@@ -5,6 +5,7 @@ on:
     branches:
       - 'feature/v2.3.1-minimap-evaluation'
       - 'feature/v2.3.2-minimap-evaluation-dashboard'
+      - 'feature/v2.3.3-vision-opt-in-box-suggest'
   pull_request:
 
 jobs:
@@ -25,6 +26,7 @@ jobs:
           node --check src/PersonalAI.Web/wwwroot/vision-review-core.js
           node --check src/PersonalAI.Web/wwwroot/vision-review.js
           node --test tests/vision-review-core.test.cjs
+          node --test tests/vision-review-consent.test.cjs
       - name: Kiểm tra trang gán nhãn được liên kết từ Vision Lab
         run: |
           grep -Fq 'vision-review.html' src/PersonalAI.Web/wwwroot/vision.html
@@ -32,3 +34,7 @@ jobs:
           grep -Fq 'vision-review.js' src/PersonalAI.Web/wwwroot/vision-review.html
           grep -Fq 'qualitySummary' src/PersonalAI.Web/wwwroot/vision-review.html
           grep -Fq 'evaluateRecords' src/PersonalAI.Web/wwwroot/vision-review.js
+          grep -Fq 'locateConsent' src/PersonalAI.Web/wwwroot/vision-review.html
+          grep -Fq 'locateConsent.checked' src/PersonalAI.Web/wwwroot/vision-review.js
+          grep -Fq 'X-Xerath-Vision' src/PersonalAI.Web/wwwroot/vision-review.js
+          grep -Fq 'normalizeLocateResponse' src/PersonalAI.Web/wwwroot/vision-review-core.js

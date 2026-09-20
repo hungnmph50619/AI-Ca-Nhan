@@ -7,6 +7,8 @@
   const threshold = el("comparisonThreshold");
   const button = el("runComparison");
   const status = el("comparisonStatus");
+  const exportButton = el("exportComparison");
+  const exportStatus = el("exportStatus");
   const summary = el("comparisonSummary");
   const metrics = el("comparisonMetrics");
   const transitions = el("comparisonTransitions");
@@ -19,6 +21,8 @@
 
   function clearResults() {
     lastResult = null;
+    exportButton.disabled = true;
+    exportStatus.textContent = "Chưa có báo cáo để lưu.";
     summary.textContent = "Chưa có kết quả cho lựa chọn hiện tại.";
     metrics.textContent = "";
     transitions.textContent = "Chưa có số liệu chuyển trạng thái.";
@@ -83,6 +87,37 @@
     displaySample();
   }
   filterSelect.addEventListener("change", refreshFilteredSamples);
+  exportButton.addEventListener("click", () => {
+    if (!lastResult || busy || exportButton.disabled) return;
+    // Chỉ xuất số đếm và kết quả theo mã mẫu, không xuất ảnh, tên tệp
+    // nguồn, khóa API hoặc trạng thái đồng ý gửi ảnh tới Gemini.
+    const report = {
+      schema: "minimap-paired-comparison-v1",
+      samples: lastResult.samples,
+      minimum_iou: lastResult.minimum_iou,
+      changed_predictions: lastResult.changed_predictions,
+      transitions: lastResult.transitions,
+      a: lastResult.a,
+      b: lastResult.b,
+      per_sample: lastResult.per_sample,
+      note: "Báo cáo tọa độ trên cùng mã mẫu và nhãn chuẩn, không chứng minh hiệu quả thực tế."
+    };
+    const blob = new Blob([JSON.stringify(report, null, 2)], {
+      type: "application/json;charset=utf-8"
+    });
+    const url = URL.createObjectURL(blob);
+    try {
+      const link = document.createElement("a");
+      link.href = url;
+      link.download = "minimap-a-b-comparison.json";
+      document.body.appendChild(link);
+      link.click();
+      link.remove();
+      exportStatus.textContent = "Đã tạo báo cáo JSON chỉ chứa số đếm và mã mẫu; không kèm ảnh hoặc tên tệp nguồn.";
+    } finally {
+      setTimeout(() => URL.revokeObjectURL(url), 5000);
+    }
+  });
   button.addEventListener("click", async () => {
     if (busy) return;
     const a = inputA.files && inputA.files[0];
@@ -91,6 +126,7 @@
     const minIou = Number(threshold.value);
     busy = true;
     button.disabled = true;
+    exportButton.disabled = true;
     clearResults();
     status.textContent = "Đang đọc và kiểm tra hai tệp JSON cục bộ…";
     try {
@@ -110,6 +146,7 @@
       }
       const result = core.comparePaired(JSON.parse(texts[0]), JSON.parse(texts[1]), minIou);
       lastResult = result;
+      exportButton.disabled = false;
       summary.textContent = "Đã đối chiếu " + result.samples +
         " mã mẫu có cùng nhãn chuẩn; dự đoán thay đổi ở " +
         result.changed_predictions + " mẫu. Ngưỡng IoU: " + minIou.toFixed(2) + ".";

@@ -10,6 +10,7 @@ from __future__ import annotations
 import argparse
 import json
 import math
+import re
 import sys
 from pathlib import Path
 
@@ -29,7 +30,7 @@ def _verified_index(data: object, title: str) -> dict[str, dict]:
         }:
             raise ValueError(f"{title}: mỗi mẫu chỉ có bốn trường id, reviewed, truth_box và predicted_box.")
         sample_id = record["id"]
-        if not isinstance(sample_id, str) or not sample_id or len(sample_id) > 64 or sample_id in indexed:
+        if not isinstance(sample_id, str) or not re.fullmatch(r"[a-zA-Z0-9_-]{1,64}", sample_id) or sample_id in indexed:
             raise ValueError(f"{title}: mã mẫu trống, quá dài hoặc trùng.")
         if record["reviewed"] is not True:
             raise ValueError(f"{title}: mẫu {sample_id} chưa được người dùng xác minh.")
@@ -40,7 +41,7 @@ def _verified_index(data: object, title: str) -> dict[str, dict]:
 
 
 def compare_datasets(before: object, after: object, minimum_iou: float = .5) -> dict:
-    if not isinstance(minimum_iou, (int, float)) or not math.isfinite(minimum_iou) or not 0 < minimum_iou <= 1:
+    if type(minimum_iou) not in (int, float) or not math.isfinite(minimum_iou) or not 0 < minimum_iou <= 1:
         raise ValueError("Ngưỡng IoU phải là số hữu hạn, lớn hơn 0 và không vượt quá 1.")
 
     a = _verified_index(before, "Bộ A")

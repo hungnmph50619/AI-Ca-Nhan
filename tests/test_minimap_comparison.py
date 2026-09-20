@@ -77,6 +77,19 @@ class ComparisonTests(unittest.TestCase):
             with self.subTest(bad=bad), self.assertRaises(ValueError):
                 comparison.compare_datasets(a, a, bad)
 
+    def test_import_validation_matches_browser_id_rules(self):
+        valid = [item("mau_001-A", None, None)]
+        self.assertEqual(comparison.compare_datasets(valid, valid)["samples"], 1)
+        for invalid_id in ["có-dấu", "space id", "../bad", "", "x" * 65]:
+            with self.subTest(invalid_id=invalid_id), self.assertRaises(ValueError):
+                bad = [item(invalid_id, None, None)]
+                comparison.compare_datasets(bad, bad)
+
+    def test_boolean_iou_threshold_is_not_a_number(self):
+        valid = [item("mau_001-A", None, None)]
+        with self.assertRaises(ValueError):
+            comparison.compare_datasets(valid, valid, True)
+
     def test_reports_include_no_images_or_api_keys(self):
         a = [item("sample_01", [0, 0, 200, 200], None)]
         b = [item("sample_01", [0, 0, 200, 200], [0, 0, 200, 200])]

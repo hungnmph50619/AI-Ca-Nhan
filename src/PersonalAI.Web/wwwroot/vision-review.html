@@ -1,0 +1,75 @@
+<!doctype html>
+<html lang="vi">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Gán nhãn ảnh minimap · Ngoại tuyến</title>
+  <style>
+    :root{font-family:Segoe UI,Arial,sans-serif;color-scheme:dark;background:#0b1521;color:#e8f0fc}
+    body{margin:0;padding:20px}main{max-width:900px;margin:auto}a{color:#9bd5fa}
+    p{line-height:1.6}.panel{background:#15243a;border:1px solid #33495c;border-radius:12px;padding:18px;margin:16px 0}
+    label{display:block;margin:12px 0 6px}input,select,textarea,button{font:inherit}
+    input[type=file],input[type=text],input[type=number],textarea,select{max-width:100%;padding:8px;background:#0b1521;color:inherit;border:1px solid #748ca5;border-radius:6px}
+    input[type=number]{width:82px}input[type=text],textarea{box-sizing:border-box;width:100%}
+    textarea{min-height:70px}button{padding:10px 15px;background:#237962;border:0;border-radius:6px;color:white;cursor:pointer;margin:7px 6px 7px 0}
+    button:disabled{opacity:.5;cursor:not-allowed}button:focus-visible,input:focus-visible,textarea:focus-visible,select:focus-visible{outline:3px solid #f9cf90;outline-offset:3px}
+    canvas{display:block;max-width:100%;height:auto;margin:12px 0;border:2px solid #7892af;touch-action:none;cursor:crosshair}
+    fieldset{border:1px solid #748ca5;border-radius:8px;margin-top:12px}legend{padding:0 6px}
+    .coords{display:flex;gap:10px;flex-wrap:wrap}.coords label{display:flex;flex-direction:column}
+    .checklabel{display:flex;align-items:center;gap:9px}.warning{color:#f9cf90}
+    #samples{overflow-wrap:anywhere} .sr-only{position:absolute;width:1px;height:1px;overflow:hidden;clip:rect(0,0,0,0)}
+    @media(prefers-reduced-motion:reduce){*{scroll-behavior:auto!important}}
+  </style>
+  <script src="vision-review-core.js" defer></script>
+  <script src="vision-review.js" defer></script>
+</head>
+<body>
+<main>
+  <nav><a href="/vision.html">← Quay lại trang xem ảnh minimap</a></nav>
+  <h1>Gán nhãn ảnh minimap để kiểm thử</h1>
+  <p>Chọn <strong>một ảnh ROI đã lưu</strong>, xem khung AI đề xuất (nếu có), rồi
+    dùng chuột kéo hoặc nhập bốn tọa độ để xác nhận vị trí khung thực tế.
+    Trang này xử lý ảnh ngay trong trình duyệt: <strong>không gọi Gemini, không tải ảnh lên máy chủ</strong>.
+    Dữ liệu JSON xuất ra chỉ có tọa độ và mã mẫu, không chứa ảnh hay tên file.</p>
+  <section class="panel" aria-labelledby="imageHeading">
+    <h2 id="imageHeading">1. Chọn ảnh đã lưu</h2>
+    <label for="imageFile">Ảnh PNG/JPEG (tối đa 2 MB, tối đa 6 triệu pixel)</label>
+    <input id="imageFile" type="file" accept="image/png,image/jpeg,.png,.jpg,.jpeg">
+    <canvas id="imageCanvas" hidden aria-label="Ảnh đang gán nhãn; kéo chuột để chọn khung. Có thể dùng ô tọa độ phía dưới nếu không dùng chuột."></canvas>
+    <p class="warning">Chỉ dùng ảnh mà bạn có quyền sử dụng. Tất cả tọa độ tính trên ảnh ROI đang chọn, chuẩn hóa 0–1000.</p>
+  </section>
+  <section class="panel" aria-labelledby="predictionHeading">
+    <h2 id="predictionHeading">2. Nhập kết quả AI đã đề xuất</h2>
+    <label for="predictionMode">Kết quả đề xuất cho chính ảnh này</label>
+    <select id="predictionMode">
+      <option value="">Chưa nhập kết quả</option>
+      <option value="found">AI tìm thấy một khung</option>
+      <option value="absent">AI không tìm thấy khung</option>
+    </select>
+    <label for="predictionBox">Nếu AI tìm thấy: dán normalizedBox hoặc phản hồi JSON từ API</label>
+    <textarea id="predictionBox" spellcheck="false" placeholder="[100,100,400,400]" disabled></textarea>
+  </section>
+  <section class="panel" aria-labelledby="truthHeading">
+    <h2 id="truthHeading">3. Xác minh khung thực tế</h2>
+    <label class="checklabel" for="truthAbsent"><input id="truthAbsent" type="checkbox">Ảnh không chứa trọn khung minimap (nhãn chuẩn là null)</label>
+    <p>Bạn có thể kéo khung trực tiếp trên ảnh hoặc điền tọa độ bằng bàn phím:</p>
+    <div class="coords" id="coords">
+      <label for="x1">x1 <input type="number" id="x1" min="0" max="1000" step="1" value=""></label>
+      <label for="y1">y1 <input type="number" id="y1" min="0" max="1000" step="1" value=""></label>
+      <label for="x2">x2 <input type="number" id="x2" min="0" max="1000" step="1" value=""></label>
+      <label for="y2">y2 <input type="number" id="y2" min="0" max="1000" step="1" value=""></label>
+    </div>
+    <label class="checklabel" for="reviewed"><input id="reviewed" type="checkbox">Tôi đã kiểm tra nhãn chuẩn trên chính ảnh này</label>
+    <button id="addSample" type="button">Thêm mẫu đã xác minh</button>
+    <p id="message" role="status" aria-live="polite"></p>
+  </section>
+  <section class="panel" aria-labelledby="exportHeading">
+    <h2 id="exportHeading">4. Xuất dữ liệu đánh giá</h2>
+    <p id="samples" aria-live="polite">Chưa có mẫu nào.</p>
+    <button id="exportDataset" type="button" disabled>Tải JSON tọa độ đã xác minh</button>
+    <button id="resetDataset" type="button" disabled>Xóa danh sách mẫu trong trang</button>
+    <p class="warning">Chỉ xuất tọa độ; không khẳng định dự đoán của AI đã chính xác. Không dùng dữ liệu này để phát cảnh báo trong trận.</p>
+  </section>
+</main>
+</body>
+</html>

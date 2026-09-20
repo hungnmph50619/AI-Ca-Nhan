@@ -68,7 +68,18 @@
     <p id="message" role="status" aria-live="polite"></p>
   </section>
   <section class="panel" aria-labelledby="exportHeading">
-    <h2 id="exportHeading">4. Xuất dữ liệu đánh giá</h2>
+    <h2 id="exportHeading">4. Lưu và khôi phục bộ dữ liệu đánh giá</h2>
+    <p>Để làm tiếp sau khi đóng trang, hãy tải tệp JSON về máy. Lần sau bạn có thể chọn tệp đó để khôi phục các tọa độ đã xác minh. Tệp được đọc ngay trong trình duyệt, không gửi lên máy chủ hay Gemini.</p>
+    <label for="reviewImportFile">Chọn bộ tọa độ JSON đã xuất (tối đa 1 MB, không kèm ảnh)</label>
+    <input id="reviewImportFile" type="file" accept="application/json,.json">
+    <label for="reviewImportMode">Cách khôi phục</label>
+    <select id="reviewImportMode">
+      <option value="append">Nhập thêm; từ chối nếu trùng mã mẫu</option>
+      <option value="replace">Thay thế toàn bộ danh sách đang mở (cần xác nhận)</option>
+    </select>
+    <button id="reviewImportButton" type="button">Nhập bộ tọa độ đã xác minh</button>
+    <p id="reviewImportStatus" role="status" aria-live="polite">Chưa nhập dữ liệu. Hãy chọn tệp JSON đã xuất.</p>
+    <p class="warning">Chỉ nhập lại nhãn do người dùng kiểm tra trước đó. Việc đọc tệp JSON không tự mở ảnh, không gọi AI và không kiểm chứng lại nhãn trên ảnh nguồn.</p>
     <p id="samples" aria-live="polite">Chưa có mẫu nào.</p>
     <button id="exportDataset" type="button" disabled>Tải JSON tọa độ đã xác minh</button>
     <button id="resetDataset" type="button" disabled>Xóa danh sách mẫu trong trang</button>

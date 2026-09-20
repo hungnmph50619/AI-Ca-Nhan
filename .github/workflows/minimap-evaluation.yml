@@ -6,6 +6,7 @@ on:
       - 'feature/v2.3.1-minimap-evaluation'
       - 'feature/v2.3.2-minimap-evaluation-dashboard'
       - 'feature/v2.3.3-vision-opt-in-box-suggest'
+      - 'feature/v2.3.4-minimap-evaluation-import'
   pull_request:
 
 jobs:
@@ -38,3 +39,5 @@ jobs:
           grep -Fq 'locateConsent.checked' src/PersonalAI.Web/wwwroot/vision-review.js
           grep -Fq 'X-Xerath-Vision' src/PersonalAI.Web/wwwroot/vision-review.js
           grep -Fq 'normalizeLocateResponse' src/PersonalAI.Web/wwwroot/vision-review-core.js
+          grep -Fq 'reviewImportFile' src/PersonalAI.Web/wwwroot/vision-review.html
+          grep -Fq 'importReviewedData' src/PersonalAI.Web/wwwroot/vision-review.js

@@ -1,0 +1,59 @@
+<!doctype html>
+<html lang="vi">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>So sánh hai lần nhận diện minimap · Ngoại tuyến</title>
+  <style>
+    :root{font-family:Segoe UI,Arial,sans-serif;color-scheme:dark;background:#0b1521;color:#e8f0fc}
+    body{padding:20px;margin:0}main{max-width:860px;margin:auto}
+    a{color:#9bd5fa}p{line-height:1.6}
+    section{background:#15243a;border:1px solid #33495c;border-radius:12px;padding:18px;margin:16px 0}
+    label{display:block;margin:12px 0 6px}
+    input,select,button{font:inherit}
+    input[type=file],select{max-width:100%;padding:8px;background:#0b1521;color:inherit;border:1px solid #748ca5;border-radius:6px}
+    button{padding:10px 15px;background:#237962;border:0;border-radius:6px;color:white;cursor:pointer}
+    button:disabled{opacity:.5;cursor:not-allowed}
+    button:focus-visible,input:focus-visible,select:focus-visible{outline:3px solid #f9cf90;outline-offset:3px}
+    .warning{color:#f9cf90} #comparisonDetails{overflow-wrap:anywhere}
+  </style>
+  <script src="vision-review-core.js" defer></script>
+  <script src="vision-compare-core.js" defer></script>
+  <script src="vision-compare.js" defer></script>
+</head>
+<body>
+<main>
+  <nav><a href="/vision-review.html">← Trở lại trang gán nhãn minimap</a></nav>
+  <h1>So sánh hai lần nhận diện minimap</h1>
+  <p>Chọn hai tệp JSON đã xuất từ trang gán nhãn, tương ứng hai lần dự đoán A và B
+    trên <strong>chính cùng ảnh ROI, mã mẫu và nhãn chuẩn đã xác minh</strong>.
+    Hai tệp chỉ được đọc trong trình duyệt, không gửi lên máy chủ hoặc Gemini.
+    Không cần chạy lệnh Python.</p>
+  <section aria-labelledby="filesHeading">
+    <h2 id="filesHeading">1. Chọn hai bộ tọa độ</h2>
+    <label for="comparisonA">Bộ A (JSON, tối đa 1 MB)</label>
+    <input id="comparisonA" type="file" accept="application/json,.json">
+    <label for="comparisonB">Bộ B (JSON, tối đa 1 MB)</label>
+    <input id="comparisonB" type="file" accept="application/json,.json">
+    <label for="comparisonThreshold">Ngưỡng IoU</label>
+    <select id="comparisonThreshold">
+      <option value="0.5">0,50</option>
+      <option value="0.75">0,75</option>
+      <option value="0.9">0,90</option>
+    </select>
+    <p class="warning">Công cụ kiểm tra mã mẫu và nhãn chuẩn trùng khớp, nhưng JSON không chứa ảnh nên không thể tự xác nhận hai tệp thực sự lấy từ cùng ảnh nguồn.</p>
+    <button id="runComparison" type="button">So sánh hai bộ dữ liệu</button>
+    <p id="comparisonStatus" role="status" aria-live="polite">Chưa bắt đầu so sánh.</p>
+  </section>
+  <section aria-labelledby="resultsHeading">
+    <h2 id="resultsHeading">2. Kết quả so sánh</h2>
+    <p id="comparisonSummary" aria-live="polite">Chưa có kết quả.</p>
+    <p id="comparisonMetrics"></p>
+    <label for="comparisonSample">Xem kết quả từng mã mẫu</label>
+    <select id="comparisonSample" disabled><option value="">Chưa có mẫu</option></select>
+    <p id="comparisonDetails">Chưa có mẫu để xem.</p>
+    <p class="warning">Đây là đối chiếu tọa độ trên bộ JSON đã xác minh, không phải kết quả thử nghiệm tổng quát. Chỉ số có thể không xác định nếu thiếu mẫu dương hoặc dự đoán dương; không dùng kết quả này để tự chọn mô hình hoặc tự điều khiển trò chơi.</p>
+  </section>
+</main>
+</body>
+</html>

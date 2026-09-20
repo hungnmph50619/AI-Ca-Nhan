@@ -26,16 +26,34 @@ function fixture() {
   }
   el("comparisonThreshold").value="0.5";
   let fetchCount=0;
+  const downloads=[];
+  const blobs=[];
+  const revoked=[];
+  class FakeBlob {
+    constructor(parts, options) { this.parts=parts; this.type=options.type; blobs.push(this); }
+  }
   const context={
     MinimapReviewCore:review, MinimapCompareCore:compare,
-    document:{getElementById:el,createElement:()=>({value:"",textContent:""})},
+    document:{
+      getElementById:el,
+      createElement(tag){
+        if (tag === "a") return {
+          href:"", download:"", click(){downloads.push(this.download);}, remove(){}
+        };
+        return {value:"",textContent:""};
+      },
+      body:{appendChild(){}}
+    },
+    URL:{createObjectURL:()=>("blob:report-"+blobs.length),revokeObjectURL:url=>revoked.push(url)},
+    Blob:FakeBlob,
+    setTimeout(callback){callback();},
     fetch(){fetchCount++;throw Error("Trang A/B không được gọi mạng");}
   };
   context.globalThis=context;
   vm.runInNewContext(source,context,{filename:"vision-compare.js"});
   const file=(name,data)=>({name,size:128,text:async()=>JSON.stringify(data)});
   const row=(id,truth,predicted)=>({id,reviewed:true,truth_box:truth,predicted_box:predicted});
-  return {el,file,row,fetchCount:()=>fetchCount};
+  return {el,file,row,fetchCount:()=>fetchCount,downloads,blobs,revoked};
 }
 
 test("Bấm so sánh mới tính, không gọi mạng, hiển thị A/B đúng ID",async()=>{
@@ -94,4 +112,48 @@ test("Tệp JSON quá lớn bị chặn trước khi đọc",async()=>{
   await ui.el("runComparison").emit("click");
   assert.equal(read,false);
   assert.match(ui.el("comparisonStatus").textContent,/1 MB/);
+});
+
+
+test("Báo cáo chỉ xuất sau khi so sánh thành công, không chứa tên file hoặc ảnh",async()=>{
+  const ui=fixture();
+  assert.equal(ui.el("exportComparison").disabled,true);
+  ui.el("exportComparison").emit("click");
+  assert.equal(ui.downloads.length,0);
+  ui.el("comparisonA").files=[ui.file("private-input-a.json",[ui.row("mau-1",[0,0,200,200],null)])];
+  ui.el("comparisonB").files=[ui.file("private-input-b.json",[ui.row("mau-1",[0,0,200,200],[0,0,200,200])])];
+  await ui.el("runComparison").emit("click");
+  assert.equal(ui.el("exportComparison").disabled,false);
+  ui.el("exportComparison").emit("click");
+  assert.deepEqual(ui.downloads,["minimap-a-b-comparison.json"]);
+  assert.equal(ui.blobs.length,1);
+  const exported=ui.blobs[0].parts.join("");
+  const report=JSON.parse(exported);
+  assert.equal(report.schema,"minimap-paired-comparison-v1");
+  assert.equal(report.samples,1);
+  assert.deepEqual(report.transitions,{corrected:1,regressed:0,both_match:0,both_mismatch:0});
+  assert.equal(report.per_sample[0].id,"mau-1");
+  assert.doesNotMatch(exported,/private-input|image|api.key|gemini/i);
+  assert.equal(ui.revoked.length,1);
+  assert.equal(ui.fetchCount(),0);
+  ui.el("comparisonThreshold").value="0.75";
+  ui.el("comparisonThreshold").emit("change");
+  assert.equal(ui.el("exportComparison").disabled,true);
+  ui.el("exportComparison").emit("click");
+  assert.equal(ui.blobs.length,1);
+});
+
+test("So sánh lỗi không để lại báo cáo JSON lỗi thời",async()=>{
+  const ui=fixture();
+  const first=[ui.row("mau-1",null,null)];
+  ui.el("comparisonA").files=[ui.file("a.json",first)];
+  ui.el("comparisonB").files=[ui.file("b.json",first)];
+  await ui.el("runComparison").emit("click");
+  assert.equal(ui.el("exportComparison").disabled,false);
+  ui.el("comparisonB").files=[ui.file("b.json",[ui.row("another",null,null)])];
+  await ui.el("runComparison").emit("click");
+  assert.equal(ui.el("exportComparison").disabled,true);
+  ui.el("exportComparison").emit("click");
+  assert.equal(ui.downloads.length,0);
+  assert.equal(ui.fetchCount(),0);
 });

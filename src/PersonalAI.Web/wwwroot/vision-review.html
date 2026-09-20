@@ -93,6 +93,13 @@
       </select>
       <p id="qualitySummary" role="status" aria-live="polite">Chưa có mẫu để tính độ chính xác.</p>
       <p id="qualityErrors"></p>
+      <h3 id="sampleReviewHeading">Xem lại từng mẫu trước khi xuất</h3>
+      <p>Bảng dưới đây chỉ dùng mã mẫu và tọa độ, không lưu ảnh. Nếu một nhãn bị gán nhầm, hãy xóa riêng mẫu đó rồi gán nhãn lại trên ảnh nguồn.</p>
+      <label for="sampleReviewSelect">Mã mẫu cần xem lại</label>
+      <select id="sampleReviewSelect" disabled><option value="">Chưa có mẫu</option></select>
+      <p id="sampleReviewDetail" aria-live="polite">Chưa có dữ liệu mẫu.</p>
+      <button id="removeSampleButton" type="button" disabled>Xóa riêng mẫu đã chọn</button>
+      <p id="removeSampleStatus" role="status" aria-live="polite"></p>
       <p class="warning">Các chỉ số chỉ tính trên mẫu đã được bạn xác minh trong trang này; không thay thế kiểm thử với bộ ảnh độc lập. Tọa độ đề xuất chưa phải kết quả được xác nhận.</p>
     </section>
     <p class="warning">Chỉ xuất tọa độ; không khẳng định dự đoán của AI đã chính xác. Không dùng dữ liệu này để phát cảnh báo trong trận.</p>

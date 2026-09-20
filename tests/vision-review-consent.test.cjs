@@ -15,7 +15,9 @@ function setup(fetchImplementation) {
       const listeners = new Map();
       elements.set(id, {
         id, value: "", checked: false, disabled: false, files: [], hidden: true,
-        textContent: "", style: {}, listeners,
+        textContent: "", style: {}, listeners, children: [],
+        replaceChildren() { this.children = []; this.value = ""; },
+        appendChild(child) { this.children.push(child); if (this.children.length === 1) this.value = child.value; },
         addEventListener(type, handler) { listeners.set(type, handler); },
         emit(type) { return listeners.get(type)?.({}); },
         removeAttribute() {}, focus() {}, click() {},
@@ -182,6 +184,26 @@ test("Nhập JSON offline cập nhật bảng đánh giá, không dùng API và 
   await app.element("reviewImportButton").emit("click");
   assert.match(app.element("reviewImportStatus").textContent, /không nhập/i);
   assert.match(app.element("samples").textContent, /mau-0007/);
+  assert.equal(app.calls.length, 0);
+});
+
+test("Xóa riêng mẫu bị gán nhầm không xóa những mẫu khác", async () => {
+  const app = setup(() => { throw new Error("Không gọi API khi xem hoặc xóa nhãn"); });
+  const importer = app.element("reviewImportFile");
+  app.element("reviewImportMode").value = "replace";
+  importer.files = [{name:"reviewed.json",size:512,text:async () => JSON.stringify([
+    {id:"mau-0001",reviewed:true,truth_box:null,predicted_box:null},
+    {id:"mau-0002",reviewed:true,truth_box:[100,100,400,400],predicted_box:null}
+  ])}];
+  await app.element("reviewImportButton").emit("click");
+  assert.match(app.element("sampleReviewDetail").textContent, /mau-0001/);
+  app.element("sampleReviewSelect").value = "mau-0002";
+  app.element("sampleReviewSelect").emit("change");
+  assert.match(app.element("sampleReviewDetail").textContent, /bỏ sót/);
+  app.element("removeSampleButton").emit("click");
+  assert.match(app.element("samples").textContent, /mau-0001/);
+  assert.doesNotMatch(app.element("samples").textContent, /mau-0002/);
+  assert.match(app.element("qualitySummary").textContent, /Đã kiểm tra 1 mẫu/);
   assert.equal(app.calls.length, 0);
 });
 

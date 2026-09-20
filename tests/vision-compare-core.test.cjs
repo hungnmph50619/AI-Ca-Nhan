@@ -28,6 +28,11 @@ test("Ghép cặp đúng ID, độc lập thứ tự hàng, đo hai bộ trên c
   assert.equal(result.per_sample[0].b_outcome,"true_positive");
   assert.equal(result.per_sample[0].a_iou,null);
   assert.equal(result.per_sample[0].b_iou,1);
+  assert.deepEqual(result.transitions,{
+    corrected:1, regressed:1, both_match:1, both_mismatch:0
+  });
+  assert.deepEqual(result.per_sample.map(item=>item.transition),
+    ["corrected","both_match","regressed"]);
 });
 
 test("Tệp giống hệt nhau không có dự đoán thay đổi", () => {
@@ -35,6 +40,9 @@ test("Tệp giống hệt nhau không có dự đoán thay đổi", () => {
   const result = compare.comparePaired(items, items);
   assert.equal(result.changed_predictions,0);
   assert.deepEqual(result.a,result.b);
+  assert.deepEqual(result.transitions,{
+    corrected:0,regressed:0,both_match:1,both_mismatch:0
+  });
   assert.equal(result.a.precision,null);
 });
 
@@ -60,4 +68,17 @@ test("Ngưỡng IoU phải hợp lệ và ảnh hưởng phân loại như công
   for(const bad of [0,-1,1.1,NaN,Infinity,"0.5"]){
     assert.throws(()=>compare.comparePaired(a,a,bad));
   }
+});
+
+
+test("Hai dự đoán khác nhau nhưng cùng sai không bị tính là khớp nhãn", () => {
+  const truth=[100,100,400,400];
+  const a=[row("x",truth,[0,0,50,50])];
+  const b=[row("x",truth,[600,600,900,900])];
+  const result=compare.comparePaired(a,b);
+  assert.deepEqual(result.transitions,{
+    corrected:0,regressed:0,both_match:0,both_mismatch:1
+  });
+  assert.equal(result.changed_predictions,1);
+  assert.equal(result.per_sample[0].transition,"both_mismatch");
 });

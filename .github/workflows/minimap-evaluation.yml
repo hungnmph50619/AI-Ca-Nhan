@@ -16,6 +16,7 @@ on:
       - 'feature/v2.3.11-minimap-python-browser-parity'
       - 'feature/v2.3.12-minimap-overlay-review'
       - 'feature/v2.3.13-minimap-overlay-visibility'
+      - 'feature/v2.3.14-minimap-threshold-sensitivity'
   pull_request:
 
 jobs:
@@ -71,3 +72,5 @@ jobs:
           grep -Fq 'overlayShowTruth' src/PersonalAI.Web/wwwroot/vision-compare.html
           grep -Fq 'overlayShowA' src/PersonalAI.Web/wwwroot/vision-compare.js
           grep -Fq 'overlayShowB' src/PersonalAI.Web/wwwroot/vision-compare.js
+          grep -Fq 'comparisonSensitivity' src/PersonalAI.Web/wwwroot/vision-compare.html
+          grep -Fq 'threshold_sensitivity' src/PersonalAI.Web/wwwroot/vision-compare.js

@@ -58,4 +58,19 @@ jobs:
             -H 'Content-Length: 3000000' \
             http://127.0.0.1:5079/api/vision/minimap/analyze)
           test "$oversized" = "413"
+          curl -fsS http://127.0.0.1:5079/api/vision/minimap/locate/status |
+            jq -e '.mode == "saved-training-image-opt-in" and .sendsImageToProvider == true and .automaticScreenshot == false'
+          locate_no_consent=$(curl -s -o /dev/null -w '%{http_code}' -X POST \
+            -H 'X-Xerath-Vision: 1' -F 'confirmed=false' \
+            -F 'image=@src/PersonalAI.Web/wwwroot/vision.js;type=image/png' \
+            http://127.0.0.1:5079/api/vision/minimap/locate)
+          test "$locate_no_consent" = "400"
+          locate_no_header=$(curl -s -o /dev/null -w '%{http_code}' -X POST \
+            -F 'confirmed=true' -F 'image=@src/PersonalAI.Web/wwwroot/vision.js;type=image/png' \
+            http://127.0.0.1:5079/api/vision/minimap/locate)
+          test "$locate_no_header" = "404"
+          locate_wrong_origin=$(curl -s -o /dev/null -w '%{http_code}' \
+            -H 'Origin: https://invalid.example' \
+            http://127.0.0.1:5079/api/vision/minimap/locate/status)
+          test "$locate_wrong_origin" = "404"
           echo 'Minimap vision lab build, script, status, origin, consent and size checks passed.'

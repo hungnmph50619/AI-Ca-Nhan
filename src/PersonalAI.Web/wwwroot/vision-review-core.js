@@ -55,7 +55,57 @@
     };
   }
 
-  const api = { box, parsePrediction, normalizeDrag, scaledPoint, record };
+  function overlapScore(truth, predicted) {
+    const left = Math.max(truth[0], predicted[0]);
+    const top = Math.max(truth[1], predicted[1]);
+    const right = Math.min(truth[2], predicted[2]);
+    const bottom = Math.min(truth[3], predicted[3]);
+    const intersection = Math.max(0, right - left) * Math.max(0, bottom - top);
+    const truthArea = (truth[2] - truth[0]) * (truth[3] - truth[1]);
+    const predictedArea = (predicted[2] - predicted[0]) * (predicted[3] - predicted[1]);
+    return intersection / (truthArea + predictedArea - intersection);
+  }
+
+  function evaluateRecords(items, threshold = 0.5) {
+    if (!Array.isArray(items) || items.length === 0) {
+      throw new Error("Chưa có mẫu gán nhãn để đánh giá.");
+    }
+    if (typeof threshold !== "number" || !Number.isFinite(threshold) ||
+        threshold <= 0 || threshold > 1) {
+      throw new Error("Ngưỡng IoU phải lớn hơn 0 và không vượt quá 1.");
+    }
+    const seen = new Set();
+    let tp = 0, fp = 0, fn = 0, tn = 0;
+    const details = [];
+    for (const item of items) {
+      if (!item || typeof item !== "object" || Array.isArray(item) ||
+          typeof item.id !== "string" || !item.id.trim() || seen.has(item.id) ||
+          item.reviewed !== true ||
+          !Object.prototype.hasOwnProperty.call(item, "truth_box") ||
+          !Object.prototype.hasOwnProperty.call(item, "predicted_box")) {
+        throw new Error("Mẫu phải có mã riêng, hai khung và nhãn đã xác minh.");
+      }
+      seen.add(item.id);
+      const truth = item.truth_box === null ? null : box(item.truth_box);
+      const predicted = item.predicted_box === null ? null : box(item.predicted_box);
+      const iou = truth && predicted ? overlapScore(truth, predicted) : null;
+      let outcome;
+      if (!truth && !predicted) { tn++; outcome = "true_negative"; }
+      else if (truth && predicted && iou >= threshold) { tp++; outcome = "true_positive"; }
+      else if (!truth) { fp++; outcome = "false_positive"; }
+      else if (!predicted) { fn++; outcome = "false_negative"; }
+      else { fp++; fn++; outcome = "mismatched_box"; }
+      details.push({ id: item.id, iou, outcome });
+    }
+    const precision = tp + fp ? tp / (tp + fp) : null;
+    const recall = tp + fn ? tp / (tp + fn) : null;
+    const f1 = precision !== null && recall !== null && precision + recall
+      ? 2 * precision * recall / (precision + recall) : null;
+    return { samples: items.length, threshold, tp, fp, fn, tn, precision, recall, f1, details };
+  }
+
+  const api = { box, parsePrediction, normalizeDrag, scaledPoint, record,
+    overlapScore, evaluateRecords };
   root.MinimapReviewCore = api;
   if (typeof module !== "undefined" && module.exports) module.exports = api;
 })(typeof globalThis !== "undefined" ? globalThis : this);

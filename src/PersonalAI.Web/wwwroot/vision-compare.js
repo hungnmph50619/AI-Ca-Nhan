@@ -9,6 +9,8 @@
   const status = el("comparisonStatus");
   const summary = el("comparisonSummary");
   const metrics = el("comparisonMetrics");
+  const transitions = el("comparisonTransitions");
+  const filterSelect = el("comparisonFilter");
   const sampleSelect = el("comparisonSample");
   const details = el("comparisonDetails");
   let busy = false;
@@ -19,6 +21,9 @@
     lastResult = null;
     summary.textContent = "Chưa có kết quả cho lựa chọn hiện tại.";
     metrics.textContent = "";
+    transitions.textContent = "Chưa có số liệu chuyển trạng thái.";
+    filterSelect.value = "all";
+    filterSelect.disabled = true;
     details.textContent = "Chưa có mẫu để xem.";
     sampleSelect.replaceChildren();
     sampleSelect.disabled = true;
@@ -51,6 +56,33 @@
       ". B: " + item.b_outcome + " (IoU " + iou(item.b_iou) + ").";
   }
   sampleSelect.addEventListener("change", displaySample);
+  function refreshFilteredSamples() {
+    const selected = sampleSelect.value;
+    sampleSelect.replaceChildren();
+    if (!lastResult) {
+      sampleSelect.disabled = true;
+      details.textContent = "Chưa có mẫu để xem.";
+      return;
+    }
+    const filter = filterSelect.value;
+    const rows = lastResult.per_sample.filter(item =>
+      filter === "all" ||
+      (filter === "changed" ? item.prediction_changed : item.transition === filter));
+    for (const item of rows) {
+      const option = document.createElement("option");
+      option.value = item.id;
+      option.textContent = item.id + (item.prediction_changed ? " · khác dự đoán" : "");
+      sampleSelect.appendChild(option);
+    }
+    sampleSelect.disabled = rows.length === 0;
+    if (!rows.length) {
+      details.textContent = "Không có mẫu nào thuộc nhóm đã chọn.";
+      return;
+    }
+    sampleSelect.value = rows.some(item => item.id === selected) ? selected : rows[0].id;
+    displaySample();
+  }
+  filterSelect.addEventListener("change", refreshFilteredSamples);
   button.addEventListener("click", async () => {
     if (busy) return;
     const a = inputA.files && inputA.files[0];
@@ -89,15 +121,13 @@
         "; recall: " + percent(report.recall) +
         "; F1: " + percent(report.f1) + ". ";
       metrics.textContent = describe("Bộ A", result.a) + describe("Bộ B", result.b);
-      for (const item of result.per_sample) {
-        const option = document.createElement("option");
-        option.value = item.id;
-        option.textContent = item.id + (item.prediction_changed ? " · khác dự đoán" : "");
-        sampleSelect.appendChild(option);
-      }
-      sampleSelect.value = result.per_sample[0].id;
-      sampleSelect.disabled = false;
-      displaySample();
+      transitions.textContent =
+        "A sai → B khớp nhãn chuẩn: " + result.transitions.corrected +
+        "; A khớp → B sai: " + result.transitions.regressed +
+        "; cả hai khớp: " + result.transitions.both_match +
+        "; cả hai sai: " + result.transitions.both_mismatch + ".";
+      filterSelect.disabled = false;
+      refreshFilteredSamples();
       status.textContent = "Đã so sánh cục bộ. Không có tệp nào được gửi lên máy chủ.";
     } catch (error) {
       clearResults();

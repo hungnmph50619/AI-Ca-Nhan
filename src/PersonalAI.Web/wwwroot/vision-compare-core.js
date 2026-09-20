@@ -46,6 +46,11 @@
         : "both_mismatch";
       return {
         id,
+        // Dùng riêng trên giao diện để vẽ sơ đồ tọa độ; báo cáo tải về
+        // vẫn chỉ chứa thống kê qua danh sách trường cho phép.
+        truth_box: indexA.get(id).truth_box,
+        a_box: aBox,
+        b_box: bBox,
         transition,
         prediction_changed: JSON.stringify(aBox) !== JSON.stringify(bBox),
         a_outcome: entry.outcome,

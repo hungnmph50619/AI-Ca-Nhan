@@ -15,6 +15,7 @@ on:
       - 'feature/v2.3.10-minimap-comparison-report'
       - 'feature/v2.3.11-minimap-python-browser-parity'
       - 'feature/v2.3.12-minimap-overlay-review'
+      - 'feature/v2.3.13-minimap-overlay-visibility'
   pull_request:
 
 jobs:
@@ -67,3 +68,6 @@ jobs:
           grep -Fq 'minimap-paired-comparison-v1' src/PersonalAI.Web/wwwroot/vision-compare.js
           grep -Fq 'comparisonOverlay' src/PersonalAI.Web/wwwroot/vision-compare.html
           grep -Fq 'drawOverlay' src/PersonalAI.Web/wwwroot/vision-compare.js
+          grep -Fq 'overlayShowTruth' src/PersonalAI.Web/wwwroot/vision-compare.html
+          grep -Fq 'overlayShowA' src/PersonalAI.Web/wwwroot/vision-compare.js
+          grep -Fq 'overlayShowB' src/PersonalAI.Web/wwwroot/vision-compare.js

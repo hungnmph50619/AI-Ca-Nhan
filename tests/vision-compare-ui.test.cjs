@@ -15,7 +15,7 @@ function fixture() {
     if (!elements.has(id)) {
       const listeners = new Map();
       elements.set(id, {
-        value:"", files:[], disabled:false, textContent:"", children:[],
+        value:"", files:[], checked:false, disabled:false, textContent:"", children:[],
         addEventListener(type, handler){listeners.set(type,handler);},
         emit(type){return listeners.get(type)?.({});},
         replaceChildren(){this.children=[];this.value="";},
@@ -25,6 +25,8 @@ function fixture() {
     return elements.get(id);
   }
   el("comparisonThreshold").value="0.5";
+  el("overlayVisibility").disabled=true;
+  for (const id of ["overlayShowTruth","overlayShowA","overlayShowB"]) el(id).checked=true;
   const strokes=[];
   const canvas=el("comparisonOverlay");
   canvas.width=500;
@@ -211,4 +213,41 @@ test("Sơ đồ xử lý nhãn âm không vẽ khung không tồn tại",async()
   assert.match(ui.el("overlayText").textContent,/Nhãn chuẩn: không có khung/);
   assert.match(ui.el("overlayText").textContent,/Dự đoán A: không có khung/);
   assert.equal(ui.fetchCount(),0);
+});
+
+
+test("Bật tắt riêng nhãn chuẩn, A, B chỉ vẽ lớp được chọn và không làm đổi báo cáo",async()=>{
+  const ui=fixture();
+  const truth=[100,200,500,600], a=[110,205,505,605], b=[300,400,800,900];
+  ui.el("comparisonA").files=[ui.file("a.json",[ui.row("map-1",truth,a)])];
+  ui.el("comparisonB").files=[ui.file("b.json",[ui.row("map-1",truth,b)])];
+  assert.equal(ui.el("overlayVisibility").disabled,true);
+  await ui.el("runComparison").emit("click");
+  assert.equal(ui.el("overlayVisibility").disabled,false);
+  assert.equal(ui.strokes.length,4); // biên sơ đồ + ba khung
+  ui.el("overlayShowA").checked=false;
+  ui.el("overlayShowA").emit("change");
+  assert.equal(ui.strokes.length,7); // biên mới + hai khung còn hiện
+  assert.match(ui.el("overlayText").textContent,/Dự đoán A: 110, 205, 505, 605 \(đang ẩn\)/);
+  ui.el("overlayShowTruth").checked=false;
+  ui.el("overlayShowTruth").emit("change");
+  assert.equal(ui.strokes.length,9); // biên mới + chỉ B
+  ui.el("overlayShowB").checked=false;
+  ui.el("overlayShowB").emit("change");
+  assert.equal(ui.strokes.length,10); // chỉ còn viền giới hạn sơ đồ
+  assert.equal(ui.el("comparisonOverlay").hidden,false);
+  assert.match(ui.el("overlayText").textContent,/Nhãn chuẩn: 100, 200, 500, 600 \(đang ẩn\)/);
+  ui.el("exportComparison").emit("click");
+  const report=JSON.parse(ui.blobs[0].parts.join(""));
+  assert.equal(report.samples,1);
+  assert.deepEqual(Object.keys(report.per_sample[0]).sort(),[
+    "a_iou","a_outcome","b_iou","b_outcome","id","prediction_changed","transition"
+  ]);
+  assert.equal(ui.fetchCount(),0);
+  ui.el("comparisonThreshold").emit("change");
+  assert.equal(ui.el("overlayVisibility").disabled,true);
+  assert.equal(ui.el("comparisonOverlay").hidden,true);
+  ui.el("overlayShowA").checked=true;
+  ui.el("overlayShowA").emit("change");
+  assert.equal(ui.strokes.length,10); // không vẽ lại khi báo cáo hết hiệu lực
 });

@@ -17,6 +17,10 @@
   const details = el("comparisonDetails");
   const overlay = el("comparisonOverlay");
   const overlayText = el("overlayText");
+  const visibility = el("overlayVisibility");
+  const showTruth = el("overlayShowTruth");
+  const showA = el("overlayShowA");
+  const showB = el("overlayShowB");
   const overlayContext = overlay.getContext("2d");
   let busy = false;
   let selectionVersion = 0;
@@ -34,6 +38,7 @@
     details.textContent = "Chưa có mẫu để xem.";
     overlay.hidden = true;
     overlayText.textContent = "Chưa có sơ đồ tọa độ.";
+    visibility.disabled = true;
     sampleSelect.replaceChildren();
     sampleSelect.disabled = true;
   }
@@ -71,12 +76,12 @@
     ctx.strokeRect(padding, padding, span, span);
     ctx.restore();
     const segments = [
-      ["Nhãn chuẩn", item.truth_box, "#5df2cf", []],
-      ["Dự đoán A", item.a_box, "#f7c36b", [9, 4]],
-      ["Dự đoán B", item.b_box, "#f2a2df", [2, 5]]
+      ["Nhãn chuẩn", item.truth_box, "#5df2cf", [], showTruth.checked],
+      ["Dự đoán A", item.a_box, "#f7c36b", [9, 4], showA.checked],
+      ["Dự đoán B", item.b_box, "#f2a2df", [2, 5], showB.checked]
     ];
-    for (const [, coords, color, dashes] of segments) {
-      if (coords === null) continue;
+    for (const [, coords, color, dashes, enabled] of segments) {
+      if (!enabled || coords === null) continue;
       ctx.save();
       ctx.strokeStyle = color;
       ctx.lineWidth = 3;
@@ -90,8 +95,9 @@
       ctx.restore();
     }
     overlayText.textContent = "Sơ đồ của mẫu " + item.id + ". " +
-      segments.map(([name, box]) =>
-        name + ": " + (box === null ? "không có khung" : box.join(", "))).join(". ") +
+      segments.map(([name, box, , , enabled]) =>
+        name + ": " + (box === null ? "không có khung" : box.join(", ")) +
+        (enabled ? " (đang hiện)" : " (đang ẩn)")).join(". ") +
       ". Tọa độ chuẩn hóa 0–1000; sơ đồ không hiển thị ảnh gốc.";
   }
   function displaySample() {
@@ -111,6 +117,11 @@
     drawOverlay(item);
   }
   sampleSelect.addEventListener("change", displaySample);
+  for (const control of [showTruth, showA, showB]) {
+    control.addEventListener("change", () => {
+      if (lastResult && !sampleSelect.disabled) displaySample();
+    });
+  }
   function refreshFilteredSamples() {
     const selected = sampleSelect.value;
     sampleSelect.replaceChildren();
@@ -229,6 +240,7 @@
         "; cả hai khớp: " + result.transitions.both_match +
         "; cả hai sai: " + result.transitions.both_mismatch + ".";
       filterSelect.disabled = false;
+      visibility.disabled = false;
       refreshFilteredSamples();
       status.textContent = "Đã so sánh cục bộ. Không có tệp nào được gửi lên máy chủ.";
     } catch (error) {

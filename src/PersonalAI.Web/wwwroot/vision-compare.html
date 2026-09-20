@@ -19,6 +19,9 @@
     #comparisonOverlay{display:block;box-sizing:border-box;max-width:100%;height:auto;
       background:#0b1521;border:2px solid #748ca5;margin:12px 0}
     #comparisonOverlay[hidden]{display:none}
+    #overlayVisibility{border:1px solid #748ca5;border-radius:8px;margin:12px 0}
+    #overlayVisibility label{display:inline-flex;align-items:center;gap:6px;margin:8px 18px 8px 0}
+    #overlayVisibility:disabled{opacity:.65}
   </style>
   <script src="vision-review-core.js" defer></script>
   <script src="vision-compare-core.js" defer></script>
@@ -72,6 +75,12 @@
       Viền xanh: nhãn chuẩn; viền vàng đứt: dự đoán A; viền hồng chấm: dự đoán B.
       Nếu không có khung, dòng trạng thái sẽ ghi rõ. Mỗi khung được vẽ độc lập;
       viền có thể chồng lên nhau.</p>
+    <fieldset id="overlayVisibility" disabled aria-label="Chọn các lớp khung tọa độ cần xem">
+      <legend>Hiện hoặc ẩn từng lớp khung trên sơ đồ</legend>
+      <label><input type="checkbox" id="overlayShowTruth" checked> Nhãn chuẩn (xanh)</label>
+      <label><input type="checkbox" id="overlayShowA" checked> Dự đoán A (vàng)</label>
+      <label><input type="checkbox" id="overlayShowB" checked> Dự đoán B (hồng)</label>
+    </fieldset>
     <canvas id="comparisonOverlay" width="500" height="500" hidden
       role="img" aria-label="Sơ đồ tọa độ khung minimap của mẫu đã chọn; mô tả bằng chữ ở dưới."
       aria-describedby="overlayText"></canvas>

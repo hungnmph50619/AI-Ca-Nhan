@@ -66,7 +66,7 @@
       // Kiểm tra định dạng và dung lượng trước khi đọc một byte nào.
       if (!a || !b) throw new Error("Hãy chọn cả bộ A và B.");
       for (const [file, label] of [[a, "A"], [b, "B"]]) {
-        if (!/\\.json$/i.test(file.name) || file.size < 2 || file.size > 1024 * 1024) {
+        if (!/\.json$/i.test(file.name) || file.size < 2 || file.size > 1024 * 1024) {
           throw new Error("Bộ " + label + ": chọn tệp .json từ 2 byte đến 1 MB.");
         }
       }

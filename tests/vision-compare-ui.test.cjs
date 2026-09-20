@@ -251,3 +251,51 @@ test("Bật tắt riêng nhãn chuẩn, A, B chỉ vẽ lớp được chọn v�
   ui.el("overlayShowA").emit("change");
   assert.equal(ui.strokes.length,10); // không vẽ lại khi báo cáo hết hiệu lực
 });
+
+
+test("Cùng hai bộ dự đoán có thể thay đổi phân loại giữa IoU 0.50, 0.75 và 0.90",async()=>{
+  const ui=fixture();
+  const truth=[100,100,300,300];
+  const shifted=[120,100,320,300]; // IoU 180/220 = 0.818...
+  ui.el("comparisonA").files=[ui.file("private-A.json",[ui.row("mau-1",truth,shifted)])];
+  ui.el("comparisonB").files=[ui.file("private-B.json",[ui.row("mau-1",truth,truth)])];
+  assert.match(ui.el("comparisonSensitivity").textContent,/Chưa có kết quả/);
+  await ui.el("runComparison").emit("click");
+  const sensitivity=ui.el("comparisonSensitivity").textContent;
+  assert.match(sensitivity,/IoU 0\.50 — A: TP 1, FP 0, FN 0, F1 100\.0% \| B: TP 1/);
+  assert.match(sensitivity,/IoU 0\.75 — A: TP 1, FP 0, FN 0, F1 100\.0% \| B: TP 1/);
+  assert.match(sensitivity,/IoU 0\.90 — A: TP 0, FP 1, FN 1, F1 0\.0% \| B: TP 1/);
+  assert.match(sensitivity,/IoU 0\.90.*A sai\/B khớp 1/);
+  assert.equal(ui.fetchCount(),0);
+  assert.match(ui.el("comparisonSummary").textContent,/Ngưỡng IoU: 0\.50/);
+  ui.el("exportComparison").emit("click");
+  const exported=ui.blobs[0].parts.join("");
+  const report=JSON.parse(exported);
+  assert.deepEqual(report.threshold_sensitivity.map(item=>item.minimum_iou),[0.5,0.75,0.9]);
+  assert.deepEqual(report.threshold_sensitivity.map(item=>item.a.tp),[1,1,0]);
+  assert.deepEqual(report.threshold_sensitivity.map(item=>item.b.tp),[1,1,1]);
+  assert.equal(report.threshold_sensitivity[2].transitions.corrected,1);
+  assert.doesNotMatch(exported,/truth_box|a_box|b_box|private-A|private-B/);
+  assert.equal(ui.fetchCount(),0);
+  ui.el("comparisonThreshold").value="0.9";
+  ui.el("comparisonThreshold").emit("change");
+  assert.match(ui.el("comparisonSensitivity").textContent,/Chưa có kết quả/);
+  assert.equal(ui.el("exportComparison").disabled,true);
+  assert.equal(ui.el("comparisonOverlay").hidden,true);
+  await ui.el("runComparison").emit("click");
+  assert.match(ui.el("comparisonSummary").textContent,/Ngưỡng IoU: 0\.90/);
+  assert.equal(ui.el("comparisonSensitivity").textContent,sensitivity);
+});
+
+test("Hai bộ lệch nhãn hoặc đọc dở không tạo bảng nhạy ngưỡng và báo cáo",async()=>{
+  const ui=fixture();
+  const base=[ui.row("one",[100,100,300,300],[100,100,300,300])];
+  ui.el("comparisonA").files=[ui.file("a.json",base)];
+  ui.el("comparisonB").files=[ui.file("b.json",[ui.row("one",[101,100,300,300],null)])];
+  await ui.el("runComparison").emit("click");
+  assert.match(ui.el("comparisonStatus").textContent,/Không thể so sánh/);
+  assert.match(ui.el("comparisonSensitivity").textContent,/Chưa có kết quả/);
+  assert.equal(ui.el("exportComparison").disabled,true);
+  assert.equal(ui.blobs.length,0);
+  assert.equal(ui.fetchCount(),0);
+});

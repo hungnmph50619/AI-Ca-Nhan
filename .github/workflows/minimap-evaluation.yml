@@ -26,6 +26,7 @@ jobs:
           node --check src/PersonalAI.Web/wwwroot/vision-review-core.js
           node --check src/PersonalAI.Web/wwwroot/vision-review.js
           node --test tests/vision-review-core.test.cjs
+          node --test tests/vision-review-consent.test.cjs
       - name: Kiểm tra trang gán nhãn được liên kết từ Vision Lab
         run: |
           grep -Fq 'vision-review.html' src/PersonalAI.Web/wwwroot/vision.html

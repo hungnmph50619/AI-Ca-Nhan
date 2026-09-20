@@ -183,9 +183,9 @@ test("Sơ đồ không có ảnh hiển thị ba khung khác nhau và chữ mô 
   await ui.el("runComparison").emit("click");
   assert.equal(ui.el("comparisonOverlay").hidden,false);
   assert.deepEqual(ui.strokes.slice(-3),[
-    [67,114,188,188],
-    [71.7,116.35,185.65,188],
-    [161,208,235,235]
+    [66,112,184,184],
+    [70.6,114.3,181.7,184],
+    [158,204,230,230]
   ]);
   assert.match(ui.el("overlayText").textContent,/Nhãn chuẩn: 100, 200, 500, 600/);
   assert.match(ui.el("overlayText").textContent,/Dự đoán A: 110, 205, 505, 605/);

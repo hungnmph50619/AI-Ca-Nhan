@@ -207,7 +207,8 @@
       const status = await statusResponse.json();
       if (!status.available) throw new Error("Hãy chọn Gemini hỗ trợ ảnh và lưu khóa trong Cài đặt AI.");
       if (version !== loadVersion || image !== selectedImage ||
-          (fileInput.files && fileInput.files[0]) !== file) return;
+          (fileInput.files && fileInput.files[0]) !== file ||
+          !locateConsent.checked) return;
 
       const form = new FormData();
       form.append("image", file, file.name);

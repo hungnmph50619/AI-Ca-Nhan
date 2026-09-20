@@ -264,7 +264,7 @@ test("Cùng hai bộ dự đoán có thể thay đổi phân loại giữa IoU 0
   const sensitivity=ui.el("comparisonSensitivity").textContent;
   assert.match(sensitivity,/IoU 0\.50 — A: TP 1, FP 0, FN 0, F1 100\.0% \| B: TP 1/);
   assert.match(sensitivity,/IoU 0\.75 — A: TP 1, FP 0, FN 0, F1 100\.0% \| B: TP 1/);
-  assert.match(sensitivity,/IoU 0\.90 — A: TP 0, FP 1, FN 1, F1 0\.0% \| B: TP 1/);
+  assert.match(sensitivity,/IoU 0\.90 — A: TP 0, FP 1, FN 1, F1 không xác định \| B: TP 1/);
   assert.match(sensitivity,/IoU 0\.90.*A sai\/B khớp 1/);
   assert.equal(ui.fetchCount(),0);
   assert.match(ui.el("comparisonSummary").textContent,/Ngưỡng IoU: 0\.50/);

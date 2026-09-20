@@ -13,6 +13,7 @@ on:
       - 'feature/v2.3.8-minimap-compare-ui'
       - 'feature/v2.3.9-minimap-paired-diagnostics'
       - 'feature/v2.3.10-minimap-comparison-report'
+      - 'feature/v2.3.11-minimap-python-browser-parity'
   pull_request:
 
 jobs:
@@ -38,6 +39,7 @@ jobs:
           node --check src/PersonalAI.Web/wwwroot/vision-compare.js
           node --test tests/vision-compare-core.test.cjs
           node --test tests/vision-compare-ui.test.cjs
+          node --test tests/vision-compare-parity.test.cjs
       - name: Kiểm tra trang gán nhãn được liên kết từ Vision Lab
         run: |
           grep -Fq 'vision-review.html' src/PersonalAI.Web/wwwroot/vision.html

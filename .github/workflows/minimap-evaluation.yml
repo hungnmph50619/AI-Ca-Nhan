@@ -10,6 +10,7 @@ on:
       - 'feature/v2.3.5-minimap-sample-review'
       - 'feature/v2.3.6-minimap-async-safety'
       - 'feature/v2.3.7-minimap-evaluation-compare'
+      - 'feature/v2.3.8-minimap-compare-ui'
   pull_request:
 
 jobs:
@@ -31,6 +32,10 @@ jobs:
           node --check src/PersonalAI.Web/wwwroot/vision-review.js
           node --test tests/vision-review-core.test.cjs
           node --test tests/vision-review-consent.test.cjs
+          node --check src/PersonalAI.Web/wwwroot/vision-compare-core.js
+          node --check src/PersonalAI.Web/wwwroot/vision-compare.js
+          node --test tests/vision-compare-core.test.cjs
+          node --test tests/vision-compare-ui.test.cjs
       - name: Kiểm tra trang gán nhãn được liên kết từ Vision Lab
         run: |
           grep -Fq 'vision-review.html' src/PersonalAI.Web/wwwroot/vision.html
@@ -48,3 +53,6 @@ jobs:
           grep -Fq 'removeSampleButton' src/PersonalAI.Web/wwwroot/vision-review.js
           grep -Fq 'datasetVersion' src/PersonalAI.Web/wwwroot/vision-review.js
           grep -Fq 'approvedConsentVersion' src/PersonalAI.Web/wwwroot/vision-review.js
+          grep -Fq 'vision-compare.html' src/PersonalAI.Web/wwwroot/vision-review.html
+          grep -Fq 'vision-compare-core.js' src/PersonalAI.Web/wwwroot/vision-compare.html
+          grep -Fq 'vision-compare.js' src/PersonalAI.Web/wwwroot/vision-compare.html

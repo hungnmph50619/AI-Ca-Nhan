@@ -25,6 +25,16 @@ function fixture() {
     return elements.get(id);
   }
   el("comparisonThreshold").value="0.5";
+  const strokes=[];
+  const canvas=el("comparisonOverlay");
+  canvas.width=500;
+  canvas.height=500;
+  canvas.hidden=true;
+  canvas.getContext=()=>({
+    clearRect(){},fillRect(){},save(){},restore(){},setLineDash(){},
+    strokeRect(x,y,width,height){strokes.push([x,y,width,height]);},
+    fillStyle:"",strokeStyle:"",lineWidth:1
+  });
   let fetchCount=0;
   const downloads=[];
   const blobs=[];
@@ -53,7 +63,7 @@ function fixture() {
   vm.runInNewContext(source,context,{filename:"vision-compare.js"});
   const file=(name,data)=>({name,size:128,text:async()=>JSON.stringify(data)});
   const row=(id,truth,predicted)=>({id,reviewed:true,truth_box:truth,predicted_box:predicted});
-  return {el,file,row,fetchCount:()=>fetchCount,downloads,blobs,revoked};
+  return {el,file,row,fetchCount:()=>fetchCount,downloads,blobs,revoked,strokes};
 }
 
 test("Bấm so sánh mới tính, không gọi mạng, hiển thị A/B đúng ID",async()=>{
@@ -133,6 +143,11 @@ test("Báo cáo chỉ xuất sau khi so sánh thành công, không chứa tên f
   assert.equal(report.samples,1);
   assert.deepEqual(report.transitions,{corrected:1,regressed:0,both_match:0,both_mismatch:0});
   assert.equal(report.per_sample[0].id,"mau-1");
+  assert.deepEqual(Object.keys(report.per_sample[0]).sort(),[
+    "a_iou","a_outcome","b_iou","b_outcome","id",
+    "prediction_changed","transition"
+  ]);
+  assert.doesNotMatch(exported,/truth_box|a_box|b_box|0,0,200,200/);
   assert.doesNotMatch(exported,/private-input|image|api.key|gemini/i);
   assert.equal(ui.revoked.length,1);
   assert.equal(ui.fetchCount(),0);
@@ -155,5 +170,43 @@ test("So sánh lỗi không để lại báo cáo JSON lỗi thời",async()=>{
   assert.equal(ui.el("exportComparison").disabled,true);
   ui.el("exportComparison").emit("click");
   assert.equal(ui.downloads.length,0);
+  assert.equal(ui.fetchCount(),0);
+});
+
+
+test("Sơ đồ không có ảnh hiển thị ba khung khác nhau và chữ mô tả",async()=>{
+  const ui=fixture();
+  const truth=[100,200,500,600], a=[110,205,505,605], b=[300,400,800,900];
+  ui.el("comparisonA").files=[ui.file("a.json",[ui.row("map-1",truth,a)])];
+  ui.el("comparisonB").files=[ui.file("b.json",[ui.row("map-1",truth,b)])];
+  assert.equal(ui.el("comparisonOverlay").hidden,true);
+  await ui.el("runComparison").emit("click");
+  assert.equal(ui.el("comparisonOverlay").hidden,false);
+  assert.deepEqual(ui.strokes.slice(-3),[
+    [67,114,188,188],
+    [71.7,116.35,185.65,188],
+    [161,208,235,235]
+  ]);
+  assert.match(ui.el("overlayText").textContent,/Nhãn chuẩn: 100, 200, 500, 600/);
+  assert.match(ui.el("overlayText").textContent,/Dự đoán A: 110, 205, 505, 605/);
+  assert.match(ui.el("overlayText").textContent,/Dự đoán B: 300, 400, 800, 900/);
+  assert.equal(ui.fetchCount(),0);
+  ui.el("comparisonFilter").value="regressed";
+  ui.el("comparisonFilter").emit("change");
+  assert.equal(ui.el("comparisonOverlay").hidden,true);
+  ui.el("comparisonA").emit("change");
+  assert.equal(ui.el("comparisonOverlay").hidden,true);
+  assert.match(ui.el("overlayText").textContent,/Chưa có sơ đồ/);
+});
+
+test("Sơ đồ xử lý nhãn âm không vẽ khung không tồn tại",async()=>{
+  const ui=fixture();
+  ui.el("comparisonA").files=[ui.file("a.json",[ui.row("empty",null,null)])];
+  ui.el("comparisonB").files=[ui.file("b.json",[ui.row("empty",null,[100,100,400,400])])];
+  await ui.el("runComparison").emit("click");
+  assert.equal(ui.el("comparisonOverlay").hidden,false);
+  assert.equal(ui.strokes.length,2); // đường biên và khung của B
+  assert.match(ui.el("overlayText").textContent,/Nhãn chuẩn: không có khung/);
+  assert.match(ui.el("overlayText").textContent,/Dự đoán A: không có khung/);
   assert.equal(ui.fetchCount(),0);
 });

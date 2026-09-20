@@ -26,6 +26,10 @@ test("Ghép cặp đúng ID, độc lập thứ tự hàng, đo hai bộ trên c
   assert.deepEqual(result.per_sample.map(row => row.id), ["one","three","two"]);
   assert.equal(result.per_sample[0].a_outcome,"false_negative");
   assert.equal(result.per_sample[0].b_outcome,"true_positive");
+  assert.deepEqual(result.per_sample[0].truth_box,[0,0,200,200]);
+  assert.equal(result.per_sample[0].a_box,null);
+  assert.deepEqual(result.per_sample[0].b_box,[0,0,200,200]);
+  assert.equal(result.per_sample[1].truth_box[0],100);
   assert.equal(result.per_sample[0].a_iou,null);
   assert.equal(result.per_sample[0].b_iou,1);
   assert.deepEqual(result.transitions,{

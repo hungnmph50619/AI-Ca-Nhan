@@ -16,3 +16,16 @@ jobs:
           python-version: '3.11'
       - name: Kiểm thử bộ đánh giá tọa độ đã xác minh
         run: python -m unittest discover -s tests -p test_minimap_eval.py -v
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Kiểm thử mã xử lý gán nhãn ngoại tuyến
+        run: |
+          node --check src/PersonalAI.Web/wwwroot/vision-review-core.js
+          node --check src/PersonalAI.Web/wwwroot/vision-review.js
+          node --test tests/vision-review-core.test.cjs
+      - name: Kiểm tra trang gán nhãn được liên kết từ Vision Lab
+        run: |
+          grep -Fq 'vision-review.html' src/PersonalAI.Web/wwwroot/vision.html
+          grep -Fq 'vision-review-core.js' src/PersonalAI.Web/wwwroot/vision-review.html
+          grep -Fq 'vision-review.js' src/PersonalAI.Web/wwwroot/vision-review.html

@@ -68,6 +68,18 @@
     <p id="samples" aria-live="polite">Chưa có mẫu nào.</p>
     <button id="exportDataset" type="button" disabled>Tải JSON tọa độ đã xác minh</button>
     <button id="resetDataset" type="button" disabled>Xóa danh sách mẫu trong trang</button>
+    <section aria-labelledby="qualityHeading">
+      <h3 id="qualityHeading">Tổng hợp kết quả trên mẫu đã xác minh</h3>
+      <label for="qualityThreshold">Ngưỡng IoU để tính khung khớp (mặc định 0,50)</label>
+      <select id="qualityThreshold">
+        <option value="0.5">0,50</option>
+        <option value="0.75">0,75</option>
+        <option value="0.9">0,90</option>
+      </select>
+      <p id="qualitySummary" role="status" aria-live="polite">Chưa có mẫu để tính độ chính xác.</p>
+      <p id="qualityErrors"></p>
+      <p class="warning">Các chỉ số chỉ tính trên mẫu đã được bạn xác minh trong trang này; không thay thế kiểm thử với bộ ảnh độc lập. Tọa độ đề xuất chưa phải kết quả được xác nhận.</p>
+    </section>
     <p class="warning">Chỉ xuất tọa độ; không khẳng định dự đoán của AI đã chính xác. Không dùng dữ liệu này để phát cảnh báo trong trận.</p>
   </section>
 </main>

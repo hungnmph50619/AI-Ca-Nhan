@@ -4,6 +4,7 @@ on:
   push:
     branches:
       - 'feature/v2.3.1-minimap-evaluation'
+      - 'feature/v2.3.2-minimap-evaluation-dashboard'
   pull_request:
 
 jobs:
@@ -29,3 +30,5 @@ jobs:
           grep -Fq 'vision-review.html' src/PersonalAI.Web/wwwroot/vision.html
           grep -Fq 'vision-review-core.js' src/PersonalAI.Web/wwwroot/vision-review.html
           grep -Fq 'vision-review.js' src/PersonalAI.Web/wwwroot/vision-review.html
+          grep -Fq 'qualitySummary' src/PersonalAI.Web/wwwroot/vision-review.html
+          grep -Fq 'evaluateRecords' src/PersonalAI.Web/wwwroot/vision-review.js

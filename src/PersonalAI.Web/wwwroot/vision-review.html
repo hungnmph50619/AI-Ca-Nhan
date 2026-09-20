@@ -3,7 +3,7 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>Gán nhãn ảnh minimap · Ngoại tuyến</title>
+  <title>Gán nhãn và kiểm thử ảnh minimap</title>
   <style>
     :root{font-family:Segoe UI,Arial,sans-serif;color-scheme:dark;background:#0b1521;color:#e8f0fc}
     body{margin:0;padding:20px}main{max-width:900px;margin:auto}a{color:#9bd5fa}
@@ -29,7 +29,7 @@
   <h1>Gán nhãn ảnh minimap để kiểm thử</h1>
   <p>Chọn <strong>một ảnh ROI đã lưu</strong>, xem khung AI đề xuất (nếu có), rồi
     dùng chuột kéo hoặc nhập bốn tọa độ để xác nhận vị trí khung thực tế.
-    Trang này xử lý ảnh ngay trong trình duyệt: <strong>không gọi Gemini, không tải ảnh lên máy chủ</strong>.
+    Ở chế độ mặc định, ảnh chỉ được mở cục bộ trong trình duyệt. <strong>Chỉ khi bạn chọn ảnh, tích đồng ý riêng cho ảnh này và bấm nút đề xuất</strong>, ảnh mới được gửi qua máy chủ cục bộ tới Google Gemini. Có thể gán nhãn hoàn toàn thủ công mà không gửi ảnh.
     Dữ liệu JSON xuất ra chỉ có tọa độ và mã mẫu, không chứa ảnh hay tên file.</p>
   <section class="panel" aria-labelledby="imageHeading">
     <h2 id="imageHeading">1. Chọn ảnh đã lưu</h2>
@@ -39,7 +39,11 @@
     <p class="warning">Chỉ dùng ảnh mà bạn có quyền sử dụng. Tất cả tọa độ tính trên ảnh ROI đang chọn, chuẩn hóa 0–1000.</p>
   </section>
   <section class="panel" aria-labelledby="predictionHeading">
-    <h2 id="predictionHeading">2. Nhập kết quả AI đã đề xuất</h2>
+    <h2 id="predictionHeading">2. Lấy đề xuất AI (không bắt buộc)</h2>
+    <p>Bạn có thể dán kết quả đã có bên dưới hoặc cho phép Gemini phân tích <strong>một ảnh ROI đã chọn</strong>. Nút này không tự chụp màn hình và không tự gửi ảnh tiếp theo. API có thể phát sinh phí/hạn mức từ nhà cung cấp.</p>
+    <label class="checklabel" for="locateConsent"><input type="checkbox" id="locateConsent">Tôi đồng ý gửi <strong>ảnh ROI đang chọn</strong> tới Google Gemini để đề xuất khung minimap. Tôi sẽ tự kiểm tra lại kết quả.</label>
+    <button type="button" id="locateButton" disabled>Đề xuất khung minimap cho ảnh này</button>
+    <p id="locateStatus" role="status" aria-live="polite">Chưa gửi ảnh đến Gemini.</p>
     <label for="predictionMode">Kết quả đề xuất cho chính ảnh này</label>
     <select id="predictionMode">
       <option value="">Chưa nhập kết quả</option>

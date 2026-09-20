@@ -7,6 +7,9 @@
   const context = canvas.getContext("2d");
   const predictionMode = el("predictionMode");
   const predictionBox = el("predictionBox");
+  const locateConsent = el("locateConsent");
+  const locateButton = el("locateButton");
+  const locateStatus = el("locateStatus");
   const truthAbsent = el("truthAbsent");
   const reviewed = el("reviewed");
   const message = el("message");
@@ -21,6 +24,16 @@
   let image = null;
   let imageUrl = null;
   let loadVersion = 0;
+  let editVersion = 0;
+  let locateBusy = false;
+
+  function updateLocateReady() {
+    const file = fileInput.files && fileInput.files[0];
+    locateButton.disabled = locateBusy || !image || !file ||
+      !locateConsent.checked || file.size < 24 || file.size > 2 * 1024 * 1024 ||
+      !["image/png", "image/jpeg"].includes(file.type);
+  }
+  locateConsent.addEventListener("change", updateLocateReady);
   let dragStart = null;
   let previewBox = null;
   let serial = 0;
@@ -34,6 +47,7 @@
     dragStart = null;
     previewBox = null;
     canvas.hidden = true;
+    updateLocateReady();
   }
   function coordinates() {
     return core.box(fields.map(field => {
@@ -75,11 +89,15 @@
     }
   }
   function resetCurrent() {
+    loadVersion++;
     fileInput.value = "";
     releaseImage();
     predictionMode.value = "";
     predictionBox.value = "";
     predictionBox.disabled = true;
+    locateConsent.checked = false;
+    locateStatus.textContent = "Chưa gửi ảnh đến Gemini.";
+    updateLocateReady();
     truthAbsent.checked = false;
     reviewed.checked = false;
     fields.forEach(field => { field.value = ""; field.disabled = false; });
@@ -119,6 +137,9 @@
   fileInput.addEventListener("change", () => {
     const version = ++loadVersion;
     releaseImage();
+    locateConsent.checked = false;
+    locateStatus.textContent = "Chưa gửi ảnh đến Gemini.";
+    updateLocateReady();
     predictionMode.value = "";
     predictionBox.value = "";
     predictionBox.disabled = true;
@@ -148,6 +169,7 @@
       canvas.width = width;
       canvas.height = height;
       canvas.hidden = false;
+      updateLocateReady();
       redraw();
       notify("Đã mở ảnh cục bộ. Chọn trạng thái đề xuất AI, sau đó xác minh khung chuẩn.");
     };
@@ -160,11 +182,75 @@
   });
 
   predictionMode.addEventListener("change", () => {
+    editVersion++;
     predictionBox.disabled = predictionMode.value !== "found";
     reviewed.checked = false;
     redraw();
   });
-  predictionBox.addEventListener("input", () => { reviewed.checked = false; redraw(); });
+  predictionBox.addEventListener("input", () => { editVersion++; reviewed.checked = false; redraw(); });
+  // Không gọi mô hình khi chọn ảnh hoặc tích checkbox. Chỉ nút bấm này mới
+  // gửi một ảnh đã chọn, sau xác nhận riêng cho ảnh đó.
+  locateButton.addEventListener("click", async () => {
+    const file = fileInput.files && fileInput.files[0];
+    const selectedImage = image;
+    if (locateBusy || !file || !image || !locateConsent.checked) return;
+    const version = loadVersion;
+    const originalEditVersion = editVersion;
+    locateBusy = true;
+    updateLocateReady();
+    locateStatus.textContent = "Đang kiểm tra cấu hình Gemini…";
+    try {
+      const statusResponse = await fetch("/api/vision/minimap/locate/status", {
+        method: "GET", credentials: "same-origin", cache: "no-store"
+      });
+      if (!statusResponse.ok) throw new Error("Không kết nối được dịch vụ đề xuất khung cục bộ.");
+      const status = await statusResponse.json();
+      if (!status.available) throw new Error("Hãy chọn Gemini hỗ trợ ảnh và lưu khóa trong Cài đặt AI.");
+      if (version !== loadVersion || image !== selectedImage ||
+          (fileInput.files && fileInput.files[0]) !== file) return;
+
+      const form = new FormData();
+      form.append("image", file, file.name);
+      form.append("confirmed", "true");
+      locateStatus.textContent = "Đang gửi riêng ảnh đã đồng ý tới Gemini để lấy khung đề xuất…";
+      const response = await fetch("/api/vision/minimap/locate", {
+        method: "POST",
+        credentials: "same-origin",
+        headers: { "X-Xerath-Vision": "1" },
+        body: form
+      });
+      let data;
+      try { data = await response.json(); }
+      catch { throw new Error("Máy chủ không trả JSON hợp lệ."); }
+      if (!response.ok) throw new Error(data.error || "Gemini chưa tìm được khung.");
+      if (version !== loadVersion || image !== selectedImage ||
+          (fileInput.files && fileInput.files[0]) !== file) return;
+      if (originalEditVersion !== editVersion) {
+        throw new Error("Bạn đã sửa kết quả đề xuất trong khi chờ Gemini; không ghi đè dữ liệu vừa nhập.");
+      }
+      const proposal = core.normalizeLocateResponse(data, selectedImage.naturalWidth,
+        selectedImage.naturalHeight);
+      predictionMode.value = proposal.mode;
+      predictionBox.disabled = proposal.mode !== "found";
+      predictionBox.value = proposal.coordinates ? JSON.stringify(proposal.coordinates) : "";
+      reviewed.checked = false; // Phải xác minh lại, không dùng dự đoán làm nhãn chuẩn.
+      redraw();
+      locateStatus.textContent = proposal.coordinates
+        ? "Đã có khung đề xuất của Gemini (viền vàng). Hãy tự xác minh khung thực tế (viền xanh)."
+        : "Gemini không tìm thấy đủ khung. Hãy tự kiểm tra ảnh và xác minh nhãn chuẩn.";
+    } catch (error) {
+      if (version === loadVersion && image === selectedImage) {
+        locateStatus.textContent = "Không thể lấy đề xuất: " +
+          String(error.message || error) + " Bạn vẫn có thể nhập thủ công.";
+      }
+    } finally {
+      locateBusy = false;
+      // Mỗi lần gửi cần tích xác nhận lại, kể cả khi mô hình báo lỗi.
+      locateConsent.checked = false;
+      updateLocateReady();
+    }
+  });
+
   truthAbsent.addEventListener("change", () => {
     fields.forEach(field => { field.disabled = truthAbsent.checked; });
     reviewed.checked = false;

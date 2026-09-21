@@ -13,6 +13,7 @@
   const metrics = el("comparisonMetrics");
   const transitions = el("comparisonTransitions");
   const filterSelect = el("comparisonFilter");
+  const searchInput = el("comparisonSearch");
   const sampleSelect = el("comparisonSample");
   const previousSample = el("previousSample");
   const nextSample = el("nextSample");
@@ -38,6 +39,8 @@
     transitions.textContent = "Chưa có số liệu chuyển trạng thái.";
     filterSelect.value = "all";
     filterSelect.disabled = true;
+    searchInput.disabled = true;
+    searchInput.value = "";
     details.textContent = "Chưa có mẫu để xem.";
     overlay.hidden = true;
     overlayText.textContent = "Chưa có sơ đồ tọa độ.";
@@ -172,9 +175,12 @@
       return;
     }
     const filter = filterSelect.value;
+    // Tìm theo mã trong nhóm đang lọc; không dùng regex hay chèn HTML.
+    const query = searchInput.value.trim().toLowerCase();
     const rows = lastResult.per_sample.filter(item =>
-      filter === "all" ||
-      (filter === "changed" ? item.prediction_changed : item.transition === filter));
+      (filter === "all" ||
+        (filter === "changed" ? item.prediction_changed : item.transition === filter)) &&
+      item.id.toLowerCase().includes(query));
     for (const item of rows) {
       const option = document.createElement("option");
       option.value = item.id;
@@ -183,7 +189,9 @@
     }
     sampleSelect.disabled = rows.length === 0;
     if (!rows.length) {
-      details.textContent = "Không có mẫu nào thuộc nhóm đã chọn.";
+      details.textContent = query
+        ? "Không có mẫu nào khớp mã đang tìm trong nhóm đã chọn."
+        : "Không có mẫu nào thuộc nhóm đã chọn.";
       updateNavigation();
       overlay.hidden = true;
       overlayText.textContent = "Không có sơ đồ trong nhóm đã chọn.";
@@ -194,6 +202,7 @@
     updateNavigation();
   }
   filterSelect.addEventListener("change", refreshFilteredSamples);
+  searchInput.addEventListener("input", refreshFilteredSamples);
   exportButton.addEventListener("click", () => {
     if (!lastResult || busy || exportButton.disabled) return;
     // Chỉ xuất số đếm và kết quả theo mã mẫu, không xuất ảnh, tên tệp
@@ -281,6 +290,7 @@
         "; cả hai khớp: " + result.transitions.both_match +
         "; cả hai sai: " + result.transitions.both_mismatch + ".";
       filterSelect.disabled = false;
+      searchInput.disabled = false;
       visibility.disabled = false;
       refreshFilteredSamples();
       status.textContent = "Đã so sánh cục bộ. Không có tệp nào được gửi lên máy chủ.";

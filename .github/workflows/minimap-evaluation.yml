@@ -17,6 +17,7 @@ on:
       - 'feature/v2.3.12-minimap-overlay-review'
       - 'feature/v2.3.13-minimap-overlay-visibility'
       - 'feature/v2.3.14-minimap-sample-navigation'
+      - 'feature/v2.3.15-minimap-sample-search'
   pull_request:
 
 jobs:
@@ -75,3 +76,5 @@ jobs:
           grep -Fq 'previousSample' src/PersonalAI.Web/wwwroot/vision-compare.html
           grep -Fq 'nextSample' src/PersonalAI.Web/wwwroot/vision-compare.js
           grep -Fq 'samplePosition' src/PersonalAI.Web/wwwroot/vision-compare.js
+          grep -Fq 'comparisonSearch' src/PersonalAI.Web/wwwroot/vision-compare.html
+          grep -Fq 'searchInput.addEventListener("input"' src/PersonalAI.Web/wwwroot/vision-compare.js

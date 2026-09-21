@@ -22,6 +22,8 @@
     #overlayVisibility{border:1px solid #748ca5;border-radius:8px;margin:12px 0}
     #overlayVisibility label{display:inline-flex;align-items:center;gap:6px;margin:8px 18px 8px 0}
     #overlayVisibility:disabled{opacity:.65}
+    #sampleNavigation{display:flex;gap:10px;align-items:center;flex-wrap:wrap;margin:10px 0}
+    #sampleNavigation span{font-variant-numeric:tabular-nums}
   </style>
   <script src="vision-review-core.js" defer></script>
   <script src="vision-compare-core.js" defer></script>
@@ -69,6 +71,11 @@
     </select>
     <label for="comparisonSample">Xem kết quả từng mã mẫu</label>
     <select id="comparisonSample" disabled><option value="">Chưa có mẫu</option></select>
+    <div id="sampleNavigation" aria-label="Điều hướng mẫu trong nhóm đang lọc">
+      <button id="previousSample" type="button" disabled>← Mẫu trước</button>
+      <button id="nextSample" type="button" disabled>Mẫu sau →</button>
+      <span id="samplePosition" role="status" aria-live="polite">Chưa có mẫu.</span>
+    </div>
     <p id="comparisonDetails">Chưa có mẫu để xem.</p>
     <h3 id="overlayHeading">Sơ đồ khung tọa độ của mẫu đã chọn</h3>
     <p>Ô vuông 0–1000 bên dưới là sơ đồ minh họa tọa độ, <strong>không phải ảnh gốc</strong>.

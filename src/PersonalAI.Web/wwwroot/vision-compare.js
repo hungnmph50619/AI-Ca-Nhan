@@ -14,6 +14,9 @@
   const transitions = el("comparisonTransitions");
   const filterSelect = el("comparisonFilter");
   const sampleSelect = el("comparisonSample");
+  const previousSample = el("previousSample");
+  const nextSample = el("nextSample");
+  const samplePosition = el("samplePosition");
   const details = el("comparisonDetails");
   const overlay = el("comparisonOverlay");
   const overlayText = el("overlayText");
@@ -41,6 +44,9 @@
     visibility.disabled = true;
     sampleSelect.replaceChildren();
     sampleSelect.disabled = true;
+    previousSample.disabled = true;
+    nextSample.disabled = true;
+    samplePosition.textContent = "Chưa có mẫu.";
   }
   for (const field of [inputA, inputB, threshold]) {
     field.addEventListener("change", () => {
@@ -116,7 +122,37 @@
       ". B: " + item.b_outcome + " (IoU " + iou(item.b_iou) + ").";
     drawOverlay(item);
   }
-  sampleSelect.addEventListener("change", displaySample);
+  function updateNavigation() {
+    const count = sampleSelect.children.length;
+    const index = sampleSelect.children.findIndex
+      ? sampleSelect.children.findIndex(option => option.value === sampleSelect.value)
+      : Array.from(sampleSelect.children).findIndex(option => option.value === sampleSelect.value);
+    if (count === 0 || index < 0 || sampleSelect.disabled) {
+      previousSample.disabled = true;
+      nextSample.disabled = true;
+      samplePosition.textContent = count === 0 ? "Không có mẫu trong nhóm này." : "Chưa chọn mẫu.";
+      return;
+    }
+    previousSample.disabled = index <= 0;
+    nextSample.disabled = index >= count - 1;
+    samplePosition.textContent = "Mẫu " + (index + 1) + " / " + count + " trong nhóm đang lọc.";
+  }
+  function moveSample(delta) {
+    if (sampleSelect.disabled) return;
+    const options = Array.from(sampleSelect.children);
+    const index = options.findIndex(option => option.value === sampleSelect.value);
+    const nextIndex = index + delta;
+    if (index < 0 || nextIndex < 0 || nextIndex >= options.length) return;
+    sampleSelect.value = options[nextIndex].value;
+    displaySample();
+    updateNavigation();
+  }
+  sampleSelect.addEventListener("change", () => {
+    displaySample();
+    updateNavigation();
+  });
+  previousSample.addEventListener("click", () => moveSample(-1));
+  nextSample.addEventListener("click", () => moveSample(1));
   for (const control of [showTruth, showA, showB]) {
     control.addEventListener("change", () => {
       if (lastResult && !sampleSelect.disabled) displaySample();
@@ -127,6 +163,9 @@
     sampleSelect.replaceChildren();
     if (!lastResult) {
       sampleSelect.disabled = true;
+      previousSample.disabled = true;
+      nextSample.disabled = true;
+      samplePosition.textContent = "Chưa có mẫu.";
       details.textContent = "Chưa có mẫu để xem.";
       overlay.hidden = true;
       overlayText.textContent = "Chưa có sơ đồ tọa độ.";
@@ -145,12 +184,14 @@
     sampleSelect.disabled = rows.length === 0;
     if (!rows.length) {
       details.textContent = "Không có mẫu nào thuộc nhóm đã chọn.";
+      updateNavigation();
       overlay.hidden = true;
       overlayText.textContent = "Không có sơ đồ trong nhóm đã chọn.";
       return;
     }
     sampleSelect.value = rows.some(item => item.id === selected) ? selected : rows[0].id;
     displaySample();
+    updateNavigation();
   }
   filterSelect.addEventListener("change", refreshFilteredSamples);
   exportButton.addEventListener("click", () => {

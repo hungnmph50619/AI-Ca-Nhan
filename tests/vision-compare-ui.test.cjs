@@ -53,6 +53,9 @@ function fixture() {
         if (tag === "a") return {
           href:"", download:"", click(){downloads.push(this.download);}, remove(){}
         };
+        if (tag === "tr") return {
+          children:[],appendChild(child){this.children.push(child);}
+        };
         return {value:"",textContent:""};
       },
       body:{appendChild(){}}
@@ -453,5 +456,59 @@ test("So sánh JSON lỗi sẽ khóa xuất CSV của kết quả trước",asyn
   assert.equal(ui.el("exportComparisonCsv").disabled,true);
   ui.el("exportComparisonCsv").emit("click");
   assert.equal(ui.blobs.length,0);
+  assert.equal(ui.fetchCount(),0);
+});
+
+
+test("Bảng ba ngưỡng được tính cục bộ, không thay đổi ngưỡng tải báo cáo",async()=>{
+  const ui=fixture();
+  const truth=[0,0,200,200], shifted=[20,0,220,200];
+  ui.el("comparisonA").files=[ui.file("a.json",[ui.row("one",truth,null)])];
+  ui.el("comparisonB").files=[ui.file("b.json",[ui.row("one",truth,shifted)])];
+  assert.equal(ui.el("sensitivityRows").children.length,0);
+  await ui.el("runComparison").emit("click");
+  const rows=ui.el("sensitivityRows").children;
+  assert.equal(rows.length,3);
+  assert.deepEqual(rows.map(row=>row.children[0].textContent),["0.50","0.75","0.90"]);
+  assert.deepEqual(rows.map(row=>row.children[1].textContent),["0 / 1","0 / 1","0 / 0"]);
+  assert.deepEqual(rows.map(row=>row.children[6].textContent),["1","1","0"]);
+  assert.match(ui.el("sensitivityStatus").textContent,/3 ngưỡng/);
+  assert.equal(ui.fetchCount(),0);
+
+  ui.el("exportComparison").emit("click");
+  const report=JSON.parse(ui.blobs[0].parts.join(""));
+  assert.equal(report.minimum_iou,0.5);
+  assert.equal(report.per_sample.length,1);
+  assert.equal(Object.hasOwn(report,"sensitivity"),false);
+  ui.el("exportComparisonCsv").emit("click");
+  assert.match(ui.blobs[1].parts.join(""),/"0.5"/);
+  assert.doesNotMatch(ui.blobs[1].parts.join(""),/"0.9"/);
+
+  ui.el("comparisonThreshold").value="0.9";
+  ui.el("comparisonThreshold").emit("change");
+  assert.equal(ui.el("sensitivityRows").children.length,0);
+  assert.match(ui.el("sensitivityStatus").textContent,/Chưa có dữ liệu/);
+  assert.equal(ui.el("exportComparison").disabled,true);
+  assert.equal(ui.el("exportComparisonCsv").disabled,true);
+  await ui.el("runComparison").emit("click");
+  assert.equal(ui.el("sensitivityRows").children.length,3);
+  ui.el("exportComparison").emit("click");
+  const newReport=JSON.parse(ui.blobs[2].parts.join(""));
+  assert.equal(newReport.minimum_iou,0.9);
+  assert.equal(ui.fetchCount(),0);
+});
+
+test("So sánh thất bại không giữ lại bảng nhạy cảm theo ngưỡng của dữ liệu cũ",async()=>{
+  const ui=fixture();
+  const rows=[ui.row("one",null,null)];
+  ui.el("comparisonA").files=[ui.file("a.json",rows)];
+  ui.el("comparisonB").files=[ui.file("b.json",rows)];
+  await ui.el("runComparison").emit("click");
+  assert.equal(ui.el("sensitivityRows").children.length,3);
+  ui.el("comparisonB").files=[ui.file("wrong.json",[ui.row("two",null,null)])];
+  await ui.el("runComparison").emit("click");
+  assert.equal(ui.el("sensitivityRows").children.length,0);
+  assert.match(ui.el("sensitivityStatus").textContent,/Chưa có dữ liệu/);
+  assert.equal(ui.el("exportComparison").disabled,true);
   assert.equal(ui.fetchCount(),0);
 });

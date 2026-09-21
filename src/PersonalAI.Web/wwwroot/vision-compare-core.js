@@ -85,7 +85,23 @@
     };
   }
 
-  const api = {comparePaired};
+  // Tổng hợp đa ngưỡng chỉ chứa số liệu, tuyệt đối không đưa khung
+  // truth_box/a_box/b_box vào bảng hay báo cáo tải về.
+  function compareAcrossThresholds(a, b) {
+    return [0.5, 0.75, 0.9].map(minimum_iou => {
+      const result = comparePaired(a, b, minimum_iou);
+      return {
+        minimum_iou: result.minimum_iou,
+        samples: result.samples,
+        changed_predictions: result.changed_predictions,
+        transitions: result.transitions,
+        a: result.a,
+        b: result.b
+      };
+    });
+  }
+
+  const api = {comparePaired, compareAcrossThresholds};
   root.MinimapCompareCore = api;
   if (typeof module !== "undefined" && module.exports) module.exports = api;
 })(typeof globalThis !== "undefined" ? globalThis : this);

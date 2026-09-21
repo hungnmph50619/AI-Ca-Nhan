@@ -86,3 +86,32 @@ test("Hai dự đoán khác nhau nhưng cùng sai không bị tính là khớp n
   assert.equal(result.changed_predictions,1);
   assert.equal(result.per_sample[0].transition,"both_mismatch");
 });
+
+
+test("Ba ngưỡng IoU dùng cùng một bộ A/B nhưng phân loại phụ thuộc ngưỡng", () => {
+  const truth=[0,0,200,200], slightlyShifted=[20,0,220,200];
+  const a=[row("first",truth,null),row("empty",null,null)];
+  const b=[row("empty",null,null),row("first",truth,slightlyShifted)];
+  const summaries=compare.compareAcrossThresholds(a,b);
+  assert.deepEqual(summaries.map(item=>item.minimum_iou),[0.5,0.75,0.9]);
+  assert.deepEqual(summaries.map(item=>item.samples),[2,2,2]);
+  assert.deepEqual(summaries.map(item=>item.changed_predictions),[1,1,1]);
+  assert.deepEqual(summaries.map(item=>item.b.tp),[1,1,0]);
+  assert.deepEqual(summaries.map(item=>item.b.fn),[0,0,1]);
+  assert.deepEqual(summaries.map(item=>item.transitions.corrected),[1,1,0]);
+  assert.deepEqual(summaries.map(item=>item.transitions.both_mismatch),[0,0,1]);
+  for (const report of summaries) {
+    const direct=compare.comparePaired(a,b,report.minimum_iou);
+    assert.deepEqual(report.a,direct.a);
+    assert.deepEqual(report.b,direct.b);
+    assert.deepEqual(report.transitions,direct.transitions);
+    assert.equal(Object.hasOwn(report,"per_sample"),false);
+    assert.equal(Object.hasOwn(report,"truth_box"),false);
+  }
+});
+
+test("Bảng đa ngưỡng từ chối bộ dữ liệu không trùng ID hoặc nhãn chuẩn", () => {
+  const a=[row("first",[0,0,200,200],null)];
+  assert.throws(()=>compare.compareAcrossThresholds(a,[row("second",[0,0,200,200],null)]));
+  assert.throws(()=>compare.compareAcrossThresholds(a,[row("first",[0,0,201,200],null)]));
+});

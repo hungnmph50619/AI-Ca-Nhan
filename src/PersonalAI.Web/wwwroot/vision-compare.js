@@ -14,6 +14,8 @@
   const summary = el("comparisonSummary");
   const metrics = el("comparisonMetrics");
   const transitions = el("comparisonTransitions");
+  const sensitivityRows = el("sensitivityRows");
+  const sensitivityStatus = el("sensitivityStatus");
   const filterSelect = el("comparisonFilter");
   const searchInput = el("comparisonSearch");
   const sampleSelect = el("comparisonSample");
@@ -40,6 +42,8 @@
     summary.textContent = "Chưa có kết quả cho lựa chọn hiện tại.";
     metrics.textContent = "";
     transitions.textContent = "Chưa có số liệu chuyển trạng thái.";
+    sensitivityRows.replaceChildren();
+    sensitivityStatus.textContent = "Chưa có dữ liệu đa ngưỡng.";
     filterSelect.value = "all";
     filterSelect.disabled = true;
     searchInput.disabled = true;
@@ -267,6 +271,32 @@
       setTimeout(() => URL.revokeObjectURL(url), 5000);
     }
   });
+  function displaySensitivity(rows) {
+    sensitivityRows.replaceChildren();
+    const pair = (a, b) => String(a) + " / " + String(b);
+    const percent = n => n === null ? "không xác định" : (n * 100).toFixed(1) + "%";
+    for (const result of rows) {
+      const tr = document.createElement("tr");
+      const cells = [
+        result.minimum_iou.toFixed(2),
+        pair(result.a.tp, result.b.tp),
+        pair(result.a.fp, result.b.fp),
+        pair(result.a.fn, result.b.fn),
+        pair(result.a.tn, result.b.tn),
+        pair(percent(result.a.f1), percent(result.b.f1)),
+        result.transitions.corrected,
+        result.transitions.regressed
+      ];
+      for (const value of cells) {
+        const td = document.createElement("td");
+        td.textContent = String(value);
+        tr.appendChild(td);
+      }
+      sensitivityRows.appendChild(tr);
+    }
+    sensitivityStatus.textContent = "Đã đối chiếu " + rows.length +
+      " ngưỡng IoU trên cùng hai bộ dữ liệu; báo cáo tải về chỉ theo ngưỡng đã chọn.";
+  }
   button.addEventListener("click", async () => {
     if (busy) return;
     const a = inputA.files && inputA.files[0];
@@ -294,8 +324,13 @@
           (inputB.files && inputB.files[0]) !== b) {
         throw new Error("Tệp hoặc ngưỡng đã thay đổi trong khi đọc. Hãy so sánh lại.");
       }
-      const result = core.comparePaired(JSON.parse(texts[0]), JSON.parse(texts[1]), minIou);
+      const dataA = JSON.parse(texts[0]);
+      const dataB = JSON.parse(texts[1]);
+      const result = core.comparePaired(dataA, dataB, minIou);
+      // Chỉ tổng hợp số đếm; không lưu thêm bộ tọa độ vào tab.
+      const sensitivity = core.compareAcrossThresholds(dataA, dataB);
       lastResult = result;
+      displaySensitivity(sensitivity);
       exportButton.disabled = false;
       exportCsvButton.disabled = false;
       summary.textContent = "Đã đối chiếu " + result.samples +

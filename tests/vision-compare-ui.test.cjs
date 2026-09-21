@@ -321,3 +321,87 @@ test("Đổi dữ liệu hoặc ngưỡng xóa trạng thái điều hướng c�
   ui.el("nextSample").emit("click");
   assert.equal(ui.el("comparisonSample").value,"");
 });
+
+
+test("Tìm mã mẫu kết hợp bộ lọc, điều hướng trong kết quả khớp và không gọi mạng",async()=>{
+  const ui=fixture();
+  const truth=[0,0,200,200];
+  const a=[
+    ui.row("Alpha-01",truth,null),
+    ui.row("Alpha-02",truth,truth),
+    ui.row("Beta-03",truth,null),
+    ui.row("Gamma-04",truth,truth)
+  ];
+  const b=[
+    ui.row("Alpha-01",truth,truth),
+    ui.row("Alpha-02",truth,null),
+    ui.row("Beta-03",truth,truth),
+    ui.row("Gamma-04",truth,truth)
+  ];
+  ui.el("comparisonA").files=[ui.file("a.json",a)];
+  ui.el("comparisonB").files=[ui.file("b.json",b)];
+  assert.equal(ui.el("comparisonSearch").disabled,true);
+  await ui.el("runComparison").emit("click");
+  assert.equal(ui.el("comparisonSearch").disabled,false);
+  assert.match(ui.el("samplePosition").textContent,/1 \/ 4/);
+
+  ui.el("comparisonSearch").value="aLpHa";
+  ui.el("comparisonSearch").emit("input");
+  assert.match(ui.el("samplePosition").textContent,/1 \/ 2/);
+  assert.equal(ui.el("comparisonSample").value,"Alpha-01");
+  ui.el("nextSample").emit("click");
+  assert.equal(ui.el("comparisonSample").value,"Alpha-02");
+  assert.match(ui.el("samplePosition").textContent,/2 \/ 2/);
+
+  ui.el("comparisonFilter").value="corrected";
+  ui.el("comparisonFilter").emit("change");
+  assert.equal(ui.el("comparisonSample").value,"Alpha-01");
+  assert.match(ui.el("samplePosition").textContent,/1 \/ 1/);
+  assert.equal(ui.el("nextSample").disabled,true);
+  ui.el("comparisonSearch").value=" beta ";
+  ui.el("comparisonSearch").emit("input");
+  assert.equal(ui.el("comparisonSample").value,"Beta-03");
+  assert.match(ui.el("samplePosition").textContent,/1 \/ 1/);
+  assert.equal(ui.el("previousSample").disabled,true);
+
+  ui.el("comparisonSearch").value="khong-co";
+  ui.el("comparisonSearch").emit("input");
+  assert.equal(ui.el("comparisonSample").disabled,true);
+  assert.equal(ui.el("previousSample").disabled,true);
+  assert.equal(ui.el("nextSample").disabled,true);
+  assert.equal(ui.el("comparisonOverlay").hidden,true);
+  assert.match(ui.el("comparisonDetails").textContent,/Không có mẫu/);
+
+  ui.el("comparisonSearch").value="";
+  ui.el("comparisonSearch").emit("input");
+  assert.match(ui.el("samplePosition").textContent,/1 \/ 2/);
+  ui.el("exportComparison").emit("click");
+  const report=JSON.parse(ui.blobs[0].parts.join(""));
+  assert.equal(report.samples,4); // Lọc chỉ tác động cách xem, không thay báo cáo toàn bộ
+  assert.equal(report.per_sample.length,4);
+  assert.equal(ui.fetchCount(),0);
+});
+
+test("Đổi file hoặc ngưỡng sẽ khóa và xóa mã tìm kiếm cũ",async()=>{
+  const ui=fixture();
+  const rows=[ui.row("Alpha-01",null,null),ui.row("Beta-02",null,null)];
+  ui.el("comparisonA").files=[ui.file("a.json",rows)];
+  ui.el("comparisonB").files=[ui.file("b.json",rows)];
+  await ui.el("runComparison").emit("click");
+  ui.el("comparisonSearch").value="alpha";
+  ui.el("comparisonSearch").emit("input");
+  assert.match(ui.el("samplePosition").textContent,/1 \/ 1/);
+  ui.el("comparisonB").emit("change");
+  assert.equal(ui.el("comparisonSearch").disabled,true);
+  assert.equal(ui.el("comparisonSearch").value,"");
+  assert.equal(ui.el("comparisonSample").disabled,true);
+  assert.equal(ui.el("comparisonOverlay").hidden,true);
+  assert.equal(ui.el("exportComparison").disabled,true);
+  await ui.el("runComparison").emit("click");
+  assert.equal(ui.el("comparisonSearch").disabled,false);
+  assert.match(ui.el("samplePosition").textContent,/1 \/ 2/);
+  ui.el("comparisonThreshold").emit("change");
+  assert.equal(ui.el("comparisonSearch").disabled,true);
+  assert.equal(ui.el("comparisonSearch").value,"");
+  assert.equal(ui.fetchCount(),0);
+});

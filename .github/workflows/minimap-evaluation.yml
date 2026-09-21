@@ -18,6 +18,7 @@ on:
       - 'feature/v2.3.13-minimap-overlay-visibility'
       - 'feature/v2.3.14-minimap-sample-navigation'
       - 'feature/v2.3.15-minimap-sample-search'
+      - 'feature/v2.3.16-minimap-csv-export'
   pull_request:
 
 jobs:
@@ -41,6 +42,8 @@ jobs:
           node --test tests/vision-review-consent.test.cjs
           node --check src/PersonalAI.Web/wwwroot/vision-compare-core.js
           node --check src/PersonalAI.Web/wwwroot/vision-compare.js
+          node --check src/PersonalAI.Web/wwwroot/vision-compare-csv.js
+          node --test tests/vision-compare-csv.test.cjs
           node --test tests/vision-compare-core.test.cjs
           node --test tests/vision-compare-ui.test.cjs
           node --test tests/vision-compare-parity.test.cjs
@@ -78,3 +81,5 @@ jobs:
           grep -Fq 'samplePosition' src/PersonalAI.Web/wwwroot/vision-compare.js
           grep -Fq 'comparisonSearch' src/PersonalAI.Web/wwwroot/vision-compare.html
           grep -Fq 'searchInput.addEventListener("input"' src/PersonalAI.Web/wwwroot/vision-compare.js
+          grep -Fq 'exportComparisonCsv' src/PersonalAI.Web/wwwroot/vision-compare.html
+          grep -Fq 'vision-compare-csv.js' src/PersonalAI.Web/wwwroot/vision-compare.html

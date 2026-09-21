@@ -8,6 +8,8 @@
   const button = el("runComparison");
   const status = el("comparisonStatus");
   const exportButton = el("exportComparison");
+  const exportCsvButton = el("exportComparisonCsv");
+  const csvCore = globalThis.MinimapCompareCsv;
   const exportStatus = el("exportStatus");
   const summary = el("comparisonSummary");
   const metrics = el("comparisonMetrics");
@@ -33,6 +35,7 @@
   function clearResults() {
     lastResult = null;
     exportButton.disabled = true;
+    exportCsvButton.disabled = true;
     exportStatus.textContent = "Chưa có báo cáo để lưu.";
     summary.textContent = "Chưa có kết quả cho lựa chọn hiện tại.";
     metrics.textContent = "";
@@ -244,6 +247,26 @@
       setTimeout(() => URL.revokeObjectURL(url), 5000);
     }
   });
+  exportCsvButton.addEventListener("click", () => {
+    if (!lastResult || busy || exportCsvButton.disabled) return;
+    // CSV luôn gồm TOÀN BỘ mẫu đã so sánh, độc lập với ô tìm và bộ lọc.
+    // Dùng danh sách trường cho phép; không xuất tọa độ hoặc ảnh nguồn.
+    const csv = csvCore.formatCsv(lastResult);
+    const blob = new Blob([csv], {type: "text/csv;charset=utf-8"});
+    const url = URL.createObjectURL(blob);
+    try {
+      const link = document.createElement("a");
+      link.href = url;
+      link.download = "minimap-a-b-comparison.csv";
+      document.body.appendChild(link);
+      link.click();
+      link.remove();
+      exportStatus.textContent =
+        "Đã tạo CSV gồm toàn bộ mẫu đã so sánh, không kèm ảnh hoặc khung tọa độ.";
+    } finally {
+      setTimeout(() => URL.revokeObjectURL(url), 5000);
+    }
+  });
   button.addEventListener("click", async () => {
     if (busy) return;
     const a = inputA.files && inputA.files[0];
@@ -253,6 +276,7 @@
     busy = true;
     button.disabled = true;
     exportButton.disabled = true;
+    exportCsvButton.disabled = true;
     clearResults();
     status.textContent = "Đang đọc và kiểm tra hai tệp JSON cục bộ…";
     try {
@@ -273,6 +297,7 @@
       const result = core.comparePaired(JSON.parse(texts[0]), JSON.parse(texts[1]), minIou);
       lastResult = result;
       exportButton.disabled = false;
+      exportCsvButton.disabled = false;
       summary.textContent = "Đã đối chiếu " + result.samples +
         " mã mẫu có cùng nhãn chuẩn; dự đoán thay đổi ở " +
         result.changed_predictions + " mẫu. Ngưỡng IoU: " + minIou.toFixed(2) + ".";

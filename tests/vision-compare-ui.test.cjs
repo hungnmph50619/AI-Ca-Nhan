@@ -6,6 +6,7 @@ const fs = require("node:fs");
 const path = require("node:path");
 const review = require("../src/PersonalAI.Web/wwwroot/vision-review-core.js");
 const compare = require("../src/PersonalAI.Web/wwwroot/vision-compare-core.js");
+const compareCsv = require("../src/PersonalAI.Web/wwwroot/vision-compare-csv.js");
 const source = fs.readFileSync(path.join(__dirname,
   "../src/PersonalAI.Web/wwwroot/vision-compare.js"), "utf8");
 
@@ -45,7 +46,7 @@ function fixture() {
     constructor(parts, options) { this.parts=parts; this.type=options.type; blobs.push(this); }
   }
   const context={
-    MinimapReviewCore:review, MinimapCompareCore:compare,
+    MinimapReviewCore:review, MinimapCompareCore:compare, MinimapCompareCsv:compareCsv,
     document:{
       getElementById:el,
       createElement(tag){
@@ -130,6 +131,7 @@ test("Tệp JSON quá lớn bị chặn trước khi đọc",async()=>{
 test("Báo cáo chỉ xuất sau khi so sánh thành công, không chứa tên file hoặc ảnh",async()=>{
   const ui=fixture();
   assert.equal(ui.el("exportComparison").disabled,true);
+  assert.equal(ui.el("exportComparisonCsv").disabled,true);
   ui.el("exportComparison").emit("click");
   assert.equal(ui.downloads.length,0);
   ui.el("comparisonA").files=[ui.file("private-input-a.json",[ui.row("mau-1",[0,0,200,200],null)])];
@@ -403,5 +405,53 @@ test("Đổi file hoặc ngưỡng sẽ khóa và xóa mã tìm kiếm cũ",asyn
   ui.el("comparisonThreshold").emit("change");
   assert.equal(ui.el("comparisonSearch").disabled,true);
   assert.equal(ui.el("comparisonSearch").value,"");
+  assert.equal(ui.fetchCount(),0);
+});
+
+
+test("CSV tải đúng toàn bộ mẫu ngay cả khi tìm kiếm đang ẩn bớt; không xuất tọa độ",async()=>{
+  const ui=fixture();
+  const truth=[123,234,345,456];
+  const a=[ui.row("Alpha-01",truth,null),ui.row("Beta-02",null,null)];
+  const b=[ui.row("Beta-02",null,null),ui.row("Alpha-01",truth,truth)];
+  ui.el("comparisonA").files=[ui.file("secret-a.json",a)];
+  ui.el("comparisonB").files=[ui.file("secret-b.json",b)];
+  assert.equal(ui.el("exportComparisonCsv").disabled,true);
+  ui.el("exportComparisonCsv").emit("click");
+  assert.equal(ui.downloads.length,0);
+  await ui.el("runComparison").emit("click");
+  assert.equal(ui.el("exportComparisonCsv").disabled,false);
+  ui.el("comparisonSearch").value="alpha";
+  ui.el("comparisonSearch").emit("input");
+  assert.match(ui.el("samplePosition").textContent,/1 \/ 1/);
+  ui.el("exportComparisonCsv").emit("click");
+  assert.deepEqual(ui.downloads,["minimap-a-b-comparison.csv"]);
+  assert.equal(ui.blobs.length,1);
+  assert.equal(ui.blobs[0].type,"text/csv;charset=utf-8");
+  const exported=ui.blobs[0].parts.join("");
+  assert.equal(exported.slice(1).trim().split("\r\n").length,3); // header + toàn bộ 2 mẫu
+  assert.match(exported,/Alpha-01/);
+  assert.match(exported,/Beta-02/);
+  assert.doesNotMatch(exported,/123|234|345|456|secret-a|truth_box|a_box|b_box/);
+  assert.equal(ui.revoked.length,1);
+  assert.equal(ui.fetchCount(),0);
+  ui.el("comparisonThreshold").emit("change");
+  assert.equal(ui.el("exportComparisonCsv").disabled,true);
+  ui.el("exportComparisonCsv").emit("click");
+  assert.equal(ui.downloads.length,1);
+});
+
+test("So sánh JSON lỗi sẽ khóa xuất CSV của kết quả trước",async()=>{
+  const ui=fixture();
+  const first=[ui.row("same",null,null)];
+  ui.el("comparisonA").files=[ui.file("a.json",first)];
+  ui.el("comparisonB").files=[ui.file("b.json",first)];
+  await ui.el("runComparison").emit("click");
+  assert.equal(ui.el("exportComparisonCsv").disabled,false);
+  ui.el("comparisonB").files=[ui.file("invalid.json",[ui.row("different",null,null)])];
+  await ui.el("runComparison").emit("click");
+  assert.equal(ui.el("exportComparisonCsv").disabled,true);
+  ui.el("exportComparisonCsv").emit("click");
+  assert.equal(ui.blobs.length,0);
   assert.equal(ui.fetchCount(),0);
 });

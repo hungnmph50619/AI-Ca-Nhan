@@ -30,6 +30,7 @@
   </style>
   <script src="vision-review-core.js" defer></script>
   <script src="vision-compare-core.js" defer></script>
+  <script src="vision-compare-csv.js" defer></script>
   <script src="vision-compare.js" defer></script>
 </head>
 <body>
@@ -61,6 +62,7 @@
     <p id="comparisonSummary" aria-live="polite">Chưa có kết quả.</p>
     <p id="comparisonMetrics"></p>
     <button id="exportComparison" type="button" disabled>Tải báo cáo so sánh JSON</button>
+    <button id="exportComparisonCsv" type="button" disabled>Tải bảng CSV của toàn bộ mẫu</button>
     <p id="exportStatus" role="status" aria-live="polite">Chưa có báo cáo để lưu.</p>
     <p id="comparisonTransitions" aria-live="polite">Chưa có số liệu chuyển trạng thái.</p>
     <label for="comparisonFilter">Lọc mẫu theo thay đổi</label>

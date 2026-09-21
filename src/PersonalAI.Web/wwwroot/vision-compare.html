@@ -24,6 +24,9 @@
     #overlayVisibility:disabled{opacity:.65}
     #sampleNavigation{display:flex;gap:10px;align-items:center;flex-wrap:wrap;margin:10px 0}
     #sampleNavigation span{font-variant-numeric:tabular-nums}
+    #comparisonSearch{width:100%;box-sizing:border-box;max-width:550px;
+      padding:9px;background:#0b1521;color:inherit;border:1px solid #748ca5;border-radius:6px}
+    #comparisonSearch:disabled{opacity:.6}
   </style>
   <script src="vision-review-core.js" defer></script>
   <script src="vision-compare-core.js" defer></script>
@@ -69,6 +72,9 @@
       <option value="both_match">Cả A và B đều khớp nhãn chuẩn</option>
       <option value="changed">Chỉ mẫu thay đổi dự đoán</option>
     </select>
+    <label for="comparisonSearch">Tìm mã mẫu trong nhóm đang lọc</label>
+    <input id="comparisonSearch" type="search" maxlength="64" autocomplete="off"
+      placeholder="Nhập một phần mã mẫu (không phân biệt chữ hoa/thường)" disabled>
     <label for="comparisonSample">Xem kết quả từng mã mẫu</label>
     <select id="comparisonSample" disabled><option value="">Chưa có mẫu</option></select>
     <div id="sampleNavigation" aria-label="Điều hướng mẫu trong nhóm đang lọc">

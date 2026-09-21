@@ -251,3 +251,73 @@ test("Bật tắt riêng nhãn chuẩn, A, B chỉ vẽ lớp được chọn v�
   ui.el("overlayShowA").emit("change");
   assert.equal(ui.strokes.length,10); // không vẽ lại khi báo cáo hết hiệu lực
 });
+
+
+test("Nút trước/sau đi trong đúng nhóm đang lọc và cập nhật vị trí mẫu",async()=>{
+  const ui=fixture();
+  const truth=[0,0,200,200];
+  const a=[
+    ui.row("mau-1",truth,null),
+    ui.row("mau-2",truth,truth),
+    ui.row("mau-3",truth,truth)
+  ];
+  const b=[
+    ui.row("mau-1",truth,truth),
+    ui.row("mau-2",truth,null),
+    ui.row("mau-3",truth,truth)
+  ];
+  ui.el("comparisonA").files=[ui.file("a.json",a)];
+  ui.el("comparisonB").files=[ui.file("b.json",b)];
+  await ui.el("runComparison").emit("click");
+  assert.equal(ui.el("comparisonSample").value,"mau-1");
+  assert.match(ui.el("samplePosition").textContent,/1 \/ 3/);
+  assert.equal(ui.el("previousSample").disabled,true);
+  assert.equal(ui.el("nextSample").disabled,false);
+
+  ui.el("nextSample").emit("click");
+  assert.equal(ui.el("comparisonSample").value,"mau-2");
+  assert.match(ui.el("samplePosition").textContent,/2 \/ 3/);
+  assert.match(ui.el("comparisonDetails").textContent,/Mẫu mau-2/);
+  assert.equal(ui.el("previousSample").disabled,false);
+  assert.equal(ui.el("nextSample").disabled,false);
+
+  ui.el("nextSample").emit("click");
+  assert.equal(ui.el("comparisonSample").value,"mau-3");
+  assert.match(ui.el("samplePosition").textContent,/3 \/ 3/);
+  assert.equal(ui.el("nextSample").disabled,true);
+  ui.el("nextSample").emit("click");
+  assert.equal(ui.el("comparisonSample").value,"mau-3");
+
+  ui.el("comparisonFilter").value="corrected";
+  ui.el("comparisonFilter").emit("change");
+  assert.equal(ui.el("comparisonSample").value,"mau-1");
+  assert.match(ui.el("samplePosition").textContent,/1 \/ 1/);
+  assert.equal(ui.el("previousSample").disabled,true);
+  assert.equal(ui.el("nextSample").disabled,true);
+
+  ui.el("comparisonFilter").value="both_mismatch";
+  ui.el("comparisonFilter").emit("change");
+  assert.equal(ui.el("comparisonSample").disabled,true);
+  assert.equal(ui.el("previousSample").disabled,true);
+  assert.equal(ui.el("nextSample").disabled,true);
+  assert.match(ui.el("samplePosition").textContent,/Không có mẫu/);
+  assert.equal(ui.fetchCount(),0);
+});
+
+test("Đổi dữ liệu hoặc ngưỡng xóa trạng thái điều hướng cũ",async()=>{
+  const ui=fixture();
+  const rows=[ui.row("one",null,null),ui.row("two",null,null)];
+  ui.el("comparisonA").files=[ui.file("a.json",rows)];
+  ui.el("comparisonB").files=[ui.file("b.json",rows)];
+  await ui.el("runComparison").emit("click");
+  assert.match(ui.el("samplePosition").textContent,/1 \/ 2/);
+  assert.equal(ui.el("nextSample").disabled,false);
+  ui.el("comparisonThreshold").value="0.75";
+  ui.el("comparisonThreshold").emit("change");
+  assert.equal(ui.el("comparisonSample").disabled,true);
+  assert.equal(ui.el("previousSample").disabled,true);
+  assert.equal(ui.el("nextSample").disabled,true);
+  assert.match(ui.el("samplePosition").textContent,/Chưa có mẫu/);
+  ui.el("nextSample").emit("click");
+  assert.equal(ui.el("comparisonSample").value,"");
+});

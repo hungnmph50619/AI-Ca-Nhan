@@ -25,6 +25,7 @@ public static class EvaluationEndpoints
         services.AddScoped<IAutomatedReviewService, AutomatedReviewService>();
         services.AddScoped<IAutoTestService, AutoTestService>();
         services.AddScoped<IAutoDeployService, AutoDeployService>();
+        services.AddScoped<IAutomaticRollbackService, AutomaticRollbackService>();
         return services;
     }
 
@@ -34,7 +35,7 @@ public static class EvaluationEndpoints
             Results.Ok(new
             {
                 version = PersonalAiRelease.Version,
-                frameworkVersion = "2.4.6",
+                frameworkVersion = "2.4.7",
                 localOnly = true,
                 maximumBatchSize = EvaluationEngine.MaximumBatchSize,
                 maximumSummaryResults = EvaluationMetricsAggregator.MaximumResults,
@@ -366,6 +367,25 @@ public static class EvaluationEndpoints
                 return Results.Ok(await autoDeploy.RunAsync(request, cancellationToken));
             }
             catch (AutoDeployValidationException exception)
+            {
+                return Results.BadRequest(new ApiError(exception.Message));
+            }
+            catch (ToolExecutionInputException exception)
+            {
+                return Results.BadRequest(new ApiError(exception.Message));
+            }
+        });
+
+        endpoints.MapPost("/api/self-improvement/auto-rollback/run", async (
+            RunAutomaticRollbackRequest request,
+            IAutomaticRollbackService rollback,
+            CancellationToken cancellationToken) =>
+        {
+            try
+            {
+                return Results.Ok(await rollback.RunAsync(request, cancellationToken));
+            }
+            catch (AutomaticRollbackValidationException exception)
             {
                 return Results.BadRequest(new ApiError(exception.Message));
             }

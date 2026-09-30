@@ -221,6 +221,7 @@ public sealed partial class SyntheticDataService(
         var verificationReport = verification.GetLatest(draft.Id);
         if (verificationReport is null ||
             !verificationReport.EligibleForTraining ||
+            verificationReport.Status != SyntheticVerificationStatuses.Verified ||
             verificationReport.CriticReportId != criticReport.Id)
         {
             throw new SyntheticDataValidationException(

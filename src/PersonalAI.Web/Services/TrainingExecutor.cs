@@ -62,9 +62,15 @@ public sealed class TrainingExecutor(
                 {
                     try
                     {
+                        var providerId = pending.TrainingMethod.Equals(
+                                LocalSmallModelTrainingProvider.Method,
+                                StringComparison.OrdinalIgnoreCase)
+                            ? LocalSmallModelTrainingProvider.ProviderId
+                            : MockTrainingProvider.ProviderId;
+
                         executions.Queue(
                             pending.Id,
-                            MockTrainingProvider.ProviderId,
+                            providerId,
                             JsonTrainingExecutionStore.DefaultTimeoutSeconds);
                     }
                     catch (TrainingExecutionValidationException)
@@ -109,7 +115,14 @@ public sealed class TrainingExecutor(
             using var linked=CancellationTokenSource.CreateLinkedTokenSource(stoppingToken,timeout.Token);
 
             var handle=await provider.StartAsync(new TrainingProviderStartRequest(
-                job.Id,job.BaseModel,job.TrainingMethod,job.Hyperparameters,job.Seed),linked.Token);
+                job.Id,
+                job.DatasetId,
+                job.DatasetVersion,
+                job.DatasetSha256,
+                job.BaseModel,
+                job.TrainingMethod,
+                job.Hyperparameters,
+                job.Seed),linked.Token);
             executions.Set(job.Id,TrainingExecutionStatuses.Running,handle.ExternalJobId);
 
             while(!linked.IsCancellationRequested)

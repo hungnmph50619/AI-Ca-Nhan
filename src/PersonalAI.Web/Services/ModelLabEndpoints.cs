@@ -19,6 +19,7 @@ public static class ModelLabEndpoints
         services.AddSingleton<ITrainingProviderRegistry, TrainingProviderRegistry>();
         services.AddSingleton<ITrainingExecutionStore, JsonTrainingExecutionStore>();
         services.AddSingleton<IModelArtifactStore, JsonModelArtifactStore>();
+        services.AddSingleton<IModelRegistry, JsonModelRegistry>();
         services.AddSingleton<TrainingExecutor>();
         services.AddSingleton<ITrainingExecutor>(sp => sp.GetRequiredService<TrainingExecutor>());
         services.AddHostedService(sp => sp.GetRequiredService<TrainingExecutor>());
@@ -68,6 +69,107 @@ public static class ModelLabEndpoints
             catch (ModelArtifactValidationException exception)
             {
                 return Results.BadRequest(new ApiError(exception.Message));
+            }
+            catch (KeyNotFoundException exception)
+            {
+                return Results.NotFound(new ApiError(exception.Message));
+            }
+        });
+
+        endpoints.MapGet("/api/model-lab/models/status", (
+            IModelRegistry registry) =>
+            Results.Ok(registry.GetStatus()));
+
+        endpoints.MapGet("/api/model-lab/models/families", (
+            IModelRegistry registry) =>
+            Results.Ok(registry.GetFamilies()));
+
+        endpoints.MapGet("/api/model-lab/models", (
+            IModelRegistry registry) =>
+            Results.Ok(registry.GetAll()));
+
+        endpoints.MapGet("/api/model-lab/models/{modelId:guid}", (
+            Guid modelId,
+            IModelRegistry registry) =>
+        {
+            var model = registry.Get(modelId);
+            return model is null ? Results.NotFound() : Results.Ok(model);
+        });
+
+        endpoints.MapGet("/api/model-lab/models/family/{family}", (
+            string family,
+            IModelRegistry registry) =>
+        {
+            try
+            {
+                return Results.Ok(registry.GetFamily(family));
+            }
+            catch (ModelRegistryValidationException exception)
+            {
+                return Results.BadRequest(new ApiError(exception.Message));
+            }
+        });
+
+        endpoints.MapPost("/api/model-lab/models", (
+            RegisterModelVersionRequest request,
+            IModelRegistry registry,
+            IAuditRecorder audit) =>
+        {
+            try
+            {
+                var model = registry.Register(request);
+                audit.Record(
+                    AuditAgents.User,
+                    "model-lab.model-register",
+                    $"model-version:{model.Id:D}",
+                    $"family:{model.Family};version:{model.Version}",
+                    AuditResults.Succeeded);
+                return Results.Created(
+                    $"/api/model-lab/models/{model.Id:D}",
+                    model);
+            }
+            catch (ModelRegistryValidationException exception)
+            {
+                return Results.BadRequest(new ApiError(exception.Message));
+            }
+            catch (ModelRegistryConflictException exception)
+            {
+                return Results.Json(
+                    new ApiError(exception.Message),
+                    statusCode: StatusCodes.Status409Conflict);
+            }
+            catch (KeyNotFoundException exception)
+            {
+                return Results.NotFound(new ApiError(exception.Message));
+            }
+        });
+
+        endpoints.MapPost("/api/model-lab/models/{modelId:guid}/stage", (
+            Guid modelId,
+            UpdateModelDeploymentStageRequest request,
+            IModelRegistry registry,
+            IAuditRecorder audit) =>
+        {
+            try
+            {
+                var model = registry.UpdateStage(modelId, request);
+                audit.Record(
+                    AuditAgents.User,
+                    "model-lab.model-stage",
+                    $"model-version:{model.Id:D}",
+                    $"stage:{model.Stage}",
+                    AuditResults.Succeeded);
+                return Results.Ok(model);
+            }
+            catch (ModelRegistryValidationException exception)
+            {
+                return Results.BadRequest(new ApiError(exception.Message));
+            }
+            catch (ModelRegistryConflictException exception)
+            {
+                return Results.Json(
+                    new ApiError(exception.Message),
+                    statusCode: StatusCodes.Status409Conflict);
             }
             catch (KeyNotFoundException exception)
             {

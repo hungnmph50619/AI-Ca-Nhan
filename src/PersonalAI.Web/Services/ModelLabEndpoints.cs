@@ -1,0 +1,144 @@
+using PersonalAI.Web.ModelLab;
+using PersonalAI.Web.Models;
+
+namespace PersonalAI.Web.Services;
+
+public static class ModelLabEndpoints
+{
+    public static IServiceCollection AddModelLab(
+        this IServiceCollection services)
+    {
+        services.AddSingleton<IModelLabDatasetStore, SqliteModelLabDatasetStore>();
+        return services;
+    }
+
+    public static IEndpointRouteBuilder MapModelLab(
+        this IEndpointRouteBuilder endpoints)
+    {
+        endpoints.MapGet("/api/model-lab/status", (
+            IModelLabDatasetStore store) =>
+            Results.Ok(store.GetStatus()));
+
+        endpoints.MapGet("/api/model-lab/datasets", (
+            IModelLabDatasetStore store) =>
+            Results.Ok(store.GetAll()));
+
+        endpoints.MapGet("/api/model-lab/datasets/{datasetId}", (
+            string datasetId,
+            IModelLabDatasetStore store) =>
+        {
+            try
+            {
+                var dataset = store.Get(datasetId);
+                return dataset is null
+                    ? Results.NotFound()
+                    : Results.Ok(dataset);
+            }
+            catch (ModelLabDatasetValidationException exception)
+            {
+                return Results.BadRequest(new ApiError(exception.Message));
+            }
+        });
+
+        endpoints.MapGet("/api/model-lab/datasets/{datasetId}/versions", (
+            string datasetId,
+            IModelLabDatasetStore store) =>
+        {
+            try
+            {
+                var dataset = store.Get(datasetId);
+                if (dataset is null) return Results.NotFound();
+                return Results.Ok(store.GetVersions(datasetId));
+            }
+            catch (ModelLabDatasetValidationException exception)
+            {
+                return Results.BadRequest(new ApiError(exception.Message));
+            }
+        });
+
+        endpoints.MapGet("/api/model-lab/datasets/{datasetId}/versions/{version:int}", (
+            string datasetId,
+            int version,
+            IModelLabDatasetStore store) =>
+        {
+            try
+            {
+                var snapshot = store.GetVersion(datasetId, version);
+                return snapshot is null
+                    ? Results.NotFound()
+                    : Results.Ok(snapshot);
+            }
+            catch (ModelLabDatasetValidationException exception)
+            {
+                return Results.BadRequest(new ApiError(exception.Message));
+            }
+        });
+
+        endpoints.MapPost("/api/model-lab/datasets", (
+            CreateModelLabDatasetRequest request,
+            IModelLabDatasetStore store,
+            IAuditRecorder audit) =>
+        {
+            try
+            {
+                var dataset = store.Create(request);
+                audit.Record(
+                    AuditAgents.User,
+                    "model-lab.dataset.create",
+                    $"model-lab-dataset:{dataset.Id}",
+                    "user-request",
+                    AuditResults.Succeeded);
+                return Results.Created(
+                    $"/api/model-lab/datasets/{Uri.EscapeDataString(dataset.Id)}",
+                    dataset);
+            }
+            catch (ModelLabDatasetValidationException exception)
+            {
+                return Results.BadRequest(new ApiError(exception.Message));
+            }
+            catch (ModelLabDatasetConflictException exception)
+            {
+                return Results.Json(
+                    new ApiError(exception.Message),
+                    statusCode: StatusCodes.Status409Conflict);
+            }
+        });
+
+        endpoints.MapPost("/api/model-lab/datasets/{datasetId}/versions", (
+            string datasetId,
+            CreateModelLabDatasetVersionRequest request,
+            IModelLabDatasetStore store,
+            IAuditRecorder audit) =>
+        {
+            try
+            {
+                var version = store.CreateVersion(datasetId, request);
+                audit.Record(
+                    AuditAgents.User,
+                    "model-lab.dataset.version.create",
+                    $"model-lab-dataset:{version.DatasetId}:v{version.Version}",
+                    "user-request",
+                    AuditResults.Succeeded);
+                return Results.Created(
+                    $"/api/model-lab/datasets/{Uri.EscapeDataString(version.DatasetId)}/versions/{version.Version}",
+                    version);
+            }
+            catch (ModelLabDatasetValidationException exception)
+            {
+                return Results.BadRequest(new ApiError(exception.Message));
+            }
+            catch (ModelLabDatasetConflictException exception)
+            {
+                return Results.Json(
+                    new ApiError(exception.Message),
+                    statusCode: StatusCodes.Status409Conflict);
+            }
+            catch (KeyNotFoundException exception)
+            {
+                return Results.NotFound(new ApiError(exception.Message));
+            }
+        });
+
+        return endpoints;
+    }
+}

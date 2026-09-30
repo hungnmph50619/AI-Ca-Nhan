@@ -21,6 +21,7 @@ public static class ModelLabEndpoints
         services.AddSingleton<IModelArtifactStore, JsonModelArtifactStore>();
         services.AddSingleton<IModelRegistry, JsonModelRegistry>();
         services.AddScoped<ISyntheticCriticService, SyntheticCriticService>();
+        services.AddScoped<ISyntheticVerificationService, SyntheticVerificationService>();
         services.AddScoped<ISyntheticDataService, SyntheticDataService>();
         services.AddSingleton<TrainingExecutor>();
         services.AddSingleton<ITrainingExecutor>(sp => sp.GetRequiredService<TrainingExecutor>());
@@ -34,6 +35,45 @@ public static class ModelLabEndpoints
         endpoints.MapGet("/api/model-lab/status", (
             IModelLabDatasetStore store) =>
             Results.Ok(store.GetStatus()));
+
+        endpoints.MapGet("/api/model-lab/synthetic/verification/status", (
+            ISyntheticVerificationService verification) =>
+            Results.Ok(verification.GetStatus()));
+
+        endpoints.MapGet("/api/model-lab/synthetic/verification/reports", (
+            ISyntheticVerificationService verification) =>
+            Results.Ok(verification.GetAll()));
+
+        endpoints.MapGet("/api/model-lab/synthetic/verification/reports/{draftId:guid}/latest", (
+            Guid draftId,
+            ISyntheticVerificationService verification) =>
+        {
+            var report = verification.GetLatest(draftId);
+            return report is null ? Results.NotFound() : Results.Ok(report);
+        });
+
+        endpoints.MapPost("/api/model-lab/synthetic/verification/run", (
+            VerifySyntheticDraftRequest request,
+            ISyntheticDataService synthetic,
+            ISyntheticVerificationService verification) =>
+        {
+            try
+            {
+                var draft = synthetic.Get(request.DraftId);
+                if (draft is null)
+                    return Results.NotFound(new ApiError("Không tìm thấy synthetic draft."));
+
+                return Results.Ok(verification.Verify(draft, request));
+            }
+            catch (SyntheticVerificationException exception)
+            {
+                return Results.BadRequest(new ApiError(exception.Message));
+            }
+            catch (KeyNotFoundException exception)
+            {
+                return Results.NotFound(new ApiError(exception.Message));
+            }
+        });
 
         endpoints.MapGet("/api/model-lab/synthetic/critic/status", (
             ISyntheticCriticService critic) =>

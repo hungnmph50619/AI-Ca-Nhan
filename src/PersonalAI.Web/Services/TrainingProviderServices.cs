@@ -96,7 +96,7 @@ public sealed class MockTrainingProvider : ITrainingProvider
             errors.Add("BaseModel phải có từ 1 đến 200 ký tự.");
 
         if (method != "full")
-            errors.Add("Mock provider v2.5.5 chỉ hỗ trợ trainingMethod='full'.");
+            errors.Add("Mock provider v2.5.6 chỉ hỗ trợ trainingMethod='full'.");
 
         if (request.Hyperparameters is not null &&
             request.Hyperparameters.Value.ValueKind is not (
@@ -169,10 +169,29 @@ public sealed class MockTrainingProvider : ITrainingProvider
             throw new KeyNotFoundException(
                 "Không tìm thấy mock training job.");
 
-        return Task.FromResult(progress with
+        var next = progress.Status switch
         {
-            CheckedAt = DateTimeOffset.UtcNow
-        });
+            TrainingProviderExecutionStatuses.Queued => progress with
+            {
+                Status = TrainingProviderExecutionStatuses.Running,
+                ProgressPercent = 50,
+                CheckedAt = DateTimeOffset.UtcNow
+            },
+            TrainingProviderExecutionStatuses.Running => progress with
+            {
+                Status = TrainingProviderExecutionStatuses.Completed,
+                ProgressPercent = 100,
+                Metrics = JsonSerializer.SerializeToElement(new
+                {
+                    simulated = true,
+                    completed = true
+                }),
+                CheckedAt = DateTimeOffset.UtcNow
+            },
+            _ => progress with { CheckedAt = DateTimeOffset.UtcNow }
+        };
+        _jobs[id] = next;
+        return Task.FromResult(next);
     }
 
     public Task CancelAsync(

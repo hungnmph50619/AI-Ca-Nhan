@@ -1,0 +1,108 @@
+name: Model Lab v2.5.4
+
+on:
+  push:
+    branches:
+      - master
+      - 'experiment/**'
+    paths:
+      - 'src/PersonalAI.Web/ModelLab/**'
+      - 'src/PersonalAI.Web/Services/ModelLabEndpoints.cs'
+      - 'src/PersonalAI.Web/Services/TrainingDatasetValidationService.cs'
+      - 'src/PersonalAI.Web/Services/DataCleaningService.cs'
+      - 'src/PersonalAI.Web/Services/ModelLabDatasetStore.cs'
+      - 'src/PersonalAI.Web/Models/SystemModels.cs'
+      - '.github/workflows/model-lab-v254.yml'
+  pull_request:
+    paths:
+      - 'src/PersonalAI.Web/ModelLab/**'
+      - 'src/PersonalAI.Web/Services/ModelLabEndpoints.cs'
+      - 'src/PersonalAI.Web/Services/TrainingDatasetValidationService.cs'
+      - 'src/PersonalAI.Web/Services/DataCleaningService.cs'
+      - 'src/PersonalAI.Web/Services/ModelLabDatasetStore.cs'
+      - 'src/PersonalAI.Web/Models/SystemModels.cs'
+
+jobs:
+  validate-v254:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup .NET
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: '8.0.x'
+
+      - name: Restore
+        run: dotnet restore PersonalAI.sln
+
+      - name: Build
+        run: dotnet build PersonalAI.sln --configuration Release --no-restore
+
+      - name: Run dotnet tests
+        run: dotnet test PersonalAI.sln --configuration Release --no-build
+
+      - name: Training dataset validation smoke tests
+        shell: bash
+        run: |
+          set -euo pipefail
+          rm -rf /tmp/personalai-v254
+          mkdir -p /tmp/personalai-v254/workspace /tmp/personalai-v254/model-lab
+
+          Workspace__Root=/tmp/personalai-v254/workspace           ModelLab__Root=/tmp/personalai-v254/model-lab           dotnet run --project src/PersonalAI.Web/PersonalAI.Web.csproj             --configuration Release --no-build             --urls http://127.0.0.1:5084             >/tmp/personalai-v254.log 2>&1 &
+          APP_PID=$!
+          trap 'kill "$APP_PID" 2>/dev/null || true' EXIT
+
+          ready=0
+          for i in {1..30}; do
+            if curl -fsS http://127.0.0.1:5084/api/model-lab/status >/dev/null; then
+              ready=1
+              break
+            fi
+            sleep 1
+          done
+          if [ "$ready" -ne 1 ]; then
+            cat /tmp/personalai-v254.log
+            exit 1
+          fi
+
+          curl -fsS -X POST http://127.0.0.1:5084/api/model-lab/datasets             -H 'Content-Type: application/json'             -d '{"id":"valid-training","name":"Valid training","description":"CI","items":[{"input":"Question","expected":"Answer"}]}'             >/tmp/valid-created.json
+
+          valid_sha=$(curl -fsS http://127.0.0.1:5084/api/model-lab/datasets/valid-training/versions/1 | jq -r '.contentSha256')
+
+          curl -fsS -X POST http://127.0.0.1:5084/api/model-lab/training/validate             -H 'Content-Type: application/json'             -d '{"datasetId":"valid-training","sourceVersion":1,"expectedContentSha256":"'"$valid_sha"'"}'             | tee /tmp/valid-report.json             | jq -e '
+                .valid == true
+                and .acceptedExamples == 1
+                and .rejectedExamples == 0
+                and .schemaErrorCount == 0
+                and .secretCount == 0
+                and .sourceDatasetUnchanged == true
+                and .checksumMatched == true
+              ' >/dev/null
+
+          bad_sha=$(printf '0%.0s' {1..64})
+          curl -fsS -X POST http://127.0.0.1:5084/api/model-lab/training/validate             -H 'Content-Type: application/json'             -d '{"datasetId":"valid-training","sourceVersion":1,"expectedContentSha256":"'"$bad_sha"'"}'             | jq -e '
+                .valid == false
+                and .checksumMatched == false
+                and any(.issues[]; .code == "checksum-mismatch")
+              ' >/dev/null
+
+          curl -fsS -X POST http://127.0.0.1:5084/api/model-lab/datasets             -H 'Content-Type: application/json'             -d '{"id":"secret-training","name":"Secret training","description":"CI","items":[{"input":"Question","expected":"Answer","api_key":"sk-123456789012345678901234567890"}]}'             >/tmp/secret-created.json
+
+          curl -fsS -X POST http://127.0.0.1:5084/api/model-lab/training/validate             -H 'Content-Type: application/json'             -d '{"datasetId":"secret-training","sourceVersion":1}'             | jq -e '
+                .valid == false
+                and .secretCount == 1
+                and .rejectedExamples == 1
+                and any(.issues[]; .code == "secret")
+              ' >/dev/null
+
+          curl -fsS -X POST http://127.0.0.1:5084/api/model-lab/datasets             -H 'Content-Type: application/json'             -d '{"id":"duplicate-training","name":"Duplicate training","description":"CI","items":[{"input":"Q","expected":"A"},{"input":"Q","expected":"A"}]}'             >/tmp/duplicate-created.json
+
+          curl -fsS -X POST http://127.0.0.1:5084/api/model-lab/training/validate             -H 'Content-Type: application/json'             -d '{"datasetId":"duplicate-training","sourceVersion":1}'             | jq -e '
+                .valid == false
+                and .duplicateRatio > 0
+                and .rejectedExamples == 1
+                and .sourceDatasetUnchanged == true
+                and any(.issues[]; .code == "duplicate")
+              ' >/dev/null

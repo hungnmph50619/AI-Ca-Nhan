@@ -20,6 +20,8 @@ public static class ModelLabEndpoints
         services.AddSingleton<ITrainingExecutionStore, JsonTrainingExecutionStore>();
         services.AddSingleton<IModelArtifactStore, JsonModelArtifactStore>();
         services.AddSingleton<IModelRegistry, JsonModelRegistry>();
+        services.AddSingleton<ICandidateTrainingPlanStore, JsonCandidateTrainingPlanStore>();
+        services.AddScoped<ICandidateTrainingService, CandidateTrainingService>();
         services.AddScoped<ISyntheticCriticService, SyntheticCriticService>();
         services.AddScoped<ISyntheticVerificationService, SyntheticVerificationService>();
         services.AddScoped<ISyntheticDataService, SyntheticDataService>();
@@ -316,6 +318,50 @@ public static class ModelLabEndpoints
                 return Results.BadRequest(new ApiError(exception.Message));
             }
             catch (ModelRegistryConflictException exception)
+            {
+                return Results.Json(
+                    new ApiError(exception.Message),
+                    statusCode: StatusCodes.Status409Conflict);
+            }
+            catch (KeyNotFoundException exception)
+            {
+                return Results.NotFound(new ApiError(exception.Message));
+            }
+        });
+
+        endpoints.MapGet("/api/model-lab/candidate-training/status", (
+            ICandidateTrainingService candidates) =>
+            Results.Ok(candidates.GetStatus()));
+
+        endpoints.MapGet("/api/model-lab/candidate-training/plans", (
+            ICandidateTrainingService candidates) =>
+            Results.Ok(candidates.GetAll()));
+
+        endpoints.MapGet("/api/model-lab/candidate-training/plans/{planId:guid}", (
+            Guid planId,
+            ICandidateTrainingService candidates) =>
+        {
+            var plan = candidates.Get(planId);
+            return plan is null ? Results.NotFound() : Results.Ok(plan);
+        });
+
+        endpoints.MapPost("/api/model-lab/candidate-training/start", (
+            StartCandidateTrainingRequest request,
+            ICandidateTrainingService candidates) =>
+        {
+            try
+            {
+                return Results.Ok(candidates.Start(request));
+            }
+            catch (CandidateTrainingValidationException exception)
+            {
+                return Results.BadRequest(new ApiError(exception.Message));
+            }
+            catch (TrainingJobValidationException exception)
+            {
+                return Results.BadRequest(new ApiError(exception.Message));
+            }
+            catch (TrainingJobConflictException exception)
             {
                 return Results.Json(
                     new ApiError(exception.Message),

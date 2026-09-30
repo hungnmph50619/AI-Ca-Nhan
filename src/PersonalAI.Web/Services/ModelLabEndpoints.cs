@@ -20,6 +20,7 @@ public static class ModelLabEndpoints
         services.AddSingleton<ITrainingExecutionStore, JsonTrainingExecutionStore>();
         services.AddSingleton<IModelArtifactStore, JsonModelArtifactStore>();
         services.AddSingleton<IModelRegistry, JsonModelRegistry>();
+        services.AddScoped<ISyntheticCriticService, SyntheticCriticService>();
         services.AddScoped<ISyntheticDataService, SyntheticDataService>();
         services.AddSingleton<TrainingExecutor>();
         services.AddSingleton<ITrainingExecutor>(sp => sp.GetRequiredService<TrainingExecutor>());
@@ -33,6 +34,49 @@ public static class ModelLabEndpoints
         endpoints.MapGet("/api/model-lab/status", (
             IModelLabDatasetStore store) =>
             Results.Ok(store.GetStatus()));
+
+        endpoints.MapGet("/api/model-lab/synthetic/critic/status", (
+            ISyntheticCriticService critic) =>
+            Results.Ok(critic.GetStatus()));
+
+        endpoints.MapGet("/api/model-lab/synthetic/critic/reports", (
+            ISyntheticCriticService critic) =>
+            Results.Ok(critic.GetAll()));
+
+        endpoints.MapGet("/api/model-lab/synthetic/critic/reports/{draftId:guid}/latest", (
+            Guid draftId,
+            ISyntheticCriticService critic) =>
+        {
+            var report = critic.GetLatest(draftId);
+            return report is null ? Results.NotFound() : Results.Ok(report);
+        });
+
+        endpoints.MapPost("/api/model-lab/synthetic/critic/review", async (
+            ReviewSyntheticDraftRequest request,
+            ISyntheticDataService synthetic,
+            ISyntheticCriticService critic,
+            CancellationToken cancellationToken) =>
+        {
+            try
+            {
+                var draft = synthetic.Get(request.DraftId);
+                if (draft is null)
+                    return Results.NotFound(new ApiError("Không tìm thấy synthetic draft."));
+
+                return Results.Ok(await critic.ReviewAsync(
+                    draft,
+                    request,
+                    cancellationToken));
+            }
+            catch (SyntheticCriticValidationException exception)
+            {
+                return Results.BadRequest(new ApiError(exception.Message));
+            }
+            catch (InvalidOperationException exception)
+            {
+                return Results.BadRequest(new ApiError(exception.Message));
+            }
+        });
 
         endpoints.MapGet("/api/model-lab/synthetic/status", (
             ISyntheticDataService synthetic) =>

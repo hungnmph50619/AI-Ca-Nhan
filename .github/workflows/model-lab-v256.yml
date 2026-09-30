@@ -1,0 +1,76 @@
+name: Model Lab v2.5.6
+
+on:
+  push:
+    branches:
+      - 'experiment/roadmap-v2-5-6-current'
+  pull_request:
+    paths:
+      - 'src/PersonalAI.Web/ModelLab/TrainingExecutionModels.cs'
+      - 'src/PersonalAI.Web/Services/TrainingExecutionStore.cs'
+      - 'src/PersonalAI.Web/Services/TrainingExecutor.cs'
+      - 'src/PersonalAI.Web/Services/TrainingProviderServices.cs'
+      - 'src/PersonalAI.Web/Services/ModelLabEndpoints.cs'
+      - 'src/PersonalAI.Web/Models/SystemModels.cs'
+
+jobs:
+  validate-v256:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: '8.0.x'
+      - name: Restore
+        run: dotnet restore PersonalAI.sln
+      - name: Build
+        run: dotnet build PersonalAI.sln -c Release --no-restore
+      - name: Tests
+        run: dotnet test PersonalAI.sln -c Release --no-build
+      - name: Executor smoke test
+        shell: bash
+        run: |
+          set -euo pipefail
+          rm -rf /tmp/personalai-v256
+          mkdir -p /tmp/personalai-v256/workspace /tmp/personalai-v256/model-lab
+
+          Workspace__Root=/tmp/personalai-v256/workspace           ModelLab__Root=/tmp/personalai-v256/model-lab           dotnet run --project src/PersonalAI.Web/PersonalAI.Web.csproj             -c Release --no-build             --urls http://127.0.0.1:5086             >/tmp/personalai-v256.log 2>&1 &
+          APP_PID=$!
+          trap 'kill "$APP_PID" 2>/dev/null || true' EXIT
+
+          for i in {1..30}; do
+            if curl -fsS http://127.0.0.1:5086/api/model-lab/status >/dev/null; then
+              break
+            fi
+            sleep 1
+          done
+
+          curl -fsS -X POST http://127.0.0.1:5086/api/model-lab/datasets             -H 'Content-Type: application/json'             -d '{"id":"executor-demo","name":"Executor demo","description":"CI","items":[{"input":"Q","expected":"A"}]}'             >/tmp/dataset.json
+
+          curl -fsS -X POST http://127.0.0.1:5086/api/model-lab/training/jobs             -H 'Content-Type: application/json'             -d '{"datasetId":"executor-demo","datasetVersion":1,"baseModel":"mock-base","trainingMethod":"full","hyperparameters":{"epochs":1}}'             >/tmp/job.json
+
+          job_id=$(jq -r '.id' /tmp/job.json)
+
+          completed=0
+          for i in {1..30}; do
+            state_file=/tmp/personalai-v256/model-lab/training-executions-personal.json
+            if [ -f "$state_file" ] && jq -e --arg id "$job_id"               'any(.[]; .trainingJobId == $id and .status == "completed")'               "$state_file" >/dev/null; then
+              completed=1
+              break
+            fi
+            sleep 1
+          done
+
+          if [ "$completed" -ne 1 ]; then
+            cat /tmp/personalai-v256.log
+            test -f /tmp/personalai-v256/model-lab/training-executions-personal.json && cat /tmp/personalai-v256/model-lab/training-executions-personal.json
+            exit 1
+          fi
+
+          jq -e --arg id "$job_id" '
+            any(.[]; .trainingJobId == $id
+              and .status == "completed"
+              and .providerId == "mock"
+              and .attempt == 1
+              and .completedAt != null)
+          ' /tmp/personalai-v256/model-lab/training-executions-personal.json >/dev/null

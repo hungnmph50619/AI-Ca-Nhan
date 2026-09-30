@@ -11,6 +11,7 @@ public static class ModelLabEndpoints
         services.AddSingleton<IModelLabDatasetStore, SqliteModelLabDatasetStore>();
         services.AddScoped<IPersonalDatasetBuilder, PersonalDatasetBuilder>();
         services.AddScoped<IDataCleaningService, DataCleaningService>();
+        services.AddScoped<ITrainingDatasetValidationService, TrainingDatasetValidationService>();
         services.AddSingleton<ITrainingJobStore, SqliteTrainingJobStore>();
         return services;
     }
@@ -25,6 +26,32 @@ public static class ModelLabEndpoints
         endpoints.MapGet("/api/model-lab/training/status", (
             ITrainingJobStore jobs) =>
             Results.Ok(jobs.GetStatus()));
+
+        endpoints.MapPost("/api/model-lab/training/validate", (
+            ValidateTrainingDatasetRequest request,
+            ITrainingDatasetValidationService validation) =>
+        {
+            try
+            {
+                return Results.Ok(validation.Validate(request));
+            }
+            catch (TrainingDatasetValidationException exception)
+            {
+                return Results.BadRequest(new ApiError(exception.Message));
+            }
+            catch (DataCleaningValidationException exception)
+            {
+                return Results.BadRequest(new ApiError(exception.Message));
+            }
+            catch (ModelLabDatasetValidationException exception)
+            {
+                return Results.BadRequest(new ApiError(exception.Message));
+            }
+            catch (KeyNotFoundException exception)
+            {
+                return Results.NotFound(new ApiError(exception.Message));
+            }
+        });
 
         endpoints.MapGet("/api/model-lab/training/jobs", (
             ITrainingJobStore jobs) =>

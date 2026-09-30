@@ -28,6 +28,7 @@ builder.Services.AddSingleton<IKnowledgeDocumentManagementService, KnowledgeDocu
 builder.Services.AddSingleton<IKnowledgeHybridSearchService, KnowledgeHybridSearchService>();
 builder.Services.AddKnowledgeQuality();
 builder.Services.AddEvaluationFramework();
+builder.Services.AddModelLab();
 builder.Services.AddAuditFoundation();
 builder.Services.AddUndoFoundation();
 builder.Services.AddComputerUse();
@@ -106,6 +107,7 @@ app.MapHardeningFoundation();
 app.MapPersonalAiOs();
 app.MapAgentFramework();
 app.MapEvaluationFramework();
+app.MapModelLab();
 
 app.MapGet("/api/status", (
     IAiProviderResolver providerResolver,

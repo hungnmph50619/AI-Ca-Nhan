@@ -25,6 +25,17 @@ public interface IDevelopmentAgentService
         bool staged,
         CancellationToken cancellationToken = default);
 
+    Task<DevelopmentBranchResult> GetCurrentBranchAsync(
+        string repositoryPath,
+        CancellationToken cancellationToken = default);
+
+    Task<DevelopmentBranchResult> CreateExperimentBranchAsync(
+        string repositoryPath,
+        string baseBranch,
+        string experimentBranch,
+        bool confirmed,
+        CancellationToken cancellationToken = default);
+
     Task<DevelopmentProcessResult> DotnetRestoreAsync(
         string targetPath,
         CancellationToken cancellationToken = default);
@@ -117,19 +128,21 @@ public sealed class DevelopmentAgentService(
                 DevelopmentCapabilities.TextSearch,
                 DevelopmentCapabilities.GitStatus,
                 DevelopmentCapabilities.GitDiff,
+                DevelopmentCapabilities.GitExperimentBranch,
                 DevelopmentCapabilities.DotnetRestore,
                 DevelopmentCapabilities.DotnetBuild,
                 DevelopmentCapabilities.DotnetTest
             ],
             [
                 "Không có generic shell, command string, cmd /c hoặc PowerShell execution.",
-                "Không có git add/commit/push/pull/reset/checkout/merge/rebase.",
+                "Không có git add/commit/push/pull/reset/merge/rebase. Chỉ cho phép tạo/switch branch experiment/* có xác nhận.",
                 "Chỉ dotnet restore/build/test với target project/solution nằm trong workspace.",
                 "Không nhận arbitrary process arguments từ tool input.",
                 "dotnet build/test có thể thực thi MSBuild targets hoặc test code của project; vì vậy luôn cần xác nhận.",
                 "Source search bỏ qua .git, bin, obj, node_modules và các build-output directory phổ biến.",
                 "Mọi source/process output của development tools được coi là dữ liệu nhạy cảm."
-            ]);
+            ],
+            ExperimentBranchActionsEnabled: true);
 
     public DevelopmentWorkspaceInspection InspectWorkspace()
     {
@@ -370,6 +383,145 @@ public sealed class DevelopmentAgentService(
             result.DurationMs,
             result.Output,
             result.OutputTruncated);
+    }
+
+
+    public async Task<DevelopmentBranchResult> GetCurrentBranchAsync(
+        string repositoryPath,
+        CancellationToken cancellationToken = default)
+    {
+        EnsureExecutableAvailable("git");
+        var directory = ResolveDirectory(repositoryPath, allowRoot: true);
+        var repository = ResolveGitRepository(directory);
+        var result = await RunProcessAsync(
+            "git",
+            [
+                $"--git-dir={repository.GitDirectory}",
+                $"--work-tree={repository.WorkTree}",
+                "branch",
+                "--show-current"
+            ],
+            directory,
+            GitTimeoutMs,
+            cancellationToken);
+
+        return new DevelopmentBranchResult(
+            repositoryPath,
+            result.Output.Trim(),
+            result.ExitCode == 0 && !result.TimedOut,
+            result.DurationMs,
+            result.Output);
+    }
+
+    public async Task<DevelopmentBranchResult> CreateExperimentBranchAsync(
+        string repositoryPath,
+        string baseBranch,
+        string experimentBranch,
+        bool confirmed,
+        CancellationToken cancellationToken = default)
+    {
+        if (!confirmed)
+            throw new ToolExecutionInputException(
+                "Tạo experiment branch cần xác nhận rõ của người dùng.");
+
+        var normalizedBase = NormalizeSafeBranch(baseBranch, allowExperimentOnly: false);
+        var normalizedExperiment = NormalizeSafeBranch(experimentBranch, allowExperimentOnly: true);
+
+        EnsureExecutableAvailable("git");
+        var directory = ResolveDirectory(repositoryPath, allowRoot: true);
+        var repository = ResolveGitRepository(directory);
+
+        var status = await RunProcessAsync(
+            "git",
+            [
+                $"--git-dir={repository.GitDirectory}",
+                $"--work-tree={repository.WorkTree}",
+                "status",
+                "--porcelain",
+                "--untracked-files=normal"
+            ],
+            directory,
+            GitTimeoutMs,
+            cancellationToken);
+
+        if (status.ExitCode != 0 || status.TimedOut)
+            throw new ToolExecutionInputException(
+                "Không kiểm tra được trạng thái Git trước khi tạo experiment branch.");
+        if (!string.IsNullOrWhiteSpace(status.Output))
+            throw new ToolExecutionInputException(
+                "Repository đang có thay đổi chưa commit; từ chối tạo/switch experiment branch.");
+
+        var verify = await RunProcessAsync(
+            "git",
+            [
+                $"--git-dir={repository.GitDirectory}",
+                $"--work-tree={repository.WorkTree}",
+                "rev-parse",
+                "--verify",
+                $"refs/heads/{normalizedBase}"
+            ],
+            directory,
+            GitTimeoutMs,
+            cancellationToken);
+
+        if (verify.ExitCode != 0 || verify.TimedOut)
+            throw new ToolExecutionInputException(
+                $"Không tìm thấy base branch '{normalizedBase}'.");
+
+        var create = await RunProcessAsync(
+            "git",
+            [
+                $"--git-dir={repository.GitDirectory}",
+                $"--work-tree={repository.WorkTree}",
+                "switch",
+                "-c",
+                normalizedExperiment,
+                normalizedBase
+            ],
+            directory,
+            GitTimeoutMs,
+            cancellationToken);
+
+        return new DevelopmentBranchResult(
+            repositoryPath,
+            normalizedExperiment,
+            create.ExitCode == 0 && !create.TimedOut,
+            create.DurationMs,
+            create.Output);
+    }
+
+    private static string NormalizeSafeBranch(
+        string? value,
+        bool allowExperimentOnly)
+    {
+        var branch = (value ?? string.Empty).Trim();
+        if (branch.Length is < 1 or > 120 ||
+            branch.StartsWith('-') ||
+            branch.Contains("..", StringComparison.Ordinal) ||
+            branch.Contains(' ') ||
+            branch.Any(character =>
+                char.IsControl(character) ||
+                character is '~' or '^' or ':' or '?' or '*' or '[' or '\\'))
+        {
+            throw new ToolExecutionInputException("Tên branch không hợp lệ.");
+        }
+
+        if (allowExperimentOnly &&
+            !branch.StartsWith("experiment/", StringComparison.Ordinal))
+        {
+            throw new ToolExecutionInputException(
+                "Chỉ được phép tạo branch có tiền tố experiment/.");
+        }
+
+        if (string.Equals(branch, "main", StringComparison.OrdinalIgnoreCase) ||
+            string.Equals(branch, "master", StringComparison.OrdinalIgnoreCase))
+        {
+            if (allowExperimentOnly)
+                throw new ToolExecutionInputException(
+                    "Không được dùng main/master làm experiment branch.");
+        }
+
+        return branch;
     }
 
     public Task<DevelopmentProcessResult> DotnetRestoreAsync(

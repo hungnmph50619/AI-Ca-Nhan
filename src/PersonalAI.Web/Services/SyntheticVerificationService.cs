@@ -36,7 +36,9 @@ public sealed class SyntheticVerificationService(
             reports.Count(x => x.EligibleForTraining),
             CriticRequired: true,
             DatasetValidationRequired: true,
+            ReferenceVerificationRequired: true,
             EvaluationGateRequired: true,
+            HumanReviewOptional: true,
             VerificationRequiredForCommit: true);
     }
 
@@ -126,6 +128,38 @@ public sealed class SyntheticVerificationService(
             datasetCheck.Detail,
             datasetCheck.Score));
 
+        var referenceCheck = VerifyAgainstSourceReferences(
+            source.Items,
+            draft.Items);
+        layers.Add(new(
+            "reference-verification",
+            referenceCheck.Passed,
+            referenceCheck.Detail,
+            referenceCheck.Score));
+
+        var humanReviewApplied = request.HumanReviewed;
+        var humanReviewPassed = true;
+        if (request.HumanReviewed)
+        {
+            var decision = (request.HumanReviewDecision ?? string.Empty)
+                .Trim()
+                .ToLowerInvariant();
+            humanReviewPassed = decision == "approved";
+            layers.Add(new(
+                "human-review",
+                humanReviewPassed,
+                humanReviewPassed
+                    ? "Human review đã approved."
+                    : "Human review đã áp dụng nhưng chưa approved."));
+        }
+        else
+        {
+            layers.Add(new(
+                "human-review",
+                true,
+                "Human review không được yêu cầu cho lần xác minh này."));
+        }
+
         var denominator = Math.Max(1, prospective.Length);
         var syntheticRatio = (double)draft.Items.Count / denominator;
 
@@ -145,7 +179,13 @@ public sealed class SyntheticVerificationService(
             sourceImmutable &&
             criticPassed &&
             datasetCheck.Passed &&
-            evaluationPassed;
+            referenceCheck.Passed &&
+            evaluationPassed &&
+            humanReviewPassed;
+
+        var status = eligible
+            ? SyntheticVerificationStatuses.Verified
+            : SyntheticVerificationStatuses.Rejected;
 
         var report = new SyntheticVerificationReport(
             Guid.NewGuid(),
@@ -160,7 +200,10 @@ public sealed class SyntheticVerificationService(
             safetyAverage,
             syntheticRatio,
             datasetCheck.Passed,
+            referenceCheck.Passed,
             evaluationPassed,
+            humanReviewApplied,
+            status,
             eligible,
             DateTimeOffset.UtcNow);
 
@@ -179,6 +222,68 @@ public sealed class SyntheticVerificationService(
             eligible ? AuditResults.Succeeded : AuditResults.Failed);
 
         return report;
+    }
+
+    private static (bool Passed, string Detail, double Score)
+        VerifyAgainstSourceReferences(
+            IReadOnlyList<JsonElement> sourceItems,
+            IReadOnlyList<JsonElement> syntheticItems)
+    {
+        var sourceLabels = sourceItems
+            .Where(x => x.ValueKind == JsonValueKind.Object)
+            .Select(x => x.TryGetProperty("expected", out var expected) &&
+                         expected.ValueKind == JsonValueKind.String
+                ? expected.GetString()?.Trim()
+                : null)
+            .Where(x => !string.IsNullOrWhiteSpace(x))
+            .Cast<string>()
+            .Distinct(StringComparer.OrdinalIgnoreCase)
+            .ToArray();
+
+        var classificationLike =
+            sourceLabels.Length is >= 1 and <= 100 &&
+            sourceLabels.All(x => x.Length <= 120);
+
+        if (!classificationLike)
+        {
+            return (
+                true,
+                "Source dataset không có label vocabulary dạng classification; reference verification không áp dụng cứng.",
+                1d);
+        }
+
+        var sourceSet = sourceLabels.ToHashSet(StringComparer.OrdinalIgnoreCase);
+        var matched = 0;
+
+        for (var index = 0; index < syntheticItems.Count; index++)
+        {
+            var item = syntheticItems[index];
+            if (item.ValueKind != JsonValueKind.Object ||
+                !item.TryGetProperty("expected", out var expected) ||
+                expected.ValueKind != JsonValueKind.String)
+            {
+                return (
+                    false,
+                    $"Synthetic item {index} thiếu expected để reference verify.",
+                    syntheticItems.Count == 0 ? 0 : (double)matched / syntheticItems.Count);
+            }
+
+            var label = expected.GetString()?.Trim() ?? string.Empty;
+            if (!sourceSet.Contains(label))
+            {
+                return (
+                    false,
+                    $"Synthetic item {index} dùng label '{label}' không có trong source reference set.",
+                    syntheticItems.Count == 0 ? 0 : (double)matched / syntheticItems.Count);
+            }
+
+            matched++;
+        }
+
+        return (
+            true,
+            $"Tất cả {syntheticItems.Count} synthetic item khớp source label reference set.",
+            syntheticItems.Count == 0 ? 0 : 1d);
     }
 
     private static (bool Passed, string Detail, double Score)

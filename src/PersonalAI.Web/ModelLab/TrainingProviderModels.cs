@@ -31,6 +31,9 @@ public sealed record TrainingProviderValidationResult(
 
 public sealed record TrainingProviderStartRequest(
     Guid TrainingJobId,
+    string DatasetId,
+    int DatasetVersion,
+    string DatasetSha256,
     string BaseModel,
     string TrainingMethod,
     JsonElement Hyperparameters,

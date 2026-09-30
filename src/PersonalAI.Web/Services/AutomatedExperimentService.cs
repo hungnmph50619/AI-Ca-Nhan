@@ -30,7 +30,7 @@ public sealed class AutomatedExperimentService(
 
         var developmentStatus = development.GetStatus();
         var branchCreationPerformed = false;
-        var status = developmentStatus.GitWriteActionsEnabled
+        var status = developmentStatus.ExperimentBranchActionsEnabled
             ? AutomatedExperimentStatuses.Prepared
             : AutomatedExperimentStatuses.BranchCreationBlocked;
 
@@ -38,9 +38,9 @@ public sealed class AutomatedExperimentService(
             AuditAgents.System,
             "self-improvement.experiment.prepare",
             $"experiment:{experimentId}",
-            developmentStatus.GitWriteActionsEnabled
+            developmentStatus.ExperimentBranchActionsEnabled
                 ? "isolated-experiment-prepared"
-                : "git-write-actions-disabled",
+                : "experiment-branch-actions-disabled",
             status == AutomatedExperimentStatuses.Prepared
                 ? AuditResults.Prepared
                 : AuditResults.Blocked);
@@ -61,7 +61,7 @@ public sealed class AutomatedExperimentService(
             RollbackPlan:
                 "Discard the experiment branch or reset the isolated experiment; do not change main automatically.",
             GitAvailable: developmentStatus.GitAvailable,
-            GitWriteActionsEnabled: developmentStatus.GitWriteActionsEnabled,
+            GitWriteActionsEnabled: developmentStatus.ExperimentBranchActionsEnabled,
             BranchCreationPerformed: branchCreationPerformed,
             HumanApprovalRequired: true,
             PreparedAt: DateTimeOffset.UtcNow);

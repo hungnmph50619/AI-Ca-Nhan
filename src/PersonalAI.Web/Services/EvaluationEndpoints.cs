@@ -1,4 +1,5 @@
 using PersonalAI.Web.Evaluation.Benchmarks;
+using PersonalAI.Web.Evaluation.Comparison;
 using PersonalAI.Web.Evaluation.Contracts;
 using PersonalAI.Web.Evaluation.Core;
 using PersonalAI.Web.Evaluation.Evaluators;
@@ -15,6 +16,7 @@ public static class EvaluationEndpoints
         services.AddSingleton<IEvaluationEngine, EvaluationEngine>();
         services.AddSingleton<IRegressionDatasetStore, SqliteRegressionDatasetStore>();
         services.AddScoped<IAgentBenchmarkService, AgentBenchmarkService>();
+        services.AddScoped<IModelComparisonService, ModelComparisonService>();
         return services;
     }
 
@@ -24,7 +26,7 @@ public static class EvaluationEndpoints
             Results.Ok(new
             {
                 version = PersonalAiRelease.Version,
-                frameworkVersion = "2.3.22",
+                frameworkVersion = "2.3.23",
                 localOnly = true,
                 maximumBatchSize = EvaluationEngine.MaximumBatchSize,
                 maximumSummaryResults = EvaluationMetricsAggregator.MaximumResults,
@@ -184,6 +186,20 @@ public static class EvaluationEndpoints
                 return Results.Json(
                     new ApiError(exception.Message),
                     statusCode: StatusCodes.Status502BadGateway);
+            }
+        });
+
+        endpoints.MapPost("/api/evaluation/model-comparison", (
+            ModelComparisonRequest request,
+            IModelComparisonService comparison) =>
+        {
+            try
+            {
+                return Results.Ok(comparison.Compare(request));
+            }
+            catch (ModelComparisonValidationException exception)
+            {
+                return Results.BadRequest(new ApiError(exception.Message));
             }
         });
 

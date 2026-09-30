@@ -14,6 +14,7 @@ public static class ModelLabEndpoints
         services.AddScoped<ITrainingDatasetValidationService, TrainingDatasetValidationService>();
         services.AddSingleton<ITrainingJobStore, SqliteTrainingJobStore>();
         services.AddSingleton<ITrainingProvider, MockTrainingProvider>();
+        services.AddSingleton<ITrainingProvider, LocalSmallModelTrainingProvider>();
         services.AddSingleton<ITrainingProviderRegistry, TrainingProviderRegistry>();
         services.AddSingleton<ITrainingExecutionStore, JsonTrainingExecutionStore>();
         services.AddSingleton<TrainingExecutor>();

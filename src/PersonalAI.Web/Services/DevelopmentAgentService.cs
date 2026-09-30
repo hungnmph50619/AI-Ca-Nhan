@@ -49,6 +49,12 @@ public interface IDevelopmentAgentService
         string targetPath,
         string configuration,
         CancellationToken cancellationToken = default);
+
+    Task<DevelopmentPublishResult> DotnetPublishCandidateAsync(
+        string targetPath,
+        string configuration,
+        string deploymentId,
+        CancellationToken cancellationToken = default);
 }
 
 public sealed class DevelopmentAgentService(
@@ -66,6 +72,7 @@ public sealed class DevelopmentAgentService(
     public const int DotnetRestoreTimeoutMs = 110_000;
     public const int DotnetBuildTimeoutMs = 110_000;
     public const int DotnetTestTimeoutMs = 170_000;
+    public const int DotnetPublishTimeoutMs = 170_000;
 
     private static readonly StringComparer PathComparer =
         OperatingSystem.IsWindows()
@@ -131,12 +138,13 @@ public sealed class DevelopmentAgentService(
                 DevelopmentCapabilities.GitExperimentBranch,
                 DevelopmentCapabilities.DotnetRestore,
                 DevelopmentCapabilities.DotnetBuild,
-                DevelopmentCapabilities.DotnetTest
+                DevelopmentCapabilities.DotnetTest,
+                DevelopmentCapabilities.DotnetPublishCandidate
             ],
             [
                 "Không có generic shell, command string, cmd /c hoặc PowerShell execution.",
                 "Không có git add/commit/push/pull/reset/merge/rebase. Chỉ cho phép tạo/switch branch experiment/* có xác nhận.",
-                "Chỉ dotnet restore/build/test với target project/solution nằm trong workspace.",
+                "Chỉ dotnet restore/build/test với target project/solution nằm trong workspace; publish chỉ tạo candidate trong local app data.",
                 "Không nhận arbitrary process arguments từ tool input.",
                 "dotnet build/test có thể thực thi MSBuild targets hoặc test code của project; vì vậy luôn cần xác nhận.",
                 "Source search bỏ qua .git, bin, obj, node_modules và các build-output directory phổ biến.",
@@ -587,6 +595,132 @@ public sealed class DevelopmentAgentService(
             ],
             DotnetTestTimeoutMs,
             cancellationToken);
+    }
+
+
+    public async Task<DevelopmentPublishResult> DotnetPublishCandidateAsync(
+        string targetPath,
+        string configuration,
+        string deploymentId,
+        CancellationToken cancellationToken = default)
+    {
+        EnsureExecutableAvailable("dotnet");
+        var target = ResolveDotnetTarget(targetPath);
+        var normalizedConfiguration = NormalizeConfiguration(configuration);
+        var normalizedDeploymentId = NormalizeDeploymentId(deploymentId);
+
+        var localData = Environment.GetFolderPath(
+            Environment.SpecialFolder.LocalApplicationData);
+        if (string.IsNullOrWhiteSpace(localData))
+        {
+            localData = Path.Combine(
+                Environment.GetFolderPath(Environment.SpecialFolder.UserProfile),
+                ".personalai");
+        }
+
+        var deploymentRoot = Path.Combine(
+            localData,
+            "PersonalAI",
+            "Deployments",
+            workspaceContext.CurrentWorkspaceId,
+            normalizedDeploymentId);
+
+        if (Directory.Exists(deploymentRoot) || File.Exists(deploymentRoot))
+        {
+            throw new ToolExecutionInputException(
+                "Deployment candidate ID đã tồn tại; không ghi đè candidate cũ.");
+        }
+
+        Directory.CreateDirectory(deploymentRoot);
+        var workingDirectory = Path.GetDirectoryName(target.FullPath)
+            ?? workspaceFiles.GetWorkspaceRoot();
+
+        ProcessRunResult result;
+        try
+        {
+            result = await RunProcessAsync(
+                "dotnet",
+                [
+                    "publish",
+                    target.FullPath,
+                    "--no-restore",
+                    "--nologo",
+                    "--configuration",
+                    normalizedConfiguration,
+                    "--verbosity",
+                    "minimal",
+                    "--output",
+                    deploymentRoot
+                ],
+                workingDirectory,
+                DotnetPublishTimeoutMs,
+                cancellationToken);
+        }
+        catch
+        {
+            TryDeleteDirectory(deploymentRoot);
+            throw;
+        }
+
+        if (result.ExitCode != 0 || result.TimedOut)
+        {
+            TryDeleteDirectory(deploymentRoot);
+            return new DevelopmentPublishResult(
+                $"{workspaceContext.CurrentWorkspaceId}/{normalizedDeploymentId}",
+                target.RelativePath,
+                result.ExitCode,
+                Succeeded: false,
+                result.TimedOut,
+                result.DurationMs,
+                result.Output,
+                result.OutputTruncated,
+                FileCount: 0,
+                TotalBytes: 0);
+        }
+
+        var files = Directory
+            .EnumerateFiles(deploymentRoot, "*", SearchOption.AllDirectories)
+            .Select(path => new FileInfo(path))
+            .ToArray();
+
+        return new DevelopmentPublishResult(
+            $"{workspaceContext.CurrentWorkspaceId}/{normalizedDeploymentId}",
+            target.RelativePath,
+            result.ExitCode,
+            Succeeded: true,
+            result.TimedOut,
+            result.DurationMs,
+            result.Output,
+            result.OutputTruncated,
+            files.Length,
+            files.Sum(file => file.Length));
+    }
+
+    private static string NormalizeDeploymentId(string? value)
+    {
+        var id = (value ?? string.Empty).Trim().ToLowerInvariant();
+        if (id.Length is < 3 or > 100 ||
+            id.Any(character =>
+                !(char.IsLetterOrDigit(character) || character == '-')))
+        {
+            throw new ToolExecutionInputException(
+                "Deployment ID chỉ được gồm chữ thường, số, dấu gạch ngang và dài 3–100 ký tự.");
+        }
+
+        return id;
+    }
+
+    private static void TryDeleteDirectory(string path)
+    {
+        try
+        {
+            if (Directory.Exists(path))
+                Directory.Delete(path, recursive: true);
+        }
+        catch
+        {
+            // Best effort cleanup; never mask the original publish failure.
+        }
     }
 
     private async Task<DevelopmentProcessResult> RunDotnetAsync(

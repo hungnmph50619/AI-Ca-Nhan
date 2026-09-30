@@ -22,6 +22,7 @@ public static class ModelLabEndpoints
         services.AddSingleton<IModelRegistry, JsonModelRegistry>();
         services.AddSingleton<ICandidateTrainingPlanStore, JsonCandidateTrainingPlanStore>();
         services.AddScoped<ICandidateTrainingService, CandidateTrainingService>();
+        services.AddScoped<IRegisteredModelComparisonService, RegisteredModelComparisonService>();
         services.AddScoped<ISyntheticCriticService, SyntheticCriticService>();
         services.AddScoped<ISyntheticVerificationService, SyntheticVerificationService>();
         services.AddScoped<ISyntheticDataService, SyntheticDataService>();
@@ -322,6 +323,40 @@ public static class ModelLabEndpoints
                 return Results.Json(
                     new ApiError(exception.Message),
                     statusCode: StatusCodes.Status409Conflict);
+            }
+            catch (KeyNotFoundException exception)
+            {
+                return Results.NotFound(new ApiError(exception.Message));
+            }
+        });
+
+        endpoints.MapGet("/api/model-lab/model-comparisons/status", (
+            IRegisteredModelComparisonService comparisons) =>
+            Results.Ok(comparisons.GetStatus()));
+
+        endpoints.MapGet("/api/model-lab/model-comparisons", (
+            IRegisteredModelComparisonService comparisons) =>
+            Results.Ok(comparisons.GetAll()));
+
+        endpoints.MapGet("/api/model-lab/model-comparisons/{comparisonId:guid}", (
+            Guid comparisonId,
+            IRegisteredModelComparisonService comparisons) =>
+        {
+            var report = comparisons.Get(comparisonId);
+            return report is null ? Results.NotFound() : Results.Ok(report);
+        });
+
+        endpoints.MapPost("/api/model-lab/model-comparisons", (
+            CompareRegisteredModelsRequest request,
+            IRegisteredModelComparisonService comparisons) =>
+        {
+            try
+            {
+                return Results.Ok(comparisons.Compare(request));
+            }
+            catch (RegisteredModelComparisonValidationException exception)
+            {
+                return Results.BadRequest(new ApiError(exception.Message));
             }
             catch (KeyNotFoundException exception)
             {

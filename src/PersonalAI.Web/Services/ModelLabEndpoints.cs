@@ -15,6 +15,7 @@ public static class ModelLabEndpoints
         services.AddSingleton<ITrainingJobStore, SqliteTrainingJobStore>();
         services.AddSingleton<ITrainingProvider, MockTrainingProvider>();
         services.AddSingleton<ITrainingProvider, LocalSmallModelTrainingProvider>();
+        services.AddSingleton<ITrainingProvider, PeftTrainingProvider>();
         services.AddSingleton<ITrainingProviderRegistry, TrainingProviderRegistry>();
         services.AddSingleton<ITrainingExecutionStore, JsonTrainingExecutionStore>();
         services.AddSingleton<TrainingExecutor>();

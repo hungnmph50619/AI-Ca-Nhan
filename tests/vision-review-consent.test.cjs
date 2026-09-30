@@ -1,0 +1,301 @@
+"use strict";
+// Kiểm thử hành vi nút đề xuất bằng DOM giả; không có ảnh thật hay mạng.
+const assert = require("node:assert/strict");
+const test = require("node:test");
+const vm = require("node:vm");
+const fs = require("node:fs");
+const path = require("node:path");
+const core = require("../src/PersonalAI.Web/wwwroot/vision-review-core.js");
+const script = fs.readFileSync(path.join(__dirname, "../src/PersonalAI.Web/wwwroot/vision-review.js"), "utf8");
+
+function setup(fetchImplementation) {
+  const elements = new Map();
+  function element(id) {
+    if (!elements.has(id)) {
+      const listeners = new Map();
+      elements.set(id, {
+        id, value: "", checked: false, disabled: false, files: [], hidden: true,
+        textContent: "", style: {}, listeners, children: [],
+        replaceChildren() { this.children = []; this.value = ""; },
+        appendChild(child) { this.children.push(child); if (this.children.length === 1) this.value = child.value; },
+        addEventListener(type, handler) { listeners.set(type, handler); },
+        emit(type) { return listeners.get(type)?.({}); },
+        removeAttribute() {}, focus() {}, click() {},
+        getBoundingClientRect() { return {left: 0, top: 0, width: 960, height: 540}; }
+      });
+    }
+    return elements.get(id);
+  }
+  const canvas = element("imageCanvas");
+  canvas.getContext = () => ({
+    clearRect() {}, drawImage() {}, save() {}, restore() {}, setLineDash() {},
+    strokeRect() {}, strokeStyle: "", lineWidth: 2
+  });
+  element("qualityThreshold").value = "0.5";
+  const document = {
+    getElementById: element,
+    createElement: () => ({click(){}, remove(){}}),
+    body: {appendChild(){}}
+  };
+  class FakeImage {
+    naturalWidth = 960;
+    naturalHeight = 540;
+    set src(value) { if (value) this.onload?.(); }
+  }
+  class FakeFormData {
+    fields = [];
+    append(name, value, filename) { this.fields.push({name, value, filename}); }
+  }
+  const calls = [];
+  const context = {
+    MinimapReviewCore: core,
+    document,
+    Image: FakeImage,
+    FormData: FakeFormData,
+    URL: {createObjectURL: () => "blob:test", revokeObjectURL() {}},
+    window: {addEventListener() {}, confirm: () => true},
+    fetch: async (url, options) => {
+      calls.push({url, options});
+      return fetchImplementation(url, options);
+    },
+    console,
+    setTimeout() {},
+    Blob: class {},
+  };
+  context.globalThis = context;
+  vm.runInNewContext(script, context, {filename: "vision-review.js"});
+  function selectImage(id) {
+    const input = element("imageFile");
+    input.files = [{ name: id + ".png", size: 4096, type: "image/png" }];
+    input.emit("change");
+  }
+  async function clickLocate() { await element("locateButton").emit("click"); }
+  function consent() {
+    element("locateConsent").checked = true;
+    element("locateConsent").emit("change");
+  }
+  return {element, calls, selectImage, clickLocate, consent};
+}
+
+function response(data) { return {ok: true, json: async () => data}; }
+const ready = {available: true};
+const proposed = {
+  provider: "Gemini", verified: false, needsReview: true,
+  width: 960, height: 540, found: true,
+  normalizedBox: [600, 100, 900, 400]
+};
+
+test("Chọn ảnh hoặc chỉ tích xác nhận KHÔNG gửi ảnh; một lần bấm mới gửi", async () => {
+  const app = setup(url => response(url.endsWith("/status") ? ready : proposed));
+  app.selectImage("a");
+  assert.equal(app.calls.length, 0);
+  assert.equal(app.element("locateButton").disabled, true);
+  app.consent();
+  assert.equal(app.calls.length, 0);
+  assert.equal(app.element("locateButton").disabled, false);
+  await app.clickLocate();
+  assert.deepEqual(app.calls.map(x => x.url), [
+    "/api/vision/minimap/locate/status", "/api/vision/minimap/locate"
+  ]);
+  assert.equal(app.calls[1].options.method, "POST");
+  assert.equal(app.calls[1].options.headers["X-Xerath-Vision"], "1");
+  assert.equal(app.calls[1].options.body.fields.find(x => x.name === "confirmed").value, "true");
+  assert.equal(app.element("predictionMode").value, "found");
+  assert.equal(app.element("predictionBox").value, "[600,100,900,400]");
+  assert.equal(app.element("reviewed").checked, false);
+  assert.equal(app.element("locateConsent").checked, false);
+  assert.equal(app.element("locateButton").disabled, true);
+  await app.clickLocate();
+  assert.equal(app.calls.length, 2, "Không gửi lại khi chưa đồng ý lần nữa");
+});
+
+test("Rút lại đồng ý khi đang kiểm tra trạng thái: không gửi ảnh", async () => {
+  let finishStatus;
+  const waiting = new Promise(resolve => { finishStatus = resolve; });
+  const app = setup(url => url.endsWith("/status") ? waiting : response(proposed));
+  app.selectImage("a");
+  app.consent();
+  const inflight = app.clickLocate();
+  app.element("locateConsent").checked = false;
+  app.element("locateConsent").emit("change");
+  finishStatus(response(ready));
+  await inflight;
+  assert.equal(app.calls.filter(x => x.url === "/api/vision/minimap/locate").length, 0);
+});
+
+test("Đổi ảnh khi đang kiểm tra trạng thái: không gửi ảnh cũ", async () => {
+  let finishStatus;
+  const waiting = new Promise(resolve => { finishStatus = resolve; });
+  const app = setup(url => url.endsWith("/status") ? waiting : response(proposed));
+  app.selectImage("a");
+  app.consent();
+  const inflight = app.clickLocate();
+  app.selectImage("b");
+  finishStatus(response(ready));
+  await inflight;
+  assert.equal(app.calls.filter(x => x.url === "/api/vision/minimap/locate").length, 0);
+  assert.equal(app.element("locateConsent").checked, false);
+  assert.equal(app.element("predictionBox").value, "");
+});
+
+test("Đổi ảnh khi Gemini đang trả kết quả: bỏ qua đề xuất cũ", async () => {
+  let finishProposal;
+  const waiting = new Promise(resolve => { finishProposal = resolve; });
+  const app = setup(url => url.endsWith("/status") ? response(ready) : waiting);
+  app.selectImage("a");
+  app.consent();
+  const inflight = app.clickLocate();
+  // Chờ tới khi fetch /locate thực sự bắt đầu, không dùng timeout.
+  for (let i = 0; i < 12 && app.calls.length < 2; i++) await Promise.resolve();
+  assert.equal(app.calls.length, 2);
+  app.selectImage("b");
+  finishProposal(response(proposed));
+  await inflight;
+  assert.equal(app.element("predictionMode").value, "");
+  assert.equal(app.element("predictionBox").value, "");
+  assert.equal(app.element("reviewed").checked, false);
+});
+
+test("Kết quả sai kích thước không ghi vào nhãn chuẩn", async () => {
+  const app = setup(url => response(url.endsWith("/status") ? ready : {...proposed, width: 1920}));
+  app.selectImage("a");
+  app.consent();
+  await app.clickLocate();
+  assert.equal(app.element("predictionMode").value, "");
+  assert.equal(app.element("predictionBox").value, "");
+  assert.match(app.element("locateStatus").textContent, /không phù hợp/);
+});
+
+
+test("Nhập JSON offline cập nhật bảng đánh giá, không dùng API và giữ mẫu khi tệp lỗi", async () => {
+  const app = setup(() => { throw new Error("Không được gọi API khi nhập JSON"); });
+  const importer = app.element("reviewImportFile");
+  app.element("reviewImportMode").value = "replace";
+  importer.files = [{name:"reviewed.json", size:512, text:async () => JSON.stringify([
+    {id:"mau-0007", reviewed:true, truth_box:[100,100,400,400], predicted_box:[100,100,400,400]}
+  ])}];
+  await app.element("reviewImportButton").emit("click");
+  assert.equal(app.calls.length, 0);
+  assert.match(app.element("qualitySummary").textContent, /Đã kiểm tra 1 mẫu/);
+  assert.match(app.element("samples").textContent, /mau-0007/);
+  importer.files = [{name:"invalid.json", size:512, text:async () => JSON.stringify([
+    {id:"mau-0007", reviewed:false, truth_box:null, predicted_box:null}
+  ])}];
+  await app.element("reviewImportButton").emit("click");
+  assert.match(app.element("reviewImportStatus").textContent, /không nhập/i);
+  assert.match(app.element("samples").textContent, /mau-0007/);
+  assert.equal(app.calls.length, 0);
+});
+
+test("Xóa riêng mẫu bị gán nhầm không xóa những mẫu khác", async () => {
+  const app = setup(() => { throw new Error("Không gọi API khi xem hoặc xóa nhãn"); });
+  const importer = app.element("reviewImportFile");
+  app.element("reviewImportMode").value = "replace";
+  importer.files = [{name:"reviewed.json",size:512,text:async () => JSON.stringify([
+    {id:"mau-0001",reviewed:true,truth_box:null,predicted_box:null},
+    {id:"mau-0002",reviewed:true,truth_box:[100,100,400,400],predicted_box:null}
+  ])}];
+  await app.element("reviewImportButton").emit("click");
+  assert.match(app.element("sampleReviewDetail").textContent, /mau-0001/);
+  app.element("sampleReviewSelect").value = "mau-0002";
+  app.element("sampleReviewSelect").emit("change");
+  assert.match(app.element("sampleReviewDetail").textContent, /bỏ sót/);
+  app.element("removeSampleButton").emit("click");
+  assert.match(app.element("samples").textContent, /mau-0001/);
+  assert.doesNotMatch(app.element("samples").textContent, /mau-0002/);
+  assert.match(app.element("qualitySummary").textContent, /Đã kiểm tra 1 mẫu/);
+  assert.equal(app.calls.length, 0);
+});
+
+test("Nhập thêm không được âm thầm ghi đè mã trùng", async () => {
+  const app = setup(() => { throw new Error("Không được gọi API khi nhập JSON"); });
+  const importer = app.element("reviewImportFile");
+  app.element("reviewImportMode").value = "replace";
+  importer.files = [{name:"first.json",size:256,text:async () => JSON.stringify([
+    {id:"mau-0001",reviewed:true,truth_box:null,predicted_box:null}
+  ])}];
+  await app.element("reviewImportButton").emit("click");
+  app.element("reviewImportMode").value = "append";
+  importer.files = [{name:"second.json",size:256,text:async () => JSON.stringify([
+    {id:"mau-0001",reviewed:true,truth_box:[10,10,100,100],predicted_box:null}
+  ])}];
+  await app.element("reviewImportButton").emit("click");
+  assert.match(app.element("reviewImportStatus").textContent, /không nhập/i);
+  assert.match(app.element("qualitySummary").textContent, /Đã kiểm tra 1 mẫu/);
+  assert.equal(app.calls.length, 0);
+});
+
+
+test("Rút đồng ý rồi tích lại trong khi kiểm tra trạng thái không hồi sinh lần bấm cũ", async () => {
+  let releaseStatus;
+  const waiting = new Promise(resolve => { releaseStatus = resolve; });
+  const app = setup(url => url.endsWith("/status") ? waiting : response(proposed));
+  app.selectImage("a");
+  app.consent();
+  const request = app.clickLocate();
+  app.element("locateConsent").checked = false;
+  app.element("locateConsent").emit("change");
+  app.consent();
+  releaseStatus(response(ready));
+  await request;
+  assert.equal(app.calls.filter(call => call.url === "/api/vision/minimap/locate").length, 0);
+  assert.equal(app.element("locateConsent").checked, false);
+});
+
+test("Đề xuất cũ hoàn tất không xóa sự đồng ý của ảnh mới", async () => {
+  let releasePrediction;
+  const waiting = new Promise(resolve => { releasePrediction = resolve; });
+  const app = setup(url => url.endsWith("/status") ? response(ready) : waiting);
+  app.selectImage("a");
+  app.consent();
+  const oldRequest = app.clickLocate();
+  for (let i = 0; i < 12 && app.calls.length < 2; i++) await Promise.resolve();
+  assert.equal(app.calls.length, 2);
+  app.selectImage("b");
+  app.consent();
+  releasePrediction(response(proposed));
+  await oldRequest;
+  assert.equal(app.element("locateConsent").checked, true);
+  assert.equal(app.element("locateButton").disabled, false);
+  assert.equal(app.element("predictionBox").value, "");
+});
+
+test("Nhập JSON đang đọc không được khôi phục dữ liệu sau khi người dùng xóa cả danh sách", async () => {
+  const app = setup(() => { throw new Error("Nhập JSON không được gọi API"); });
+  const importer = app.element("reviewImportFile");
+  app.element("reviewImportMode").value = "replace";
+  importer.files = [{name:"first.json",size:256,text:async () => JSON.stringify([
+    {id:"mau-0001",reviewed:true,truth_box:null,predicted_box:null}
+  ])}];
+  await app.element("reviewImportButton").emit("click");
+  let releaseRead;
+  const delayed = new Promise(resolve => { releaseRead = resolve; });
+  importer.files = [{name:"later.json",size:256,text:async () => delayed}];
+  const pendingImport = app.element("reviewImportButton").emit("click");
+  app.element("resetDataset").emit("click");
+  releaseRead(JSON.stringify([
+    {id:"mau-0002",reviewed:true,truth_box:null,predicted_box:null}
+  ]));
+  await pendingImport;
+  assert.match(app.element("samples").textContent, /Chưa có mẫu nào/);
+  assert.match(app.element("reviewImportStatus").textContent, /không nhập/i);
+  assert.equal(app.calls.length, 0);
+});
+
+test("Đổi file trong khi đang đọc JSON không được nhập file đã bỏ chọn", async () => {
+  const app = setup(() => { throw new Error("Nhập JSON không được gọi API"); });
+  const importer = app.element("reviewImportFile");
+  app.element("reviewImportMode").value = "append";
+  let releaseRead;
+  const delayed = new Promise(resolve => { releaseRead = resolve; });
+  importer.files = [{name:"old.json",size:256,text:async () => delayed}];
+  const pendingImport = app.element("reviewImportButton").emit("click");
+  importer.files = [{name:"new.json",size:256,text:async () => "[]"}];
+  releaseRead(JSON.stringify([
+    {id:"mau-0001",reviewed:true,truth_box:null,predicted_box:null}
+  ]));
+  await pendingImport;
+  assert.match(app.element("samples").textContent, /Chưa có mẫu nào/);
+  assert.match(app.element("reviewImportStatus").textContent, /không nhập/i);
+  assert.equal(app.calls.length, 0);
+});

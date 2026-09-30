@@ -1,0 +1,88 @@
+name: Minimap offline evaluation tests
+
+on:
+  push:
+    branches:
+      - 'feature/v2.3.1-minimap-evaluation'
+      - 'feature/v2.3.2-minimap-evaluation-dashboard'
+      - 'feature/v2.3.3-vision-opt-in-box-suggest'
+      - 'feature/v2.3.4-minimap-evaluation-import'
+      - 'feature/v2.3.5-minimap-sample-review'
+      - 'feature/v2.3.6-minimap-async-safety'
+      - 'feature/v2.3.7-minimap-evaluation-compare'
+      - 'feature/v2.3.8-minimap-compare-ui'
+      - 'feature/v2.3.9-minimap-paired-diagnostics'
+      - 'feature/v2.3.10-minimap-comparison-report'
+      - 'feature/v2.3.11-minimap-python-browser-parity'
+      - 'feature/v2.3.12-minimap-overlay-review'
+      - 'feature/v2.3.13-minimap-overlay-visibility'
+      - 'feature/v2.3.14-minimap-sample-navigation'
+      - 'feature/v2.3.15-minimap-sample-search'
+      - 'feature/v2.3.16-minimap-csv-export'
+      - 'feature/v2.3.17-minimap-threshold-sensitivity'
+  pull_request:
+
+jobs:
+  offline-minimap-evaluation:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - name: Kiểm thử bộ đánh giá tọa độ đã xác minh
+        run: python -m unittest discover -s tests -p 'test_minimap_*.py' -v
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Kiểm thử mã xử lý gán nhãn ngoại tuyến
+        run: |
+          node --check src/PersonalAI.Web/wwwroot/vision-review-core.js
+          node --check src/PersonalAI.Web/wwwroot/vision-review.js
+          node --test tests/vision-review-core.test.cjs
+          node --test tests/vision-review-consent.test.cjs
+          node --check src/PersonalAI.Web/wwwroot/vision-compare-core.js
+          node --check src/PersonalAI.Web/wwwroot/vision-compare.js
+          node --check src/PersonalAI.Web/wwwroot/vision-compare-csv.js
+          node --test tests/vision-compare-csv.test.cjs
+          node --test tests/vision-compare-core.test.cjs
+          node --test tests/vision-compare-ui.test.cjs
+          node --test tests/vision-compare-parity.test.cjs
+      - name: Kiểm tra trang gán nhãn được liên kết từ Vision Lab
+        run: |
+          grep -Fq 'vision-review.html' src/PersonalAI.Web/wwwroot/vision.html
+          grep -Fq 'vision-review-core.js' src/PersonalAI.Web/wwwroot/vision-review.html
+          grep -Fq 'vision-review.js' src/PersonalAI.Web/wwwroot/vision-review.html
+          grep -Fq 'qualitySummary' src/PersonalAI.Web/wwwroot/vision-review.html
+          grep -Fq 'evaluateRecords' src/PersonalAI.Web/wwwroot/vision-review.js
+          grep -Fq 'locateConsent' src/PersonalAI.Web/wwwroot/vision-review.html
+          grep -Fq 'locateConsent.checked' src/PersonalAI.Web/wwwroot/vision-review.js
+          grep -Fq 'X-Xerath-Vision' src/PersonalAI.Web/wwwroot/vision-review.js
+          grep -Fq 'normalizeLocateResponse' src/PersonalAI.Web/wwwroot/vision-review-core.js
+          grep -Fq 'reviewImportFile' src/PersonalAI.Web/wwwroot/vision-review.html
+          grep -Fq 'importReviewedData' src/PersonalAI.Web/wwwroot/vision-review.js
+          grep -Fq 'sampleReviewSelect' src/PersonalAI.Web/wwwroot/vision-review.html
+          grep -Fq 'removeSampleButton' src/PersonalAI.Web/wwwroot/vision-review.js
+          grep -Fq 'datasetVersion' src/PersonalAI.Web/wwwroot/vision-review.js
+          grep -Fq 'approvedConsentVersion' src/PersonalAI.Web/wwwroot/vision-review.js
+          grep -Fq 'vision-compare.html' src/PersonalAI.Web/wwwroot/vision-review.html
+          grep -Fq 'vision-compare-core.js' src/PersonalAI.Web/wwwroot/vision-compare.html
+          grep -Fq 'vision-compare.js' src/PersonalAI.Web/wwwroot/vision-compare.html
+          grep -Fq 'comparisonFilter' src/PersonalAI.Web/wwwroot/vision-compare.html
+          grep -Fq 'transitions' src/PersonalAI.Web/wwwroot/vision-compare-core.js
+          grep -Fq 'exportComparison' src/PersonalAI.Web/wwwroot/vision-compare.html
+          grep -Fq 'minimap-paired-comparison-v1' src/PersonalAI.Web/wwwroot/vision-compare.js
+          grep -Fq 'comparisonOverlay' src/PersonalAI.Web/wwwroot/vision-compare.html
+          grep -Fq 'drawOverlay' src/PersonalAI.Web/wwwroot/vision-compare.js
+          grep -Fq 'overlayShowTruth' src/PersonalAI.Web/wwwroot/vision-compare.html
+          grep -Fq 'overlayShowA' src/PersonalAI.Web/wwwroot/vision-compare.js
+          grep -Fq 'overlayShowB' src/PersonalAI.Web/wwwroot/vision-compare.js
+          grep -Fq 'previousSample' src/PersonalAI.Web/wwwroot/vision-compare.html
+          grep -Fq 'nextSample' src/PersonalAI.Web/wwwroot/vision-compare.js
+          grep -Fq 'samplePosition' src/PersonalAI.Web/wwwroot/vision-compare.js
+          grep -Fq 'comparisonSearch' src/PersonalAI.Web/wwwroot/vision-compare.html
+          grep -Fq 'searchInput.addEventListener("input"' src/PersonalAI.Web/wwwroot/vision-compare.js
+          grep -Fq 'exportComparisonCsv' src/PersonalAI.Web/wwwroot/vision-compare.html
+          grep -Fq 'vision-compare-csv.js' src/PersonalAI.Web/wwwroot/vision-compare.html
+          grep -Fq 'sensitivityRows' src/PersonalAI.Web/wwwroot/vision-compare.html
+          grep -Fq 'compareAcrossThresholds' src/PersonalAI.Web/wwwroot/vision-compare-core.js

@@ -21,9 +21,14 @@ public interface IComputerUseService
     ComputerActionResponse FocusWindow(string windowId);
 
     ComputerActionResponse MoveCursor(int x, int y);
+
+    ComputerActionResponse ClickLeft(string windowId, int x, int y);
+
+    ComputerActionResponse TypeNotepadText(string windowId, string text);
 }
 
-public sealed class WindowsComputerUseService : IComputerUseService
+public sealed class WindowsComputerUseService(
+    ComputerControlGate control) : IComputerUseService
 {
     public const int MaximumWindows = 50;
 
@@ -34,6 +39,13 @@ public sealed class WindowsComputerUseService : IComputerUseService
     private const int SmCxVirtualScreen = 78;
     private const int SmCyVirtualScreen = 79;
     private const int SmCMonitors = 80;
+    private const uint InputMouse = 0;
+    private const uint InputKeyboard = 1;
+    private const uint KeyboardUnicode = 0x0004;
+    private const uint KeyboardKeyUp = 0x0002;
+    public const int MaximumNotepadTextLength = 32;
+    private const uint MouseLeftDown = 0x0002;
+    private const uint MouseLeftUp = 0x0004;
 
     public ComputerUseStatusResponse GetStatus()
     {
@@ -48,16 +60,23 @@ public sealed class WindowsComputerUseService : IComputerUseService
                 ComputerUseCapabilities.WindowList,
                 ComputerUseCapabilities.ActiveWindow,
                 ComputerUseCapabilities.FocusWindow,
-                ComputerUseCapabilities.MoveCursor
+                ComputerUseCapabilities.MoveCursor,
+                ComputerUseCapabilities.ClickLeft,
+                ComputerUseCapabilities.TypeNotepadText
             }
             : Array.Empty<string>();
 
         var limitations = new List<string>
         {
             "Không chụp ảnh màn hình trong v1.1.0.",
-            "Không click chuột, gõ phím hoặc nhập văn bản trong v1.1.0.",
+            "Chỉ hỗ trợ nhấp trái từng lần và nhập một dòng tối đa 32 ký tự vào Notepad có xác nhận; chưa có nhấp phải, nhấp đúp, kéo thả, cuộn hoặc phím tắt.",
             "Không mở ứng dụng, chạy shell hoặc thực thi lệnh hệ thống.",
-            "Các hành động thay đổi focus/cursor phải đi qua Tool Framework và xác nhận."
+            "Các hành động thay đổi focus/cursor phải đi qua Tool Framework và xác nhận.",
+            "Điều khiển được khóa lúc khởi động; phải cho phép thủ công. Nút dừng chỉ chặn các lệnh mới qua dịch vụ, không phải phím dừng toàn hệ thống.",
+            "Nhấp chuột có thể kích hoạt hành động trong ứng dụng khác; chỉ thử trên cửa sổ thử nghiệm không chứa dữ liệu quan trọng.",
+            "Nhập bàn phím chỉ dành cho cửa sổ Notepad đang hoạt động; không nhập mật khẩu, mã xác thực hoặc dữ liệu nhạy cảm. Nội dung có thể bị ứng dụng đích lưu lại.",
+            "Mỗi lần bật chỉ có tối đa 60 giây và 5 thao tác, tính cả thao tác bị Windows từ chối.",
+            "Nhấn Ctrl + Shift + F12 để khóa lại các thao tác máy tính khi phím dừng đã đăng ký; nếu phím bị ứng dụng khác sử dụng, ứng dụng không cho phép bật điều khiển."
         };
 
         if (!windows)
@@ -73,13 +92,18 @@ public sealed class WindowsComputerUseService : IComputerUseService
                 "Tiến trình hiện không chạy trong interactive Windows session.");
         }
 
+        var session = control.GetStatus();
         return new ComputerUseStatusResponse(
             PersonalAiRelease.Version,
             RuntimeInformation.OSDescription,
             windows,
             interactive,
             capabilities,
-            limitations);
+            limitations,
+            DesktopActionsPaused: session.Paused,
+            DesktopSessionExpiresAt: session.ExpiresAt,
+            DesktopRemainingActions: session.RemainingActions,
+            StopHotkeyAvailable: session.StopHotkeyAvailable);
     }
 
     public ComputerScreenInfo GetScreenInfo()
@@ -177,6 +201,10 @@ public sealed class WindowsComputerUseService : IComputerUseService
     }
 
     public ComputerActionResponse FocusWindow(
+        string windowId) =>
+        control.RunAllowed(() => FocusWindowCore(windowId));
+
+    private ComputerActionResponse FocusWindowCore(
         string windowId)
     {
         EnsureAvailable();
@@ -218,6 +246,11 @@ public sealed class WindowsComputerUseService : IComputerUseService
 
     public ComputerActionResponse MoveCursor(
         int x,
+        int y) =>
+        control.RunAllowed(() => MoveCursorCore(x, y));
+
+    private ComputerActionResponse MoveCursorCore(
+        int x,
         int y)
     {
         EnsureAvailable();
@@ -254,6 +287,166 @@ public sealed class WindowsComputerUseService : IComputerUseService
             ComputerUseCapabilities.MoveCursor,
             true,
             $"Đã di chuyển con trỏ tới ({x}, {y}).");
+    }
+
+    public ComputerActionResponse ClickLeft(
+        string windowId,
+        int x,
+        int y) =>
+        control.RunAllowed(() => ClickLeftCore(windowId, x, y));
+
+    private ComputerActionResponse ClickLeftCore(
+        string windowId,
+        int x,
+        int y)
+    {
+        EnsureAvailable();
+        var screen = GetScreenInfo();
+        var right = checked(screen.VirtualLeft + screen.VirtualWidth);
+        var bottom = checked(screen.VirtualTop + screen.VirtualHeight);
+        if (x < screen.VirtualLeft || x >= right
+            || y < screen.VirtualTop || y >= bottom)
+            throw new ToolExecutionInputException("Tọa độ nhấp nằm ngoài màn hình hiện tại.");
+
+        var target = ParseWindowId(windowId);
+        if (!IsWindow(target) || !IsWindowVisible(target)
+            || target != GetForegroundWindow()
+            || !GetWindowRect(target, out var rect)
+            || x < rect.Left || x >= rect.Right
+            || y < rect.Top || y >= rect.Bottom)
+            throw new ToolExecutionInputException(
+                "Cửa sổ đích không còn ở phía trước hoặc tọa độ nằm ngoài cửa sổ. Hãy kiểm tra lại trước khi xác nhận.");
+
+        // Không tự chọn cửa sổ, không di chuyển chuột tới nơi khác nếu cửa sổ đã đổi.
+        if (!SetCursorPos(x, y) || GetForegroundWindow() != target)
+            throw new ToolExecutionInputException(
+                "Không thể xác nhận vị trí con trỏ và cửa sổ đích trước khi nhấp.");
+
+        var inputs = new[]
+        {
+            new NativeInputEvent { Type = InputMouse,
+                Data = new NativeInputUnion { Mouse = new MouseInputData { Flags = MouseLeftDown } } },
+            new NativeInputEvent { Type = InputMouse,
+                Data = new NativeInputUnion { Mouse = new MouseInputData { Flags = MouseLeftUp } } }
+        };
+        var count = SendInput((uint)inputs.Length, inputs,
+            Marshal.SizeOf<NativeInputEvent>());
+        if (count != (uint)inputs.Length)
+        {
+            // Nếu Windows chỉ phát được sự kiện nhấn, thử nhả ngay để tránh giữ nút.
+            var release = new[]
+            {
+                new NativeInputEvent { Type = InputMouse,
+                    Data = new NativeInputUnion { Mouse = new MouseInputData { Flags = MouseLeftUp } } }
+            };
+            _ = SendInput(1, release, Marshal.SizeOf<NativeInputEvent>());
+            throw new ToolExecutionInputException(
+                "Windows không xác nhận đủ sự kiện nhấp và nhả chuột.");
+        }
+
+        return new ComputerActionResponse(
+            ComputerUseCapabilities.ClickLeft,
+            true,
+            "Đã gửi một lần nhấp chuột trái tại tọa độ đã xác nhận.");
+    }
+
+    public ComputerActionResponse TypeNotepadText(
+        string windowId, string text) =>
+        control.RunAllowed(() => TypeNotepadTextCore(windowId, text));
+
+    private ComputerActionResponse TypeNotepadTextCore(
+        string windowId, string text)
+    {
+        EnsureAvailable();
+        if (string.IsNullOrEmpty(text)
+            || text.Length > MaximumNotepadTextLength
+            || text.Any(character => char.IsControl(character)
+                || char.IsSurrogate(character)
+                || char.GetUnicodeCategory(character) is
+                    UnicodeCategory.LineSeparator or UnicodeCategory.ParagraphSeparator
+                        or UnicodeCategory.Format))
+        {
+            throw new ToolExecutionInputException(
+                "Chỉ cho phép một dòng văn bản từ 1 đến 32 ký tự; không nhận phím điều khiển, xuống dòng, tab hoặc ký tự đặc biệt không hiển thị.");
+        }
+
+        var target = ParseWindowId(windowId);
+        if (!IsWindow(target) || !IsWindowVisible(target)
+            || GetForegroundWindow() != target)
+        {
+            throw new ToolExecutionInputException(
+                "Cửa sổ Notepad đích không còn ở phía trước. Hãy chọn lại trước khi xác nhận.");
+        }
+
+        _ = GetWindowThreadProcessId(target, out var processId);
+        if (processId is 0 or > int.MaxValue)
+            throw new ToolExecutionInputException("Không xác định được cửa sổ Notepad đích.");
+
+        string processName;
+        try
+        {
+            using var process = Process.GetProcessById((int)processId);
+            processName = process.ProcessName;
+        }
+        catch (Exception exception) when (exception is ArgumentException or InvalidOperationException)
+        {
+            throw new ToolExecutionInputException(
+                "Không xác minh được tiến trình Notepad đang hoạt động.");
+        }
+
+        if (!string.Equals(processName, "notepad",
+            StringComparison.OrdinalIgnoreCase))
+        {
+            throw new ToolExecutionInputException(
+                "Bản thử nghiệm chỉ cho phép nhập văn bản vào ứng dụng Notepad đang hoạt động.");
+        }
+
+        var inputs = new NativeInputEvent[text.Length * 2];
+        for (var index = 0; index < text.Length; index++)
+        {
+            var key = (ushort)text[index];
+            inputs[index * 2] = new NativeInputEvent
+            {
+                Type = InputKeyboard,
+                Data = new NativeInputUnion
+                {
+                    Keyboard = new KeyboardInputData
+                    {
+                        Scan = key, Flags = KeyboardUnicode
+                    }
+                }
+            };
+            inputs[index * 2 + 1] = new NativeInputEvent
+            {
+                Type = InputKeyboard,
+                Data = new NativeInputUnion
+                {
+                    Keyboard = new KeyboardInputData
+                    {
+                        Scan = key, Flags = KeyboardUnicode | KeyboardKeyUp
+                    }
+                }
+            };
+        }
+
+        if (GetForegroundWindow() != target)
+            throw new ToolExecutionInputException(
+                "Cửa sổ đích đã thay đổi; đã hủy lệnh nhập văn bản.");
+
+        var sent = SendInput((uint)inputs.Length, inputs,
+            Marshal.SizeOf<NativeInputEvent>());
+        if (sent != (uint)inputs.Length)
+        {
+            // Nếu một phần lệnh đã được gửi, không thử gửi lại văn bản
+            // vì có thể gây nhập trùng hoặc nhập vào cửa sổ đã đổi.
+            throw new ToolExecutionInputException(
+                "Windows chỉ tiếp nhận một phần lệnh nhập; hãy kiểm tra nội dung Notepad trước khi thử lại.");
+        }
+
+        return new ComputerActionResponse(
+            ComputerUseCapabilities.TypeNotepadText,
+            true,
+            $"Đã gửi {text.Length} ký tự tới Notepad đang hoạt động.");
     }
 
     private static ComputerWindowInfo BuildWindowInfo(
@@ -424,6 +617,50 @@ public sealed class WindowsComputerUseService : IComputerUseService
         public int Right;
         public int Bottom;
     }
+
+    [StructLayout(LayoutKind.Sequential)]
+    private struct NativeInputEvent
+    {
+        public uint Type;
+        public NativeInputUnion Data;
+    }
+
+    [StructLayout(LayoutKind.Explicit)]
+    private struct NativeInputUnion
+    {
+        [FieldOffset(0)]
+        public MouseInputData Mouse;
+
+        [FieldOffset(0)]
+        public KeyboardInputData Keyboard;
+    }
+
+    [StructLayout(LayoutKind.Sequential)]
+    private struct KeyboardInputData
+    {
+        public ushort VirtualKey;
+        public ushort Scan;
+        public uint Flags;
+        public uint Time;
+        public IntPtr ExtraInfo;
+    }
+
+    [StructLayout(LayoutKind.Sequential)]
+    private struct MouseInputData
+    {
+        public int Dx;
+        public int Dy;
+        public uint MouseData;
+        public uint Flags;
+        public uint Time;
+        public IntPtr ExtraInfo;
+    }
+
+    [DllImport("user32.dll", SetLastError = true)]
+    private static extern uint SendInput(
+        uint numberOfInputs,
+        [In] NativeInputEvent[] inputs,
+        int inputSize);
 
     [DllImport("user32.dll")]
     [return: MarshalAs(UnmanagedType.Bool)]

@@ -1,0 +1,110 @@
+<!doctype html>
+<html lang="vi">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Gán nhãn và kiểm thử ảnh minimap</title>
+  <style>
+    :root{font-family:Segoe UI,Arial,sans-serif;color-scheme:dark;background:#0b1521;color:#e8f0fc}
+    body{margin:0;padding:20px}main{max-width:900px;margin:auto}a{color:#9bd5fa}
+    p{line-height:1.6}.panel{background:#15243a;border:1px solid #33495c;border-radius:12px;padding:18px;margin:16px 0}
+    label{display:block;margin:12px 0 6px}input,select,textarea,button{font:inherit}
+    input[type=file],input[type=text],input[type=number],textarea,select{max-width:100%;padding:8px;background:#0b1521;color:inherit;border:1px solid #748ca5;border-radius:6px}
+    input[type=number]{width:82px}input[type=text],textarea{box-sizing:border-box;width:100%}
+    textarea{min-height:70px}button{padding:10px 15px;background:#237962;border:0;border-radius:6px;color:white;cursor:pointer;margin:7px 6px 7px 0}
+    button:disabled{opacity:.5;cursor:not-allowed}button:focus-visible,input:focus-visible,textarea:focus-visible,select:focus-visible{outline:3px solid #f9cf90;outline-offset:3px}
+    canvas{display:block;max-width:100%;height:auto;margin:12px 0;border:2px solid #7892af;touch-action:none;cursor:crosshair}
+    fieldset{border:1px solid #748ca5;border-radius:8px;margin-top:12px}legend{padding:0 6px}
+    .coords{display:flex;gap:10px;flex-wrap:wrap}.coords label{display:flex;flex-direction:column}
+    .checklabel{display:flex;align-items:center;gap:9px}.warning{color:#f9cf90}
+    #samples{overflow-wrap:anywhere} .sr-only{position:absolute;width:1px;height:1px;overflow:hidden;clip:rect(0,0,0,0)}
+    @media(prefers-reduced-motion:reduce){*{scroll-behavior:auto!important}}
+  </style>
+  <script src="vision-review-core.js" defer></script>
+  <script src="vision-review.js" defer></script>
+</head>
+<body>
+<main>
+  <nav><a href="/vision.html">← Quay lại trang xem ảnh minimap</a></nav>
+  <p><a href="/vision-compare.html">So sánh hai bộ nhận diện minimap A/B đã xác minh (không tải tệp lên)</a></p>
+  <h1>Gán nhãn ảnh minimap để kiểm thử</h1>
+  <p>Chọn <strong>một ảnh ROI đã lưu</strong>, xem khung AI đề xuất (nếu có), rồi
+    dùng chuột kéo hoặc nhập bốn tọa độ để xác nhận vị trí khung thực tế.
+    Ở chế độ mặc định, ảnh chỉ được mở cục bộ trong trình duyệt. <strong>Chỉ khi bạn chọn ảnh, tích đồng ý riêng cho ảnh này và bấm nút đề xuất</strong>, ảnh mới được gửi qua máy chủ cục bộ tới Google Gemini. Có thể gán nhãn hoàn toàn thủ công mà không gửi ảnh.
+    Dữ liệu JSON xuất ra chỉ có tọa độ và mã mẫu, không chứa ảnh hay tên file.</p>
+  <section class="panel" aria-labelledby="imageHeading">
+    <h2 id="imageHeading">1. Chọn ảnh đã lưu</h2>
+    <label for="imageFile">Ảnh PNG/JPEG (tối đa 2 MB, tối đa 6 triệu pixel)</label>
+    <input id="imageFile" type="file" accept="image/png,image/jpeg,.png,.jpg,.jpeg">
+    <canvas id="imageCanvas" hidden aria-label="Ảnh đang gán nhãn; kéo chuột để chọn khung. Có thể dùng ô tọa độ phía dưới nếu không dùng chuột."></canvas>
+    <p class="warning">Chỉ dùng ảnh mà bạn có quyền sử dụng. Tất cả tọa độ tính trên ảnh ROI đang chọn, chuẩn hóa 0–1000.</p>
+  </section>
+  <section class="panel" aria-labelledby="predictionHeading">
+    <h2 id="predictionHeading">2. Lấy đề xuất AI (không bắt buộc)</h2>
+    <p>Bạn có thể dán kết quả đã có bên dưới hoặc cho phép Gemini phân tích <strong>một ảnh ROI đã chọn</strong>. Nút này không tự chụp màn hình và không tự gửi ảnh tiếp theo. API có thể phát sinh phí/hạn mức từ nhà cung cấp.</p>
+    <label class="checklabel" for="locateConsent"><input type="checkbox" id="locateConsent">Tôi đồng ý gửi <strong>ảnh ROI đang chọn</strong> tới Google Gemini để đề xuất khung minimap. Tôi sẽ tự kiểm tra lại kết quả.</label>
+    <button type="button" id="locateButton" disabled>Đề xuất khung minimap cho ảnh này</button>
+    <p id="locateStatus" role="status" aria-live="polite">Chưa gửi ảnh đến Gemini.</p>
+    <label for="predictionMode">Kết quả đề xuất cho chính ảnh này</label>
+    <select id="predictionMode">
+      <option value="">Chưa nhập kết quả</option>
+      <option value="found">AI tìm thấy một khung</option>
+      <option value="absent">AI không tìm thấy khung</option>
+    </select>
+    <label for="predictionBox">Nếu AI tìm thấy: dán normalizedBox hoặc phản hồi JSON từ API</label>
+    <textarea id="predictionBox" spellcheck="false" placeholder="[100,100,400,400]" disabled></textarea>
+  </section>
+  <section class="panel" aria-labelledby="truthHeading">
+    <h2 id="truthHeading">3. Xác minh khung thực tế</h2>
+    <label class="checklabel" for="truthAbsent"><input id="truthAbsent" type="checkbox">Ảnh không chứa trọn khung minimap (nhãn chuẩn là null)</label>
+    <p>Bạn có thể kéo khung trực tiếp trên ảnh hoặc điền tọa độ bằng bàn phím:</p>
+    <div class="coords" id="coords">
+      <label for="x1">x1 <input type="number" id="x1" min="0" max="1000" step="1" value=""></label>
+      <label for="y1">y1 <input type="number" id="y1" min="0" max="1000" step="1" value=""></label>
+      <label for="x2">x2 <input type="number" id="x2" min="0" max="1000" step="1" value=""></label>
+      <label for="y2">y2 <input type="number" id="y2" min="0" max="1000" step="1" value=""></label>
+    </div>
+    <label class="checklabel" for="reviewed"><input id="reviewed" type="checkbox">Tôi đã kiểm tra nhãn chuẩn trên chính ảnh này</label>
+    <button id="addSample" type="button">Thêm mẫu đã xác minh</button>
+    <p id="message" role="status" aria-live="polite"></p>
+  </section>
+  <section class="panel" aria-labelledby="exportHeading">
+    <h2 id="exportHeading">4. Lưu và khôi phục bộ dữ liệu đánh giá</h2>
+    <p>Để làm tiếp sau khi đóng trang, hãy tải tệp JSON về máy. Lần sau bạn có thể chọn tệp đó để khôi phục các tọa độ đã xác minh. Tệp được đọc ngay trong trình duyệt, không gửi lên máy chủ hay Gemini.</p>
+    <label for="reviewImportFile">Chọn bộ tọa độ JSON đã xuất (tối đa 1 MB, không kèm ảnh)</label>
+    <input id="reviewImportFile" type="file" accept="application/json,.json">
+    <label for="reviewImportMode">Cách khôi phục</label>
+    <select id="reviewImportMode">
+      <option value="append">Nhập thêm; từ chối nếu trùng mã mẫu</option>
+      <option value="replace">Thay thế toàn bộ danh sách đang mở (cần xác nhận)</option>
+    </select>
+    <button id="reviewImportButton" type="button">Nhập bộ tọa độ đã xác minh</button>
+    <p id="reviewImportStatus" role="status" aria-live="polite">Chưa nhập dữ liệu. Hãy chọn tệp JSON đã xuất.</p>
+    <p class="warning">Chỉ nhập lại nhãn do người dùng kiểm tra trước đó. Việc đọc tệp JSON không tự mở ảnh, không gọi AI và không kiểm chứng lại nhãn trên ảnh nguồn.</p>
+    <p id="samples" aria-live="polite">Chưa có mẫu nào.</p>
+    <button id="exportDataset" type="button" disabled>Tải JSON tọa độ đã xác minh</button>
+    <button id="resetDataset" type="button" disabled>Xóa danh sách mẫu trong trang</button>
+    <section aria-labelledby="qualityHeading">
+      <h3 id="qualityHeading">Tổng hợp kết quả trên mẫu đã xác minh</h3>
+      <label for="qualityThreshold">Ngưỡng IoU để tính khung khớp (mặc định 0,50)</label>
+      <select id="qualityThreshold">
+        <option value="0.5">0,50</option>
+        <option value="0.75">0,75</option>
+        <option value="0.9">0,90</option>
+      </select>
+      <p id="qualitySummary" role="status" aria-live="polite">Chưa có mẫu để tính độ chính xác.</p>
+      <p id="qualityErrors"></p>
+      <h3 id="sampleReviewHeading">Xem lại từng mẫu trước khi xuất</h3>
+      <p>Bảng dưới đây chỉ dùng mã mẫu và tọa độ, không lưu ảnh. Nếu một nhãn bị gán nhầm, hãy xóa riêng mẫu đó rồi gán nhãn lại trên ảnh nguồn.</p>
+      <label for="sampleReviewSelect">Mã mẫu cần xem lại</label>
+      <select id="sampleReviewSelect" disabled><option value="">Chưa có mẫu</option></select>
+      <p id="sampleReviewDetail" aria-live="polite">Chưa có dữ liệu mẫu.</p>
+      <button id="removeSampleButton" type="button" disabled>Xóa riêng mẫu đã chọn</button>
+      <p id="removeSampleStatus" role="status" aria-live="polite"></p>
+      <p class="warning">Các chỉ số chỉ tính trên mẫu đã được bạn xác minh trong trang này; không thay thế kiểm thử với bộ ảnh độc lập. Tọa độ đề xuất chưa phải kết quả được xác nhận.</p>
+    </section>
+    <p class="warning">Chỉ xuất tọa độ; không khẳng định dự đoán của AI đã chính xác. Không dùng dữ liệu này để phát cảnh báo trong trận.</p>
+  </section>
+</main>
+</body>
+</html>

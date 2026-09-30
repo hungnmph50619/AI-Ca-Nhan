@@ -8,6 +8,8 @@ public static class ComputerUseCapabilities
     public const string ActiveWindow = "active-window";
     public const string FocusWindow = "focus-window";
     public const string MoveCursor = "move-cursor";
+    public const string ClickLeft = "click-left";
+    public const string TypeNotepadText = "type-notepad-text";
 }
 
 public sealed record ComputerUseStatusResponse(
@@ -16,7 +18,12 @@ public sealed record ComputerUseStatusResponse(
     bool Supported,
     bool InteractiveSession,
     IReadOnlyList<string> AvailableCapabilities,
-    IReadOnlyList<string> Limitations);
+    IReadOnlyList<string> Limitations,
+    bool DesktopActionsPaused = true,
+    DateTimeOffset? DesktopSessionExpiresAt = null,
+    int DesktopRemainingActions = 0,
+    bool StopHotkeyAvailable = false,
+    string StopHotkey = "Ctrl + Shift + F12");
 
 public sealed record ComputerScreenInfo(
     int PrimaryWidth,
@@ -50,3 +57,6 @@ public sealed record ComputerActionResponse(
     string Action,
     bool Applied,
     string Detail);
+
+/// <summary>Văn bản chỉ ở bộ nhớ trong lúc gửi yêu cầu; không ghi vào nhật ký hoạt động.</summary>
+public sealed record ComputerNotepadTextRequest(string WindowId, string Text);

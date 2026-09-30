@@ -1,0 +1,58 @@
+/* Bố cục cửa sổ: khung và nội dung phải có cùng chiều rộng hữu dụng.
+   Giữ nguyên mọi hành vi của tác nhân AI và cơ chế phê duyệt hiện có. */
+.settings-dialog {
+  box-sizing: border-box;
+  max-width: calc(100vw - 32px);
+}
+
+#computerUseDialog,
+#browserAgentDialog { width: min(820px, calc(100vw - 32px)); }
+#connectorDialog,
+#developmentAgentDialog,
+#agentDialog { width: min(860px, calc(100vw - 32px)); }
+#androidCompanionDialog { width: min(840px, calc(100vw - 32px)); }
+#lifeContextDialog,
+#automationDialog { width: min(900px, calc(100vw - 32px)); }
+#decisionEngineDialog { width: min(920px, calc(100vw - 32px)); }
+#osDialog { width: min(980px, calc(100vw - 32px)); }
+
+/* Những thẻ trước đây đặt width 820–920px bên trong dialog mặc định 560px,
+   khiến phần đầu của biểu mẫu và tiêu đề bị cắt ở mép trái. */
+.settings-dialog > .settings-card {
+  box-sizing: border-box;
+  width: 100%;
+  max-width: 100%;
+  min-width: 0;
+}
+
+.settings-dialog .settings-header > div,
+.settings-dialog .agent-grid,
+.settings-dialog .workflow-panel {
+  min-width: 0;
+}
+
+.settings-dialog .settings-header h2,
+.settings-dialog .settings-header .eyebrow {
+  overflow-wrap: anywhere;
+}
+
+@media (max-width: 720px) {
+  .settings-dialog {
+    max-width: calc(100vw - 20px);
+  }
+  #computerUseDialog,
+  #browserAgentDialog,
+  #connectorDialog,
+  #developmentAgentDialog,
+  #androidCompanionDialog,
+  #lifeContextDialog,
+  #decisionEngineDialog,
+  #automationDialog,
+  #osDialog,
+  #agentDialog {
+    width: calc(100vw - 20px);
+  }
+  .settings-dialog > .settings-card {
+    padding: 16px;
+  }
+}

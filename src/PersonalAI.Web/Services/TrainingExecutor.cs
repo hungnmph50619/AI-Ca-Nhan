@@ -17,6 +17,8 @@ public sealed class TrainingExecutor(
     ITrainingJobStore jobs,
     ITrainingProviderRegistry providers,
     IModelArtifactStore artifacts,
+    IModelRegistry modelRegistry,
+    ICandidateTrainingPlanStore candidatePlans,
     IAuditRecorder audit) : BackgroundService, ITrainingExecutor
 {
     private readonly SemaphoreSlim _signal=new(0);
@@ -152,7 +154,7 @@ public sealed class TrainingExecutor(
                        !string.IsNullOrWhiteSpace(artifactPathElement.GetString()))
                     {
                         var artifactPath=artifactPathElement.GetString()!;
-                        artifacts.Register(new RegisterModelArtifactRequest(
+                        var artifact = artifacts.Register(new RegisterModelArtifactRequest(
                             Name:$"{job.TrainingMethod}-{job.Id:D}",
                             Version:"1",
                             BaseModel:job.BaseModel,
@@ -163,6 +165,31 @@ public sealed class TrainingExecutor(
                             TrainingMethod:job.TrainingMethod,
                             ArtifactPath:artifactPath,
                             Metrics:metrics));
+
+                        var candidatePlan = candidatePlans.GetByTrainingJob(job.Id);
+                        if(candidatePlan is not null)
+                        {
+                            var model = modelRegistry.Register(
+                                new RegisterModelVersionRequest(
+                                    candidatePlan.Family,
+                                    candidatePlan.Version,
+                                    artifact.Id,
+                                    candidatePlan.CompatibleTasks,
+                                    candidatePlan.Runtime,
+                                    $"candidate-plan:{candidatePlan.Id:D};verification:{candidatePlan.VerificationReportId:D}"));
+
+                            candidatePlans.UpdateRegistration(
+                                job.Id,
+                                artifact.Id,
+                                model.Id);
+
+                            audit.Record(
+                                AuditAgents.System,
+                                "model-lab.candidate-training.register",
+                                $"candidate-plan:{candidatePlan.Id:D}",
+                                $"artifact:{artifact.Id:D};model-version:{model.Id:D};stage:{model.Stage}",
+                                AuditResults.Succeeded);
+                        }
                     }
 
                     return;
@@ -188,6 +215,12 @@ public sealed class TrainingExecutor(
         catch(Exception ex)
         {
             executions.Set(execution.TrainingJobId,TrainingExecutionStatuses.Failed,reason:ex.Message);
+
+            if(candidatePlans.GetByTrainingJob(execution.TrainingJobId) is not null)
+            {
+                try { candidatePlans.Fail(execution.TrainingJobId, ex.Message); }
+                catch { }
+            }
         }
     }
 }

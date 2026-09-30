@@ -55,7 +55,9 @@ jobs:
             .version == "2.6.2"
             and .criticRequired == true
             and .datasetValidationRequired == true
+            and .referenceVerificationRequired == true
             and .evaluationGateRequired == true
+            and .humanReviewOptional == true
             and .verificationRequiredForCommit == true
           ' /tmp/verification-status.json >/dev/null
 
@@ -162,11 +164,13 @@ jobs:
           jq -e '
             .eligibleForTraining == true
             and .datasetValid == true
+            and .referenceVerified == true
             and .evaluationGatePassed == true
+            and .status == "verified"
             and .criticAverage >= 0.94
             and .safetyAverage >= 0.99
             and .syntheticRatio == 0.5
-            and ([.layers[] | select(.passed == true)] | length) == 4
+            and ([.layers[] | select(.passed == true)] | length) == 6
           ' /tmp/verification.json >/dev/null
 
           curl -fsS -X POST             http://127.0.0.1:5093/api/model-lab/synthetic/commit             -H 'Content-Type: application/json'             -d '{

@@ -19,6 +19,7 @@ public static class EvaluationEndpoints
         services.AddScoped<IAgentBenchmarkService, AgentBenchmarkService>();
         services.AddScoped<IModelComparisonService, ModelComparisonService>();
         services.AddScoped<ISelfEvaluationAgent, SelfEvaluationAgent>();
+        services.AddScoped<IImprovementProposalService, ImprovementProposalService>();
         return services;
     }
 
@@ -28,7 +29,7 @@ public static class EvaluationEndpoints
             Results.Ok(new
             {
                 version = PersonalAiRelease.Version,
-                frameworkVersion = "2.4.0",
+                frameworkVersion = "2.4.1",
                 localOnly = true,
                 maximumBatchSize = EvaluationEngine.MaximumBatchSize,
                 maximumSummaryResults = EvaluationMetricsAggregator.MaximumResults,
@@ -214,6 +215,20 @@ public static class EvaluationEndpoints
                 return Results.Ok(selfEvaluation.Evaluate(request));
             }
             catch (SelfEvaluationValidationException exception)
+            {
+                return Results.BadRequest(new ApiError(exception.Message));
+            }
+        });
+
+        endpoints.MapPost("/api/self-improvement/proposals", (
+            ImprovementProposalRequest request,
+            IImprovementProposalService proposals) =>
+        {
+            try
+            {
+                return Results.Ok(proposals.Create(request));
+            }
+            catch (ImprovementProposalValidationException exception)
             {
                 return Results.BadRequest(new ApiError(exception.Message));
             }

@@ -76,6 +76,7 @@ public sealed class SyntheticCriticService(
         var local = draft.Items
             .Select((item, index) => LocalReview(item, index))
             .ToArray();
+        local = ApplyCrossItemChecks(draft.Items, local);
 
         string providerName = "local-critic";
         string modelName = "deterministic-v1";
@@ -84,10 +85,10 @@ public sealed class SyntheticCriticService(
 
         if (request.ConfirmExternalAi)
         {
-            var provider = providers.GetActive();
+            var provider = ResolveCriticProvider(draft.Provider);
             if (!provider.IsConfigured)
                 throw new SyntheticCriticValidationException(
-                    "Nhà cung cấp AI đang chọn chưa được cấu hình.");
+                    "Không có nhà cung cấp AI đã cấu hình cho semantic critic.");
 
             var response = await provider.ReplyAsync(
                 [new ChatMessage("user", BuildPrompt(draft, local))],
@@ -151,6 +152,101 @@ public sealed class SyntheticCriticService(
             passed ? AuditResults.Succeeded : AuditResults.Failed);
 
         return report;
+    }
+
+    private IAiProvider ResolveCriticProvider(string generatorProvider)
+    {
+        foreach (var name in new[] { "OpenAI", "Gemini" })
+        {
+            try
+            {
+                var candidate = providers.GetByName(name);
+                if (candidate.IsConfigured &&
+                    !candidate.Name.Equals(
+                        generatorProvider,
+                        StringComparison.OrdinalIgnoreCase))
+                {
+                    return candidate;
+                }
+            }
+            catch (InvalidOperationException)
+            {
+            }
+        }
+
+        return providers.GetActive();
+    }
+
+    private static SyntheticCriticItemReview[] ApplyCrossItemChecks(
+        IReadOnlyList<JsonElement> items,
+        SyntheticCriticItemReview[] reviews)
+    {
+        var seen = new Dictionary<string, int>(StringComparer.OrdinalIgnoreCase);
+
+        for (var index = 0; index < items.Count; index++)
+        {
+            var raw = items[index].GetRawText();
+            var review = reviews[index];
+
+            if (LooksLikeSecret(raw))
+            {
+                review = review with
+                {
+                    Safety = 0,
+                    Overall = 0,
+                    Accepted = false,
+                    Reason = review.Reason + " Critic phát hiện dấu hiệu secret/token."
+                };
+            }
+
+            var fingerprint = GetPairFingerprint(items[index]);
+            if (fingerprint is not null)
+            {
+                if (seen.TryGetValue(fingerprint, out var firstIndex))
+                {
+                    review = review with
+                    {
+                        Consistency = 0.25,
+                        Overall = Math.Min(review.Overall, 0.25),
+                        Accepted = false,
+                        Reason = review.Reason +
+                            $" Trùng nội dung với item {firstIndex}."
+                    };
+                }
+                else
+                {
+                    seen[fingerprint] = index;
+                }
+            }
+
+            reviews[index] = review;
+        }
+
+        return reviews;
+    }
+
+    private static string? GetPairFingerprint(JsonElement item)
+    {
+        if (item.ValueKind != JsonValueKind.Object ||
+            !item.TryGetProperty("input", out var input) ||
+            !item.TryGetProperty("expected", out var expected))
+            return null;
+
+        return string.Concat(
+            input.ToString().Trim().ToLowerInvariant(),
+            "\n",
+            expected.ToString().Trim().ToLowerInvariant());
+    }
+
+    private static bool LooksLikeSecret(string text)
+    {
+        var value = text.ToLowerInvariant();
+        return value.Contains("-----begin private key-----") ||
+               value.Contains("-----begin rsa private key-----") ||
+               value.Contains("bearer ") ||
+               value.Contains("\"api_key\"") ||
+               value.Contains("\"password\"") ||
+               value.Contains("sk-");
     }
 
     private static SyntheticCriticItemReview LocalReview(

@@ -18,6 +18,7 @@ public static class ModelLabEndpoints
         services.AddSingleton<ITrainingProvider, PeftTrainingProvider>();
         services.AddSingleton<ITrainingProviderRegistry, TrainingProviderRegistry>();
         services.AddSingleton<ITrainingExecutionStore, JsonTrainingExecutionStore>();
+        services.AddSingleton<IModelArtifactStore, JsonModelArtifactStore>();
         services.AddSingleton<TrainingExecutor>();
         services.AddSingleton<ITrainingExecutor>(sp => sp.GetRequiredService<TrainingExecutor>());
         services.AddHostedService(sp => sp.GetRequiredService<TrainingExecutor>());
@@ -30,6 +31,22 @@ public static class ModelLabEndpoints
         endpoints.MapGet("/api/model-lab/status", (
             IModelLabDatasetStore store) =>
             Results.Ok(store.GetStatus()));
+
+        endpoints.MapGet("/api/model-lab/artifacts/status", (
+            IModelArtifactStore artifacts) =>
+            Results.Ok(artifacts.GetStatus()));
+
+        endpoints.MapGet("/api/model-lab/artifacts", (
+            IModelArtifactStore artifacts) =>
+            Results.Ok(artifacts.GetAll()));
+
+        endpoints.MapGet("/api/model-lab/artifacts/{artifactId:guid}", (
+            Guid artifactId,
+            IModelArtifactStore artifacts) =>
+        {
+            var artifact = artifacts.Get(artifactId);
+            return artifact is null ? Results.NotFound() : Results.Ok(artifact);
+        });
 
         endpoints.MapGet("/api/model-lab/training/providers", (
             ITrainingProviderRegistry registry) =>

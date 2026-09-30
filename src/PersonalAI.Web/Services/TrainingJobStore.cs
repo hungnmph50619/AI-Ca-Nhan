@@ -58,7 +58,7 @@ public sealed class SqliteTrainingJobStore(
                 MaximumJobsPerWorkspace,
                 Persistent: true,
                 ConfigImmutable: true,
-                TrainingExecutionEnabled: false);
+                TrainingExecutionEnabled: true);
         }
     }
 
@@ -247,7 +247,7 @@ public sealed class SqliteTrainingJobStore(
             if (existing.Status == TrainingJobStatuses.Running)
             {
                 throw new TrainingJobConflictException(
-                    "v2.5.3 chưa có training executor nên không hỗ trợ huỷ job đang Running.");
+                    "Không thể huỷ trực tiếp job đang Running qua legacy store; hãy dùng training executor.");
             }
 
             using var command = connection.CreateCommand();

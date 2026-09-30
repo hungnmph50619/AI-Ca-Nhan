@@ -47,7 +47,9 @@ public sealed record SyntheticVerificationStatus(
     int PassedReports,
     bool CriticRequired,
     bool DatasetValidationRequired,
+    bool ReferenceVerificationRequired,
     bool EvaluationGateRequired,
+    bool HumanReviewOptional,
     bool VerificationRequiredForCommit);
 
 public sealed class SyntheticVerificationException(string message)

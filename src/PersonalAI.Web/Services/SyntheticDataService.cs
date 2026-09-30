@@ -22,6 +22,7 @@ public sealed partial class SyntheticDataService(
     IModelLabDatasetStore datasets,
     IAiProviderResolver providers,
     ISyntheticCriticService critic,
+    ISyntheticVerificationService verification,
     IWorkspaceContextAccessor workspace,
     IConfiguration configuration,
     IAuditRecorder audit) : ISyntheticDataService
@@ -216,6 +217,15 @@ public sealed partial class SyntheticDataService(
                 "Synthetic draft phải có Critic report semantic đã PASS trước khi commit.");
         }
 
+        var verificationReport = verification.GetLatest(draft.Id);
+        if (verificationReport is null ||
+            !verificationReport.EligibleForTraining ||
+            verificationReport.CriticReportId != criticReport.Id)
+        {
+            throw new SyntheticDataValidationException(
+                "Synthetic draft phải có Verification report mới nhất đạt eligibleForTraining=true.");
+        }
+
         var source = datasets.GetVersion(draft.DatasetId, draft.SourceVersion)
             ?? throw new KeyNotFoundException("Dataset version nguồn không còn tồn tại.");
         if (!source.ContentSha256.Equals(
@@ -240,7 +250,7 @@ public sealed partial class SyntheticDataService(
             .ToArray();
 
         var note = string.IsNullOrWhiteSpace(request.VersionNote)
-            ? $"Synthetic data draft {draft.Id:D}: +{draft.Items.Count} item(s), provider={draft.Provider}, model={draft.Model}, critic={criticReport.Id:D}."
+            ? $"Synthetic data draft {draft.Id:D}: +{draft.Items.Count} item(s), provider={draft.Provider}, model={draft.Model}, critic={criticReport.Id:D}, verification={verificationReport.Id:D}."
             : request.VersionNote.Trim();
 
         var created = datasets.CreateVersion(
@@ -254,7 +264,7 @@ public sealed partial class SyntheticDataService(
             AuditAgents.User,
             "model-lab.synthetic.commit",
             $"model-lab-dataset:{created.DatasetId}:v{created.Version}",
-            $"draft:{draft.Id:D};synthetic:{draft.Items.Count};critic:{criticReport.Id:D}",
+            $"draft:{draft.Id:D};synthetic:{draft.Items.Count};critic:{criticReport.Id:D};verification:{verificationReport.Id:D}",
             AuditResults.Succeeded);
 
         return new SyntheticDataCommitResult(

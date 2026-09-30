@@ -55,6 +55,10 @@ public interface IDevelopmentAgentService
         string configuration,
         string deploymentId,
         CancellationToken cancellationToken = default);
+
+    Task<DevelopmentDeploymentRollbackResult> DiscardDeploymentCandidateAsync(
+        string deploymentId,
+        CancellationToken cancellationToken = default);
 }
 
 public sealed class DevelopmentAgentService(
@@ -139,12 +143,13 @@ public sealed class DevelopmentAgentService(
                 DevelopmentCapabilities.DotnetRestore,
                 DevelopmentCapabilities.DotnetBuild,
                 DevelopmentCapabilities.DotnetTest,
-                DevelopmentCapabilities.DotnetPublishCandidate
+                DevelopmentCapabilities.DotnetPublishCandidate,
+                DevelopmentCapabilities.DeploymentCandidateDiscard
             ],
             [
                 "Không có generic shell, command string, cmd /c hoặc PowerShell execution.",
                 "Không có git add/commit/push/pull/reset/merge/rebase. Chỉ cho phép tạo/switch branch experiment/* có xác nhận.",
-                "Chỉ dotnet restore/build/test với target project/solution nằm trong workspace; publish chỉ tạo candidate trong local app data.",
+                "Chỉ dotnet restore/build/test với target project/solution nằm trong workspace; publish/rollback chỉ tác động deployment candidate trong local app data.",
                 "Không nhận arbitrary process arguments từ tool input.",
                 "dotnet build/test có thể thực thi MSBuild targets hoặc test code của project; vì vậy luôn cần xác nhận.",
                 "Source search bỏ qua .git, bin, obj, node_modules và các build-output directory phổ biến.",
@@ -694,6 +699,61 @@ public sealed class DevelopmentAgentService(
             OutputTruncated: result.OutputTruncated,
             FileCount: files.Length,
             TotalBytes: files.Sum(file => file.Length));
+    }
+
+
+    public Task<DevelopmentDeploymentRollbackResult> DiscardDeploymentCandidateAsync(
+        string deploymentId,
+        CancellationToken cancellationToken = default)
+    {
+        cancellationToken.ThrowIfCancellationRequested();
+        var normalizedDeploymentId = NormalizeDeploymentId(deploymentId);
+        var localData = Environment.GetFolderPath(
+            Environment.SpecialFolder.LocalApplicationData);
+        if (string.IsNullOrWhiteSpace(localData))
+        {
+            localData = Path.Combine(
+                Environment.GetFolderPath(Environment.SpecialFolder.UserProfile),
+                ".personalai");
+        }
+
+        var deploymentRoot = Path.Combine(
+            localData,
+            "PersonalAI",
+            "Deployments",
+            workspaceContext.CurrentWorkspaceId,
+            normalizedDeploymentId);
+
+        var existed = Directory.Exists(deploymentRoot);
+        if (!existed)
+        {
+            return Task.FromResult(new DevelopmentDeploymentRollbackResult(
+                $"{workspaceContext.CurrentWorkspaceId}/{normalizedDeploymentId}",
+                Existed: false,
+                RolledBack: true,
+                DateTimeOffset.UtcNow));
+        }
+
+        try
+        {
+            Directory.Delete(deploymentRoot, recursive: true);
+        }
+        catch (UnauthorizedAccessException)
+        {
+            throw new ToolExecutionInputException(
+                "Không có quyền rollback deployment candidate.");
+        }
+        catch (IOException)
+        {
+            throw new ToolExecutionInputException(
+                "Không thể rollback deployment candidate.");
+        }
+
+        return Task.FromResult(new DevelopmentDeploymentRollbackResult(
+            $"{workspaceContext.CurrentWorkspaceId}/{normalizedDeploymentId}",
+            Existed: true,
+            RolledBack: !Directory.Exists(deploymentRoot),
+            DateTimeOffset.UtcNow));
     }
 
     private static string NormalizeDeploymentId(string? value)

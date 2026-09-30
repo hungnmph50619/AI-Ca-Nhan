@@ -1,5 +1,5 @@
 (() => {
-  const VERSION = "2.2.6";
+  const VERSION = "2.3.17";
   let dialog;
   let select;
   let goal;
@@ -94,7 +94,7 @@
     const heading = document.createElement("div");
     const eyebrow = document.createElement("p");
     eyebrow.className = "eyebrow";
-    eyebrow.textContent = "HỆ THỐNG TÁC NHÂN AI · v2.2.6";
+    eyebrow.textContent = "HỆ THỐNG TÁC NHÂN AI · v2.3.17";
     const title = document.createElement("h2");
     title.id = "agentTitle";
     title.textContent = "Sử dụng tác nhân AI";

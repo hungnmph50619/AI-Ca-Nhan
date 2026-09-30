@@ -13,6 +13,8 @@ public static class ModelLabEndpoints
         services.AddScoped<IDataCleaningService, DataCleaningService>();
         services.AddScoped<ITrainingDatasetValidationService, TrainingDatasetValidationService>();
         services.AddSingleton<ITrainingJobStore, SqliteTrainingJobStore>();
+        services.AddSingleton<ITrainingProvider, MockTrainingProvider>();
+        services.AddSingleton<ITrainingProviderRegistry, TrainingProviderRegistry>();
         return services;
     }
 
@@ -22,6 +24,31 @@ public static class ModelLabEndpoints
         endpoints.MapGet("/api/model-lab/status", (
             IModelLabDatasetStore store) =>
             Results.Ok(store.GetStatus()));
+
+        endpoints.MapGet("/api/model-lab/training/providers", (
+            ITrainingProviderRegistry registry) =>
+            Results.Ok(registry.GetAll()));
+
+        endpoints.MapPost("/api/model-lab/training/providers/{providerId}/validate", (
+            string providerId,
+            TrainingProviderValidationRequest request,
+            ITrainingProviderRegistry registry) =>
+        {
+            try
+            {
+                var provider = registry.Get(providerId);
+                var normalized = request with { ProviderId = provider.Id };
+                return Results.Ok(provider.Validate(normalized));
+            }
+            catch (TrainingProviderValidationException exception)
+            {
+                return Results.BadRequest(new ApiError(exception.Message));
+            }
+            catch (KeyNotFoundException exception)
+            {
+                return Results.NotFound(new ApiError(exception.Message));
+            }
+        });
 
         endpoints.MapGet("/api/model-lab/training/status", (
             ITrainingJobStore jobs) =>

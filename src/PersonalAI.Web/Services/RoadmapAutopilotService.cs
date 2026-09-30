@@ -16,7 +16,8 @@ public interface IRoadmapAutopilotService
 }
 
 public sealed class RoadmapAutopilotService(
-    IAiProviderResolver providers,
+    IAutopilotProviderRouter providerRouter,
+    IRoadmapAutopilotCheckpointStore checkpoints,
     IDevelopmentAgentService development,
     IWorkspaceFileService files,
     IWorkspaceContextAccessor workspace,
@@ -273,7 +274,9 @@ public sealed class RoadmapAutopilotService(
 
     public RoadmapAutopilotStatus GetStatus()
     {
-        var openAi = providers.GetByName("OpenAI");
+        var providerInfos = providerRouter.GetProviders();
+        var openAi = providerInfos.FirstOrDefault(item =>
+            item.Name.Equals("OpenAI", StringComparison.OrdinalIgnoreCase));
         var dev = development.GetStatus();
         var next = GetNextVersion();
         return new RoadmapAutopilotStatus(
@@ -282,8 +285,8 @@ public sealed class RoadmapAutopilotService(
             PersonalAiRelease.Version,
             next?.Version,
             next?.Name,
-            openAi.IsConfigured,
-            openAi.Model,
+            openAi?.Configured ?? false,
+            openAi?.Model ?? string.Empty,
             dev.GitAvailable,
             dev.DotnetAvailable,
             AutomaticMergeEnabled: false,
@@ -322,10 +325,9 @@ public sealed class RoadmapAutopilotService(
             ?? throw new RoadmapAutopilotValidationException(
                 "Không còn phiên bản tự động nào trong catalog hiện tại.");
 
-        var provider = providers.GetByName("OpenAI");
-        if (!provider.IsConfigured)
+        if (!providerRouter.GetProviders().Any(item => item.Configured))
             throw new RoadmapAutopilotValidationException(
-                "Chưa cấu hình OpenAI trong Cài đặt AI.");
+                "Chưa cấu hình nhà cung cấp AI nào cho chế độ tự phát triển.");
 
         var maxRepairs = Math.Clamp(
             request.MaximumRepairAttempts ?? DefaultMaximumRepairAttempts,
@@ -355,21 +357,88 @@ public sealed class RoadmapAutopilotService(
                     "Không tạo được experiment branch.");
         }
 
-        var context = await CollectContextAsync(spec, cancellationToken);
+        var saved = checkpoints.Get();
+        if (saved is not null &&
+            (!string.Equals(saved.TargetVersion, spec.Version, StringComparison.Ordinal) ||
+             !string.Equals(saved.Branch, branchName, StringComparison.Ordinal)))
+        {
+            throw new RoadmapAutopilotValidationException(
+                $"Đang có checkpoint chưa hoàn tất cho v{saved.TargetVersion} trên branch '{saved.Branch}'.");
+        }
+
         var changed = new Dictionary<string, RoadmapAutopilotFileChange>(
             StringComparer.OrdinalIgnoreCase);
+        if (saved is not null)
+        {
+            foreach (var item in saved.FilesChanged)
+                changed[item.Path] = item;
+        }
 
-        var draft = await provider.ReplyAsync(
-            [new ChatMessage("user", BuildImplementationPrompt(spec, context))],
-            cancellationToken);
-        var proposal = ParseProposal(draft);
-        await ApplyEditsAsync(proposal.Edits, changed, cancellationToken);
+        var attempts = Math.Max(1, saved?.Attempt ?? 1);
+        var lastProvider = saved?.LastProvider ?? string.Empty;
+        var lastModel = saved?.LastModel ?? string.Empty;
 
-        var attempts = 1;
+        if (changed.Count == 0)
+        {
+            checkpoints.Save(new RoadmapAutopilotCheckpoint(
+                workspace.CurrentWorkspaceId,
+                spec.Version,
+                spec.Name,
+                branchName,
+                "planning",
+                attempts,
+                null,
+                null,
+                [],
+                null,
+                null,
+                null,
+                DateTimeOffset.UtcNow));
+
+            var context = await CollectContextAsync(spec, cancellationToken);
+            var draft = await providerRouter.ReplyAsync(
+                [new ChatMessage("user", BuildImplementationPrompt(spec, context))],
+                cancellationToken);
+            lastProvider = draft.Provider;
+            lastModel = draft.Model;
+            var proposal = ParseProposal(draft.Content);
+            await ApplyEditsAsync(proposal.Edits, changed, cancellationToken);
+
+            checkpoints.Save(new RoadmapAutopilotCheckpoint(
+                workspace.CurrentWorkspaceId,
+                spec.Version,
+                spec.Name,
+                branchName,
+                "verifying",
+                attempts,
+                lastProvider,
+                lastModel,
+                changed.Values.ToArray(),
+                null,
+                null,
+                null,
+                DateTimeOffset.UtcNow));
+        }
+
         RoadmapAutopilotVerification verification;
         while (true)
         {
             verification = await VerifyAsync(request, cancellationToken);
+            checkpoints.Save(new RoadmapAutopilotCheckpoint(
+                workspace.CurrentWorkspaceId,
+                spec.Version,
+                spec.Name,
+                branchName,
+                "verified",
+                attempts,
+                lastProvider,
+                lastModel,
+                changed.Values.ToArray(),
+                verification.RestorePassed,
+                verification.BuildPassed,
+                verification.TestsPassed,
+                DateTimeOffset.UtcNow));
+
             if (verification.RestorePassed &&
                 verification.BuildPassed &&
                 verification.TestsPassed &&
@@ -383,14 +452,31 @@ public sealed class RoadmapAutopilotService(
 
             var repairContext = await ReadChangedFilesAsync(
                 changed.Keys, cancellationToken);
-            var repair = await provider.ReplyAsync(
+            var repair = await providerRouter.ReplyAsync(
                 [new ChatMessage(
                     "user",
                     BuildRepairPrompt(spec, verification, repairContext))],
                 cancellationToken);
-            var repairProposal = ParseProposal(repair);
+            lastProvider = repair.Provider;
+            lastModel = repair.Model;
+            var repairProposal = ParseProposal(repair.Content);
             await ApplyEditsAsync(repairProposal.Edits, changed, cancellationToken);
             attempts++;
+
+            checkpoints.Save(new RoadmapAutopilotCheckpoint(
+                workspace.CurrentWorkspaceId,
+                spec.Version,
+                spec.Name,
+                branchName,
+                "repairing",
+                attempts,
+                lastProvider,
+                lastModel,
+                changed.Values.ToArray(),
+                verification.RestorePassed,
+                verification.BuildPassed,
+                verification.TestsPassed,
+                DateTimeOffset.UtcNow));
         }
 
         var ready =
@@ -398,6 +484,21 @@ public sealed class RoadmapAutopilotService(
             verification.BuildPassed &&
             verification.TestsPassed &&
             await VersionFileUpdatedAsync(spec.Version, cancellationToken);
+
+        checkpoints.Save(new RoadmapAutopilotCheckpoint(
+            workspace.CurrentWorkspaceId,
+            spec.Version,
+            spec.Name,
+            branchName,
+            ready ? "ready-for-commit" : "changes-required",
+            attempts,
+            lastProvider,
+            lastModel,
+            changed.Values.ToArray(),
+            verification.RestorePassed,
+            verification.BuildPassed,
+            verification.TestsPassed,
+            DateTimeOffset.UtcNow));
 
         audit.Record(
             AuditAgents.System,
@@ -412,8 +513,8 @@ public sealed class RoadmapAutopilotService(
             spec.Version,
             spec.Name,
             branchName,
-            provider.Name,
-            provider.Model,
+            lastProvider,
+            lastModel,
             attempts,
             changed.Values.OrderBy(x => x.Path, StringComparer.OrdinalIgnoreCase).ToArray(),
             verification,
@@ -561,7 +662,7 @@ public sealed class RoadmapAutopilotService(
                 AuditAgents.System,
                 "roadmap-autopilot.file-write",
                 $"file:{path}",
-                "openai-proposed-confirmed-autopilot-edit",
+                "ai-provider-proposed-confirmed-autopilot-edit",
                 AuditResults.Succeeded);
         }
     }

@@ -24,6 +24,7 @@ public static class EvaluationEndpoints
         services.AddScoped<ISelfCodingService, SelfCodingService>();
         services.AddScoped<IAutomatedReviewService, AutomatedReviewService>();
         services.AddScoped<IAutoTestService, AutoTestService>();
+        services.AddScoped<IAutoDeployService, AutoDeployService>();
         return services;
     }
 
@@ -33,7 +34,7 @@ public static class EvaluationEndpoints
             Results.Ok(new
             {
                 version = PersonalAiRelease.Version,
-                frameworkVersion = "2.4.5",
+                frameworkVersion = "2.4.6",
                 localOnly = true,
                 maximumBatchSize = EvaluationEngine.MaximumBatchSize,
                 maximumSummaryResults = EvaluationMetricsAggregator.MaximumResults,
@@ -352,6 +353,25 @@ public static class EvaluationEndpoints
                 return Results.Json(
                     new ApiError(exception.Message),
                     statusCode: StatusCodes.Status502BadGateway);
+            }
+        });
+
+        endpoints.MapPost("/api/self-improvement/auto-deploy/run", async (
+            RunAutoDeployRequest request,
+            IAutoDeployService autoDeploy,
+            CancellationToken cancellationToken) =>
+        {
+            try
+            {
+                return Results.Ok(await autoDeploy.RunAsync(request, cancellationToken));
+            }
+            catch (AutoDeployValidationException exception)
+            {
+                return Results.BadRequest(new ApiError(exception.Message));
+            }
+            catch (ToolExecutionInputException exception)
+            {
+                return Results.BadRequest(new ApiError(exception.Message));
             }
         });
 

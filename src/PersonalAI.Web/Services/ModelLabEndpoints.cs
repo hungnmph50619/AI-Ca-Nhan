@@ -11,6 +11,7 @@ public static class ModelLabEndpoints
         services.AddSingleton<IModelLabDatasetStore, SqliteModelLabDatasetStore>();
         services.AddScoped<IPersonalDatasetBuilder, PersonalDatasetBuilder>();
         services.AddScoped<IDataCleaningService, DataCleaningService>();
+        services.AddSingleton<ITrainingJobStore, SqliteTrainingJobStore>();
         return services;
     }
 
@@ -20,6 +21,86 @@ public static class ModelLabEndpoints
         endpoints.MapGet("/api/model-lab/status", (
             IModelLabDatasetStore store) =>
             Results.Ok(store.GetStatus()));
+
+        endpoints.MapGet("/api/model-lab/training/status", (
+            ITrainingJobStore jobs) =>
+            Results.Ok(jobs.GetStatus()));
+
+        endpoints.MapGet("/api/model-lab/training/jobs", (
+            ITrainingJobStore jobs) =>
+            Results.Ok(jobs.GetAll()));
+
+        endpoints.MapGet("/api/model-lab/training/jobs/{jobId:guid}", (
+            Guid jobId,
+            ITrainingJobStore jobs) =>
+        {
+            var job = jobs.Get(jobId);
+            return job is null ? Results.NotFound() : Results.Ok(job);
+        });
+
+        endpoints.MapPost("/api/model-lab/training/jobs", (
+            CreateTrainingJobRequest request,
+            ITrainingJobStore jobs,
+            IAuditRecorder audit) =>
+        {
+            try
+            {
+                var job = jobs.Create(request);
+                audit.Record(
+                    AuditAgents.User,
+                    "model-lab.training-job.create",
+                    $"model-lab-training-job:{job.Id:D}",
+                    $"dataset:{job.DatasetId}:v{job.DatasetVersion};config:{job.ConfigSha256}",
+                    AuditResults.Succeeded);
+                return Results.Created(
+                    $"/api/model-lab/training/jobs/{job.Id:D}",
+                    job);
+            }
+            catch (TrainingJobValidationException exception)
+            {
+                return Results.BadRequest(new ApiError(exception.Message));
+            }
+            catch (TrainingJobConflictException exception)
+            {
+                return Results.Json(
+                    new ApiError(exception.Message),
+                    statusCode: StatusCodes.Status409Conflict);
+            }
+            catch (ModelLabDatasetValidationException exception)
+            {
+                return Results.BadRequest(new ApiError(exception.Message));
+            }
+            catch (KeyNotFoundException exception)
+            {
+                return Results.NotFound(new ApiError(exception.Message));
+            }
+        });
+
+        endpoints.MapPost("/api/model-lab/training/jobs/{jobId:guid}/cancel", (
+            Guid jobId,
+            ITrainingJobStore jobs,
+            IAuditRecorder audit) =>
+        {
+            try
+            {
+                var job = jobs.Cancel(jobId);
+                if (job is null) return Results.NotFound();
+
+                audit.Record(
+                    AuditAgents.User,
+                    "model-lab.training-job.cancel",
+                    $"model-lab-training-job:{job.Id:D}",
+                    "user-request",
+                    AuditResults.Succeeded);
+                return Results.Ok(job);
+            }
+            catch (TrainingJobConflictException exception)
+            {
+                return Results.Json(
+                    new ApiError(exception.Message),
+                    statusCode: StatusCodes.Status409Conflict);
+            }
+        });
 
         endpoints.MapGet("/api/model-lab/datasets", (
             IModelLabDatasetStore store) =>

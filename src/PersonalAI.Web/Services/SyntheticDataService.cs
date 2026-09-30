@@ -21,6 +21,7 @@ public interface ISyntheticDataService
 public sealed partial class SyntheticDataService(
     IModelLabDatasetStore datasets,
     IAiProviderResolver providers,
+    ISyntheticCriticService critic,
     IWorkspaceContextAccessor workspace,
     IConfiguration configuration,
     IAuditRecorder audit) : ISyntheticDataService
@@ -205,6 +206,15 @@ public sealed partial class SyntheticDataService(
             throw new SyntheticDataValidationException(
                 "Synthetic draft chưa đủ điều kiện để commit.");
 
+        var criticReport = critic.GetLatest(draft.Id);
+        if (criticReport is null ||
+            !criticReport.SemanticReviewed ||
+            !criticReport.Passed)
+        {
+            throw new SyntheticDataValidationException(
+                "Synthetic draft phải có Critic report semantic đã PASS trước khi commit.");
+        }
+
         var source = datasets.GetVersion(draft.DatasetId, draft.SourceVersion)
             ?? throw new KeyNotFoundException("Dataset version nguồn không còn tồn tại.");
         if (!source.ContentSha256.Equals(
@@ -229,7 +239,7 @@ public sealed partial class SyntheticDataService(
             .ToArray();
 
         var note = string.IsNullOrWhiteSpace(request.VersionNote)
-            ? $"Synthetic data draft {draft.Id:D}: +{draft.Items.Count} item(s), provider={draft.Provider}, model={draft.Model}."
+            ? $"Synthetic data draft {draft.Id:D}: +{draft.Items.Count} item(s), provider={draft.Provider}, model={draft.Model}, critic={criticReport.Id:D}."
             : request.VersionNote.Trim();
 
         var created = datasets.CreateVersion(
@@ -243,7 +253,7 @@ public sealed partial class SyntheticDataService(
             AuditAgents.User,
             "model-lab.synthetic.commit",
             $"model-lab-dataset:{created.DatasetId}:v{created.Version}",
-            $"draft:{draft.Id:D};synthetic:{draft.Items.Count}",
+            $"draft:{draft.Id:D};synthetic:{draft.Items.Count};critic:{criticReport.Id:D}",
             AuditResults.Succeeded);
 
         return new SyntheticDataCommitResult(

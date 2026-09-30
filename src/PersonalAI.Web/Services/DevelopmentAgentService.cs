@@ -666,14 +666,14 @@ public sealed class DevelopmentAgentService(
         {
             TryDeleteDirectory(deploymentRoot);
             return new DevelopmentPublishResult(
-                $"{workspaceContext.CurrentWorkspaceId}/{normalizedDeploymentId}",
-                target.RelativePath,
-                result.ExitCode,
+                DeploymentSlot: $"{workspaceContext.CurrentWorkspaceId}/{normalizedDeploymentId}",
+                TargetPath: target.RelativePath,
+                ExitCode: result.ExitCode,
                 Succeeded: false,
-                result.TimedOut,
-                result.DurationMs,
-                result.Output,
-                result.OutputTruncated,
+                TimedOut: result.TimedOut,
+                DurationMs: result.DurationMs,
+                Output: result.Output,
+                OutputTruncated: result.OutputTruncated,
                 FileCount: 0,
                 TotalBytes: 0);
         }
@@ -684,16 +684,16 @@ public sealed class DevelopmentAgentService(
             .ToArray();
 
         return new DevelopmentPublishResult(
-            $"{workspaceContext.CurrentWorkspaceId}/{normalizedDeploymentId}",
-            target.RelativePath,
-            result.ExitCode,
+            DeploymentSlot: $"{workspaceContext.CurrentWorkspaceId}/{normalizedDeploymentId}",
+            TargetPath: target.RelativePath,
+            ExitCode: result.ExitCode,
             Succeeded: true,
-            result.TimedOut,
-            result.DurationMs,
-            result.Output,
-            result.OutputTruncated,
-            files.Length,
-            files.Sum(file => file.Length));
+            TimedOut: result.TimedOut,
+            DurationMs: result.DurationMs,
+            Output: result.Output,
+            OutputTruncated: result.OutputTruncated,
+            FileCount: files.Length,
+            TotalBytes: files.Sum(file => file.Length));
     }
 
     private static string NormalizeDeploymentId(string? value)

@@ -1,3 +1,4 @@
+using PersonalAI.Web.Evaluation.Benchmarks;
 using PersonalAI.Web.Evaluation.Contracts;
 using PersonalAI.Web.Evaluation.Core;
 using PersonalAI.Web.Evaluation.Evaluators;
@@ -13,6 +14,7 @@ public static class EvaluationEndpoints
         services.AddSingleton<IEvaluator, MinimapBoxEvaluator>();
         services.AddSingleton<IEvaluationEngine, EvaluationEngine>();
         services.AddSingleton<IRegressionDatasetStore, SqliteRegressionDatasetStore>();
+        services.AddScoped<IAgentBenchmarkService, AgentBenchmarkService>();
         return services;
     }
 
@@ -22,7 +24,7 @@ public static class EvaluationEndpoints
             Results.Ok(new
             {
                 version = PersonalAiRelease.Version,
-                frameworkVersion = "2.3.21",
+                frameworkVersion = "2.3.22",
                 localOnly = true,
                 maximumBatchSize = EvaluationEngine.MaximumBatchSize,
                 maximumSummaryResults = EvaluationMetricsAggregator.MaximumResults,
@@ -147,6 +149,41 @@ public static class EvaluationEndpoints
             catch (RegressionDatasetValidationException exception)
             {
                 return Results.BadRequest(new ApiError(exception.Message));
+            }
+        });
+
+        endpoints.MapPost("/api/evaluation/benchmark/agents/run", async (
+            RunAgentBenchmarkRequest request,
+            IAgentBenchmarkService benchmark,
+            CancellationToken cancellationToken) =>
+        {
+            try
+            {
+                return Results.Ok(await benchmark.RunAsync(request, cancellationToken));
+            }
+            catch (AgentBenchmarkValidationException exception)
+            {
+                return Results.BadRequest(new ApiError(exception.Message));
+            }
+            catch (AgentValidationException exception)
+            {
+                return Results.BadRequest(new ApiError(exception.Message));
+            }
+            catch (KeyNotFoundException exception)
+            {
+                return Results.BadRequest(new ApiError(exception.Message));
+            }
+            catch (InvalidOperationException exception)
+            {
+                return Results.Json(
+                    new ApiError(exception.Message),
+                    statusCode: StatusCodes.Status503ServiceUnavailable);
+            }
+            catch (HttpRequestException exception)
+            {
+                return Results.Json(
+                    new ApiError(exception.Message),
+                    statusCode: StatusCodes.Status502BadGateway);
             }
         });
 

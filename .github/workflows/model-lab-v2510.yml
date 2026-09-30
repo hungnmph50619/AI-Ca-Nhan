@@ -1,0 +1,137 @@
+name: Model Lab v2.5.10
+
+on:
+  push:
+    branches:
+      - 'experiment/roadmap-v2-5-10-current'
+  pull_request:
+    paths:
+      - 'src/PersonalAI.Web/ModelLab/ModelRegistryModels.cs'
+      - 'src/PersonalAI.Web/Services/ModelRegistry.cs'
+      - 'src/PersonalAI.Web/Services/ModelLabEndpoints.cs'
+      - 'src/PersonalAI.Web/Models/SystemModels.cs'
+
+jobs:
+  validate-v2510:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: '8.0.x'
+
+      - name: Restore
+        run: dotnet restore PersonalAI.sln
+
+      - name: Build
+        run: dotnet build PersonalAI.sln -c Release --no-restore
+
+      - name: Tests
+        run: dotnet test PersonalAI.sln -c Release --no-build
+
+      - name: Model registry smoke test
+        shell: bash
+        run: |
+          set -euo pipefail
+          rm -rf /tmp/personalai-v2510
+          mkdir -p /tmp/personalai-v2510/workspace /tmp/personalai-v2510/model-lab
+
+          Workspace__Root=/tmp/personalai-v2510/workspace           ModelLab__Root=/tmp/personalai-v2510/model-lab           dotnet run --project src/PersonalAI.Web/PersonalAI.Web.csproj             -c Release --no-build             --urls http://127.0.0.1:5090             >/tmp/personalai-v2510.log 2>&1 &
+          APP_PID=$!
+          trap 'kill "$APP_PID" 2>/dev/null || true' EXIT
+
+          ready=0
+          for i in {1..30}; do
+            if curl -fsS http://127.0.0.1:5090/api/model-lab/models/status >/dev/null; then
+              ready=1
+              break
+            fi
+            sleep 1
+          done
+          test "$ready" = "1"
+
+          curl -fsS -X POST http://127.0.0.1:5090/api/model-lab/datasets             -H 'Content-Type: application/json'             -d '{
+              "id":"registry-demo",
+              "name":"Registry demo",
+              "description":"CI",
+              "items":[
+                {"input":"open calendar","expected":"calendar"},
+                {"input":"calendar events","expected":"calendar"},
+                {"input":"read email","expected":"email"},
+                {"input":"show inbox","expected":"email"}
+              ]
+            }' >/tmp/dataset.json
+
+          curl -fsS -X POST http://127.0.0.1:5090/api/model-lab/training/jobs             -H 'Content-Type: application/json'             -d '{
+              "datasetId":"registry-demo",
+              "datasetVersion":1,
+              "baseModel":"local-text-classifier",
+              "trainingMethod":"naive-bayes",
+              "hyperparameters":{}
+            }' >/tmp/job.json
+
+          job_id=$(jq -r '.id' /tmp/job.json)
+          artifact_id=""
+
+          for i in {1..30}; do
+            curl -fsS http://127.0.0.1:5090/api/model-lab/artifacts >/tmp/artifacts.json
+            artifact_id=$(jq -r --arg id "$job_id" '
+              [.[] | select(.trainingJobId == $id)][0].id // ""
+            ' /tmp/artifacts.json)
+            if [ -n "$artifact_id" ]; then
+              break
+            fi
+            sleep 1
+          done
+
+          test -n "$artifact_id"
+
+          curl -fsS -X POST             http://127.0.0.1:5090/api/model-lab/artifacts/$artifact_id/status             -H 'Content-Type: application/json'             -d '{"status":"validated"}'             | jq -e '.status == "validated"' >/dev/null
+
+          curl -fsS -X POST http://127.0.0.1:5090/api/model-lab/models             -H 'Content-Type: application/json'             -d '{
+              "family":"intent-router",
+              "version":"1.0.0",
+              "artifactId":"'"$artifact_id"'",
+              "compatibleTasks":["intent-classification","tool-routing"],
+              "runtime":"local",
+              "notes":"CI candidate"
+            }' >/tmp/model.json
+
+          model_id=$(jq -r '.id' /tmp/model.json)
+          jq -e '
+            .family == "intent-router"
+            and .version == "1.0.0"
+            and .stage == "candidate"
+            and .trainingMethod == "naive-bayes"
+            and (.compatibleTasks | index("intent-classification")) != null
+          ' /tmp/model.json >/dev/null
+
+          curl -fsS -X POST             http://127.0.0.1:5090/api/model-lab/models/$model_id/stage             -H 'Content-Type: application/json'             -d '{"stage":"staging","reason":"CI staging"}'             | jq -e '.stage == "staging"' >/dev/null
+
+          curl -fsS -X POST             http://127.0.0.1:5090/api/model-lab/models/$model_id/stage             -H 'Content-Type: application/json'             -d '{"stage":"canary","reason":"CI canary"}'             | jq -e '.stage == "canary"' >/dev/null
+
+          curl -fsS -X POST             http://127.0.0.1:5090/api/model-lab/models/$model_id/stage             -H 'Content-Type: application/json'             -d '{"stage":"production","reason":"CI production"}'             | jq -e '.stage == "production"' >/dev/null
+
+          curl -fsS http://127.0.0.1:5090/api/model-lab/models/families             | jq -e '
+              any(.[];
+                .family == "intent-router"
+                and .versions == 1
+                and .productionVersion == "1.0.0")
+            ' >/dev/null
+
+          curl -fsS http://127.0.0.1:5090/api/model-lab/models/status             | jq -e '
+              .families >= 1
+              and .versions >= 1
+              and .production == 1
+              and .persistent == true
+              and .singleProductionPerFamily == true
+            ' >/dev/null
+
+          duplicate_code=$(curl -sS -o /tmp/duplicate.json -w '%{http_code}'             -X POST http://127.0.0.1:5090/api/model-lab/models             -H 'Content-Type: application/json'             -d '{
+              "family":"intent-router",
+              "version":"1.0.0",
+              "artifactId":"'"$artifact_id"'",
+              "compatibleTasks":["intent-classification"],
+              "runtime":"local"
+            }')
+          test "$duplicate_code" = "409"

@@ -1,5 +1,6 @@
 using PersonalAI.Web.Evaluation.Contracts;
 using PersonalAI.Web.Evaluation.Core;
+using PersonalAI.Web.Evaluation.Evaluators;
 using PersonalAI.Web.Models;
 
 namespace PersonalAI.Web.Services;
@@ -8,6 +9,7 @@ public static class EvaluationEndpoints
 {
     public static IServiceCollection AddEvaluationFramework(this IServiceCollection services)
     {
+        services.AddSingleton<IEvaluator, MinimapBoxEvaluator>();
         services.AddSingleton<IEvaluationEngine, EvaluationEngine>();
         return services;
     }
@@ -18,7 +20,7 @@ public static class EvaluationEndpoints
             Results.Ok(new
             {
                 version = PersonalAiRelease.Version,
-                frameworkVersion = "2.3.18",
+                frameworkVersion = "2.3.19",
                 localOnly = true,
                 maximumBatchSize = EvaluationEngine.MaximumBatchSize,
                 categories = engine.Categories

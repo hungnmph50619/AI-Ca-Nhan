@@ -59,7 +59,8 @@ public sealed record SyntheticDataStatus(
     int MaximumItemsPerDraft,
     bool ExternalAiRequiresConfirmation,
     bool CommitRequiresConfirmation,
-    bool SourceVersionImmutable);
+    bool SourceVersionImmutable,
+    bool CriticPassRequiredForCommit);
 
 public sealed class SyntheticDataValidationException(string message)
     : Exception(message);

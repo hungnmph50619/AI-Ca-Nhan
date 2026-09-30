@@ -22,6 +22,7 @@ public static class EvaluationEndpoints
         services.AddScoped<IImprovementProposalService, ImprovementProposalService>();
         services.AddScoped<IAutomatedExperimentService, AutomatedExperimentService>();
         services.AddScoped<ISelfCodingService, SelfCodingService>();
+        services.AddScoped<IAutomatedReviewService, AutomatedReviewService>();
         return services;
     }
 
@@ -31,7 +32,7 @@ public static class EvaluationEndpoints
             Results.Ok(new
             {
                 version = PersonalAiRelease.Version,
-                frameworkVersion = "2.4.3",
+                frameworkVersion = "2.4.4",
                 localOnly = true,
                 maximumBatchSize = EvaluationEngine.MaximumBatchSize,
                 maximumSummaryResults = EvaluationMetricsAggregator.MaximumResults,
@@ -266,6 +267,41 @@ public static class EvaluationEndpoints
             catch (ToolExecutionInputException exception)
             {
                 return Results.BadRequest(new ApiError(exception.Message));
+            }
+        });
+
+        endpoints.MapPost("/api/self-improvement/automated-review/run", async (
+            RunAutomatedReviewRequest request,
+            IAutomatedReviewService review,
+            CancellationToken cancellationToken) =>
+        {
+            try
+            {
+                return Results.Ok(await review.RunAsync(request, cancellationToken));
+            }
+            catch (AutomatedReviewValidationException exception)
+            {
+                return Results.BadRequest(new ApiError(exception.Message));
+            }
+            catch (ToolExecutionInputException exception)
+            {
+                return Results.BadRequest(new ApiError(exception.Message));
+            }
+            catch (AgentValidationException exception)
+            {
+                return Results.BadRequest(new ApiError(exception.Message));
+            }
+            catch (AgentBusyException exception)
+            {
+                return Results.Json(
+                    new ApiError(exception.Message),
+                    statusCode: StatusCodes.Status409Conflict);
+            }
+            catch (ReviewerOutputException exception)
+            {
+                return Results.Json(
+                    new ApiError(exception.Message),
+                    statusCode: StatusCodes.Status502BadGateway);
             }
         });
 

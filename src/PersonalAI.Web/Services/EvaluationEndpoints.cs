@@ -5,6 +5,7 @@ using PersonalAI.Web.Evaluation.Core;
 using PersonalAI.Web.Evaluation.Evaluators;
 using PersonalAI.Web.Evaluation.Regression;
 using PersonalAI.Web.Models;
+using PersonalAI.Web.SelfImprovement;
 
 namespace PersonalAI.Web.Services;
 
@@ -17,6 +18,7 @@ public static class EvaluationEndpoints
         services.AddSingleton<IRegressionDatasetStore, SqliteRegressionDatasetStore>();
         services.AddScoped<IAgentBenchmarkService, AgentBenchmarkService>();
         services.AddScoped<IModelComparisonService, ModelComparisonService>();
+        services.AddScoped<ISelfEvaluationAgent, SelfEvaluationAgent>();
         return services;
     }
 
@@ -26,7 +28,7 @@ public static class EvaluationEndpoints
             Results.Ok(new
             {
                 version = PersonalAiRelease.Version,
-                frameworkVersion = "2.3.23",
+                frameworkVersion = "2.4.0",
                 localOnly = true,
                 maximumBatchSize = EvaluationEngine.MaximumBatchSize,
                 maximumSummaryResults = EvaluationMetricsAggregator.MaximumResults,
@@ -198,6 +200,20 @@ public static class EvaluationEndpoints
                 return Results.Ok(comparison.Compare(request));
             }
             catch (ModelComparisonValidationException exception)
+            {
+                return Results.BadRequest(new ApiError(exception.Message));
+            }
+        });
+
+        endpoints.MapPost("/api/self-improvement/evaluate", (
+            SelfEvaluationRequest request,
+            ISelfEvaluationAgent selfEvaluation) =>
+        {
+            try
+            {
+                return Results.Ok(selfEvaluation.Evaluate(request));
+            }
+            catch (SelfEvaluationValidationException exception)
             {
                 return Results.BadRequest(new ApiError(exception.Message));
             }

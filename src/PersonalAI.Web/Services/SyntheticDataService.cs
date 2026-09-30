@@ -117,9 +117,18 @@ public sealed partial class SyntheticDataService(
             .Cast<string>()
             .ToHashSet(StringComparer.Ordinal);
 
-        for (var index = 0; index < parsed.Count; index++)
+        if (parsed.Count != request.Count)
         {
-            var item = parsed[index];
+            issues.Add(new(
+                null,
+                "count-mismatch",
+                $"AI trả {parsed.Count} mẫu trong khi yêu cầu {request.Count}; chỉ xử lý tối đa số lượng đã yêu cầu."));
+        }
+
+        var candidates = parsed.Take(request.Count).ToArray();
+        for (var index = 0; index < candidates.Length; index++)
+        {
+            var item = candidates[index];
             if (!TryValidateItem(item, out var normalized, out var reason))
             {
                 issues.Add(new(index, "invalid-item", reason));
@@ -161,7 +170,7 @@ public sealed partial class SyntheticDataService(
             request.Count,
             accepted,
             accepted.Count,
-            parsed.Count - accepted.Count,
+            candidates.Length - accepted.Count,
             issues,
             ReadyToCommit: accepted.Count > 0 && issues.All(x => x.Code != "secret"),
             DateTimeOffset.UtcNow);

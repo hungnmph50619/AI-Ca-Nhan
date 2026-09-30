@@ -10,6 +10,7 @@ public static class ModelLabEndpoints
     {
         services.AddSingleton<IModelLabDatasetStore, SqliteModelLabDatasetStore>();
         services.AddScoped<IPersonalDatasetBuilder, PersonalDatasetBuilder>();
+        services.AddScoped<IDataCleaningService, DataCleaningService>();
         return services;
     }
 
@@ -152,6 +153,34 @@ public static class ModelLabEndpoints
                     cancellationToken));
             }
             catch (PersonalDatasetBuilderValidationException exception)
+            {
+                return Results.BadRequest(new ApiError(exception.Message));
+            }
+            catch (ModelLabDatasetValidationException exception)
+            {
+                return Results.BadRequest(new ApiError(exception.Message));
+            }
+            catch (ModelLabDatasetConflictException exception)
+            {
+                return Results.Json(
+                    new ApiError(exception.Message),
+                    statusCode: StatusCodes.Status409Conflict);
+            }
+            catch (KeyNotFoundException exception)
+            {
+                return Results.NotFound(new ApiError(exception.Message));
+            }
+        });
+
+        endpoints.MapPost("/api/model-lab/data-cleaning", (
+            CleanModelLabDatasetRequest request,
+            IDataCleaningService cleaner) =>
+        {
+            try
+            {
+                return Results.Ok(cleaner.Clean(request));
+            }
+            catch (DataCleaningValidationException exception)
             {
                 return Results.BadRequest(new ApiError(exception.Message));
             }

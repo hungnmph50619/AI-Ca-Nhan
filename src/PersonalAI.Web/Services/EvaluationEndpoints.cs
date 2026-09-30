@@ -21,6 +21,7 @@ public static class EvaluationEndpoints
         services.AddScoped<ISelfEvaluationAgent, SelfEvaluationAgent>();
         services.AddScoped<IImprovementProposalService, ImprovementProposalService>();
         services.AddScoped<IAutomatedExperimentService, AutomatedExperimentService>();
+        services.AddScoped<ISelfCodingService, SelfCodingService>();
         return services;
     }
 
@@ -30,7 +31,7 @@ public static class EvaluationEndpoints
             Results.Ok(new
             {
                 version = PersonalAiRelease.Version,
-                frameworkVersion = "2.4.2",
+                frameworkVersion = "2.4.3",
                 localOnly = true,
                 maximumBatchSize = EvaluationEngine.MaximumBatchSize,
                 maximumSummaryResults = EvaluationMetricsAggregator.MaximumResults,
@@ -244,6 +245,25 @@ public static class EvaluationEndpoints
                 return Results.Ok(experiments.Prepare(request));
             }
             catch (AutomatedExperimentValidationException exception)
+            {
+                return Results.BadRequest(new ApiError(exception.Message));
+            }
+        });
+
+        endpoints.MapPost("/api/self-improvement/self-coding/run", async (
+            RunSelfCodingRequest request,
+            ISelfCodingService selfCoding,
+            CancellationToken cancellationToken) =>
+        {
+            try
+            {
+                return Results.Ok(await selfCoding.RunAsync(request, cancellationToken));
+            }
+            catch (SelfCodingValidationException exception)
+            {
+                return Results.BadRequest(new ApiError(exception.Message));
+            }
+            catch (ToolExecutionInputException exception)
             {
                 return Results.BadRequest(new ApiError(exception.Message));
             }

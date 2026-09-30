@@ -48,7 +48,8 @@ public sealed partial class SyntheticDataService(
             MaximumItemsPerDraft,
             ExternalAiRequiresConfirmation: true,
             CommitRequiresConfirmation: true,
-            SourceVersionImmutable: true);
+            SourceVersionImmutable: true,
+            CriticPassRequiredForCommit: true);
     }
 
     public IReadOnlyList<SyntheticDataDraft> GetAll()

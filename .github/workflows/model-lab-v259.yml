@@ -1,0 +1,111 @@
+name: Model Lab v2.5.9
+
+on:
+  push:
+    branches:
+      - 'experiment/roadmap-v2-5-9-current'
+  pull_request:
+    paths:
+      - 'src/PersonalAI.Web/ModelLab/ModelArtifactModels.cs'
+      - 'src/PersonalAI.Web/Services/ModelArtifactStore.cs'
+      - 'src/PersonalAI.Web/Services/TrainingExecutor.cs'
+      - 'src/PersonalAI.Web/Services/ModelLabEndpoints.cs'
+      - 'src/PersonalAI.Web/Models/SystemModels.cs'
+
+jobs:
+  validate-v259:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: '8.0.x'
+
+      - name: Restore
+        run: dotnet restore PersonalAI.sln
+
+      - name: Build
+        run: dotnet build PersonalAI.sln -c Release --no-restore
+
+      - name: Tests
+        run: dotnet test PersonalAI.sln -c Release --no-build
+
+      - name: Artifact registry smoke test
+        shell: bash
+        run: |
+          set -euo pipefail
+          rm -rf /tmp/personalai-v259
+          mkdir -p /tmp/personalai-v259/workspace /tmp/personalai-v259/model-lab
+
+          Workspace__Root=/tmp/personalai-v259/workspace           ModelLab__Root=/tmp/personalai-v259/model-lab           dotnet run --project src/PersonalAI.Web/PersonalAI.Web.csproj             -c Release --no-build             --urls http://127.0.0.1:5089             >/tmp/personalai-v259.log 2>&1 &
+          APP_PID=$!
+          trap 'kill "$APP_PID" 2>/dev/null || true' EXIT
+
+          ready=0
+          for i in {1..30}; do
+            if curl -fsS http://127.0.0.1:5089/api/model-lab/artifacts/status >/dev/null; then
+              ready=1
+              break
+            fi
+            sleep 1
+          done
+          test "$ready" = "1"
+
+          curl -fsS -X POST http://127.0.0.1:5089/api/model-lab/datasets             -H 'Content-Type: application/json'             -d '{
+              "id":"artifact-demo",
+              "name":"Artifact demo",
+              "description":"CI",
+              "items":[
+                {"input":"open calendar","expected":"calendar"},
+                {"input":"calendar events","expected":"calendar"},
+                {"input":"read email","expected":"email"},
+                {"input":"show inbox","expected":"email"}
+              ]
+            }' >/tmp/dataset.json
+
+          curl -fsS -X POST http://127.0.0.1:5089/api/model-lab/training/jobs             -H 'Content-Type: application/json'             -d '{
+              "datasetId":"artifact-demo",
+              "datasetVersion":1,
+              "baseModel":"local-text-classifier",
+              "trainingMethod":"naive-bayes",
+              "hyperparameters":{}
+            }' >/tmp/job.json
+
+          job_id=$(jq -r '.id' /tmp/job.json)
+          found=0
+
+          for i in {1..30}; do
+            curl -fsS http://127.0.0.1:5089/api/model-lab/artifacts >/tmp/artifacts.json
+            if jq -e --arg id "$job_id" '
+              any(.[]; .trainingJobId == $id and .status == "candidate")
+            ' /tmp/artifacts.json >/dev/null; then
+              found=1
+              break
+            fi
+            sleep 1
+          done
+
+          if [ "$found" -ne 1 ]; then
+            cat /tmp/personalai-v259.log
+            cat /tmp/artifacts.json
+            exit 1
+          fi
+
+          artifact_id=$(jq -r --arg id "$job_id" '
+            .[] | select(.trainingJobId == $id) | .id
+          ' /tmp/artifacts.json)
+
+          jq -e --arg id "$job_id" '
+            any(.[]; .trainingJobId == $id
+              and .status == "candidate"
+              and .artifactSha256 != null
+              and (.artifactSha256 | length) == 64
+              and .sizeBytes > 0
+              and .datasetId == "artifact-demo"
+              and .datasetVersion == 1
+              and .trainingMethod == "naive-bayes")
+          ' /tmp/artifacts.json >/dev/null
+
+          curl -fsS -X POST             http://127.0.0.1:5089/api/model-lab/artifacts/$artifact_id/status             -H 'Content-Type: application/json'             -d '{"status":"validated"}'             | jq -e '.status == "validated"' >/dev/null
+
+          curl -fsS http://127.0.0.1:5089/api/model-lab/artifacts/status             | jq -e '.artifacts >= 1 and .validated >= 1 and .persistent == true' >/dev/null

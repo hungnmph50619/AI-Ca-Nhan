@@ -27,6 +27,7 @@ builder.Services.AddSingleton<IKnowledgeEmbeddingIndex, KnowledgeEmbeddingIndex>
 builder.Services.AddSingleton<IKnowledgeDocumentManagementService, KnowledgeDocumentManagementService>();
 builder.Services.AddSingleton<IKnowledgeHybridSearchService, KnowledgeHybridSearchService>();
 builder.Services.AddKnowledgeQuality();
+builder.Services.AddEvaluationFramework();
 builder.Services.AddAuditFoundation();
 builder.Services.AddUndoFoundation();
 builder.Services.AddComputerUse();
@@ -104,6 +105,7 @@ app.MapStableCore();
 app.MapHardeningFoundation();
 app.MapPersonalAiOs();
 app.MapAgentFramework();
+app.MapEvaluationFramework();
 
 app.MapGet("/api/status", (
     IAiProviderResolver providerResolver,

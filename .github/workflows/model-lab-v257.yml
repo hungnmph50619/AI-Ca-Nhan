@@ -1,0 +1,120 @@
+name: Model Lab v2.5.7
+
+on:
+  push:
+    branches:
+      - 'experiment/roadmap-v2-5-7-current'
+  pull_request:
+    paths:
+      - 'src/PersonalAI.Web/Services/LocalSmallModelTrainingProvider.cs'
+      - 'src/PersonalAI.Web/ModelLab/TrainingProviderModels.cs'
+      - 'src/PersonalAI.Web/Services/TrainingExecutor.cs'
+      - 'src/PersonalAI.Web/Services/ModelLabEndpoints.cs'
+      - 'src/PersonalAI.Web/Models/SystemModels.cs'
+
+jobs:
+  validate-v257:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: '8.0.x'
+
+      - name: Restore
+        run: dotnet restore PersonalAI.sln
+
+      - name: Build
+        run: dotnet build PersonalAI.sln -c Release --no-restore
+
+      - name: Tests
+        run: dotnet test PersonalAI.sln -c Release --no-build
+
+      - name: Real small-model training smoke test
+        shell: bash
+        run: |
+          set -euo pipefail
+          rm -rf /tmp/personalai-v257
+          mkdir -p /tmp/personalai-v257/workspace /tmp/personalai-v257/model-lab
+
+          Workspace__Root=/tmp/personalai-v257/workspace           ModelLab__Root=/tmp/personalai-v257/model-lab           dotnet run --project src/PersonalAI.Web/PersonalAI.Web.csproj             -c Release --no-build             --urls http://127.0.0.1:5087             >/tmp/personalai-v257.log 2>&1 &
+          APP_PID=$!
+          trap 'kill "$APP_PID" 2>/dev/null || true' EXIT
+
+          ready=0
+          for i in {1..30}; do
+            if curl -fsS http://127.0.0.1:5087/api/model-lab/status >/dev/null; then
+              ready=1
+              break
+            fi
+            sleep 1
+          done
+
+          if [ "$ready" -ne 1 ]; then
+            cat /tmp/personalai-v257.log
+            exit 1
+          fi
+
+          curl -fsS -X POST http://127.0.0.1:5087/api/model-lab/datasets             -H 'Content-Type: application/json'             -d '{
+              "id":"intent-demo",
+              "name":"Intent demo",
+              "description":"CI",
+              "items":[
+                {"input":"open my calendar","expected":"calendar"},
+                {"input":"show calendar events","expected":"calendar"},
+                {"input":"read my email","expected":"email"},
+                {"input":"show inbox messages","expected":"email"}
+              ]
+            }' >/tmp/dataset.json
+
+          curl -fsS -X POST http://127.0.0.1:5087/api/model-lab/training/jobs             -H 'Content-Type: application/json'             -d '{
+              "datasetId":"intent-demo",
+              "datasetVersion":1,
+              "baseModel":"local-text-classifier",
+              "trainingMethod":"naive-bayes",
+              "hyperparameters":{}
+            }' >/tmp/job.json
+
+          job_id=$(jq -r '.id' /tmp/job.json)
+          state_file=/tmp/personalai-v257/model-lab/training-executions-personal.json
+          completed=0
+
+          for i in {1..30}; do
+            if [ -f "$state_file" ] && jq -e --arg id "$job_id" '
+              any(.[]; .trainingJobId == $id and .status == "completed")
+            ' "$state_file" >/dev/null; then
+              completed=1
+              break
+            fi
+            sleep 1
+          done
+
+          if [ "$completed" -ne 1 ]; then
+            cat /tmp/personalai-v257.log
+            test -f "$state_file" && cat "$state_file"
+            exit 1
+          fi
+
+          artifact=$(jq -r --arg id "$job_id" '
+            .[] | select(.trainingJobId == $id) | .metrics.artifactPath
+          ' "$state_file")
+
+          test -n "$artifact"
+          test -f "$artifact"
+
+          jq -e '
+            .kind == "naive-bayes"
+            and (.labels | length) == 2
+            and (.vocabulary | length) > 0
+          ' "$artifact" >/dev/null
+
+          jq -e --arg id "$job_id" '
+            any(.[]; .trainingJobId == $id
+              and .providerId == "local-small-model"
+              and .status == "completed"
+              and .metrics.candidateOnly == true
+              and .metrics.examples == 4
+              and .metrics.labels == 2
+              and .metrics.trainingAccuracy >= 0.5)
+          ' "$state_file" >/dev/null

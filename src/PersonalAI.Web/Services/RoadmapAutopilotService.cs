@@ -754,13 +754,13 @@ public sealed class RoadmapAutopilotService(
                 value, JsonOptions);
             if (parsed?.Edits is null)
                 throw new RoadmapAutopilotValidationException(
-                    "OpenAI không trả danh sách edits.");
+                    "Nhà cung cấp AI không trả danh sách edits.");
             return parsed;
         }
         catch (JsonException)
         {
             throw new RoadmapAutopilotValidationException(
-                "OpenAI trả JSON sửa code không hợp lệ.");
+                "Nhà cung cấp AI trả JSON sửa code không hợp lệ.");
         }
     }
 

@@ -48,6 +48,33 @@ public static class ModelLabEndpoints
             return artifact is null ? Results.NotFound() : Results.Ok(artifact);
         });
 
+        endpoints.MapPost("/api/model-lab/artifacts/{artifactId:guid}/status", (
+            Guid artifactId,
+            UpdateModelArtifactStatusRequest request,
+            IModelArtifactStore artifacts,
+            IAuditRecorder audit) =>
+        {
+            try
+            {
+                var artifact = artifacts.UpdateStatus(artifactId, request);
+                audit.Record(
+                    AuditAgents.User,
+                    "model-lab.artifact.status",
+                    $"model-artifact:{artifact.Id:D}",
+                    $"status:{artifact.Status}",
+                    AuditResults.Succeeded);
+                return Results.Ok(artifact);
+            }
+            catch (ModelArtifactValidationException exception)
+            {
+                return Results.BadRequest(new ApiError(exception.Message));
+            }
+            catch (KeyNotFoundException exception)
+            {
+                return Results.NotFound(new ApiError(exception.Message));
+            }
+        });
+
         endpoints.MapGet("/api/model-lab/training/providers", (
             ITrainingProviderRegistry registry) =>
             Results.Ok(registry.GetAll()));

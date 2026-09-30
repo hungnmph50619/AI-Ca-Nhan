@@ -58,6 +58,9 @@ public sealed class TrainingExecutor(
             foreach (var pending in jobs.GetAll()
                 .Where(x => x.Status == TrainingJobStatuses.Pending))
             {
+                if (TrainingMethods.IsPeft(pending.TrainingMethod))
+                    continue;
+
                 if (executions.Get(pending.Id) is null)
                 {
                     try

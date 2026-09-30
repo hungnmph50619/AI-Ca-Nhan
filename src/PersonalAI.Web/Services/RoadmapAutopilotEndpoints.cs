@@ -1,0 +1,64 @@
+using PersonalAI.Web.Models;
+using PersonalAI.Web.SelfImprovement;
+
+namespace PersonalAI.Web.Services;
+
+public static class RoadmapAutopilotEndpoints
+{
+    public static IServiceCollection AddRoadmapAutopilot(
+        this IServiceCollection services)
+    {
+        services.AddScoped<IRoadmapAutopilotService, RoadmapAutopilotService>();
+        return services;
+    }
+
+    public static IEndpointRouteBuilder MapRoadmapAutopilot(
+        this IEndpointRouteBuilder endpoints)
+    {
+        endpoints.MapGet("/api/development-autopilot/status", (
+            IRoadmapAutopilotService autopilot) =>
+            Results.Ok(autopilot.GetStatus()));
+
+        endpoints.MapGet("/api/development-autopilot/next", (
+            IRoadmapAutopilotService autopilot) =>
+        {
+            var next = autopilot.GetNextVersion();
+            return next is null ? Results.NotFound() : Results.Ok(next);
+        });
+
+        endpoints.MapPost("/api/development-autopilot/run-next", async (
+            RunRoadmapAutopilotRequest request,
+            IRoadmapAutopilotService autopilot,
+            CancellationToken cancellationToken) =>
+        {
+            try
+            {
+                return Results.Ok(await autopilot.RunNextAsync(
+                    request,
+                    cancellationToken));
+            }
+            catch (RoadmapAutopilotValidationException exception)
+            {
+                return Results.BadRequest(new ApiError(exception.Message));
+            }
+            catch (ToolExecutionInputException exception)
+            {
+                return Results.BadRequest(new ApiError(exception.Message));
+            }
+            catch (InvalidOperationException exception)
+            {
+                return Results.Json(
+                    new ApiError(exception.Message),
+                    statusCode: StatusCodes.Status503ServiceUnavailable);
+            }
+            catch (HttpRequestException exception)
+            {
+                return Results.Json(
+                    new ApiError(exception.Message),
+                    statusCode: StatusCodes.Status502BadGateway);
+            }
+        });
+
+        return endpoints;
+    }
+}

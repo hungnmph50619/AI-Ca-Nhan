@@ -2,6 +2,7 @@ namespace PersonalAI.Web.Models;
 
 public static class AgentExecutionStatuses
 {
+    public const string Pending = "pending";
     public const string Succeeded = "succeeded";
     public const string Busy = "busy";
     public const string InvalidInput = "invalid-input";

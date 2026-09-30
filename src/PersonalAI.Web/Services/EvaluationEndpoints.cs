@@ -20,9 +20,11 @@ public static class EvaluationEndpoints
             Results.Ok(new
             {
                 version = PersonalAiRelease.Version,
-                frameworkVersion = "2.3.19",
+                frameworkVersion = "2.3.20",
                 localOnly = true,
                 maximumBatchSize = EvaluationEngine.MaximumBatchSize,
+                maximumSummaryResults = EvaluationMetricsAggregator.MaximumResults,
+                roadmapMetrics = EvaluationMetricCatalog.RoadmapMetrics,
                 categories = engine.Categories
             }));
 
@@ -43,6 +45,18 @@ public static class EvaluationEndpoints
             try
             {
                 return Results.Ok(engine.EvaluateMany(evaluationCases));
+            }
+            catch (EvaluationEngineException exception)
+            {
+                return Results.BadRequest(new ApiError(exception.Message));
+            }
+        });
+
+        endpoints.MapPost("/api/evaluation/summarize", (IReadOnlyList<EvaluationResult> results) =>
+        {
+            try
+            {
+                return Results.Ok(EvaluationMetricsAggregator.Summarize(results));
             }
             catch (EvaluationEngineException exception)
             {

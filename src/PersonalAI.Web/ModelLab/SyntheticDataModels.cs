@@ -60,7 +60,8 @@ public sealed record SyntheticDataStatus(
     bool ExternalAiRequiresConfirmation,
     bool CommitRequiresConfirmation,
     bool SourceVersionImmutable,
-    bool CriticPassRequiredForCommit);
+    bool CriticPassRequiredForCommit,
+    bool VerificationRequiredForCommit);
 
 public sealed class SyntheticDataValidationException(string message)
     : Exception(message);

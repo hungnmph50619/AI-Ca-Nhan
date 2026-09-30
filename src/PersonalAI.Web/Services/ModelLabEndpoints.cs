@@ -20,6 +20,7 @@ public static class ModelLabEndpoints
         services.AddSingleton<ITrainingExecutionStore, JsonTrainingExecutionStore>();
         services.AddSingleton<IModelArtifactStore, JsonModelArtifactStore>();
         services.AddSingleton<IModelRegistry, JsonModelRegistry>();
+        services.AddScoped<ISyntheticDataService, SyntheticDataService>();
         services.AddSingleton<TrainingExecutor>();
         services.AddSingleton<ITrainingExecutor>(sp => sp.GetRequiredService<TrainingExecutor>());
         services.AddHostedService(sp => sp.GetRequiredService<TrainingExecutor>());
@@ -32,6 +33,71 @@ public static class ModelLabEndpoints
         endpoints.MapGet("/api/model-lab/status", (
             IModelLabDatasetStore store) =>
             Results.Ok(store.GetStatus()));
+
+        endpoints.MapGet("/api/model-lab/synthetic/status", (
+            ISyntheticDataService synthetic) =>
+            Results.Ok(synthetic.GetStatus()));
+
+        endpoints.MapGet("/api/model-lab/synthetic/drafts", (
+            ISyntheticDataService synthetic) =>
+            Results.Ok(synthetic.GetAll()));
+
+        endpoints.MapGet("/api/model-lab/synthetic/drafts/{draftId:guid}", (
+            Guid draftId,
+            ISyntheticDataService synthetic) =>
+        {
+            var draft = synthetic.Get(draftId);
+            return draft is null ? Results.NotFound() : Results.Ok(draft);
+        });
+
+        endpoints.MapPost("/api/model-lab/synthetic/generate", async (
+            GenerateSyntheticDataRequest request,
+            ISyntheticDataService synthetic,
+            CancellationToken cancellationToken) =>
+        {
+            try
+            {
+                return Results.Ok(await synthetic.GenerateAsync(
+                    request,
+                    cancellationToken));
+            }
+            catch (SyntheticDataValidationException exception)
+            {
+                return Results.BadRequest(new ApiError(exception.Message));
+            }
+            catch (KeyNotFoundException exception)
+            {
+                return Results.NotFound(new ApiError(exception.Message));
+            }
+            catch (InvalidOperationException exception)
+            {
+                return Results.BadRequest(new ApiError(exception.Message));
+            }
+        });
+
+        endpoints.MapPost("/api/model-lab/synthetic/commit", (
+            CommitSyntheticDataRequest request,
+            ISyntheticDataService synthetic) =>
+        {
+            try
+            {
+                return Results.Ok(synthetic.Commit(request));
+            }
+            catch (SyntheticDataValidationException exception)
+            {
+                return Results.BadRequest(new ApiError(exception.Message));
+            }
+            catch (ModelLabDatasetConflictException exception)
+            {
+                return Results.Json(
+                    new ApiError(exception.Message),
+                    statusCode: StatusCodes.Status409Conflict);
+            }
+            catch (KeyNotFoundException exception)
+            {
+                return Results.NotFound(new ApiError(exception.Message));
+            }
+        });
 
         endpoints.MapGet("/api/model-lab/artifacts/status", (
             IModelArtifactStore artifacts) =>

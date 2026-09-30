@@ -23,6 +23,7 @@ public static class EvaluationEndpoints
         services.AddScoped<IAutomatedExperimentService, AutomatedExperimentService>();
         services.AddScoped<ISelfCodingService, SelfCodingService>();
         services.AddScoped<IAutomatedReviewService, AutomatedReviewService>();
+        services.AddScoped<IAutoTestService, AutoTestService>();
         return services;
     }
 
@@ -32,7 +33,7 @@ public static class EvaluationEndpoints
             Results.Ok(new
             {
                 version = PersonalAiRelease.Version,
-                frameworkVersion = "2.4.4",
+                frameworkVersion = "2.4.5",
                 localOnly = true,
                 maximumBatchSize = EvaluationEngine.MaximumBatchSize,
                 maximumSummaryResults = EvaluationMetricsAggregator.MaximumResults,
@@ -298,6 +299,55 @@ public static class EvaluationEndpoints
                     statusCode: StatusCodes.Status409Conflict);
             }
             catch (ReviewerOutputException exception)
+            {
+                return Results.Json(
+                    new ApiError(exception.Message),
+                    statusCode: StatusCodes.Status502BadGateway);
+            }
+        });
+
+        endpoints.MapPost("/api/self-improvement/auto-test/run", async (
+            RunAutoTestRequest request,
+            IAutoTestService autoTest,
+            CancellationToken cancellationToken) =>
+        {
+            try
+            {
+                return Results.Ok(await autoTest.RunAsync(request, cancellationToken));
+            }
+            catch (AutoTestValidationException exception)
+            {
+                return Results.BadRequest(new ApiError(exception.Message));
+            }
+            catch (EvaluationEngineException exception)
+            {
+                return Results.BadRequest(new ApiError(exception.Message));
+            }
+            catch (AgentBenchmarkValidationException exception)
+            {
+                return Results.BadRequest(new ApiError(exception.Message));
+            }
+            catch (AgentValidationException exception)
+            {
+                return Results.BadRequest(new ApiError(exception.Message));
+            }
+            catch (AgentBusyException exception)
+            {
+                return Results.Json(
+                    new ApiError(exception.Message),
+                    statusCode: StatusCodes.Status409Conflict);
+            }
+            catch (KeyNotFoundException exception)
+            {
+                return Results.BadRequest(new ApiError(exception.Message));
+            }
+            catch (InvalidOperationException exception)
+            {
+                return Results.Json(
+                    new ApiError(exception.Message),
+                    statusCode: StatusCodes.Status503ServiceUnavailable);
+            }
+            catch (HttpRequestException exception)
             {
                 return Results.Json(
                     new ApiError(exception.Message),

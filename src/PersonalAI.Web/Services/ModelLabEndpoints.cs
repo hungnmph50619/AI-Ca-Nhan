@@ -15,6 +15,10 @@ public static class ModelLabEndpoints
         services.AddSingleton<ITrainingJobStore, SqliteTrainingJobStore>();
         services.AddSingleton<ITrainingProvider, MockTrainingProvider>();
         services.AddSingleton<ITrainingProviderRegistry, TrainingProviderRegistry>();
+        services.AddSingleton<ITrainingExecutionStore, JsonTrainingExecutionStore>();
+        services.AddSingleton<TrainingExecutor>();
+        services.AddSingleton<ITrainingExecutor>(sp => sp.GetRequiredService<TrainingExecutor>());
+        services.AddHostedService(sp => sp.GetRequiredService<TrainingExecutor>());
         return services;
     }
 

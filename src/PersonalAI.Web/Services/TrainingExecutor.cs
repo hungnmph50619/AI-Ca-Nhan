@@ -16,6 +16,7 @@ public sealed class TrainingExecutor(
     ITrainingExecutionStore executions,
     ITrainingJobStore jobs,
     ITrainingProviderRegistry providers,
+    IModelArtifactStore artifacts,
     IAuditRecorder audit) : BackgroundService, ITrainingExecutor
 {
     private readonly SemaphoreSlim _signal=new(0);
@@ -143,6 +144,27 @@ public sealed class TrainingExecutor(
                 if(progress.Status==TrainingProviderExecutionStatuses.Completed)
                 {
                     executions.Set(job.Id,TrainingExecutionStatuses.Completed,metrics:progress.Metrics);
+
+                    if(progress.Metrics is JsonElement metrics &&
+                       metrics.ValueKind==JsonValueKind.Object &&
+                       metrics.TryGetProperty("artifactPath",out var artifactPathElement) &&
+                       artifactPathElement.ValueKind==JsonValueKind.String &&
+                       !string.IsNullOrWhiteSpace(artifactPathElement.GetString()))
+                    {
+                        var artifactPath=artifactPathElement.GetString()!;
+                        artifacts.Register(new RegisterModelArtifactRequest(
+                            Name:$"{job.TrainingMethod}-{job.Id:D}",
+                            Version:"1",
+                            BaseModel:job.BaseModel,
+                            TrainingJobId:job.Id,
+                            DatasetId:job.DatasetId,
+                            DatasetVersion:job.DatasetVersion,
+                            DatasetSha256:job.DatasetSha256,
+                            TrainingMethod:job.TrainingMethod,
+                            ArtifactPath:artifactPath,
+                            Metrics:metrics));
+                    }
+
                     return;
                 }
                 if(progress.Status==TrainingProviderExecutionStatuses.Failed)

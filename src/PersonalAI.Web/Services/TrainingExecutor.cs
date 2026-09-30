@@ -55,6 +55,24 @@ public sealed class TrainingExecutor(
         executions.RecoverInterrupted();
         while(!stoppingToken.IsCancellationRequested)
         {
+            foreach (var pending in jobs.GetAll()
+                .Where(x => x.Status == TrainingJobStatuses.Pending))
+            {
+                if (executions.Get(pending.Id) is null)
+                {
+                    try
+                    {
+                        executions.Queue(
+                            pending.Id,
+                            MockTrainingProvider.ProviderId,
+                            JsonTrainingExecutionStore.DefaultTimeoutSeconds);
+                    }
+                    catch (TrainingExecutionValidationException)
+                    {
+                    }
+                }
+            }
+
             var next=executions.GetAll()
                 .Where(x=>x.Status==TrainingExecutionStatuses.Queued)
                 .OrderBy(x=>x.CreatedAt)
@@ -97,7 +115,9 @@ public sealed class TrainingExecutor(
             while(!linked.IsCancellationRequested)
             {
                 var current=executions.Get(job.Id);
-                if(current?.Status==TrainingExecutionStatuses.Cancelled)
+                var jobState=jobs.Get(job.Id);
+                if(current?.Status==TrainingExecutionStatuses.Cancelled ||
+                   jobState?.Status==TrainingJobStatuses.Cancelled)
                 {
                     await provider.CancelAsync(handle.ExternalJobId,CancellationToken.None);
                     return;

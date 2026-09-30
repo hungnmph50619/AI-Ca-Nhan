@@ -11,6 +11,7 @@ public static class DevelopmentCapabilities
     public const string DotnetBuild = "dotnet-build";
     public const string DotnetTest = "dotnet-test";
     public const string DotnetPublishCandidate = "dotnet-publish-candidate";
+    public const string DeploymentCandidateDiscard = "deployment-candidate-discard";
 }
 
 public sealed record DevelopmentStatusResponse(
@@ -92,3 +93,10 @@ public sealed record DevelopmentPublishResult(
     bool OutputTruncated,
     int FileCount,
     long TotalBytes);
+
+
+public sealed record DevelopmentDeploymentRollbackResult(
+    string DeploymentSlot,
+    bool Existed,
+    bool RolledBack,
+    DateTimeOffset CompletedAt);

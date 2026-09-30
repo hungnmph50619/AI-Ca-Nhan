@@ -6,6 +6,7 @@ public static class DevelopmentCapabilities
     public const string TextSearch = "text-search";
     public const string GitStatus = "git-status";
     public const string GitDiff = "git-diff";
+    public const string GitExperimentBranch = "git-experiment-branch";
     public const string DotnetRestore = "dotnet-restore";
     public const string DotnetBuild = "dotnet-build";
     public const string DotnetTest = "dotnet-test";
@@ -23,7 +24,8 @@ public sealed record DevelopmentStatusResponse(
     int MaximumSearchHits,
     int MaximumProcessOutputCharacters,
     IReadOnlyList<string> AvailableCapabilities,
-    IReadOnlyList<string> Limitations);
+    IReadOnlyList<string> Limitations,
+    bool ExperimentBranchActionsEnabled = false);
 
 public sealed record DevelopmentProjectEntry(
     string Path,
@@ -68,3 +70,11 @@ public sealed record DevelopmentGitResult(
     int DurationMs,
     string Output,
     bool OutputTruncated);
+
+
+public sealed record DevelopmentBranchResult(
+    string RepositoryPath,
+    string Branch,
+    bool Succeeded,
+    int DurationMs,
+    string Output);

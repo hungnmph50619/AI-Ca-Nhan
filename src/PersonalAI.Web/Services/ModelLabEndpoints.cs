@@ -9,6 +9,7 @@ public static class ModelLabEndpoints
         this IServiceCollection services)
     {
         services.AddSingleton<IModelLabDatasetStore, SqliteModelLabDatasetStore>();
+        services.AddScoped<IPersonalDatasetBuilder, PersonalDatasetBuilder>();
         return services;
     }
 
@@ -122,6 +123,37 @@ public static class ModelLabEndpoints
                 return Results.Created(
                     $"/api/model-lab/datasets/{Uri.EscapeDataString(version.DatasetId)}/versions/{version.Version}",
                     version);
+            }
+            catch (ModelLabDatasetValidationException exception)
+            {
+                return Results.BadRequest(new ApiError(exception.Message));
+            }
+            catch (ModelLabDatasetConflictException exception)
+            {
+                return Results.Json(
+                    new ApiError(exception.Message),
+                    statusCode: StatusCodes.Status409Conflict);
+            }
+            catch (KeyNotFoundException exception)
+            {
+                return Results.NotFound(new ApiError(exception.Message));
+            }
+        });
+
+        endpoints.MapPost("/api/model-lab/personal-dataset/build", async (
+            BuildPersonalDatasetRequest request,
+            IPersonalDatasetBuilder builder,
+            CancellationToken cancellationToken) =>
+        {
+            try
+            {
+                return Results.Ok(await builder.BuildAsync(
+                    request,
+                    cancellationToken));
+            }
+            catch (PersonalDatasetBuilderValidationException exception)
+            {
+                return Results.BadRequest(new ApiError(exception.Message));
             }
             catch (ModelLabDatasetValidationException exception)
             {

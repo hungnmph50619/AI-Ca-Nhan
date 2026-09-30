@@ -10,6 +10,7 @@ public static class DevelopmentCapabilities
     public const string DotnetRestore = "dotnet-restore";
     public const string DotnetBuild = "dotnet-build";
     public const string DotnetTest = "dotnet-test";
+    public const string DotnetPublishCandidate = "dotnet-publish-candidate";
 }
 
 public sealed record DevelopmentStatusResponse(
@@ -78,3 +79,16 @@ public sealed record DevelopmentBranchResult(
     bool Succeeded,
     int DurationMs,
     string Output);
+
+
+public sealed record DevelopmentPublishResult(
+    string DeploymentSlot,
+    string TargetPath,
+    int ExitCode,
+    bool Succeeded,
+    bool TimedOut,
+    int DurationMs,
+    string Output,
+    bool OutputTruncated,
+    int FileCount,
+    long TotalBytes);

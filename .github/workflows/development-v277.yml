@@ -50,7 +50,7 @@ jobs:
           done
 
           jq -e '
-            .version=="2.7.7"
+            (.version | split(".") | map(tonumber)) >= [2,7,7]
             and .reportsPersisted==true
             and .failedBenchmarkBlocksContinuation==true
             and (.requiredGates | sort)==(

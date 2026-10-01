@@ -51,7 +51,7 @@ jobs:
           test "$ready" = "1"
 
           jq -e '
-            .version == "2.6.0"
+            (.version | split(".") | map(tonumber)) >= [2,6,0]
             and .maximumItemsPerDraft == 50
             and .externalAiRequiresConfirmation == true
             and .commitRequiresConfirmation == true

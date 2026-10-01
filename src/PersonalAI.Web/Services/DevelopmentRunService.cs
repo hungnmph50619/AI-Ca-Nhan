@@ -23,6 +23,7 @@ public sealed class DevelopmentRunService(
     IDevelopmentBenchmarkReportStore benchmarks,
     IDevelopmentGitHubReportStore githubReports,
     IDevelopmentMergePolicyReportStore mergePolicyReports,
+    IDevelopmentLocalSyncReportStore localSyncReports,
     ICiMonitorService ci,
     IConfiguration configuration,
     IAuditRecorder audit) : IDevelopmentRunService
@@ -121,6 +122,7 @@ public sealed class DevelopmentRunService(
                 [],
                 request.ImprovementItemId,
                 request.DiagnosisId,
+                null,
                 null,
                 null,
                 null,
@@ -289,6 +291,30 @@ public sealed class DevelopmentRunService(
                         "Pull Request chưa được merge; không được chuyển sang local-sync.");
             }
 
+            if (current.Stage == DevelopmentRunStages.LocalSync)
+            {
+                if (request.LocalSyncReportId is null)
+                    throw new DevelopmentRunConflictException(
+                        "LocalSyncReportId là bắt buộc trước khi hoàn tất DevelopmentRun.");
+
+                var localSyncReport = localSyncReports.Get(
+                    request.LocalSyncReportId.Value)
+                    ?? throw new DevelopmentRunConflictException(
+                        "Không tìm thấy DevelopmentLocalSyncReport.");
+
+                if (localSyncReport.DevelopmentRunId != current.Id)
+                    throw new DevelopmentRunConflictException(
+                        "Local sync report không thuộc DevelopmentRun hiện tại.");
+
+                if (!localSyncReport.Synced ||
+                    localSyncReport.DirtyTreeDetected ||
+                    localSyncReport.State != DevelopmentLocalSyncStates.Synced)
+                {
+                    throw new DevelopmentRunConflictException(
+                        "Local sync chưa hoàn tất an toàn; DevelopmentRun chưa thể completed.");
+                }
+            }
+
             var next = NextStage(current.Stage);
             var now = DateTimeOffset.UtcNow;
 
@@ -316,6 +342,7 @@ public sealed class DevelopmentRunService(
                 BenchmarkReportId = request.BenchmarkReportId ?? current.BenchmarkReportId,
                 GitHubReportId = request.GitHubReportId ?? current.GitHubReportId,
                 MergePolicyReportId = request.MergePolicyReportId ?? current.MergePolicyReportId,
+                LocalSyncReportId = request.LocalSyncReportId ?? current.LocalSyncReportId,
                 History = history,
                 UpdatedAt = now,
                 CompletedAt = status == "completed" ? now : null

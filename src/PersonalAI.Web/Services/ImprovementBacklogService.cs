@@ -98,12 +98,25 @@ public sealed class ImprovementBacklogService(
             if (index >= 0)
             {
                 var current = all[index];
+                var duplicateEvidence = current.Evidence.Any(x =>
+                    x.SourceType.Equals(evidence.SourceType, StringComparison.OrdinalIgnoreCase) &&
+                    x.SourceId.Equals(evidence.SourceId, StringComparison.OrdinalIgnoreCase) &&
+                    x.Reference.Equals(evidence.Reference, StringComparison.OrdinalIgnoreCase) &&
+                    x.Summary.Equals(evidence.Summary, StringComparison.OrdinalIgnoreCase));
+
+                if (duplicateEvidence)
+                {
+                    audit.Record(
+                        AuditAgents.System,
+                        "improvement.backlog.dedupe",
+                        $"improvement:{current.Id:D}",
+                        $"source:{sourceType};sourceId:{SafeInline(sourceId, 120)};duplicate-evidence:true",
+                        AuditResults.Succeeded);
+                    return current;
+                }
+
                 var mergedEvidence = current.Evidence
                     .Concat([evidence])
-                    .GroupBy(
-                        x => $"{x.SourceType}|{x.SourceId}|{x.Reference}|{x.Summary}",
-                        StringComparer.OrdinalIgnoreCase)
-                    .Select(group => group.OrderBy(x => x.ObservedAt).First())
                     .OrderByDescending(x => x.ObservedAt)
                     .Take(MaximumEvidencePerItem)
                     .OrderBy(x => x.ObservedAt)

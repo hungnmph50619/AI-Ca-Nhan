@@ -19,6 +19,7 @@ builder.Services.AddWorkspaceFoundation();
 builder.Services.AddStableCore();
 builder.Services.AddHardeningFoundation();
 builder.Services.AddPersonalAiOs();
+builder.Services.AddSingleton<ILeagueMatchSnapshotStore, LeagueMatchSnapshotStore>();
 builder.Services.AddSingleton<IAiSettingsStore, AiSettingsStore>();
 builder.Services.AddSingleton<KnowledgeDocumentExtractor>();
 builder.Services.AddSingleton<IKnowledgeDocumentStore, SqliteKnowledgeDocumentStore>();

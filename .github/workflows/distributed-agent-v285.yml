@@ -1,0 +1,214 @@
+name: Distributed Agent Execution v2.8.5
+
+on:
+  push:
+    branches:
+      - 'experiment/roadmap-v2-8-5-distributed-agent-execution'
+
+jobs:
+  validate-v285:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: '8.0.x'
+
+      - name: Restore
+        run: dotnet restore PersonalAI.sln
+
+      - name: Build
+        run: dotnet build PersonalAI.sln -c Release --no-restore
+
+      - name: Tests
+        run: dotnet test PersonalAI.sln -c Release --no-build
+
+      - name: Distributed execution permission smoke test
+        shell: bash
+        run: |
+          set -euo pipefail
+          rm -rf /tmp/personalai-v285
+          mkdir -p \
+            /tmp/personalai-v285/workspace \
+            /tmp/personalai-v285/companion \
+            /tmp/personalai-v285/hub \
+            /tmp/personalai-v285/identity \
+            /tmp/personalai-v285/capabilities \
+            /tmp/personalai-v285/router \
+            /tmp/personalai-v285/distributed
+
+          export Workspace__Root=/tmp/personalai-v285/workspace
+          export Companion__Root=/tmp/personalai-v285/companion
+          export Companion__Enabled=true
+          export Companion__AllowInsecureHttp=true
+          export DeviceHub__Root=/tmp/personalai-v285/hub
+          export DeviceIdentity__Root=/tmp/personalai-v285/identity
+          export DeviceCapability__Root=/tmp/personalai-v285/capabilities
+          export TaskRouter__Root=/tmp/personalai-v285/router
+          export DistributedAgentExecution__Root=/tmp/personalai-v285/distributed
+
+          start_app() {
+            dotnet run --project src/PersonalAI.Web/PersonalAI.Web.csproj \
+              -c Release --no-build \
+              --urls http://127.0.0.1:5126 \
+              >/tmp/personalai-v285/app.log 2>&1 &
+            APP_PID=$!
+            for i in {1..30}; do
+              if curl -fsS http://127.0.0.1:5126/api/tasks/distributed-execution/status >/tmp/distributed-status.json; then
+                return 0
+              fi
+              sleep 1
+            done
+            cat /tmp/personalai-v285/app.log
+            return 1
+          }
+
+          stop_app() {
+            kill "$APP_PID" 2>/dev/null || true
+            wait "$APP_PID" 2>/dev/null || true
+          }
+
+          trap 'stop_app || true' EXIT
+          start_app
+
+          jq -e '
+            .version=="2.8.5"
+            and .correlationIdRequired==true
+            and .routeRequiredBeforeDispatch==true
+            and .permissionRevalidatedOnDispatch==true
+            and .permissionRevalidatedOnClaim==true
+            and .permissionRevalidatedOnComplete==true
+            and .offlineDeviceExecutionBlocked==true
+            and .companionTrustRevalidated==true
+            and .executionStatePersisted==true
+          ' /tmp/distributed-status.json >/dev/null
+
+          curl -fsS -X POST http://127.0.0.1:5126/api/device-hub/admin/devices \
+            -H 'Content-Type: application/json' \
+            -d '{"name":"Distributed PC","deviceType":"pc","confirmRegister":true}' \
+            >/tmp/device.json
+          device_id=$(jq -r '.id' /tmp/device.json)
+
+          curl -fsS -X POST \
+            http://127.0.0.1:5126/api/device-hub/admin/devices/$device_id/heartbeat \
+            -H 'Content-Type: application/json' \
+            -d '{"confirmHeartbeat":true}' >/dev/null
+
+          curl -fsS -X POST \
+            http://127.0.0.1:5126/api/device-hub/admin/devices/$device_id/capabilities \
+            -H 'Content-Type: application/json' \
+            -d '{"capability":"build","confirmRegister":true}' >/dev/null
+
+          curl -fsS -X POST \
+            http://127.0.0.1:5126/api/device-hub/admin/devices/$device_id/capabilities/build/permission \
+            -H 'Content-Type: application/json' \
+            -d '{"permissionGranted":true,"confirmPermissionChange":true}' >/dev/null
+
+          curl -fsS -X POST http://127.0.0.1:5126/api/tasks/prepare \
+            -H 'Content-Type: application/json' \
+            -d '{
+              "goal":"Distributed planner context smoke test",
+              "plan":"Prepare one safe local read step, then route it.",
+              "steps":[{
+                "title":"List workspace",
+                "description":"Read-only fixture step.",
+                "toolName":"workspace.list",
+                "arguments":{"path":".","maxEntries":20},
+                "dependsOn":[]
+              }]
+            }' >/tmp/task.json
+          task_id=$(jq -r '.id' /tmp/task.json)
+
+          curl -fsS -X POST http://127.0.0.1:5126/api/tasks/$task_id/route \
+            -H 'Content-Type: application/json' \
+            -d '{"requiredCapability":"build","confirmRoute":true}' \
+            >/tmp/route.json
+          test "$(jq -r '.deviceId' /tmp/route.json)" = "$device_id"
+
+          no_confirm=$(curl -sS -o /tmp/no-dispatch.json -w '%{http_code}' \
+            -X POST http://127.0.0.1:5126/api/tasks/$task_id/distributed-executions \
+            -H 'Content-Type: application/json' \
+            -d '{
+              "agentId":"planning.planner",
+              "requiredCapability":"build",
+              "context":"Plan build verification on the selected node.",
+              "confirmDispatch":false
+            }')
+          test "$no_confirm" = "400"
+
+          curl -fsS -X POST \
+            http://127.0.0.1:5126/api/tasks/$task_id/distributed-executions \
+            -H 'Content-Type: application/json' \
+            -d '{
+              "agentId":"planning.planner",
+              "requiredCapability":"build",
+              "context":"Plan build verification on the selected node.",
+              "confirmDispatch":true
+            }' >/tmp/dispatch.json
+
+          correlation_id=$(jq -r '.correlationId' /tmp/dispatch.json)
+          jq -e '
+            .status=="queued"
+            and .agentId=="planning.planner"
+            and .requiredCapability=="build"
+            and .deviceId=="'"$device_id"'"
+          ' /tmp/dispatch.json >/dev/null
+
+          no_claim=$(curl -sS -o /tmp/no-claim.json -w '%{http_code}' \
+            -X POST http://127.0.0.1:5126/api/devices/$device_id/distributed-executions/$correlation_id/claim \
+            -H 'Content-Type: application/json' \
+            -d '{"confirmClaim":false}')
+          test "$no_claim" = "400"
+
+          curl -fsS -X POST \
+            http://127.0.0.1:5126/api/devices/$device_id/distributed-executions/$correlation_id/claim \
+            -H 'Content-Type: application/json' \
+            -d '{"confirmClaim":true}' >/tmp/claim.json
+          jq -e '.status=="claimed" and .claimedAt!=null' /tmp/claim.json >/dev/null
+
+          curl -fsS -X POST \
+            http://127.0.0.1:5126/api/device-hub/admin/devices/$device_id/capabilities/build/permission \
+            -H 'Content-Type: application/json' \
+            -d '{"permissionGranted":false,"confirmPermissionChange":true}' >/dev/null
+
+          revoked_complete=$(curl -sS -o /tmp/revoked-complete.json -w '%{http_code}' \
+            -X POST http://127.0.0.1:5126/api/devices/$device_id/distributed-executions/$correlation_id/complete \
+            -H 'Content-Type: application/json' \
+            -d '{
+              "succeeded":true,
+              "resultSummary":"Build verification completed.",
+              "confirmComplete":true
+            }')
+          test "$revoked_complete" = "400"
+
+          curl -fsS -X POST \
+            http://127.0.0.1:5126/api/device-hub/admin/devices/$device_id/capabilities/build/permission \
+            -H 'Content-Type: application/json' \
+            -d '{"permissionGranted":true,"confirmPermissionChange":true}' >/dev/null
+
+          curl -fsS -X POST \
+            http://127.0.0.1:5126/api/devices/$device_id/distributed-executions/$correlation_id/complete \
+            -H 'Content-Type: application/json' \
+            -d '{
+              "succeeded":true,
+              "resultSummary":"Build verification completed.",
+              "confirmComplete":true
+            }' >/tmp/complete.json
+
+          jq -e '
+            .status=="succeeded"
+            and .completedAt!=null
+            and .resultSummary=="Build verification completed."
+          ' /tmp/complete.json >/dev/null
+
+          stop_app
+          start_app
+
+          curl -fsS \
+            http://127.0.0.1:5126/api/tasks/distributed-executions/$correlation_id \
+            >/tmp/persisted.json
+          jq -e '
+            .status=="succeeded"
+            and .correlationId=="'"$correlation_id"'"
+            and .deviceId=="'"$device_id"'"
+          ' /tmp/persisted.json >/dev/null

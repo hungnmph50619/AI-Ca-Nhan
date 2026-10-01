@@ -11,7 +11,8 @@ public sealed record RunSelfCodingRequest(
     ImprovementProposal Proposal,
     IReadOnlyList<SelfCodingFileEdit> Edits,
     bool ConfirmBranchCreation,
-    bool ConfirmFileChanges);
+    bool ConfirmFileChanges,
+    Guid? DevelopmentRunId = null);
 
 public sealed record SelfCodingFileResult(
     string Path,
@@ -30,7 +31,11 @@ public sealed record SelfCodingResult(
     bool CommitCreated,
     bool Pushed,
     bool Merged,
-    DateTimeOffset CompletedAt);
+    DateTimeOffset CompletedAt,
+    Guid? DevelopmentRunId = null,
+    string? WorktreePath = null,
+    bool MainWorktreeModified = false,
+    bool AuditPerEdit = true);
 
 public sealed class SelfCodingValidationException(string message)
     : Exception(message);

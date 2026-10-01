@@ -124,6 +124,7 @@ public static class SystemEndpoints
     {
         services.AddScoped<ISystemCoreService, SystemCoreService>();
         services.AddScoped<IUnifiedPermissionService, UnifiedPermissionService>();
+        services.AddScoped<IActionExplanationService, ActionExplanationService>();
         return services;
     }
 
@@ -189,6 +190,43 @@ public static class SystemEndpoints
             catch (UnifiedPermissionValidationException exception)
             {
                 return Results.BadRequest(new ApiError(exception.Message));
+            }
+        });
+
+        app.MapGet("/api/system/explanations/status", (
+            IActionExplanationService explanations) =>
+            Results.Ok(explanations.GetStatus()));
+
+        app.MapGet("/api/system/explanations/audit/{auditId:guid}", (
+            Guid auditId,
+            IActionExplanationService explanations) =>
+        {
+            try
+            {
+                return Results.Ok(explanations.ExplainAudit(auditId));
+            }
+            catch (KeyNotFoundException exception)
+            {
+                return Results.NotFound(new ApiError(exception.Message));
+            }
+        });
+
+        app.MapGet("/api/system/explanations/correlation/{correlationId}", (
+            string correlationId,
+            IActionExplanationService explanations) =>
+        {
+            try
+            {
+                return Results.Ok(
+                    explanations.ExplainCorrelation(correlationId));
+            }
+            catch (ActionExplanationValidationException exception)
+            {
+                return Results.BadRequest(new ApiError(exception.Message));
+            }
+            catch (KeyNotFoundException exception)
+            {
+                return Results.NotFound(new ApiError(exception.Message));
             }
         });
 

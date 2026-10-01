@@ -286,12 +286,12 @@
           status.error
           || automations.error
           || tasks.error
-          || "Không đọc được Automation Foundation.");
+          || "Không đọc được nền tảng tự động hóa.");
       }
 
       render(status, automations, tasks);
     } catch (error) {
-      setFeedback(error.message || "Không đọc được Automation Foundation.", true);
+      setFeedback(error.message || "Không đọc được nền tảng tự động hóa.", true);
     } finally {
       loading = false;
     }

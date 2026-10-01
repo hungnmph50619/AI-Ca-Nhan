@@ -52,6 +52,13 @@ public sealed record PersonalAiOsReadiness(
     int UnavailableCount,
     IReadOnlyList<string> Blockers);
 
+public sealed record PersonalAiOsProductionReadiness(
+    bool Complete,
+    int RequiredCapabilityCount,
+    int CompleteCapabilityCount,
+    IReadOnlyList<string> RequiredCapabilities,
+    IReadOnlyList<string> Blockers);
+
 public sealed record PersonalAiOsContinuousImprovement(
     bool Available,
     bool EnabledByDefault,

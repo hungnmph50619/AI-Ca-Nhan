@@ -1,0 +1,184 @@
+name: Model Lab v2.6.7
+
+on:
+  push:
+    branches:
+      - 'experiment/roadmap-v2-6-7-current'
+  pull_request:
+    paths:
+      - 'src/PersonalAI.Web/ModelLab/RollbackModels.cs'
+      - 'src/PersonalAI.Web/Services/RollbackService.cs'
+      - 'src/PersonalAI.Web/ModelLab/ModelRolloutModels.cs'
+      - 'src/PersonalAI.Web/Services/ModelRolloutService.cs'
+      - 'src/PersonalAI.Web/Services/ModelLabEndpoints.cs'
+      - 'src/PersonalAI.Web/Models/SystemModels.cs'
+
+jobs:
+  validate-v267:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: '8.0.x'
+
+      - name: Restore
+        run: dotnet restore PersonalAI.sln
+
+      - name: Build
+        run: dotnet build PersonalAI.sln -c Release --no-restore
+
+      - name: Tests
+        run: dotnet test PersonalAI.sln -c Release --no-build
+
+      - name: Automatic rollback smoke test
+        shell: bash
+        run: |
+          set -euo pipefail
+          rm -rf /tmp/personalai-v267
+          mkdir -p /tmp/personalai-v267/workspace /tmp/personalai-v267/model-lab
+
+          Workspace__Root=/tmp/personalai-v267/workspace           ModelLab__Root=/tmp/personalai-v267/model-lab           dotnet run --project src/PersonalAI.Web/PersonalAI.Web.csproj             -c Release --no-build             --urls http://127.0.0.1:5098             >/tmp/personalai-v267.log 2>&1 &
+          APP_PID=$!
+          trap 'kill "$APP_PID" 2>/dev/null || true' EXIT
+
+          ready=0
+          for i in {1..30}; do
+            if curl -fsS http://127.0.0.1:5098/api/model-lab/rollbacks/status >/tmp/status.json; then
+              ready=1
+              break
+            fi
+            sleep 1
+          done
+          test "$ready" = "1"
+
+          jq -e '
+            .version == "2.6.7"
+            and .automaticRollbackEnabled == true
+            and .productionBaselineMustRemainActive == true
+            and .auditRequired == true
+          ' /tmp/status.json >/dev/null
+
+          workspace_id=$(curl -fsS http://127.0.0.1:5098/api/model-lab/status | jq -r '.workspaceId')
+          safe_workspace=$(printf '%s' "$workspace_id" | sed 's/[^A-Za-z0-9_-]/_/g')
+
+          mkdir -p /tmp/personalai-v267/model-lab/Registry
+          mkdir -p /tmp/personalai-v267/model-lab/Rollouts
+
+          prod_model="aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa"
+          cand_model="bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb"
+          rollout_id="cccccccc-cccc-cccc-cccc-cccccccccccc"
+
+          cat > /tmp/personalai-v267/model-lab/Registry/model-registry-$safe_workspace.json <<JSON
+          [
+            {
+              "id":"$prod_model",
+              "workspaceId":"$workspace_id",
+              "family":"intent-router",
+              "version":"1.0.0",
+              "artifactId":"11111111-1111-1111-1111-111111111111",
+              "artifactSha256":"1111111111111111111111111111111111111111111111111111111111111111",
+              "baseModel":"local",
+              "trainingMethod":"naive-bayes",
+              "datasetId":"d",
+              "datasetVersion":1,
+              "datasetSha256":"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+              "compatibleTasks":["intent"],
+              "runtime":"local",
+              "stage":"production",
+              "notes":"prod",
+              "createdAt":"2026-10-01T00:00:00+00:00",
+              "updatedAt":"2026-10-01T00:00:00+00:00"
+            },
+            {
+              "id":"$cand_model",
+              "workspaceId":"$workspace_id",
+              "family":"intent-router",
+              "version":"2.0.0",
+              "artifactId":"22222222-2222-2222-2222-222222222222",
+              "artifactSha256":"2222222222222222222222222222222222222222222222222222222222222222",
+              "baseModel":"local",
+              "trainingMethod":"naive-bayes",
+              "datasetId":"d",
+              "datasetVersion":2,
+              "datasetSha256":"bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+              "compatibleTasks":["intent"],
+              "runtime":"local",
+              "stage":"canary",
+              "notes":"canary",
+              "createdAt":"2026-10-01T00:01:00+00:00",
+              "updatedAt":"2026-10-01T00:01:00+00:00"
+            }
+          ]
+          JSON
+
+          cat > /tmp/personalai-v267/model-lab/Rollouts/rollouts-$safe_workspace.json <<JSON
+          [
+            {
+              "id":"$rollout_id",
+              "workspaceId":"$workspace_id",
+              "promotionGateDecisionId":"33333333-3333-3333-3333-333333333333",
+              "candidateModelVersionId":"$cand_model",
+              "productionModelVersionId":"$prod_model",
+              "family":"intent-router",
+              "stage":"canary",
+              "trafficPercent":10,
+              "productionMutationPerformed":false,
+              "createdAt":"2026-10-01T00:02:00+00:00",
+              "updatedAt":"2026-10-01T00:02:00+00:00"
+            }
+          ]
+          JSON
+
+          curl -fsS -X POST http://127.0.0.1:5098/api/model-lab/rollbacks/evaluate             -H 'Content-Type: application/json'             -d '{
+              "rolloutId":"'"$rollout_id"'",
+              "qualityScore":0.95,
+              "errorRate":0.01,
+              "averageLatencyMilliseconds":120,
+              "safetyIncidents":0,
+              "minimumQualityScore":0.85,
+              "maximumErrorRate":0.05,
+              "maximumLatencyMilliseconds":500,
+              "maximumSafetyIncidents":0
+            }' >/tmp/healthy.json
+
+          jq -e '
+            .rollbackRequired == false
+            and .rollbackPerformed == false
+            and .resultingRolloutStage == "canary"
+            and .resultingTrafficPercent == 10
+          ' /tmp/healthy.json >/dev/null
+
+          curl -fsS -X POST http://127.0.0.1:5098/api/model-lab/rollbacks/evaluate             -H 'Content-Type: application/json'             -d '{
+              "rolloutId":"'"$rollout_id"'",
+              "qualityScore":0.70,
+              "errorRate":0.08,
+              "averageLatencyMilliseconds":650,
+              "safetyIncidents":1,
+              "minimumQualityScore":0.85,
+              "maximumErrorRate":0.05,
+              "maximumLatencyMilliseconds":500,
+              "maximumSafetyIncidents":0
+            }' >/tmp/rollback.json
+
+          jq -e '
+            .rollbackRequired == true
+            and .rollbackPerformed == true
+            and .resultingRolloutStage == "rolled-back"
+            and .resultingTrafficPercent == 0
+            and .evaluation.qualityScore == 0.70
+            and .evaluation.maximumErrorRate == 0.05
+            and ([.triggers[] | select(.triggered == true)] | length) == 4
+          ' /tmp/rollback.json >/dev/null
+
+          curl -fsS http://127.0.0.1:5098/api/model-lab/rollouts/$rollout_id             | jq -e '.stage == "rolled-back" and .trafficPercent == 0' >/dev/null
+
+          curl -fsS http://127.0.0.1:5098/api/model-lab/models/$cand_model             | jq -e '.stage == "rejected"' >/dev/null
+
+          curl -fsS http://127.0.0.1:5098/api/model-lab/models/$prod_model             | jq -e '.stage == "production"' >/dev/null
+
+          curl -fsS             'http://127.0.0.1:5098/api/audit?limit=20&action=model-lab.rollout.rollback'             | jq -e 'length >= 1' >/dev/null
+
+          curl -fsS             'http://127.0.0.1:5098/api/audit?limit=20&action=model-lab.rollback.evaluate'             | jq -e 'length >= 2' >/dev/null
+
+          curl -fsS http://127.0.0.1:5098/api/model-lab/rollbacks/status             | jq -e '.decisions == 2 and .rollbacksPerformed == 1' >/dev/null

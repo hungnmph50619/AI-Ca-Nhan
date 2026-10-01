@@ -497,6 +497,7 @@ public sealed class AutomationCoordinator(
     IServiceScopeFactory scopeFactory,
     IHttpContextAccessor httpContextAccessor,
     ILoopGuardService loopGuard,
+    IEmergencyStopService emergencyStop,
     IAuditRecorder audit,
     ILogger<AutomationCoordinator> logger) : IAutomationCoordinator
 {
@@ -506,6 +507,9 @@ public sealed class AutomationCoordinator(
     public async Task<int> RunDueAsync(
         CancellationToken cancellationToken = default)
     {
+        if (emergencyStop.IsEngaged)
+            return 0;
+
         var due = store.GetDue(
             DateTimeOffset.UtcNow,
             AutomationService.MaximumDueBatchSize);
@@ -529,7 +533,26 @@ public sealed class AutomationCoordinator(
         bool manualTrigger,
         CancellationToken cancellationToken = default)
     {
-        await _runGate.WaitAsync(cancellationToken);
+        var emergencyToken = emergencyStop.CurrentToken;
+        using var linkedCancellation =
+            CancellationTokenSource.CreateLinkedTokenSource(
+                cancellationToken,
+                emergencyToken);
+        var executionToken = linkedCancellation.Token;
+
+        try
+        {
+            await _runGate.WaitAsync(executionToken);
+        }
+        catch (OperationCanceledException)
+            when (emergencyToken.IsCancellationRequested)
+        {
+            var stopped = store.Get(
+                automation.Id,
+                automation.WorkspaceId) ?? automation;
+            return StopForEmergency(stopped, null);
+        }
+
         try
         {
             var current = store.Get(
@@ -537,6 +560,9 @@ public sealed class AutomationCoordinator(
                 automation.WorkspaceId)
                 ?? throw new AutomationValidationException(
                     "Automation không còn tồn tại.");
+
+            if (emergencyStop.IsEngaged)
+                return StopForEmergency(current, null);
 
             if (current.State
                 is AutomationStates.Completed
@@ -723,7 +749,14 @@ public sealed class AutomationCoordinator(
                         await taskEngine.ExecuteNextAsync(
                             task.Id,
                             confirmed: false,
-                            cancellationToken);
+                            executionToken);
+                }
+                catch (OperationCanceledException)
+                    when (emergencyToken.IsCancellationRequested)
+                {
+                    return StopForEmergency(
+                        running,
+                        task);
                 }
                 catch (PersonalTaskConfirmationRequiredException)
                 {
@@ -867,6 +900,36 @@ public sealed class AutomationCoordinator(
         {
             _runGate.Release();
         }
+    }
+
+    private AutomationRunResult StopForEmergency(
+        PersonalAutomation current,
+        PersonalTask? task)
+    {
+        var message =
+            "Automation đã bị emergency stop dừng; cần review và explicit release/resume trước khi tiếp tục.";
+        var updated = current with
+        {
+            Enabled = false,
+            State = AutomationStates.Interrupted,
+            NextRunAt = null,
+            UpdatedAt = DateTimeOffset.UtcNow,
+            LastRunAt = DateTimeOffset.UtcNow,
+            LastRunStatus = AutomationRunStatuses.Interrupted,
+            LastMessage = message
+        };
+        store.Save(updated);
+        RecordRunAudit(
+            updated,
+            AuditResults.Interrupted,
+            "emergency-stop");
+        return new AutomationRunResult(
+            updated,
+            task,
+            null,
+            false,
+            false,
+            message);
     }
 
     private AutomationRunResult AwaitConfirmation(

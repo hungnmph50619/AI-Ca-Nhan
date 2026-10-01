@@ -1,0 +1,178 @@
+name: Development v2.6.11
+
+on:
+  push:
+    branches:
+      - 'experiment/roadmap-v2-6-11-current'
+  pull_request:
+    paths:
+      - 'src/PersonalAI.Web/Models/GitCredentialModels.cs'
+      - 'src/PersonalAI.Web/Services/GitCredentialService.cs'
+      - 'src/PersonalAI.Web/Models/LocalGitRepositoryModels.cs'
+      - 'src/PersonalAI.Web/Services/LocalGitRepositoryService.cs'
+      - 'src/PersonalAI.Web/Services/DevelopmentEndpoints.cs'
+      - 'src/PersonalAI.Web/Models/DevelopmentModels.cs'
+      - 'src/PersonalAI.Web/Services/DevelopmentAgentService.cs'
+      - 'src/PersonalAI.Web/Models/SystemModels.cs'
+
+jobs:
+  validate-v2611:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: '8.0.x'
+
+      - name: Restore
+        run: dotnet restore PersonalAI.sln
+
+      - name: Build
+        run: dotnet build PersonalAI.sln -c Release --no-restore
+
+      - name: Tests
+        run: dotnet test PersonalAI.sln -c Release --no-build
+
+      - name: Encrypted Git credential smoke test
+        shell: bash
+        run: |
+          set -euo pipefail
+          rm -rf /tmp/personalai-v2611
+          mkdir -p /tmp/personalai-v2611/workspace/repo
+          mkdir -p /tmp/personalai-v2611/credentials
+
+          git init --bare /tmp/personalai-v2611/remote.git
+
+          cd /tmp/personalai-v2611/workspace/repo
+          git init -b main
+          git config user.name "PersonalAI CI"
+          git config user.email "ci@example.invalid"
+          printf 'initial\n' > README.md
+          git add README.md
+          git commit -m "initial"
+          git remote add origin /tmp/personalai-v2611/remote.git
+          git push -u origin main
+
+          cd "$GITHUB_WORKSPACE"
+
+          Workspace__Root=/tmp/personalai-v2611/workspace           Development__CredentialRoot=/tmp/personalai-v2611/credentials           dotnet run --project src/PersonalAI.Web/PersonalAI.Web.csproj             -c Release --no-build             --urls http://127.0.0.1:5102             >/tmp/personalai-v2611.log 2>&1 &
+          APP_PID=$!
+          trap 'kill "$APP_PID" 2>/dev/null || true' EXIT
+
+          ready=0
+          for i in {1..30}; do
+            if curl -fsS http://127.0.0.1:5102/api/development/git-credentials/status >/tmp/credential-status.json; then
+              ready=1
+              break
+            fi
+            sleep 1
+          done
+          test "$ready" = "1"
+
+          jq -e '
+            .version == "2.6.11"
+            and .credentials == 0
+            and .secretsEncrypted == true
+            and .secretsReturnedByApi == false
+            and .plaintextPersistenceEnabled == false
+            and .auditContainsSecrets == false
+            and (.supportedKinds | index("https-token")) != null
+            and (.supportedKinds | index("ssh-private-key")) != null
+          ' /tmp/credential-status.json >/dev/null
+
+          TOKEN_SECRET='v2611-token-DO-NOT-LOG-9f71c2'
+          SSH_SECRET='-----BEGIN OPENSSH PRIVATE KEY-----\nV2611_PRIVATE_DO_NOT_LOG_1f82aa\n-----END OPENSSH PRIVATE KEY-----'
+
+          curl -fsS -X POST http://127.0.0.1:5102/api/development/git-credentials             -H 'Content-Type: application/json'             -d '{
+              "name":"ci-token",
+              "kind":"https-token",
+              "secret":"'"$TOKEN_SECRET"'",
+              "username":"x-access-token",
+              "confirmStoreCredential":true
+            }' >/tmp/token-create.json
+
+          token_ref=$(jq -r '.credentialRef' /tmp/token-create.json)
+          jq -e '
+            (.credentialRef | startswith("gitcred_"))
+            and .kind == "https-token"
+            and .hasSecret == true
+            and (has("secret") | not)
+          ' /tmp/token-create.json >/dev/null
+
+          ! grep -Fq "$TOKEN_SECRET" /tmp/token-create.json
+
+          curl -fsS -X POST http://127.0.0.1:5102/api/development/git-credentials             -H 'Content-Type: application/json'             --data-binary "$(jq -nc               --arg secret "$SSH_SECRET"               '{
+                name:"ci-ssh",
+                kind:"ssh-private-key",
+                secret:$secret,
+                confirmStoreCredential:true
+              }')" >/tmp/ssh-create.json
+
+          ssh_ref=$(jq -r '.credentialRef' /tmp/ssh-create.json)
+          jq -e '
+            .kind == "ssh-private-key"
+            and .hasSecret == true
+            and (has("secret") | not)
+          ' /tmp/ssh-create.json >/dev/null
+
+          credential_file=/tmp/personalai-v2611/credentials/git-credentials.json
+          test -f "$credential_file"
+
+          ! grep -Fq "$TOKEN_SECRET" "$credential_file"
+          ! grep -Fq 'V2611_PRIVATE_DO_NOT_LOG_1f82aa' "$credential_file"
+          grep -q 'encryptedSecret' "$credential_file"
+
+          curl -fsS http://127.0.0.1:5102/api/development/git-credentials >/tmp/credential-list.json
+          jq -e '
+            length == 2
+            and all(.[];
+              .hasSecret == true
+              and (has("secret") | not))
+          ' /tmp/credential-list.json >/dev/null
+
+          ! grep -Fq "$TOKEN_SECRET" /tmp/credential-list.json
+          ! grep -Fq 'V2611_PRIVATE_DO_NOT_LOG_1f82aa' /tmp/credential-list.json
+
+          curl -fsS -X POST http://127.0.0.1:5102/api/development/git/fetch             -H 'Content-Type: application/json'             -d '{
+              "repositoryPath":"repo",
+              "remote":"origin",
+              "confirmGitWrite":true,
+              "credentialRef":"'"$token_ref"'"
+            }' >/tmp/fetch-token.json
+
+          jq -e '.succeeded == true and .operation == "fetch"' /tmp/fetch-token.json >/dev/null
+          ! grep -Fq "$TOKEN_SECRET" /tmp/fetch-token.json
+
+          test -z "$(find /tmp -maxdepth 1 -name 'personalai-git-*.key' -print -quit)"
+
+          curl -fsS -X POST http://127.0.0.1:5102/api/development/git/fetch             -H 'Content-Type: application/json'             -d '{
+              "repositoryPath":"repo",
+              "remote":"origin",
+              "confirmGitWrite":true,
+              "credentialRef":"'"$ssh_ref"'"
+            }' >/tmp/fetch-ssh.json
+
+          jq -e '.succeeded == true and .operation == "fetch"' /tmp/fetch-ssh.json >/dev/null
+          ! grep -Fq 'V2611_PRIVATE_DO_NOT_LOG_1f82aa' /tmp/fetch-ssh.json
+
+          test -z "$(find /tmp -maxdepth 1 -name 'personalai-git-*.key' -print -quit)"
+
+          curl -fsS http://127.0.0.1:5102/api/audit?limit=100 >/tmp/audit.json
+          ! grep -Fq "$TOKEN_SECRET" /tmp/audit.json
+          ! grep -Fq 'V2611_PRIVATE_DO_NOT_LOG_1f82aa' /tmp/audit.json
+
+          curl -fsS http://127.0.0.1:5102/api/development/status             | jq -e '
+              (.availableCapabilities | index("git-credential-references")) != null
+            ' >/dev/null
+
+          curl -fsS -o /dev/null -X DELETE http://127.0.0.1:5102/api/development/git-credentials             -H 'Content-Type: application/json'             -d '{
+              "credentialRef":"'"$token_ref"'",
+              "confirmDeleteCredential":true
+            }'
+
+          curl -fsS -o /dev/null -X DELETE http://127.0.0.1:5102/api/development/git-credentials             -H 'Content-Type: application/json'             -d '{
+              "credentialRef":"'"$ssh_ref"'",
+              "confirmDeleteCredential":true
+            }'
+
+          curl -fsS http://127.0.0.1:5102/api/development/git-credentials             | jq -e 'length == 0' >/dev/null

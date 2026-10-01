@@ -14,6 +14,7 @@ public static class DevelopmentEndpoints
         services.AddSingleton<IGitCredentialService, GitCredentialService>();
         services.AddSingleton<IDevelopmentEventBus, DevelopmentEventBus>();
         services.AddSingleton<IGitHubWebhookService, GitHubWebhookService>();
+        services.AddSingleton<ICiMonitorService, CiMonitorService>();
         services.AddSingleton<IPersonalAiTool, DevelopmentWorkspaceInspectTool>();
         services.AddSingleton<IPersonalAiTool, DevelopmentTextSearchTool>();
         services.AddSingleton<IPersonalAiTool, DevelopmentGitStatusTool>();
@@ -51,6 +52,112 @@ public static class DevelopmentEndpoints
         app.MapGet("/api/development/git/capabilities", (
             ILocalGitRepositoryService git) =>
             Results.Ok(git.GetStatus()));
+
+        app.MapGet("/api/development/ci/status", (
+            ICiMonitorService ci) =>
+            Results.Ok(ci.GetStatus()));
+
+        app.MapGet("/api/development/ci/runs", (
+            ICiMonitorService ci) =>
+            Results.Ok(ci.GetAll()));
+
+        app.MapGet("/api/development/ci/runs/{runId:guid}", (
+            Guid runId,
+            ICiMonitorService ci) =>
+        {
+            var run = ci.Get(runId);
+            return run is null ? Results.NotFound() : Results.Ok(run);
+        });
+
+        app.MapPost("/api/development/ci/refresh", (
+            ICiMonitorService ci) =>
+            Results.Ok(ci.RefreshFromEvents()));
+
+        app.MapPost("/api/development/ci/runs/{runId:guid}/failure-log", (
+            Guid runId,
+            RecordCiFailureLogRequest request,
+            ICiMonitorService ci) =>
+        {
+            try
+            {
+                return Results.Ok(ci.RecordFailureLog(
+                    request with { RunId = runId }));
+            }
+            catch (CiMonitorValidationException exception)
+            {
+                return Results.BadRequest(new ApiError(exception.Message));
+            }
+            catch (KeyNotFoundException exception)
+            {
+                return Results.NotFound(new ApiError(exception.Message));
+            }
+        });
+
+        app.MapPost("/api/development/ci/runs/{runId:guid}/repair", (
+            Guid runId,
+            RequestCiRepairRequest request,
+            ICiMonitorService ci) =>
+        {
+            try
+            {
+                return Results.Ok(ci.RequestRepair(
+                    request with { RunId = runId }));
+            }
+            catch (CiRepairLimitException exception)
+            {
+                return Results.Json(
+                    new ApiError(exception.Message),
+                    statusCode: StatusCodes.Status409Conflict);
+            }
+            catch (CiMonitorValidationException exception)
+            {
+                return Results.BadRequest(new ApiError(exception.Message));
+            }
+            catch (KeyNotFoundException exception)
+            {
+                return Results.NotFound(new ApiError(exception.Message));
+            }
+        });
+
+        app.MapPost("/api/development/ci/runs/{runId:guid}/timeout", (
+            Guid runId,
+            MarkCiRunTimedOutRequest request,
+            ICiMonitorService ci) =>
+        {
+            try
+            {
+                return Results.Ok(ci.MarkTimedOut(
+                    request with { RunId = runId }));
+            }
+            catch (CiMonitorValidationException exception)
+            {
+                return Results.BadRequest(new ApiError(exception.Message));
+            }
+            catch (KeyNotFoundException exception)
+            {
+                return Results.NotFound(new ApiError(exception.Message));
+            }
+        });
+
+        app.MapPost("/api/development/ci/runs/{runId:guid}/cancel", (
+            Guid runId,
+            CancelCiRunRequest request,
+            ICiMonitorService ci) =>
+        {
+            try
+            {
+                return Results.Ok(ci.Cancel(
+                    request with { RunId = runId }));
+            }
+            catch (CiMonitorValidationException exception)
+            {
+                return Results.BadRequest(new ApiError(exception.Message));
+            }
+            catch (KeyNotFoundException exception)
+            {
+                return Results.NotFound(new ApiError(exception.Message));
+            }
+        });
 
         app.MapGet("/api/development/github-webhook/status", (
             IGitHubWebhookService webhook) =>

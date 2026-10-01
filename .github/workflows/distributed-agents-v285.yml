@@ -1,0 +1,226 @@
+name: Distributed Agents v2.8.5
+
+on:
+  push:
+    branches:
+      - 'experiment/roadmap-v2-8-5-current'
+
+jobs:
+  validate-v285:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: '8.0.x'
+
+      - name: Restore
+        run: dotnet restore PersonalAI.sln
+
+      - name: Build
+        run: dotnet build PersonalAI.sln -c Release --no-restore
+
+      - name: Tests
+        run: dotnet test PersonalAI.sln -c Release --no-build
+
+      - name: Correlation and permission handoff smoke test
+        shell: bash
+        run: |
+          set -euo pipefail
+          rm -rf /tmp/personalai-v285
+          mkdir -p             /tmp/personalai-v285/workspace             /tmp/personalai-v285/companion             /tmp/personalai-v285/hub             /tmp/personalai-v285/identity             /tmp/personalai-v285/pairing             /tmp/personalai-v285/capabilities             /tmp/personalai-v285/distributed
+
+          export Workspace__Root=/tmp/personalai-v285/workspace
+          export Companion__Root=/tmp/personalai-v285/companion
+          export Companion__Enabled=true
+          export Companion__AllowInsecureHttp=true
+          export DeviceHub__Root=/tmp/personalai-v285/hub
+          export DeviceIdentity__Root=/tmp/personalai-v285/identity
+          export SecurePairing__Root=/tmp/personalai-v285/pairing
+          export DeviceCapability__Root=/tmp/personalai-v285/capabilities
+          export DistributedAgent__Root=/tmp/personalai-v285/distributed
+
+          start_app() {
+            dotnet run --project src/PersonalAI.Web/PersonalAI.Web.csproj               -c Release --no-build               --urls http://127.0.0.1:5126               >/tmp/personalai-v285/app.log 2>&1 &
+            APP_PID=$!
+            for i in {1..30}; do
+              if curl -fsS http://127.0.0.1:5126/api/agents/distributed/status >/tmp/status.json; then
+                return 0
+              fi
+              sleep 1
+            done
+            return 1
+          }
+
+          stop_app() {
+            kill "$APP_PID" 2>/dev/null || true
+            wait "$APP_PID" 2>/dev/null || true
+          }
+
+          trap 'stop_app || true' EXIT
+          start_app
+
+          jq -e '
+            .version=="2.8.5"
+            and .correlationIdRequired==true
+            and .permissionRecheckedOnClaim==true
+            and .permissionRecheckedOnComplete==true
+            and .untrustedNodesEligible==false
+            and .offlineNodesEligible==false
+            and .companionTransportEnabled==true
+          ' /tmp/status.json >/dev/null
+
+          curl -fsS -X POST http://127.0.0.1:5126/api/companion/admin/secure-pairing/start             -H 'Content-Type: application/json'             -d '{"confirmed":true}' >/tmp/ticket.json
+
+          code=$(jq -r '.code' /tmp/ticket.json)
+          challenge=$(jq -r '.challenge' /tmp/ticket.json)
+          hub_public=$(jq -r '.hubPublicKey' /tmp/ticket.json)
+
+          openssl ecparam -name prime256v1 -genkey -noout             -out /tmp/personalai-v285/device.key
+          openssl pkey -in /tmp/personalai-v285/device.key             -pubout -outform DER             | base64 -w0 >/tmp/personalai-v285/device-public.b64
+          device_public=$(cat /tmp/personalai-v285/device-public.b64)
+
+          printf 'PersonalAI-SecurePairing-v1\n%s\n%s\n%s'             "$code" "$challenge" "$hub_public"             >/tmp/personalai-v285/proof.txt
+          openssl dgst -sha256             -sign /tmp/personalai-v285/device.key             /tmp/personalai-v285/proof.txt             | base64 -w0 >/tmp/personalai-v285/signature.b64
+          signature=$(cat /tmp/personalai-v285/signature.b64)
+
+          jq -n             --arg code "$code"             --arg name "Distributed Android"             --arg publicKey "$device_public"             --arg signature "$signature"             '{
+              code:$code,
+              deviceName:$name,
+              devicePublicKey:$publicKey,
+              proofSignature:$signature
+            }' >/tmp/claim.json
+
+          curl -fsS -X POST http://127.0.0.1:5126/api/companion/secure-pairing/claim             -H 'Content-Type: application/json'             --data-binary @/tmp/claim.json >/tmp/claimed.json
+
+          token=$(jq -r '.token' /tmp/claimed.json)
+          hub_device_id=$(jq -r '.identity.deviceId' /tmp/claimed.json)
+          jq -e '.identity.trustLevel=="trusted"' /tmp/claimed.json >/dev/null
+
+          curl -fsS -X POST             http://127.0.0.1:5126/api/device-hub/admin/devices/$hub_device_id/capabilities             -H 'Content-Type: application/json'             -d '{"capability":"build","confirmRegister":true}' >/dev/null
+
+          curl -fsS -X POST             http://127.0.0.1:5126/api/device-hub/admin/devices/$hub_device_id/capabilities/build/permission             -H 'Content-Type: application/json'             -d '{"permissionGranted":true,"confirmPermissionChange":true}' >/dev/null
+
+          no_confirm=$(curl -sS -o /tmp/no-confirm.json -w '%{http_code}'             -X POST http://127.0.0.1:5126/api/agents/distributed/dispatch             -H 'Content-Type: application/json'             -d '{
+              "agentId":"planning.planner",
+              "goal":"Prepare a safe distributed plan",
+              "requiredCapability":"build",
+              "confirmDispatch":false
+            }')
+          test "$no_confirm" = "400"
+
+          curl -fsS -X POST http://127.0.0.1:5126/api/agents/distributed/dispatch             -H 'Content-Type: application/json'             -d '{
+              "agentId":"planning.planner",
+              "goal":"Prepare a safe distributed plan",
+              "requiredCapability":"build",
+              "confirmDispatch":true
+            }' >/tmp/dispatch1.json
+
+          execution1=$(jq -r '.id' /tmp/dispatch1.json)
+          correlation1=$(jq -r '.correlationId' /tmp/dispatch1.json)
+
+          jq -e '
+            .status=="queued"
+            and .agentId=="planning.planner"
+            and .requiredCapability=="build"
+            and .permissionSnapshot.registered==true
+            and .permissionSnapshot.permissionGranted==true
+            and (.correlationId | length)>20
+          ' /tmp/dispatch1.json >/dev/null
+
+          curl -fsS             -H "Authorization: Bearer $token"             http://127.0.0.1:5126/api/companion/client/distributed/next             >/tmp/envelope1.json
+
+          test "$(jq -r '.executionId' /tmp/envelope1.json)" = "$execution1"
+          test "$(jq -r '.correlationId' /tmp/envelope1.json)" = "$correlation1"
+          jq -e '
+            .requiredCapability=="build"
+            and .permissionSnapshot.registered==true
+            and .permissionSnapshot.permissionGranted==true
+          ' /tmp/envelope1.json >/dev/null
+
+          curl -fsS -X POST             http://127.0.0.1:5126/api/device-hub/admin/devices/$hub_device_id/capabilities/build/permission             -H 'Content-Type: application/json'             -d '{"permissionGranted":false,"confirmPermissionChange":true}' >/dev/null
+
+          revoked_complete=$(curl -sS -o /tmp/revoked-complete.json -w '%{http_code}'             -X POST             -H "Authorization: Bearer $token"             -H 'Content-Type: application/json'             http://127.0.0.1:5126/api/companion/client/distributed/$execution1/complete             -d '{
+              "correlationId":"'"$correlation1"'",
+              "succeeded":true,
+              "message":"must not be accepted after permission revoke"
+            }')
+          test "$revoked_complete" = "403"
+
+          curl -fsS http://127.0.0.1:5126/api/agents/distributed/executions/$execution1             | jq -e '
+              .status=="blocked"
+              and .error=="permission-or-trust-revoked-before-complete"
+              and .correlationId=="'"$correlation1"'"
+            ' >/dev/null
+
+          curl -fsS -X POST             http://127.0.0.1:5126/api/device-hub/admin/devices/$hub_device_id/capabilities/build/permission             -H 'Content-Type: application/json'             -d '{"permissionGranted":true,"confirmPermissionChange":true}' >/dev/null
+
+          curl -fsS -X POST http://127.0.0.1:5126/api/agents/distributed/dispatch             -H 'Content-Type: application/json'             -d '{
+              "agentId":"development.developer",
+              "goal":"Inspect source and prepare a distributed developer result",
+              "requiredCapability":"build",
+              "confirmDispatch":true
+            }' >/tmp/dispatch2.json
+
+          execution2=$(jq -r '.id' /tmp/dispatch2.json)
+          correlation2=$(jq -r '.correlationId' /tmp/dispatch2.json)
+
+          curl -fsS             -H "Authorization: Bearer $token"             http://127.0.0.1:5126/api/companion/client/distributed/next             >/tmp/envelope2.json
+
+          test "$(jq -r '.executionId' /tmp/envelope2.json)" = "$execution2"
+          test "$(jq -r '.correlationId' /tmp/envelope2.json)" = "$correlation2"
+
+          wrong_correlation=$(curl -sS -o /tmp/wrong-correlation.json -w '%{http_code}'             -X POST             -H "Authorization: Bearer $token"             -H 'Content-Type: application/json'             http://127.0.0.1:5126/api/companion/client/distributed/$execution2/complete             -d '{
+              "correlationId":"11111111-1111-1111-1111-111111111111",
+              "succeeded":true,
+              "message":"wrong correlation"
+            }')
+          test "$wrong_correlation" = "403"
+
+          curl -fsS -X POST             -H "Authorization: Bearer $token"             -H 'Content-Type: application/json'             http://127.0.0.1:5126/api/companion/client/distributed/$execution2/complete             -d '{
+              "correlationId":"'"$correlation2"'",
+              "succeeded":true,
+              "message":"distributed developer execution completed"
+            }' >/tmp/completed2.json
+
+          jq -e '
+            .status=="completed"
+            and .correlationId=="'"$correlation2"'"
+            and .requiredCapability=="build"
+            and .message=="distributed developer execution completed"
+          ' /tmp/completed2.json >/dev/null
+
+          hub_file=/tmp/personalai-v285/hub/device-hub-personal.json
+          jq --arg id "$hub_device_id" '
+            map(if .id==$id then
+              .lastSeenAt="2026-01-01T00:00:00+00:00"
+              | .connectionStatus="online"
+            else . end)
+          ' "$hub_file" >/tmp/hub-offline.json
+          mv /tmp/hub-offline.json "$hub_file"
+
+          offline_dispatch=$(curl -sS -o /tmp/offline-dispatch.json -w '%{http_code}'             -X POST http://127.0.0.1:5126/api/agents/distributed/dispatch             -H 'Content-Type: application/json'             -d '{
+              "agentId":"planning.planner",
+              "goal":"This must not route to an offline node",
+              "requiredCapability":"build",
+              "confirmDispatch":true
+            }')
+          test "$offline_dispatch" = "400"
+
+          curl -fsS http://127.0.0.1:5126/api/agents/distributed/executions >/tmp/executions.json
+          jq -e '
+            length==2
+            and ([.[] | select(.status=="completed")] | length)==1
+            and ([.[] | select(.status=="blocked")] | length)==1
+          ' /tmp/executions.json >/dev/null
+
+          stop_app
+          start_app
+
+          curl -fsS http://127.0.0.1:5126/api/agents/distributed/executions/$execution2             | jq -e '
+              .status=="completed"
+              and .correlationId=="'"$correlation2"'"
+              and .permissionSnapshot.permissionGranted==true
+            ' >/dev/null
+
+          curl -fsS             -H "Authorization: Bearer $token"             http://127.0.0.1:5126/api/companion/client/me             | jq -e '(.capabilities | index("distributed-agents")) != null' >/dev/null

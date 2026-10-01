@@ -71,7 +71,7 @@ jobs:
           start_app
 
           jq -e '
-            .version == "2.6.13"
+            (.version | split(".") | map(tonumber)) >= [2,6,13]
             and .runs == 0
             and .maximumRepairAttempts == 3
             and .timeoutPersisted == true

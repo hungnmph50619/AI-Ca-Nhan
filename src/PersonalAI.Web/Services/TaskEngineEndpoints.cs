@@ -8,6 +8,7 @@ public static class TaskEngineEndpoints
     {
         services.AddSingleton<IPersonalTaskStore, SqlitePersonalTaskStore>();
         services.AddScoped<ITaskEngineService, TaskEngineService>();
+        services.AddScoped<ITaskRouterService, TaskRouterService>();
         return services;
     }
 
@@ -15,6 +16,71 @@ public static class TaskEngineEndpoints
     {
         app.MapGet("/api/tasks", (ITaskEngineService taskEngine) =>
             Results.Ok(taskEngine.GetAll()));
+
+        app.MapGet("/api/tasks/router/status", (
+            ITaskRouterService router) =>
+            Results.Ok(router.GetStatus()));
+
+        app.MapGet("/api/tasks/routes", (
+            ITaskRouterService router) =>
+            Results.Ok(router.GetRoutes()));
+
+        app.MapGet("/api/tasks/{taskId:guid}/route", (
+            Guid taskId,
+            ITaskRouterService router) =>
+        {
+            var route = router.GetLatest(taskId);
+            return route is null
+                ? Results.NotFound(
+                    new ApiError(
+                        "Tác vụ chưa có quyết định routing."))
+                : Results.Ok(route);
+        });
+
+        app.MapPost("/api/tasks/{taskId:guid}/route", (
+            Guid taskId,
+            RoutePersonalTaskRequest request,
+            ITaskRouterService router) =>
+        {
+            try
+            {
+                var decision = router.Route(
+                    taskId,
+                    request);
+
+                return decision.Decision == "routed"
+                    ? Results.Ok(decision)
+                    : Results.Json(
+                        decision,
+                        statusCode:
+                            StatusCodes.Status409Conflict);
+            }
+            catch (TaskRouterValidationException exception)
+            {
+                return Results.BadRequest(
+                    new ApiError(exception.Message));
+            }
+            catch (DeviceCapabilityValidationException exception)
+            {
+                return Results.BadRequest(
+                    new ApiError(exception.Message));
+            }
+            catch (DeviceIdentityValidationException exception)
+            {
+                return Results.BadRequest(
+                    new ApiError(exception.Message));
+            }
+            catch (DeviceHubValidationException exception)
+            {
+                return Results.BadRequest(
+                    new ApiError(exception.Message));
+            }
+            catch (KeyNotFoundException exception)
+            {
+                return Results.NotFound(
+                    new ApiError(exception.Message));
+            }
+        });
 
         app.MapGet("/api/tasks/{taskId:guid}", (
             Guid taskId,

@@ -162,6 +162,14 @@ jobs:
             and .validUntilGameTimeSeconds > .gameTimeSeconds
           ' /tmp/personalai-league-v301/coach.json >/dev/null
 
+          # Polling the same triggering event must return a stable identity.
+          curl -fsS http://127.0.0.1:5145/api/integrations/league/coach/current             >/tmp/personalai-league-v301/coach-repeat.json
+          jq -e --slurpfile first /tmp/personalai-league-v301/coach.json '
+            .id == $first[0].id
+            and .gameTimeSeconds == $first[0].gameTimeSeconds
+            and .validUntilGameTimeSeconds == $first[0].validUntilGameTimeSeconds
+          ' /tmp/personalai-league-v301/coach-repeat.json >/dev/null
+
           # A clear game-clock reset starts a new match session.
           jq '.sequence=4 | .gameTimeSeconds=5 | .health=700'             /tmp/personalai-league-v301/s1.json             >/tmp/personalai-league-v301/s3.json
 

@@ -18,6 +18,7 @@ public static class CompanionEndpoints
         services.AddSingleton<ICompanionService, CompanionService>();
         services.AddScoped<IDeviceHubService, DeviceHubService>();
         services.AddScoped<IDeviceIdentityService, DeviceIdentityService>();
+        services.AddScoped<ISecurePairingService, SecurePairingService>();
         services.AddScoped<IChatTurnService, ChatTurnService>();
         return services;
     }
@@ -101,6 +102,125 @@ public static class CompanionEndpoints
         app.MapGet("/api/companion/status", (
             ICompanionService companion) =>
             Results.Ok(companion.GetStatus()));
+
+        app.MapGet(
+            "/api/companion/secure-pairing/status",
+            (
+                HttpContext httpContext,
+                ISecurePairingService securePairing) =>
+            {
+                if (!IsLocalAdminRequest(httpContext))
+                {
+                    return Results.Json(
+                        new ApiError(
+                            "Chỉ desktop local mới được xem Secure Pairing status."),
+                        statusCode:
+                            StatusCodes.Status403Forbidden);
+                }
+
+                return Results.Ok(
+                    securePairing.GetStatus());
+            });
+
+        app.MapPost(
+            "/api/companion/admin/secure-pairing/start",
+            (
+                CompanionPairingStartRequest request,
+                HttpContext httpContext,
+                ISecurePairingService securePairing,
+                IWorkspaceContextAccessor workspaceContext) =>
+            {
+                if (!IsLocalAdminRequest(httpContext))
+                {
+                    return Results.Json(
+                        new ApiError(
+                            "Chỉ desktop local mới được tạo secure pairing ticket."),
+                        statusCode:
+                            StatusCodes.Status403Forbidden);
+                }
+
+                if (!request.Confirmed)
+                {
+                    return Results.Json(
+                        new ApiError(
+                            "Cần xác nhận trước khi tạo secure pairing ticket."),
+                        statusCode:
+                            StatusCodes.Status403Forbidden);
+                }
+
+                try
+                {
+                    return Results.Ok(
+                        securePairing.Start(
+                            workspaceContext.CurrentWorkspaceId));
+                }
+                catch (SecurePairingValidationException exception)
+                {
+                    return Results.BadRequest(
+                        new ApiError(exception.Message));
+                }
+                catch (CompanionDisabledException exception)
+                {
+                    return Results.Json(
+                        new ApiError(exception.Message),
+                        statusCode:
+                            StatusCodes.Status503ServiceUnavailable);
+                }
+            });
+
+        app.MapPost(
+            "/api/companion/secure-pairing/claim",
+            (
+                SecurePairingClaimRequest request,
+                HttpContext httpContext,
+                ICompanionService companion,
+                ISecurePairingService securePairing) =>
+            {
+                if (!companion.Enabled)
+                {
+                    return Results.Json(
+                        new ApiError(
+                            "Android Companion đang bị tắt."),
+                        statusCode:
+                            StatusCodes.Status503ServiceUnavailable);
+                }
+
+                if (!httpContext.Request.IsHttps
+                    && !companion.AllowInsecureHttp)
+                {
+                    return Results.Json(
+                        new ApiError(
+                            "Secure pairing yêu cầu HTTPS."),
+                        statusCode:
+                            StatusCodes.Status426UpgradeRequired);
+                }
+
+                try
+                {
+                    return Results.Ok(
+                        securePairing.Claim(request));
+                }
+                catch (SecurePairingValidationException exception)
+                {
+                    return Results.BadRequest(
+                        new ApiError(exception.Message));
+                }
+                catch (DeviceIdentityValidationException exception)
+                {
+                    return Results.BadRequest(
+                        new ApiError(exception.Message));
+                }
+                catch (DeviceHubValidationException exception)
+                {
+                    return Results.BadRequest(
+                        new ApiError(exception.Message));
+                }
+                catch (CompanionPairingException exception)
+                {
+                    return Results.BadRequest(
+                        new ApiError(exception.Message));
+                }
+            });
 
         app.MapGet(
             "/api/device-hub/status",
@@ -533,7 +653,8 @@ public static class CompanionEndpoints
                             CompanionCapabilities.TasksRead,
                             CompanionCapabilities.CoreStatus,
                             CompanionCapabilities.DeviceHubStatus,
-                            CompanionCapabilities.DeviceIdentity
+                            CompanionCapabilities.DeviceIdentity,
+                            CompanionCapabilities.SecurePairing
                         ]));
             });
 

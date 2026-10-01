@@ -8,6 +8,7 @@ public static class CompanionCapabilities
     public const string CoreStatus = "core-status";
     public const string DeviceHubStatus = "device-hub-status";
     public const string DeviceIdentity = "device-identity";
+    public const string SecurePairing = "secure-pairing";
 }
 
 public sealed record CompanionStatusResponse(

@@ -17,7 +17,11 @@ public interface IUndoService
 
     void Abandon(UndoPreparation? preparation);
 
+    UndoSystemStatus GetStatus();
+
     UndoListResponse GetRecent(int limit = 50);
+
+    UndoInvocationResponse GetByInvocation(Guid invocationId);
 
     Task<UndoAssessment?> AssessAsync(
         Guid undoId,
@@ -40,6 +44,42 @@ public sealed class UndoService(
     IAuditRecorder audit,
     ILogger<UndoService> logger) : IUndoService
 {
+    public UndoSystemStatus GetStatus() =>
+        new(
+            PersonalAiRelease.Version,
+            workspaceContext.CurrentWorkspaceId,
+            "local-sqlite",
+            SqliteUndoStore.AvailabilityDays,
+            SqliteUndoStore.MaximumEntries,
+            SqliteUndoStore.MaximumQueryLimit,
+            SqliteUndoStore.MaximumSnapshotBytes,
+            ExplicitConfirmationRequired: true,
+            PreconditionAssessmentRequired: true,
+            WorkspaceScoped: true,
+            InvocationCorrelationEnabled: true,
+            AuditTrailEnabled: true,
+            FileMutationsSupported: true,
+            NonFileSideEffectsSupported: false,
+            [
+                UndoOperations.DeleteCreatedFile,
+                UndoOperations.RestoreFile,
+                UndoOperations.RestoreDeletedFile,
+                UndoOperations.DeleteCreatedDirectory,
+                UndoOperations.RestoreEmptyDirectory,
+                UndoOperations.MoveFileBack
+            ]);
+
+    public UndoInvocationResponse GetByInvocation(Guid invocationId)
+    {
+        var items = store.GetByInvocation(
+            invocationId,
+            workspaceContext.CurrentWorkspaceId);
+        return new(
+            invocationId,
+            items.Count,
+            items);
+    }
+
     public async Task<UndoPreparation?> PrepareAsync(
         Guid invocationId,
         string toolName,
@@ -145,7 +185,10 @@ public sealed class UndoService(
                 "reversible-tool-action",
                 AuditResults.Prepared,
                 preparation.ToolName,
-                preparation.WorkspaceId);
+                preparation.WorkspaceId,
+                level: SystemLogLevels.Info,
+                source: "undo",
+                correlationId: preparation.InvocationId.ToString("D"));
 
             return preparation.UndoId;
         }
@@ -281,7 +324,10 @@ public sealed class UndoService(
                 "user-confirmed-undo",
                 AuditResults.Succeeded,
                 item.ToolName,
-                item.WorkspaceId);
+                item.WorkspaceId,
+                level: SystemLogLevels.Info,
+                source: "undo",
+                correlationId: item.InvocationId.ToString("D"));
 
             return new UndoExecutionResponse(
                 publicItem,
@@ -318,7 +364,10 @@ public sealed class UndoService(
             reason,
             AuditResults.Denied,
             item.ToolName,
-            item.WorkspaceId);
+            item.WorkspaceId,
+            level: SystemLogLevels.Security,
+            source: "undo",
+            correlationId: item.InvocationId.ToString("D"));
     }
 
     private static UndoAssessment ToAssessment(

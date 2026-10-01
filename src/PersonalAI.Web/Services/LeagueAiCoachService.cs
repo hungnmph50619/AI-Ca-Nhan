@@ -47,6 +47,7 @@ public sealed class LeagueAiCoachService(
         var session = snapshots.GetSession(workspaceId);
         var feed = snapshots.GetEvents(workspaceId);
         var timeline = snapshots.GetTimeline(workspaceId);
+        var mapSituation = snapshots.GetMapSituation(workspaceId);
 
         if (baseAdvice is null || session is null || feed is null || timeline is null)
             return null;
@@ -113,6 +114,7 @@ public sealed class LeagueAiCoachService(
             {
                 "Chỉ dùng dữ liệu quan sát được trong JSON.",
                 "Không suy đoán vị trí đối thủ đang khuất tầm nhìn.",
+                "lastSeen chỉ là lần quan sát cuối; không được viết như vị trí hiện tại.",
                 "Không khẳng định chắc chắn kết quả giao tranh.",
                 "Không hướng dẫn tự động bấm phím, aim, né hoặc điều khiển nhân vật.",
                 "Lời khuyên tối đa 180 ký tự, bằng tiếng Việt.",
@@ -132,6 +134,29 @@ public sealed class LeagueAiCoachService(
             },
             recentEvents,
             recentSnapshots,
+            mapSituation = mapSituation is null
+                ? null
+                : new
+                {
+                    mapSituation.CurrentGameTimeSeconds,
+                    mapSituation.RecentEnemyCount,
+                    mapSituation.EvidenceOnly,
+                    mapSituation.HiddenPositionInference,
+                    sightings = mapSituation.Sightings
+                        .Take(10)
+                        .Select(item => new
+                        {
+                            item.Champion,
+                            item.Team,
+                            item.X,
+                            item.Y,
+                            item.Confidence,
+                            item.LastSeenGameTimeSeconds,
+                            item.LastSeenAgeSeconds,
+                            item.ObservationCount
+                        })
+                        .ToArray()
+                },
             outputSchema = new
             {
                 text = "string <= 180 chars",

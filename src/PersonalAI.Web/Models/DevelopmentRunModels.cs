@@ -46,7 +46,8 @@ public sealed record AdvanceDevelopmentRunRequest(
     string Result,
     string? Evidence = null,
     Guid? CiRunId = null,
-    Guid? SecurityReportId = null);
+    Guid? SecurityReportId = null,
+    Guid? BenchmarkReportId = null);
 
 public sealed record FailDevelopmentRunRequest(
     string Reason,
@@ -76,6 +77,7 @@ public sealed record DevelopmentRun(
     Guid? ImprovementItemId = null,
     Guid? DiagnosisId = null,
     Guid? SecurityReportId = null,
+    Guid? BenchmarkReportId = null,
     DateTimeOffset CreatedAt = default,
     DateTimeOffset UpdatedAt = default,
     DateTimeOffset? CompletedAt = null);

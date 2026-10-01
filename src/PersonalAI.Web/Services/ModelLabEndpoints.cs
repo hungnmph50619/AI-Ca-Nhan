@@ -23,6 +23,7 @@ public static class ModelLabEndpoints
         services.AddSingleton<ICandidateTrainingPlanStore, JsonCandidateTrainingPlanStore>();
         services.AddScoped<ICandidateTrainingService, CandidateTrainingService>();
         services.AddScoped<IRegisteredModelComparisonService, RegisteredModelComparisonService>();
+        services.AddScoped<IPromotionGateService, PromotionGateService>();
         services.AddScoped<ISyntheticCriticService, SyntheticCriticService>();
         services.AddScoped<ISyntheticVerificationService, SyntheticVerificationService>();
         services.AddScoped<ISyntheticDataService, SyntheticDataService>();
@@ -323,6 +324,40 @@ public static class ModelLabEndpoints
                 return Results.Json(
                     new ApiError(exception.Message),
                     statusCode: StatusCodes.Status409Conflict);
+            }
+            catch (KeyNotFoundException exception)
+            {
+                return Results.NotFound(new ApiError(exception.Message));
+            }
+        });
+
+        endpoints.MapGet("/api/model-lab/promotion-gates/status", (
+            IPromotionGateService gates) =>
+            Results.Ok(gates.GetStatus()));
+
+        endpoints.MapGet("/api/model-lab/promotion-gates", (
+            IPromotionGateService gates) =>
+            Results.Ok(gates.GetAll()));
+
+        endpoints.MapGet("/api/model-lab/promotion-gates/{gateId:guid}", (
+            Guid gateId,
+            IPromotionGateService gates) =>
+        {
+            var gate = gates.Get(gateId);
+            return gate is null ? Results.NotFound() : Results.Ok(gate);
+        });
+
+        endpoints.MapPost("/api/model-lab/promotion-gates/evaluate", (
+            EvaluatePromotionGateRequest request,
+            IPromotionGateService gates) =>
+        {
+            try
+            {
+                return Results.Ok(gates.Evaluate(request));
+            }
+            catch (PromotionGateValidationException exception)
+            {
+                return Results.BadRequest(new ApiError(exception.Message));
             }
             catch (KeyNotFoundException exception)
             {

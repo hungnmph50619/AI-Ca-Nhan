@@ -40,7 +40,7 @@
     const count = document.createElement("span");
     count.id = "auditSidebarCount";
     count.className = "tool-count";
-    count.setAttribute("aria-label", "Số sự kiện audit trong không gian hiện tại");
+    count.setAttribute("aria-label", "Số sự kiện nhật ký trong không gian hiện tại");
     count.textContent = "0";
 
     button.append(icon, label, count);
@@ -68,7 +68,7 @@
     const heading = document.createElement("div");
     const eyebrow = document.createElement("p");
     eyebrow.className = "eyebrow";
-    eyebrow.textContent = "TIME · AGENT · ACTION · TOOL · TARGET · REASON · RESULT";
+    eyebrow.textContent = "THỜI GIAN · TÁC NHÂN · HÀNH ĐỘNG · CÔNG CỤ · ĐÍCH · LÝ DO · KẾT QUẢ";
 
     const title = document.createElement("h2");
     title.id = "auditTitle";
@@ -86,7 +86,7 @@
 
     const intro = document.createElement("div");
     intro.className = "v096-audit-intro";
-    intro.innerHTML = "<strong>Audit Foundation v0.9.6</strong><p>Nhật ký này ghi metadata vận hành của workspace hiện tại. Không lưu nguyên văn prompt, nội dung memory, nội dung tài liệu hay tham số tool đầy đủ.</p>";
+    intro.innerHTML = "<strong>Nền tảng nhật ký kiểm toán</strong><p>Nhật ký này ghi siêu dữ liệu vận hành của không gian hiện tại. Không lưu nguyên văn lời nhắc, nội dung trí nhớ, nội dung tài liệu hay toàn bộ tham số công cụ.</p>";
 
     const controls = document.createElement("div");
     controls.className = "v096-audit-controls";
@@ -130,11 +130,11 @@
     empty.id = "auditEmpty";
     empty.className = "v096-audit-empty";
     empty.hidden = true;
-    empty.innerHTML = "<strong>Chưa có sự kiện audit</strong><p>Các hành động mới trong workspace này sẽ xuất hiện ở đây.</p>";
+    empty.innerHTML = "<strong>Chưa có sự kiện nhật ký</strong><p>Các hành động mới trong không gian này sẽ xuất hiện ở đây.</p>";
 
     const note = document.createElement("p");
     note.className = "security-copy";
-    note.textContent = "Audit v0.9.6 là append-only qua API: giao diện chỉ đọc, không có endpoint sửa hoặc xóa. Hệ thống giữ tối đa 10.000 sự kiện trong 90 ngày.";
+    note.textContent = "Nhật ký chỉ được bổ sung qua API: giao diện chỉ đọc, không có chức năng sửa hoặc xóa. Hệ thống giữ tối đa 10.000 sự kiện trong 90 ngày.";
 
     card.append(header, intro, controls, summary, list, empty, note);
     dialog.appendChild(card);
@@ -214,7 +214,7 @@
       await refreshAuditCount();
     } catch (error) {
       if (summary) {
-        summary.textContent = error.message || "Không thể đọc nhật ký audit.";
+        summary.textContent = error.message || "Không thể đọc nhật ký kiểm toán.";
       }
       if (list) list.replaceChildren();
       if (empty) empty.hidden = true;

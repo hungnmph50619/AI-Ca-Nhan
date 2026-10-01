@@ -48,7 +48,7 @@ jobs:
           done
 
           jq -e '
-            .version=="2.9.4"
+            (.version | split(".") | map(tonumber)) >= [2,9,4]
             and .maximumApiRequestsPerMinute==600
             and .maximumConcurrentApiRequests==16
             and .maximumApiRequestBytes==12582912

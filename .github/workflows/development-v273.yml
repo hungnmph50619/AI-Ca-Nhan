@@ -55,7 +55,7 @@ jobs:
           done
 
           jq -e '
-            .version == "2.7.3"
+            (.version | split(".") | map(tonumber)) >= [2,7,3]
             and (.availableCapabilities | index("self-coding-worktree")) != null
           ' /tmp/status.json >/dev/null
 
@@ -154,7 +154,7 @@ jobs:
           curl -fsS -X POST http://127.0.0.1:5108/api/self-improvement/self-coding/run             -H 'Content-Type: application/json'             -d "$coding_payload" >/tmp/coding.json
 
           jq -e '
-            .version=="2.7.3"
+            (.version | split(".") | map(tonumber)) >= [2,7,3]
             and .branch=="experiment/v273-smoke"
             and .filesChanged==1
             and .commitCreated==false

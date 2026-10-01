@@ -330,14 +330,14 @@ public sealed class GitHubWebhookService : IGitHubWebhookService
 
         if (!signature.StartsWith(Prefix, StringComparison.OrdinalIgnoreCase))
         {
-            throw new GitHubWebhookValidationException(
+            throw new GitHubWebhookSignatureException(
                 "Thiếu X-Hub-Signature-256 hợp lệ.");
         }
 
         var hex = signature[Prefix.Length..];
         if (hex.Length != 64)
         {
-            throw new GitHubWebhookValidationException(
+            throw new GitHubWebhookSignatureException(
                 "X-Hub-Signature-256 không hợp lệ.");
         }
 
@@ -348,7 +348,7 @@ public sealed class GitHubWebhookService : IGitHubWebhookService
         }
         catch (FormatException)
         {
-            throw new GitHubWebhookValidationException(
+            throw new GitHubWebhookSignatureException(
                 "X-Hub-Signature-256 không hợp lệ.");
         }
 
@@ -357,7 +357,7 @@ public sealed class GitHubWebhookService : IGitHubWebhookService
 
         if (!CryptographicOperations.FixedTimeEquals(expected, provided))
         {
-            throw new GitHubWebhookValidationException(
+            throw new GitHubWebhookSignatureException(
                 "GitHub webhook signature không hợp lệ.");
         }
     }

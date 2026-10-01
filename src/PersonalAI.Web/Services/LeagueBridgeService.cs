@@ -39,6 +39,23 @@ public sealed record LeagueMatchTimeline(
     double LastGameTimeSeconds,
     IReadOnlyList<LeagueMatchSnapshot> Snapshots);
 
+public static class LeagueMatchSessionStates
+{
+    public const string Active = "active";
+    public const string Dead = "dead";
+    public const string Stale = "stale";
+}
+
+public sealed record LeagueMatchSessionSummary(
+    Guid MatchSessionId,
+    string WorkspaceId,
+    string State,
+    DateTimeOffset StartedAtUtc,
+    DateTimeOffset LastObservedAtUtc,
+    double LastGameTimeSeconds,
+    int TimelineCount,
+    LeagueMatchSnapshot LatestSnapshot);
+
 public interface ILeagueMatchSnapshotStore
 {
     LeagueMatchSnapshotAcceptResult Accept(
@@ -46,6 +63,8 @@ public interface ILeagueMatchSnapshotStore
         LeagueMatchSnapshot snapshot);
 
     LeagueMatchTimeline? GetTimeline(string workspaceId);
+
+    LeagueMatchSessionSummary? GetSession(string workspaceId);
 }
 
 public sealed class LeagueMatchSnapshotStore : ILeagueMatchSnapshotStore
@@ -115,6 +134,36 @@ public sealed class LeagueMatchSnapshotStore : ILeagueMatchSnapshotStore
                 MatchSessionId: state.SessionId,
                 TimelineCount: state.Snapshots.Count,
                 Reason: "accepted");
+        }
+    }
+
+    public LeagueMatchSessionSummary? GetSession(string workspaceId)
+    {
+        if (!_states.TryGetValue(workspaceId, out var state))
+            return null;
+
+        lock (state.Sync)
+        {
+            if (state.SessionId == Guid.Empty || state.Snapshots.Count == 0)
+                return null;
+
+            var latest = state.Snapshots.Last();
+            var age = DateTimeOffset.UtcNow - state.LastObservedAtUtc;
+            var sessionState = age > TimeSpan.FromSeconds(10)
+                ? LeagueMatchSessionStates.Stale
+                : latest.IsDead
+                    ? LeagueMatchSessionStates.Dead
+                    : LeagueMatchSessionStates.Active;
+
+            return new(
+                state.SessionId,
+                workspaceId,
+                sessionState,
+                state.StartedAtUtc,
+                state.LastObservedAtUtc,
+                state.LastGameTimeSeconds,
+                state.Snapshots.Count,
+                latest);
         }
     }
 

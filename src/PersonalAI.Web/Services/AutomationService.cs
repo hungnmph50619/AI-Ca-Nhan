@@ -1,3 +1,5 @@
+using System.Security.Cryptography;
+using System.Text;
 using Microsoft.AspNetCore.Http;
 using PersonalAI.Web.Models;
 
@@ -494,6 +496,7 @@ public sealed class AutomationCoordinator(
     IAutomationStore store,
     IServiceScopeFactory scopeFactory,
     IHttpContextAccessor httpContextAccessor,
+    ILoopGuardService loopGuard,
     IAuditRecorder audit,
     ILogger<AutomationCoordinator> logger) : IAutomationCoordinator
 {
@@ -902,6 +905,44 @@ public sealed class AutomationCoordinator(
         PersonalTask task,
         string message)
     {
+        var fingerprint = StableFingerprint(
+            $"{task.Id:D}|{task.CurrentStep}|{message}");
+        var loopDecision = loopGuard.Check(
+            current.WorkspaceId,
+            new LoopGuardCheckRequest(
+                LoopGuardScopes.Automation,
+                current.Id.ToString("D"),
+                fingerprint,
+                CostUnits: 1));
+
+        if (loopDecision.Blocked)
+        {
+            var stoppedMessage =
+                $"Loop guard đã dừng automation: {loopDecision.StopReason}";
+            var stopped = current with
+            {
+                Enabled = false,
+                State = AutomationStates.Interrupted,
+                NextRunAt = null,
+                UpdatedAt = DateTimeOffset.UtcNow,
+                LastRunAt = DateTimeOffset.UtcNow,
+                LastRunStatus = AutomationRunStatuses.Interrupted,
+                LastMessage = stoppedMessage
+            };
+            store.Save(stopped);
+            RecordRunAudit(
+                stopped,
+                AuditResults.Interrupted,
+                $"loop-guard:{loopDecision.Reason}");
+            return new AutomationRunResult(
+                stopped,
+                task,
+                null,
+                false,
+                false,
+                stoppedMessage);
+        }
+
         var next = DateTimeOffset.UtcNow
             .AddMinutes(
                 Math.Min(
@@ -1078,6 +1119,12 @@ public sealed class AutomationCoordinator(
         message = string.Empty;
         return true;
     }
+
+    private static string StableFingerprint(string value) =>
+        Convert.ToHexString(
+            SHA256.HashData(
+                Encoding.UTF8.GetBytes(value)))
+            .ToLowerInvariant();
 
     private void RecordRunAudit(
         PersonalAutomation automation,

@@ -19,6 +19,10 @@ public interface ICompanionService
     CompanionPairingClaimResponse ClaimPairing(
         CompanionPairingClaimRequest request);
 
+    CompanionPairingClaimResponse CreateSecurePairedDevice(
+        string workspaceId,
+        string deviceName);
+
     CompanionDevice? Authenticate(
         string token);
 
@@ -221,6 +225,46 @@ public sealed class CompanionService : ICompanionService
 
             _state.Devices.Add(device);
             _pairings.Remove(code);
+            SaveLocked();
+
+            return new CompanionPairingClaimResponse(
+                token,
+                ToPublic(device));
+        }
+    }
+
+    public CompanionPairingClaimResponse CreateSecurePairedDevice(
+        string workspaceId,
+        string deviceName)
+    {
+        EnsureEnabled();
+        var normalizedWorkspace = NormalizeWorkspaceId(workspaceId);
+        var name = NormalizeDeviceName(deviceName);
+        var now = DateTimeOffset.UtcNow;
+
+        lock (_gate)
+        {
+            var count = _state.Devices.Count(item =>
+                item.WorkspaceId.Equals(
+                    normalizedWorkspace,
+                    StringComparison.OrdinalIgnoreCase));
+
+            if (count >= MaximumDevicesPerWorkspace)
+                throw new CompanionPairingException(
+                    $"Workspace đã đạt giới hạn {MaximumDevicesPerWorkspace} thiết bị companion.");
+
+            var token = CreateDeviceToken();
+            var device = new StoredCompanionDevice
+            {
+                Id = Guid.NewGuid(),
+                WorkspaceId = normalizedWorkspace,
+                Name = name,
+                TokenSha256 = HashToken(token),
+                CreatedAt = now,
+                LastSeenAt = now
+            };
+
+            _state.Devices.Add(device);
             SaveLocked();
 
             return new CompanionPairingClaimResponse(

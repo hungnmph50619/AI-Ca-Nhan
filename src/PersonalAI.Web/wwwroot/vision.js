@@ -8,6 +8,7 @@
   const result = document.getElementById("result");
   const meta = document.getElementById("resultMeta");
   const heading = document.getElementById("resultHeading");
+  const fileName = document.getElementById("imageFileName");
   const maximumImageBytes = 2 * 1024 * 1024;
   let available = false;
   let busy = false;
@@ -27,6 +28,7 @@
     preview.removeAttribute("src");
     consent.checked = false; // Consent is given per selected image, never reused.
     const file = input.files && input.files[0];
+    if (fileName) fileName.textContent = file ? file.name : "Chưa chọn ảnh";
     if (file) {
       if (!["image/png", "image/jpeg"].includes(file.type) ||
           file.size > maximumImageBytes || file.size < 24) {
@@ -69,7 +71,7 @@
       result.textContent = data.analysis;
       meta.textContent = "Ảnh đã lưu " + data.width + "×" + data.height +
         " · Gemini: " + data.model +
-        " · Kết quả chưa được xác minh, không dùng trên HUD trận đấu.";
+        " · Kết quả chưa được xác minh, không dùng trên giao diện trong trận.";
       heading.focus();
     } catch (error) {
       result.textContent = "Chưa đọc được ảnh: " + String(error.message || error);

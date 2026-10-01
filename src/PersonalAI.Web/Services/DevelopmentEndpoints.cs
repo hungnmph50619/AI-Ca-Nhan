@@ -13,6 +13,7 @@ public static class DevelopmentEndpoints
         services.AddSingleton<IDevelopmentWorktreeService, DevelopmentWorktreeService>();
         services.AddSingleton<IDevelopmentRunWorktreeService, DevelopmentRunWorktreeService>();
         services.AddScoped<IDevelopmentRecoveryService, DevelopmentRecoveryService>();
+        services.AddScoped<IDependencyMaintenanceService, DependencyMaintenanceService>();
         services.AddSingleton<IDevelopmentLeaseService, DevelopmentLeaseService>();
         services.AddSingleton<IGitCredentialService, GitCredentialService>();
         services.AddSingleton<IDevelopmentEventBus, DevelopmentEventBus>();
@@ -71,6 +72,80 @@ public static class DevelopmentEndpoints
         app.MapGet("/api/development/git/capabilities", (
             ILocalGitRepositoryService git) =>
             Results.Ok(git.GetStatus()));
+
+        app.MapGet("/api/development/dependencies/status", (
+            IDependencyMaintenanceService dependencies) =>
+            Results.Ok(dependencies.GetStatus()));
+
+        app.MapGet("/api/development/dependencies/plans", (
+            IDependencyMaintenanceService dependencies) =>
+            Results.Ok(dependencies.GetAll()));
+
+        app.MapGet("/api/development/dependencies/plans/{planId:guid}", (
+            Guid planId,
+            IDependencyMaintenanceService dependencies) =>
+        {
+            var plan = dependencies.Get(planId);
+            return plan is null ? Results.NotFound() : Results.Ok(plan);
+        });
+
+        app.MapPost("/api/development/dependencies/plan", async (
+            PlanDependencyMaintenanceRequest request,
+            IDependencyMaintenanceService dependencies,
+            CancellationToken cancellationToken) =>
+        {
+            try
+            {
+                return Results.Ok(await dependencies.PlanAsync(
+                    request,
+                    cancellationToken));
+            }
+            catch (DependencyMaintenanceValidationException exception)
+            {
+                return Results.BadRequest(new ApiError(exception.Message));
+            }
+            catch (DevelopmentRunWorktreeValidationException exception)
+            {
+                return Results.BadRequest(new ApiError(exception.Message));
+            }
+            catch (DevelopmentWorktreeValidationException exception)
+            {
+                return Results.BadRequest(new ApiError(exception.Message));
+            }
+            catch (ToolExecutionInputException exception)
+            {
+                return Results.BadRequest(new ApiError(exception.Message));
+            }
+            catch (KeyNotFoundException exception)
+            {
+                return Results.NotFound(new ApiError(exception.Message));
+            }
+        });
+
+        app.MapPost("/api/development/dependencies/apply", async (
+            ApplyDependencyMaintenanceRequest request,
+            IDependencyMaintenanceService dependencies,
+            CancellationToken cancellationToken) =>
+        {
+            try
+            {
+                return Results.Ok(await dependencies.ApplyAsync(
+                    request,
+                    cancellationToken));
+            }
+            catch (DependencyMaintenanceValidationException exception)
+            {
+                return Results.BadRequest(new ApiError(exception.Message));
+            }
+            catch (ToolExecutionInputException exception)
+            {
+                return Results.BadRequest(new ApiError(exception.Message));
+            }
+            catch (KeyNotFoundException exception)
+            {
+                return Results.NotFound(new ApiError(exception.Message));
+            }
+        });
 
         app.MapGet("/api/development/recovery/status", (
             IDevelopmentRecoveryService recovery) =>

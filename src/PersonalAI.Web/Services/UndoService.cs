@@ -54,7 +54,7 @@ public sealed class UndoService(
             SqliteUndoStore.MaximumQueryLimit,
             SqliteUndoStore.MaximumSnapshotBytes,
             ExplicitConfirmationRequired: true,
-            PreconditionAssessmentRequired: true,
+            PreconditionRevalidationRequired: true,
             WorkspaceScoped: true,
             InvocationCorrelationEnabled: true,
             AuditTrailEnabled: true,
@@ -276,6 +276,12 @@ public sealed class UndoService(
         bool confirmed,
         CancellationToken cancellationToken = default)
     {
+        var item = store.Get(
+            undoId,
+            workspaceContext.CurrentWorkspaceId)
+            ?? throw new KeyNotFoundException(
+                "Không tìm thấy bản ghi hoàn tác trong workspace hiện tại.");
+
         if (!confirmed)
         {
             audit.Record(
@@ -283,16 +289,15 @@ public sealed class UndoService(
                 "undo.execute",
                 $"undo:{undoId:D}",
                 "confirmation-required",
-                AuditResults.Denied);
+                AuditResults.Denied,
+                item.ToolName,
+                item.WorkspaceId,
+                level: SystemLogLevels.Security,
+                source: "undo",
+                correlationId: item.InvocationId.ToString("D"));
             throw new UndoConfirmationRequiredException(
                 "Hoàn tác có thể thay đổi tệp. Hãy xác nhận rõ ràng trước khi thực hiện.");
         }
-
-        var item = store.Get(
-            undoId,
-            workspaceContext.CurrentWorkspaceId)
-            ?? throw new KeyNotFoundException(
-                "Không tìm thấy bản ghi hoàn tác trong workspace hiện tại.");
 
         if (item.ExpiresAt <= DateTimeOffset.UtcNow)
         {

@@ -1,5 +1,4 @@
 using System.Diagnostics;
-using System.Text.Json;
 using PersonalAI.Web.Evaluation.Benchmarks;
 using PersonalAI.Web.Evaluation.Contracts;
 using PersonalAI.Web.Evaluation.Core;
@@ -24,19 +23,14 @@ public sealed class DevelopmentBenchmarkService(
     IEvaluationEngine evaluation,
     IAgentBenchmarkService agentBenchmark,
     IWorkspaceContextAccessor workspace,
-    IConfiguration configuration,
+    IDevelopmentBenchmarkReportStore store,
     IAuditRecorder audit) : IDevelopmentBenchmarkService
 {
     public const int HardMaximumCases = 100;
 
-    private readonly object _gate = new();
-    private readonly string _root = ResolveRoot(configuration);
-    private static readonly JsonSerializerOptions Options =
-        new(JsonSerializerDefaults.Web) { WriteIndented = true };
-
     public DevelopmentBenchmarkStatus GetStatus()
     {
-        var all = GetAll();
+        var all = store.GetAll();
         return new(
             PersonalAiRelease.Version,
             workspace.CurrentWorkspaceId,
@@ -48,17 +42,11 @@ public sealed class DevelopmentBenchmarkService(
             DevelopmentBenchmarkGateNames.Required);
     }
 
-    public IReadOnlyList<DevelopmentBenchmarkReport> GetAll()
-    {
-        lock (_gate)
-            return Load().OrderByDescending(x => x.CompletedAt).ToArray();
-    }
+    public IReadOnlyList<DevelopmentBenchmarkReport> GetAll() =>
+        store.GetAll();
 
-    public DevelopmentBenchmarkReport? Get(Guid id)
-    {
-        lock (_gate)
-            return Load().FirstOrDefault(x => x.Id == id);
-    }
+    public DevelopmentBenchmarkReport? Get(Guid id) =>
+        store.Get(id);
 
     public async Task<DevelopmentBenchmarkReport> RunAsync(
         RunDevelopmentBenchmarkRequest request,
@@ -273,12 +261,7 @@ public sealed class DevelopmentBenchmarkService(
             startedAt,
             DateTimeOffset.UtcNow);
 
-        lock (_gate)
-        {
-            var all = Load();
-            all.Add(reportOut);
-            Save(all);
-        }
+        store.Save(reportOut);
 
         audit.Record(
             AuditAgents.System,
@@ -335,53 +318,4 @@ public sealed class DevelopmentBenchmarkService(
                 $"{name} phải nằm trong khoảng {minimum}..{maximum}.");
     }
 
-    private List<DevelopmentBenchmarkReport> Load()
-    {
-        var path = PathForWorkspace();
-        if (!File.Exists(path)) return [];
-
-        try
-        {
-            return JsonSerializer.Deserialize<List<DevelopmentBenchmarkReport>>(
-                File.ReadAllText(path),
-                Options) ?? [];
-        }
-        catch (JsonException)
-        {
-            return [];
-        }
-    }
-
-    private void Save(List<DevelopmentBenchmarkReport> reports)
-    {
-        Directory.CreateDirectory(_root);
-        var path = PathForWorkspace();
-        var temp = path + ".tmp";
-        File.WriteAllText(temp, JsonSerializer.Serialize(reports, Options));
-        File.Move(temp, path, true);
-    }
-
-    private string PathForWorkspace()
-    {
-        var safe = string.Concat(workspace.CurrentWorkspaceId.Select(c =>
-            char.IsLetterOrDigit(c) || c is '-' or '_' ? c : '_'));
-        return Path.Combine(_root, $"development-benchmark-reports-{safe}.json");
-    }
-
-    private static string ResolveRoot(IConfiguration configuration)
-    {
-        var root = configuration["Development:BenchmarkRoot"];
-        if (string.IsNullOrWhiteSpace(root))
-        {
-            root = Path.Combine(
-                Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
-                "PersonalAI",
-                "Development",
-                "Benchmarks");
-        }
-
-        root = Path.GetFullPath(Environment.ExpandEnvironmentVariables(root));
-        Directory.CreateDirectory(root);
-        return root;
-    }
 }

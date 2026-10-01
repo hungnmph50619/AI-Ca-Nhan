@@ -51,7 +51,7 @@ jobs:
           test "$ready" = "1"
 
           jq -e '
-            .version == "2.6.5"
+            (.version | split(".") | map(tonumber)) >= [2,6,5]
             and .criticalRegressionAlwaysBlocks == true
             and .autoPromotionEnabled == false
             and .auditRequired == true

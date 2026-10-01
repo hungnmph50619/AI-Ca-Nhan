@@ -7,6 +7,7 @@ namespace PersonalAI.Web.Services;
 
 public interface IAutonomousCodingService
 {
+    AutonomousCodingResult? GetLatest(Guid developmentRunId);
     Task<AutonomousCodingResult> RunAsync(
         Guid developmentRunId,
         bool confirmExternalAi,
@@ -19,16 +20,33 @@ public sealed class AutonomousCodingService(
     IDevelopmentAgentService development,
     IWorkspaceFileService files,
     IRootCauseDiagnosisService diagnoses,
-    IAiProviderResolver providers) : IAutonomousCodingService
+    IAiProviderResolver providers,
+    IWorkspaceContextAccessor workspace,
+    IConfiguration configuration,
+    IAuditRecorder audit) : IAutonomousCodingService
 {
     public const int MaximumContextFiles = 6;
     public const int MaximumEdits = 4;
     public const int MaximumCharactersPerContextFile = 15_000;
 
+    private readonly object _gate = new();
+    private readonly string _root = ResolveRoot(configuration);
+    private static readonly JsonSerializerOptions StoreOptions =
+        new(JsonSerializerDefaults.Web) { WriteIndented = true };
+
     private static readonly HashSet<string> AllowedExtensions =
         new(
             [".cs", ".csproj", ".json", ".md", ".xml", ".yml", ".yaml"],
             StringComparer.OrdinalIgnoreCase);
+
+    public AutonomousCodingResult? GetLatest(Guid developmentRunId)
+    {
+        lock (_gate)
+            return Load()
+                .Where(x => x.DevelopmentRunId == developmentRunId)
+                .OrderByDescending(x => x.CompletedAt)
+                .FirstOrDefault();
+    }
 
     public async Task<AutonomousCodingResult> RunAsync(
         Guid developmentRunId,
@@ -158,13 +176,83 @@ public sealed class AutonomousCodingService(
             throw new AutonomousDevelopmentValidationException(
                 "AI không tạo thay đổi source thực tế.");
 
-        return new(
+        var result = new AutonomousCodingResult(
+            Guid.NewGuid(),
+            workspace.CurrentWorkspaceId,
             run.Id,
             binding.WorktreePath,
             changed.Count,
             changed,
             Limit(proposal.Summary, 1000),
             DateTimeOffset.UtcNow);
+
+        lock (_gate)
+        {
+            var all = Load();
+            all.Add(result);
+            Save(all);
+        }
+
+        audit.Record(
+            AuditAgents.System,
+            "development.autonomous.coding",
+            $"development-run:{run.Id:D}",
+            $"coding-report:{result.Id:D};files:{result.FilesChanged};worktree:{result.WorktreePath}",
+            AuditResults.Prepared);
+
+        return result;
+    }
+
+    private List<AutonomousCodingResult> Load()
+    {
+        var path = PathForWorkspace();
+        if (!File.Exists(path)) return [];
+
+        try
+        {
+            return JsonSerializer.Deserialize<List<AutonomousCodingResult>>(
+                File.ReadAllText(path),
+                StoreOptions) ?? [];
+        }
+        catch (JsonException)
+        {
+            throw new AutonomousDevelopmentValidationException(
+                "Autonomous coding state bị hỏng; từ chối replay edit.");
+        }
+    }
+
+    private void Save(List<AutonomousCodingResult> reports)
+    {
+        Directory.CreateDirectory(_root);
+        var path = PathForWorkspace();
+        var temp = path + ".tmp";
+        File.WriteAllText(temp, JsonSerializer.Serialize(reports, StoreOptions));
+        File.Move(temp, path, true);
+    }
+
+    private string PathForWorkspace()
+    {
+        var safe = string.Concat(workspace.CurrentWorkspaceId.Select(ch =>
+            char.IsLetterOrDigit(ch) || ch is '-' or '_' ? ch : '_'));
+        return Path.Combine(_root, $"autonomous-coding-{safe}.json");
+    }
+
+    private static string ResolveRoot(IConfiguration configuration)
+    {
+        var root = configuration["Development:Autonomous:CodingRoot"];
+        if (string.IsNullOrWhiteSpace(root))
+        {
+            root = Path.Combine(
+                Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
+                "PersonalAI",
+                "Development",
+                "Autonomous",
+                "Coding");
+        }
+
+        root = Path.GetFullPath(Environment.ExpandEnvironmentVariables(root));
+        Directory.CreateDirectory(root);
+        return root;
     }
 
     private static string BuildPrompt(

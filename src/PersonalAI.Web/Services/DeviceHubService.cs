@@ -11,12 +11,17 @@ public interface IDeviceHubService
     DeviceHubDevice RegisterLocalDevice(
         string workspaceId,
         RegisterDeviceHubDeviceRequest request);
+    DeviceHubDevice RecordLocalHeartbeat(
+        string workspaceId,
+        Guid deviceId,
+        RecordDeviceHubHeartbeatRequest request);
     DeviceHubDevice RecordCompanionHeartbeat(CompanionDevice companionDevice);
     IReadOnlyList<DeviceHubDevice> ReconcileCompanionDevices(string workspaceId);
 }
 
 public sealed class DeviceHubService(
     ICompanionService companion,
+    IWorkspaceContextAccessor workspace,
     IConfiguration configuration,
     IAuditRecorder audit) : IDeviceHubService
 {
@@ -35,8 +40,8 @@ public sealed class DeviceHubService(
 
     public DeviceHubStatus GetStatus()
     {
-        var workspaceId = PersonalWorkspaceIds.Personal;
-        var all = GetDevices(workspaceId);
+        var workspaceId = workspace.CurrentWorkspaceId;
+        var all = ReconcileCompanionDevices(workspaceId);
         return BuildStatus(workspaceId, all);
     }
 
@@ -127,6 +132,55 @@ public sealed class DeviceHubService(
                 workspaceId: normalizedWorkspace);
 
             return device;
+        }
+    }
+
+    public DeviceHubDevice RecordLocalHeartbeat(
+        string workspaceId,
+        Guid deviceId,
+        RecordDeviceHubHeartbeatRequest request)
+    {
+        ArgumentNullException.ThrowIfNull(request);
+        if (!request.ConfirmHeartbeat)
+            throw new DeviceHubValidationException(
+                "Cần ConfirmHeartbeat=true để cập nhật trạng thái thiết bị local.");
+
+        var normalized = NormalizeWorkspaceId(workspaceId);
+
+        lock (_gate)
+        {
+            var all = Load(normalized);
+            var index = all.FindIndex(x =>
+                x.Id == deviceId &&
+                x.Source == DeviceHubSources.LocalAdmin);
+
+            if (index < 0)
+                throw new KeyNotFoundException(
+                    "Không tìm thấy local device trong workspace hiện tại.");
+
+            var current = all[index];
+            var now = DateTimeOffset.UtcNow;
+            var updated = current with
+            {
+                ConnectionStatus = DeviceHubConnectionStatuses.Online,
+                PermissionsGranted = false,
+                RemoteExecutionEnabled = false,
+                LastSeenAt = now,
+                UpdatedAt = now
+            };
+
+            all[index] = updated;
+            Save(normalized, all);
+
+            audit.Record(
+                AuditAgents.User,
+                "device-hub.device.heartbeat",
+                $"device:{deviceId:D}",
+                "source:local-admin;permissions-granted:false;remote-execution:false",
+                AuditResults.Succeeded,
+                workspaceId: normalized);
+
+            return updated;
         }
     }
 

@@ -19,6 +19,7 @@ public sealed class DevelopmentRunService(
     IWorkspaceContextAccessor workspace,
     IImprovementBacklogService backlog,
     IRootCauseDiagnosisService diagnoses,
+    IDevelopmentSecurityReportStore securityReports,
     IConfiguration configuration,
     IAuditRecorder audit) : IDevelopmentRunService
 {
@@ -116,6 +117,7 @@ public sealed class DevelopmentRunService(
                 [],
                 request.ImprovementItemId,
                 request.DiagnosisId,
+                null,
                 now,
                 now,
                 null);
@@ -177,6 +179,29 @@ public sealed class DevelopmentRunService(
                 }
             }
 
+            if (current.Stage == DevelopmentRunStages.Security)
+            {
+                if (request.SecurityReportId is null)
+                    throw new DevelopmentRunConflictException(
+                        "SecurityReportId là bắt buộc trước khi chuyển security → benchmark.");
+
+                var securityReport = securityReports.Get(
+                    request.SecurityReportId.Value)
+                    ?? throw new DevelopmentRunConflictException(
+                        "Không tìm thấy DevelopmentSecurityReport.");
+
+                if (securityReport.DevelopmentRunId != current.Id)
+                    throw new DevelopmentRunConflictException(
+                        "Security report không thuộc DevelopmentRun hiện tại.");
+
+                if (securityReport.HighRiskFound ||
+                    !securityReport.PromotionAllowed)
+                {
+                    throw new DevelopmentRunConflictException(
+                        "High-risk security finding đang chặn promotion.");
+                }
+            }
+
             var next = NextStage(current.Stage);
             var now = DateTimeOffset.UtcNow;
 
@@ -200,6 +225,7 @@ public sealed class DevelopmentRunService(
                 Stage = next,
                 Status = status,
                 CiRunId = request.CiRunId ?? current.CiRunId,
+                SecurityReportId = request.SecurityReportId ?? current.SecurityReportId,
                 History = history,
                 UpdatedAt = now,
                 CompletedAt = status == "completed" ? now : null

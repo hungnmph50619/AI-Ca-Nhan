@@ -176,6 +176,26 @@ jobs:
               and .developmentRunId==null)
           ' >/dev/null
 
+      - name: Setup Java for Android
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+
+      - name: Setup Android SDK
+        uses: android-actions/setup-android@v3
+        with:
+          packages: platform-tools
+
+      - name: Install Android SDK packages
+        run: sdkmanager "platforms;android-35" "build-tools;35.0.0"
+
+      - name: Setup Gradle
+        uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: '8.9'
+
       - name: Build Android Companion
-        working-directory: android/PersonalAI.Companion
-        run: ./gradlew assembleDebug
+        run: |
+          gradle -p android/PersonalAI.Companion :app:assembleDebug --no-daemon
+          test -f android/PersonalAI.Companion/app/build/outputs/apk/debug/app-debug.apk

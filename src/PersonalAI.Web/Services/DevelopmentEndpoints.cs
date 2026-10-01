@@ -20,6 +20,8 @@ public static class DevelopmentEndpoints
         services.AddSingleton<IRootCauseDiagnosisService, RootCauseDiagnosisService>();
         services.AddScoped<IDevelopmentAutoTestService, DevelopmentAutoTestService>();
         services.AddScoped<IDevelopmentReviewService, DevelopmentReviewService>();
+        services.AddSingleton<IDevelopmentSecurityReportStore, DevelopmentSecurityReportStore>();
+        services.AddScoped<IDevelopmentSecurityService, DevelopmentSecurityService>();
         services.AddSingleton<IPersonalAiTool, DevelopmentWorkspaceInspectTool>();
         services.AddSingleton<IPersonalAiTool, DevelopmentTextSearchTool>();
         services.AddSingleton<IPersonalAiTool, DevelopmentGitStatusTool>();
@@ -57,6 +59,61 @@ public static class DevelopmentEndpoints
         app.MapGet("/api/development/git/capabilities", (
             ILocalGitRepositoryService git) =>
             Results.Ok(git.GetStatus()));
+
+        app.MapGet("/api/development/security/status", (
+            IDevelopmentSecurityService security) =>
+            Results.Ok(security.GetStatus()));
+
+        app.MapGet("/api/development/security/reports", (
+            IDevelopmentSecurityService security) =>
+            Results.Ok(security.GetAll()));
+
+        app.MapGet("/api/development/security/reports/{reportId:guid}", (
+            Guid reportId,
+            IDevelopmentSecurityService security) =>
+        {
+            var report = security.Get(reportId);
+            return report is null ? Results.NotFound() : Results.Ok(report);
+        });
+
+        app.MapPost("/api/development/security/run", async (
+            RunDevelopmentSecurityRequest request,
+            IDevelopmentSecurityService security,
+            CancellationToken cancellationToken) =>
+        {
+            try
+            {
+                return Results.Ok(await security.RunAsync(
+                    request,
+                    cancellationToken));
+            }
+            catch (DevelopmentSecurityValidationException exception)
+            {
+                return Results.BadRequest(new ApiError(exception.Message));
+            }
+            catch (LocalGitRepositoryValidationException exception)
+            {
+                return Results.BadRequest(new ApiError(exception.Message));
+            }
+            catch (WorkspaceFileValidationException exception)
+            {
+                return Results.BadRequest(new ApiError(exception.Message));
+            }
+            catch (AgentValidationException exception)
+            {
+                return Results.BadRequest(new ApiError(exception.Message));
+            }
+            catch (AgentBusyException exception)
+            {
+                return Results.Json(
+                    new ApiError(exception.Message),
+                    statusCode: StatusCodes.Status409Conflict);
+            }
+            catch (KeyNotFoundException exception)
+            {
+                return Results.NotFound(new ApiError(exception.Message));
+            }
+        });
 
         app.MapGet("/api/development/reviews/status", (
             IDevelopmentReviewService reviews) =>

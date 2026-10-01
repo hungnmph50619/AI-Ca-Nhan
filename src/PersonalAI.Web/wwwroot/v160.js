@@ -490,13 +490,13 @@
         { method: "DELETE" });
       if (!response.ok) {
         const payload = await response.json().catch(() => ({}));
-        throw new Error(payload.error || "Không thể xóa source.");
+        throw new Error(payload.error || "Không thể xóa nguồn.");
       }
 
       setFeedback("Đã xóa nguồn.");
       await load();
     } catch (error) {
-      setFeedback(error.message || "Không thể xóa source.", true);
+      setFeedback(error.message || "Không thể xóa nguồn.", true);
     }
   }
 

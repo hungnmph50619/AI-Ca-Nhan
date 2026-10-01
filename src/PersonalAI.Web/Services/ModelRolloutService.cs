@@ -82,6 +82,18 @@ public sealed class ModelRolloutService(
             throw new ModelRolloutValidationException(
                 "Production baseline phải đang ở stage production.");
 
+        lock (_gate)
+        {
+            var existing = Load();
+            if (existing.Any(x =>
+                x.CandidateModelVersionId == candidate.Id &&
+                x.Stage is RolloutStages.Staging or RolloutStages.Canary))
+            {
+                throw new ModelRolloutValidationException(
+                    "Candidate đã có rollout đang hoạt động.");
+            }
+        }
+
         var staged = registry.UpdateStage(
             candidate.Id,
             new UpdateModelDeploymentStageRequest(
@@ -105,14 +117,6 @@ public sealed class ModelRolloutService(
         lock (_gate)
         {
             var all = Load();
-            if (all.Any(x =>
-                x.CandidateModelVersionId == rollout.CandidateModelVersionId &&
-                x.Stage is RolloutStages.Staging or RolloutStages.Canary))
-            {
-                throw new ModelRolloutValidationException(
-                    "Candidate đã có rollout đang hoạt động.");
-            }
-
             all.Add(rollout);
             Save(all);
         }

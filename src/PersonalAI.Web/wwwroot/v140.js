@@ -250,7 +250,7 @@
   function updateBadge(available) {
     const badge = document.querySelector("#developmentAgentBadge");
     if (!badge) return;
-    badge.textContent = available ? "ON" : "OFF";
+    badge.textContent = available ? "BẬT" : "TẮT";
     badge.className =
       `tool-count v140-development-badge ${available ? "is-ready" : "is-off"}`;
   }

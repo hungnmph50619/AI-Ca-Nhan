@@ -67,7 +67,7 @@ jobs:
           test "$ready" = "1"
 
           jq -e '
-            .version == "2.6.8"
+            (.version | split(".") | map(tonumber)) >= [2,6,8]
             and .gitAvailable == true
             and .fetchEnabled == true
             and .checkoutEnabled == true

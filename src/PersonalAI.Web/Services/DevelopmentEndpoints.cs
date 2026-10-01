@@ -1293,7 +1293,7 @@ public static class DevelopmentEndpoints
         });
 
         app.MapDelete("/api/development/git-credentials", (
-            DeleteGitCredentialRequest request,
+            [Microsoft.AspNetCore.Mvc.FromBody] DeleteGitCredentialRequest request,
             IGitCredentialService credentials) =>
         {
             try

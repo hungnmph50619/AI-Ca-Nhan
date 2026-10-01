@@ -20,6 +20,7 @@ public sealed class TrainingExecutor(
     IModelArtifactStore artifacts,
     IModelRegistry modelRegistry,
     ICandidateTrainingPlanStore candidatePlans,
+    IEmergencyStopService emergencyStop,
     IAuditRecorder audit) : BackgroundService, ITrainingExecutor
 {
     private readonly SemaphoreSlim _signal=new(0);
@@ -32,6 +33,9 @@ public sealed class TrainingExecutor(
     public TrainingExecutionRecord Queue(Guid id,QueueTrainingJobRequest request)
     {
         ArgumentNullException.ThrowIfNull(request);
+        if (emergencyStop.IsEngaged)
+            throw new TrainingExecutionValidationException(
+                "Emergency stop đang bật; không nhận training execution mới.");
         var job=jobs.Get(id)??throw new KeyNotFoundException("Không tìm thấy training job.");
         if(TrainingJobStatuses.IsTerminal(job.Status))
             throw new TrainingExecutionValidationException("Training job đã kết thúc.");
@@ -59,6 +63,19 @@ public sealed class TrainingExecutor(
         executions.RecoverInterrupted();
         while(!stoppingToken.IsCancellationRequested)
         {
+            if (emergencyStop.IsEngaged)
+            {
+                try
+                {
+                    await Task.Delay(250, stoppingToken);
+                }
+                catch (OperationCanceledException)
+                {
+                    break;
+                }
+                continue;
+            }
+
             foreach (var pending in jobs.GetAll()
                 .Where(x => x.Status == TrainingJobStatuses.Pending))
             {
@@ -119,7 +136,11 @@ public sealed class TrainingExecutor(
             }
 
             using var timeout=new CancellationTokenSource(TimeSpan.FromSeconds(execution.TimeoutSeconds));
-            using var linked=CancellationTokenSource.CreateLinkedTokenSource(stoppingToken,timeout.Token);
+            var emergencyToken = emergencyStop.CurrentToken;
+            using var linked=CancellationTokenSource.CreateLinkedTokenSource(
+                stoppingToken,
+                timeout.Token,
+                emergencyToken);
 
             var handle=await provider.StartAsync(new TrainingProviderStartRequest(
                 job.Id,
@@ -208,6 +229,22 @@ public sealed class TrainingExecutor(
 
                 await Task.Delay(250,linked.Token);
             }
+        }
+        catch(OperationCanceledException) when(
+            emergencyStop.IsEngaged)
+        {
+            executions.Set(
+                execution.TrainingJobId,
+                TrainingExecutionStatuses.Cancelled,
+                reason:"emergency-stop");
+            audit.Record(
+                AuditAgents.System,
+                "model-lab.training-execution.cancel",
+                $"training-job:{execution.TrainingJobId:D}",
+                "emergency-stop",
+                AuditResults.Cancelled,
+                level: SystemLogLevels.Security,
+                source: "emergency-stop");
         }
         catch(OperationCanceledException) when(!stoppingToken.IsCancellationRequested)
         {

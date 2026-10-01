@@ -9,6 +9,9 @@ public interface IPersonalAiOsService
 
     Task<PersonalAiOsManifestResponse> GetManifestAsync(
         CancellationToken cancellationToken = default);
+
+    Task<PersonalAiOsProductionReadiness> GetProductionReadinessAsync(
+        CancellationToken cancellationToken = default);
 }
 
 public sealed class PersonalAiOsService(
@@ -128,6 +131,64 @@ public sealed class PersonalAiOsService(
             BuildGovernance(),
             Boundaries,
             continuous);
+    }
+
+    public async Task<PersonalAiOsProductionReadiness>
+        GetProductionReadinessAsync(
+            CancellationToken cancellationToken = default)
+    {
+        var status = await GetStatusAsync(cancellationToken);
+        var required = new[]
+        {
+            "email",
+            "calendar",
+            "browser",
+            "android",
+            "agent-framework",
+            "continuous-improvement"
+        };
+
+        var completeCount = required.Count(id =>
+            status.Capabilities.Any(capability =>
+                string.Equals(
+                    capability.Id,
+                    id,
+                    StringComparison.OrdinalIgnoreCase)
+                && capability.State is PersonalAiOsCapabilityStates.Ready
+                    or PersonalAiOsCapabilityStates.Controlled));
+
+        var blockers = new List<string>();
+
+        AddBlocker(
+            status.Capabilities.Any(capability =>
+                capability.Id == "email"
+                && capability.State == PersonalAiOsCapabilityStates.Foundation),
+            "Email mới ở mức nền tảng; chưa có Gmail/Outlook OAuth, mailbox model và send/reply action chuyên dụng.",
+            blockers);
+        AddBlocker(
+            status.Capabilities.Any(capability =>
+                capability.Id == "calendar"
+                && capability.State == PersonalAiOsCapabilityStates.Foundation),
+            "Calendar mới ở mức nền tảng; chưa có provider-specific sync và create/update/delete event.",
+            blockers);
+
+        // These contracts are intentionally explicit until the corresponding
+        // bounded execution surfaces are implemented and acceptance-tested.
+        blockers.Add(
+            "Browser Agent chưa có interactive login/form-submit/browser side effects có confirmation.");
+        blockers.Add(
+            "Android Companion chưa cho remote tool execution/task mutation qua unified permission gate.");
+        blockers.Add(
+            "Agent Framework chưa có automatic delegation/tool execution qua bounded permission gate.");
+        blockers.Add(
+            "GitHub production E2E chưa được chứng minh bằng sandbox repository thật; acceptance hiện dùng fake GitHub API cho side-effect tests.");
+
+        return new PersonalAiOsProductionReadiness(
+            Complete: blockers.Count == 0,
+            RequiredCapabilityCount: required.Length,
+            CompleteCapabilityCount: completeCount,
+            RequiredCapabilities: required,
+            Blockers: blockers);
     }
 
     private async Task<PersonalAiOsContinuousImprovement>

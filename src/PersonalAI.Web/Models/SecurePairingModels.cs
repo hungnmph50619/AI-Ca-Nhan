@@ -26,7 +26,7 @@ public sealed record SecurePairingClaimResponse(
 public sealed record SecurePairingStatus(
     string Version,
     bool Enabled,
-    int PairingLifetimeMinutes,
+    int PairingLifetimeSeconds,
     bool ChallengeSignatureRequired,
     bool PairingCodeSingleUse,
     bool ConsumedCodesPersisted,

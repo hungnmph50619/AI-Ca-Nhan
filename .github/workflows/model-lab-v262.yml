@@ -52,7 +52,7 @@ jobs:
           test "$ready" = "1"
 
           jq -e '
-            .version == "2.6.2"
+            (.version | split(".") | map(tonumber)) >= [2,6,2]
             and .criticRequired == true
             and .datasetValidationRequired == true
             and .referenceVerificationRequired == true

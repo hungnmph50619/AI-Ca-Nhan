@@ -245,7 +245,8 @@ public sealed class SecurePairingService(
             if (!key.VerifyData(
                     proof,
                     signature,
-                    HashAlgorithmName.SHA256))
+                    HashAlgorithmName.SHA256,
+                    DSASignatureFormat.Rfc3279DerSequence))
             {
                 throw new SecurePairingValidationException(
                     "Chữ ký challenge không hợp lệ.");

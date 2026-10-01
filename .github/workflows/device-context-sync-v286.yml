@@ -68,7 +68,7 @@ jobs:
           fi
 
           jq -e '
-            .version=="2.8.6"
+            (.version | split(".") | map(tonumber)) >= [2,8,6]
             and .explicitConfirmationRequired==true
             and .fullMemorySyncEnabled==false
             and .queryScopedSelection==true

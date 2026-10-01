@@ -1,0 +1,316 @@
+name: Development v2.7.8
+
+on:
+  push:
+    branches:
+      - 'experiment/roadmap-v2-7-8-current'
+
+jobs:
+  validate-v278:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: '8.0.x'
+
+      - name: Restore
+        run: dotnet restore PersonalAI.sln
+
+      - name: Build
+        run: dotnet build PersonalAI.sln -c Release --no-restore
+
+      - name: Tests
+        run: dotnet test PersonalAI.sln -c Release --no-build
+
+      - name: Push PR CI finite repair smoke test
+        shell: bash
+        run: |
+          set -euo pipefail
+          rm -rf /tmp/personalai-v278
+          mkdir -p             /tmp/personalai-v278/workspace/repo             /tmp/personalai-v278/runs             /tmp/personalai-v278/security             /tmp/personalai-v278/benchmarks             /tmp/personalai-v278/github             /tmp/personalai-v278/ci             /tmp/personalai-v278/credentials
+
+          git init --bare /tmp/personalai-v278/remote.git
+
+          cd /tmp/personalai-v278/workspace/repo
+          git init -b main
+          git config user.name "PersonalAI CI"
+          git config user.email "ci@example.invalid"
+          printf 'base\n' > README.md
+          git add README.md
+          git commit -m "initial"
+          git remote add origin /tmp/personalai-v278/remote.git
+          git push origin main
+
+          cat > /tmp/personalai-v278/fake_github.py <<'PY'
+          from http.server import BaseHTTPRequestHandler, HTTPServer
+          import json
+
+          class Handler(BaseHTTPRequestHandler):
+              def log_message(self, fmt, *args):
+                  return
+
+              def _json(self, code, payload):
+                  body = json.dumps(payload).encode()
+                  self.send_response(code)
+                  self.send_header("Content-Type", "application/json")
+                  self.send_header("Content-Length", str(len(body)))
+                  self.end_headers()
+                  self.wfile.write(body)
+
+              def do_GET(self):
+                  if self.path.startswith("/repos/owner/repo/pulls"):
+                      self._json(200, [])
+                  else:
+                      self._json(404, {"message": "not found"})
+
+              def do_POST(self):
+                  if self.path == "/repos/owner/repo/pulls":
+                      length = int(self.headers.get("Content-Length", "0"))
+                      self.rfile.read(length)
+                      self._json(201, {
+                          "number": 78,
+                          "html_url": "https://example.invalid/owner/repo/pull/78"
+                      })
+                  else:
+                      self._json(404, {"message": "not found"})
+
+          HTTPServer(("127.0.0.1", 6123), Handler).serve_forever()
+          PY
+
+          python3 /tmp/personalai-v278/fake_github.py >/tmp/personalai-v278/fake-github.log 2>&1 &
+          FAKE_PID=$!
+
+          cd "$GITHUB_WORKSPACE"
+          export Workspace__Root=/tmp/personalai-v278/workspace
+          export Development__RunRoot=/tmp/personalai-v278/runs
+          export Development__SecurityReportRoot=/tmp/personalai-v278/security
+          export Development__BenchmarkRoot=/tmp/personalai-v278/benchmarks
+          export Development__GitHubReportRoot=/tmp/personalai-v278/github
+          export Development__CiRoot=/tmp/personalai-v278/ci
+          export Development__CredentialRoot=/tmp/personalai-v278/credentials
+          export Development__GitHubApiBaseUrl=http://127.0.0.1:6123
+
+          dotnet run --project src/PersonalAI.Web/PersonalAI.Web.csproj             -c Release --no-build             --urls http://127.0.0.1:5113             >/tmp/personalai-v278/app.log 2>&1 &
+          APP_PID=$!
+
+          cleanup() {
+            kill "$APP_PID" 2>/dev/null || true
+            kill "$FAKE_PID" 2>/dev/null || true
+          }
+          trap cleanup EXIT
+
+          for i in {1..30}; do
+            if curl -fsS http://127.0.0.1:5113/api/development/github/status >/tmp/github-status.json; then
+              break
+            fi
+            sleep 1
+          done
+
+          jq -e '
+            .version=="2.7.8"
+            and .directMainPushAllowed==false
+            and .pullRequestRequired==true
+            and .maximumCiRepairAttempts==3
+            and .ciFailureExcerptReadable==true
+            and .fullGitHubLogDownloadEnabled==false
+          ' /tmp/github-status.json >/dev/null
+
+          curl -fsS -X POST http://127.0.0.1:5113/api/development/git-credentials             -H 'Content-Type: application/json'             -d '{
+              "name":"v278-ci-token",
+              "kind":"https-token",
+              "secret":"ghp_V278DUMMYTOKEN012345678901234567890",
+              "username":"x-access-token",
+              "confirmStoreCredential":true
+            }' >/tmp/credential.json
+          credential_ref=$(jq -r '.credentialRef' /tmp/credential.json)
+
+          curl -fsS -X POST http://127.0.0.1:5113/api/development/runs             -H 'Content-Type: application/json'             -d '{
+              "goal":"v2.7.8 GitHub automation smoke",
+              "repositoryPath":"repo",
+              "branch":"experiment/v278-smoke",
+              "confirmCreate":true
+            }' >/tmp/run.json
+
+          run_id=$(jq -r '.id' /tmp/run.json)
+          workspace_id=$(jq -r '.workspaceId' /tmp/run.json)
+          safe_workspace=$(printf '%s' "$workspace_id" | sed 's/[^A-Za-z0-9_-]/_/g')
+
+          for transition in             'analysis prepared'             'coding succeeded'             'testing passed'             'review approved'; do
+            set -- $transition
+            curl -fsS -X POST http://127.0.0.1:5113/api/development/runs/$run_id/advance               -H 'Content-Type: application/json'               -d '{"expectedCurrentStage":"'"$1"'","result":"'"$2"'"}' >/tmp/advance.json
+          done
+
+          security_id='55555555-5555-5555-5555-555555555555'
+          cat > /tmp/personalai-v278/security/development-security-reports-$safe_workspace.json <<JSON
+          [{
+            "id":"$security_id",
+            "workspaceId":"$workspace_id",
+            "developmentRunId":"$run_id",
+            "reviewReportId":"22222222-2222-2222-2222-222222222222",
+            "repositoryPath":"repo",
+            "branch":"experiment/v278-smoke",
+            "worktreePath":".personalai-worktrees/v278",
+            "findings":[],
+            "checkedCategories":["secret-leakage","permission-bypass","injection","path-traversal","dangerous-execution"],
+            "highRiskFound":false,
+            "promotionAllowed":true,
+            "createdAt":"2026-10-01T00:00:00+00:00"
+          }]
+          JSON
+
+          curl -fsS -X POST http://127.0.0.1:5113/api/development/runs/$run_id/advance             -H 'Content-Type: application/json'             -d '{
+              "expectedCurrentStage":"security",
+              "result":"passed",
+              "securityReportId":"'"$security_id"'"
+            }' >/tmp/benchmark-stage.json
+
+          benchmark_id='66666666-6666-6666-6666-666666666666'
+          cat > /tmp/personalai-v278/benchmarks/development-benchmark-reports-$safe_workspace.json <<JSON
+          [{
+            "id":"$benchmark_id",
+            "workspaceId":"$workspace_id",
+            "developmentRunId":"$run_id",
+            "gates":[
+              {"gate":"rag","passed":true,"observed":1,"threshold":0.8,"detail":"seed"},
+              {"gate":"tool","passed":true,"observed":1,"threshold":0.8,"detail":"seed"},
+              {"gate":"task","passed":true,"observed":1,"threshold":0.8,"detail":"seed"},
+              {"gate":"agent","passed":true,"observed":1,"threshold":0.8,"detail":"seed"},
+              {"gate":"performance","passed":true,"observed":10,"threshold":30000,"detail":"seed"},
+              {"gate":"resource","passed":true,"observed":1000000,"threshold":2147483648,"detail":"seed"}
+            ],
+            "evaluatedCases":4,
+            "failedCases":0,
+            "passed":true,
+            "durationMs":10,
+            "workingSetBytes":1000000,
+            "startedAt":"2026-10-01T00:00:00+00:00",
+            "completedAt":"2026-10-01T00:00:01+00:00"
+          }]
+          JSON
+
+          curl -fsS -X POST http://127.0.0.1:5113/api/development/runs/$run_id/advance             -H 'Content-Type: application/json'             -d '{
+              "expectedCurrentStage":"benchmark",
+              "result":"passed",
+              "benchmarkReportId":"'"$benchmark_id"'"
+            }' >/tmp/push-stage.json
+          jq -e '.stage=="push"' /tmp/push-stage.json >/dev/null
+
+          curl -fsS -X POST http://127.0.0.1:5113/api/development/worktrees             -H 'Content-Type: application/json'             -d '{
+              "repositoryPath":"repo",
+              "branch":"experiment/v278-smoke",
+              "startPoint":"main",
+              "worktreeId":"v278-smoke",
+              "confirmCreateWorktree":true
+            }' >/tmp/worktree.json
+
+          worktree_path=$(jq -r '.worktreePath' /tmp/worktree.json)
+          cd "/tmp/personalai-v278/workspace/$worktree_path"
+          git config user.name "PersonalAI CI"
+          git config user.email "ci@example.invalid"
+          printf 'feature\n' > feature.txt
+          git add feature.txt
+          git commit -m "feat: v278 smoke"
+          cd "$GITHUB_WORKSPACE"
+
+          main_push_code=$(curl -sS -o /tmp/main-push.json -w '%{http_code}'             -X POST http://127.0.0.1:5113/api/development/git/push             -H 'Content-Type: application/json'             -d '{
+              "repositoryPath":"repo",
+              "remote":"origin",
+              "branch":"main",
+              "confirmGitWrite":true,
+              "credentialRef":"'"$credential_ref"'"
+            }')
+          test "$main_push_code" = "400"
+          grep -qi 'main/master' /tmp/main-push.json
+
+          curl -fsS -X POST http://127.0.0.1:5113/api/development/github/run             -H 'Content-Type: application/json'             -d '{
+              "developmentRunId":"'"$run_id"'",
+              "repository":"owner/repo",
+              "baseBranch":"main",
+              "title":"v2.7.8 smoke PR",
+              "body":"automated smoke",
+              "credentialRef":"'"$credential_ref"'",
+              "remote":"origin",
+              "confirmPush":true,
+              "confirmCreatePullRequest":true
+            }' >/tmp/github-report.json
+
+          github_report_id=$(jq -r '.id' /tmp/github-report.json)
+          jq -e '
+            .pushed==true
+            and .pullRequestCreated==true
+            and .pullRequestNumber==78
+            and .branch=="experiment/v278-smoke"
+            and .baseBranch=="main"
+            and .maximumCiRepairAttempts==3
+          ' /tmp/github-report.json >/dev/null
+
+          git --git-dir=/tmp/personalai-v278/remote.git show-ref --verify refs/heads/experiment/v278-smoke
+
+          curl -fsS -X POST http://127.0.0.1:5113/api/development/runs/$run_id/advance             -H 'Content-Type: application/json'             -d '{
+              "expectedCurrentStage":"push",
+              "result":"succeeded",
+              "gitHubReportId":"'"$github_report_id"'"
+            }' >/tmp/ci-stage.json
+          jq -e '.stage=="ci"' /tmp/ci-stage.json >/dev/null
+
+          ci_id='77777777-7777-7777-7777-777777777777'
+          cat > /tmp/personalai-v278/ci/ci-runs-$safe_workspace.json <<JSON
+          [{
+            "id":"$ci_id",
+            "workspaceId":"$workspace_id",
+            "repository":"owner/repo",
+            "sourceEventType":"workflow_run",
+            "deliveryId":"delivery-v278",
+            "externalId":"278001",
+            "ref":"experiment/v278-smoke",
+            "sha":"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+            "state":"completed",
+            "conclusion":"failure",
+            "repairAttempts":0,
+            "maximumRepairAttempts":3,
+            "failureLogExcerpt":"build failed at smoke test",
+            "failureLogTruncated":false,
+            "firstSeenAt":"2026-10-01T00:00:00+00:00",
+            "updatedAt":"2026-10-01T00:01:00+00:00",
+            "completedAt":"2026-10-01T00:01:00+00:00"
+          }]
+          JSON
+
+          curl -fsS -X POST             http://127.0.0.1:5113/api/development/github/reports/$github_report_id/ci/refresh             >/tmp/ci-refresh.json
+
+          jq -e '
+            .report.ciRunId=="'"$ci_id"'"
+            and .report.ciState=="completed"
+            and .report.ciConclusion=="failure"
+            and .failureLogExcerpt=="build failed at smoke test"
+          ' /tmp/ci-refresh.json >/dev/null
+
+          for attempt in 1 2 3; do
+            curl -fsS -X POST               http://127.0.0.1:5113/api/development/github/reports/$github_report_id/ci/repair               -H 'Content-Type: application/json'               -d '{"reason":"repair smoke '"$attempt"'"}' >/tmp/repair.json
+            jq -e '.attempt=='"$attempt"' and .maximumAttempts==3 and .allowed==true' /tmp/repair.json >/dev/null
+          done
+
+          fourth=$(curl -sS -o /tmp/repair4.json -w '%{http_code}'             -X POST http://127.0.0.1:5113/api/development/github/reports/$github_report_id/ci/repair             -H 'Content-Type: application/json'             -d '{"reason":"must be blocked"}')
+          test "$fourth" = "409"
+
+          jq '.[] | if .id=="'"$ci_id"'" then .conclusion="success" | .repairAttempts=3 else . end'             /tmp/personalai-v278/ci/ci-runs-$safe_workspace.json             > /tmp/ci-success.json
+          mv /tmp/ci-success.json /tmp/personalai-v278/ci/ci-runs-$safe_workspace.json
+
+          curl -fsS -X POST http://127.0.0.1:5113/api/development/runs/$run_id/advance             -H 'Content-Type: application/json'             -d '{
+              "expectedCurrentStage":"ci",
+              "result":"passed",
+              "ciRunId":"'"$ci_id"'"
+            }' >/tmp/merge-policy-stage.json
+
+          jq -e '
+            .stage=="merge-policy"
+            and .ciRunId=="'"$ci_id"'"
+            and .gitHubReportId=="'"$github_report_id"'"
+          ' /tmp/merge-policy-stage.json >/dev/null
+
+          curl -fsS http://127.0.0.1:5113/api/development/status             | jq -e '(.availableCapabilities | index("github-pull-request-ci")) != null' >/dev/null
+
+          report_file=$(find /tmp/personalai-v278/github -type f -name 'development-github-reports-*.json' | head -n1)
+          test -n "$report_file"
+          ! grep -Fq 'ghp_V278DUMMYTOKEN012345678901234567890' "$report_file"

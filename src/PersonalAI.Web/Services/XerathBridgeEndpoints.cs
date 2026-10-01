@@ -129,6 +129,20 @@ public static class XerathBridgeEndpoints
                 : Results.Ok(events);
         });
 
+        app.MapGet("/api/integrations/league/coach/current", (
+            HttpContext context,
+            IWorkspaceContextAccessor workspace,
+            ILeagueCoachService coach) =>
+        {
+            if (!LocalCaller(context))
+                return Results.NotFound();
+
+            var advice = coach.GetCurrent(workspace.CurrentWorkspaceId);
+            return advice is null
+                ? Results.NoContent()
+                : Results.Ok(advice);
+        });
+
         app.MapPost("/api/integrations/xerath/notice", (HttpContext context, Signal signal) =>
         {
             if (!LocalCaller(context) ||

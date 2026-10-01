@@ -71,17 +71,17 @@
     const heading = document.createElement("div");
     const eyebrow = document.createElement("p");
     eyebrow.className = "eyebrow";
-    eyebrow.textContent = "SCHEDULE · ONE STEP · NO AUTO-CONFIRM";
+    eyebrow.textContent = "LỊCH CHẠY · MỘT BƯỚC · KHÔNG TỰ XÁC NHẬN";
 
     const title = document.createElement("h2");
     title.id = "automationTitle";
-    title.textContent = "Automation";
+    title.textContent = "Tự động hóa";
     heading.append(eyebrow, title);
 
     const close = document.createElement("button");
     close.type = "button";
     close.className = "dialog-close";
-    close.setAttribute("aria-label", "Đóng Automation");
+    close.setAttribute("aria-label", "Đóng tự động hóa");
     close.textContent = "×";
     close.addEventListener("click", () => dialog.close());
     header.append(heading, close);
@@ -89,8 +89,8 @@
     const intro = document.createElement("div");
     intro.className = "v180-automation-intro";
     intro.innerHTML =
-      "<strong>Background scheduler có guard</strong>" +
-      "<p>Mỗi lần đến lịch chỉ tiến tối đa một task step. Chỉ READ/local step không cần confirmation mới được tự chạy. Bất kỳ quyền nhạy cảm hoặc side effect nào đều dừng ở awaiting-confirmation.</p>";
+      "<strong>Bộ lập lịch nền có kiểm soát</strong>" +
+      "<p>Mỗi lần đến lịch chỉ tiến tối đa một bước công việc. Chỉ bước đọc dữ liệu cục bộ không cần xác nhận mới được tự chạy. Mọi quyền nhạy cảm hoặc hành động có tác động bên ngoài đều dừng lại để chờ bạn xác nhận.</p>";
 
     const summary = document.createElement("div");
     summary.id = "automationSummary";
@@ -99,7 +99,7 @@
 
     const listTitle = document.createElement("h3");
     listTitle.className = "v180-section-title";
-    listTitle.textContent = "Automation hiện tại";
+    listTitle.textContent = "Lịch tự động hiện tại";
 
     const list = document.createElement("div");
     list.id = "automationList";
@@ -108,20 +108,20 @@
     const empty = document.createElement("div");
     empty.id = "automationEmpty";
     empty.className = "v180-automation-empty";
-    empty.textContent = "Chưa có automation trong workspace hiện tại.";
+    empty.textContent = "Chưa có lịch tự động trong không gian hiện tại.";
     empty.hidden = true;
 
     const formTitle = document.createElement("h3");
     formTitle.className = "v180-section-title";
-    formTitle.textContent = "Tạo automation";
+    formTitle.textContent = "Tạo lịch tự động";
 
     const form = document.createElement("form");
     form.id = "automationForm";
     form.className = "v180-automation-form";
 
     const nameField = field("Tên", "automationName", "Ví dụ: Đọc báo cáo mỗi 30 phút", "text");
-    const taskField = selectField("Task", "automationTask");
-    const scheduleField = selectField("Schedule", "automationSchedule");
+    const taskField = selectField("Công việc", "automationTask");
+    const scheduleField = selectField("Kiểu lịch", "automationSchedule");
     scheduleField.input.append(
       option("once", "Một lần"),
       option("interval", "Lặp theo khoảng thời gian"));
@@ -143,12 +143,12 @@
     const note = document.createElement("p");
     note.className = "security-copy";
     note.textContent =
-      "Automation gắn vào task đã tồn tại. Decision recommendation không được tạo/chạy automation tự động. Task step cần confirmation phải được xử lý thủ công ở Tasks trước khi tiếp tục automation.";
+      "Lịch tự động chỉ gắn vào công việc đã tồn tại. Đề xuất từ bộ hỗ trợ quyết định không được tự tạo hoặc tự chạy lịch. Bước công việc cần xác nhận phải được bạn xử lý trong mục Công việc trước khi lịch tiếp tục.";
 
     const submit = document.createElement("button");
     submit.type = "submit";
     submit.className = "primary-button";
-    submit.textContent = "Tạo automation";
+    submit.textContent = "Tạo lịch tự động";
 
     form.append(
       nameField.wrapper,
@@ -174,7 +174,7 @@
     safety.className = "v180-automation-safety";
     safety.innerHTML =
       "<strong>Không tự xác nhận</strong>" +
-      "<p>Scheduler luôn gọi Task Engine với confirmed=false. WRITE, DELETE, EXTERNAL, SENSITIVE, COMPUTER, BROWSER, CONNECTOR và DEVELOPMENT không được background auto-run.</p>";
+      "<p>Bộ lập lịch luôn chạy công việc với trạng thái chưa xác nhận. Các thao tác ghi, xóa, bên ngoài, nhạy cảm, điều khiển máy, trình duyệt, kết nối và phát triển không được tự chạy nền.</p>";
 
     const feedback = document.createElement("div");
     feedback.id = "automationFeedback";
@@ -315,7 +315,7 @@
 
     const active = automations.filter(item => item.enabled).length;
     summary.textContent =
-      `${active} đang bật · ${automations.length}/${response.maximumAutomations || status.maximumAutomationsPerWorkspace || 50} automation · poll ${status.schedulerPollSeconds || 30}s · auto-confirm: ${status.autoConfirmationEnabled ? "BẬT" : "TẮT"}`;
+      `${active} đang bật · ${automations.length}/${response.maximumAutomations || status.maximumAutomationsPerWorkspace || 50} lịch · kiểm tra mỗi ${status.schedulerPollSeconds || 30} giây · tự xác nhận: ${status.autoConfirmationEnabled ? "BẬT" : "TẮT"}`;
 
     list.replaceChildren();
     automations.forEach(item => list.appendChild(automationCard(item)));
@@ -326,7 +326,7 @@
     const eligible = tasks.filter(task =>
       !["completed", "failed", "cancelled"].includes(task.status));
     if (eligible.length === 0) {
-      taskSelect.appendChild(option("", "Không có task đang hoạt động"));
+      taskSelect.appendChild(option("", "Không có công việc đang hoạt động"));
       taskSelect.disabled = true;
     } else {
       taskSelect.disabled = false;
@@ -351,12 +351,12 @@
 
     const main = document.createElement("div");
     const name = document.createElement("strong");
-    name.textContent = item.name || "Automation";
+    name.textContent = item.name || "Lịch tự động";
 
     const task = tasksById.get(String(item.taskId));
     const meta = document.createElement("span");
     meta.textContent =
-      `${stateLabel(item.state)} · ${item.scheduleKind === "interval" ? `mỗi ${item.intervalMinutes} phút` : "một lần"} · task: ${task?.goal || item.taskId}`;
+      `${stateLabel(item.state)} · ${item.scheduleKind === "interval" ? `mỗi ${item.intervalMinutes} phút` : "một lần"} · công việc: ${task?.goal || item.taskId}`;
     main.append(name, meta);
 
     const state = document.createElement("span");
@@ -367,7 +367,7 @@
     const schedule = document.createElement("p");
     schedule.className = "v180-automation-meta";
     schedule.textContent =
-      `Next: ${formatDate(item.nextRunAt)} · Last: ${item.lastRunStatus || "none"} · Runs: ${item.runCount || 0}`;
+      `Lần tới: ${formatDate(item.nextRunAt)} · Lần trước: ${item.lastRunStatus || "chưa có"} · Số lần chạy: ${item.runCount || 0}`;
 
     const message = document.createElement("p");
     message.className = "v180-automation-message";
@@ -382,7 +382,7 @@
     }
 
     if (["awaiting-confirmation", "interrupted"].includes(item.state)) {
-      actions.appendChild(button("Tiếp tục sau review", () => resume(item)));
+      actions.appendChild(button("Tiếp tục sau khi kiểm tra", () => resume(item)));
     } else if (item.enabled) {
       actions.appendChild(button("Tạm dừng", () => setEnabled(item, false)));
     } else if (!["completed", "failed"].includes(item.state)) {
@@ -408,7 +408,7 @@
   async function createAutomation(values) {
     const taskId = String(values.taskId || "").trim();
     if (!taskId) {
-      setFeedback("Hãy chọn một task đang hoạt động.", true);
+      setFeedback("Hãy chọn một công việc đang hoạt động.", true);
       return;
     }
 
@@ -440,17 +440,17 @@
       });
       const body = await response.json().catch(() => ({}));
       if (!response.ok) {
-        throw new Error(body.error || "Không thể tạo automation.");
+        throw new Error(body.error || "Không thể tạo lịch tự động.");
       }
 
       const form = document.querySelector("#automationForm");
       if (form) form.reset();
       const interval = document.querySelector("#automationIntervalField");
       if (interval) interval.hidden = true;
-      setFeedback("Đã tạo automation. Scheduler sẽ không tự xác nhận step nhạy cảm.");
+      setFeedback("Đã tạo lịch tự động. Bộ lập lịch sẽ không tự xác nhận bước nhạy cảm.");
       await load();
     } catch (error) {
-      setFeedback(error.message || "Không thể tạo automation.", true);
+      setFeedback(error.message || "Không thể tạo lịch tự động.", true);
     }
   }
 
@@ -462,9 +462,9 @@
     }
 
     const confirmed = await confirmFn(
-      `Kích hoạt automation "${item.name}" ngay bây giờ?\n\nXác nhận này chỉ kích hoạt scheduler. Nó KHÔNG xác nhận thay cho task step có side effect.`,
+      `Kích hoạt lịch "${item.name}" ngay bây giờ?\n\nXác nhận này chỉ kích hoạt bộ lập lịch. Nó KHÔNG xác nhận thay cho bước công việc có tác động bên ngoài.`,
       {
-        title: "Chạy automation",
+        title: "Chạy lịch tự động",
         confirmText: "Kích hoạt"
       });
 
@@ -480,15 +480,15 @@
         });
       const body = await response.json().catch(() => ({}));
       if (!response.ok) {
-        throw new Error(body.error || "Không thể chạy automation.");
+        throw new Error(body.error || "Không thể chạy lịch tự động.");
       }
 
       setFeedback(body.requiresConfirmation
-        ? "Automation đã dừng ở bước cần confirmation. Hãy xử lý bước đó trong Tasks, sau đó bấm Tiếp tục sau review."
-        : (body.message || "Automation đã chạy."));
+        ? "Lịch đã dừng ở bước cần xác nhận. Hãy xử lý bước đó trong mục Công việc, sau đó bấm Tiếp tục sau khi kiểm tra."
+        : (body.message || "Lịch tự động đã chạy."));
       await load();
     } catch (error) {
-      setFeedback(error.message || "Không thể chạy automation.", true);
+      setFeedback(error.message || "Không thể chạy lịch tự động.", true);
     }
   }
 
@@ -503,13 +503,13 @@
         });
       const body = await response.json().catch(() => ({}));
       if (!response.ok) {
-        throw new Error(body.error || "Không thể đổi trạng thái automation.");
+        throw new Error(body.error || "Không thể đổi trạng thái lịch tự động.");
       }
 
-      setFeedback(enabled ? "Đã bật automation." : "Đã tạm dừng automation.");
+      setFeedback(enabled ? "Đã bật lịch tự động." : "Đã tạm dừng lịch tự động.");
       await load();
     } catch (error) {
-      setFeedback(error.message || "Không thể đổi trạng thái automation.", true);
+      setFeedback(error.message || "Không thể đổi trạng thái lịch tự động.", true);
     }
   }
 
@@ -521,10 +521,10 @@
     }
 
     const confirmed = await confirmFn(
-      "Chỉ tiếp tục sau khi bạn đã kiểm tra task và xử lý bước cần xác nhận/gián đoạn nếu có.",
+      "Chỉ tiếp tục sau khi bạn đã kiểm tra công việc và xử lý bước cần xác nhận hoặc gián đoạn nếu có.",
       {
-        title: "Tiếp tục automation",
-        confirmText: "Đã review, tiếp tục"
+        title: "Tiếp tục lịch tự động",
+        confirmText: "Đã kiểm tra, tiếp tục"
       });
     if (!confirmed) return;
 
@@ -538,13 +538,13 @@
         });
       const body = await response.json().catch(() => ({}));
       if (!response.ok) {
-        throw new Error(body.error || "Không thể tiếp tục automation.");
+        throw new Error(body.error || "Không thể tiếp tục lịch tự động.");
       }
 
-      setFeedback("Automation đã được đưa lại vào lịch.");
+      setFeedback("Lịch tự động đã được đưa lại vào hàng đợi.");
       await load();
     } catch (error) {
-      setFeedback(error.message || "Không thể tiếp tục automation.", true);
+      setFeedback(error.message || "Không thể tiếp tục lịch tự động.", true);
     }
   }
 
@@ -556,9 +556,9 @@
     }
 
     const confirmed = await confirmFn(
-      `Xóa automation "${item.name}"? Task gốc sẽ không bị xóa.`,
+      `Xóa lịch "${item.name}"? Công việc gốc sẽ không bị xóa.`,
       {
-        title: "Xóa automation",
+        title: "Xóa lịch tự động",
         confirmText: "Xóa",
         danger: true
       });
@@ -570,13 +570,13 @@
         { method: "DELETE" });
       if (!response.ok) {
         const body = await response.json().catch(() => ({}));
-        throw new Error(body.error || "Không thể xóa automation.");
+        throw new Error(body.error || "Không thể xóa lịch tự động.");
       }
 
-      setFeedback("Đã xóa automation.");
+      setFeedback("Đã xóa lịch tự động.");
       await load();
     } catch (error) {
-      setFeedback(error.message || "Không thể xóa automation.", true);
+      setFeedback(error.message || "Không thể xóa lịch tự động.", true);
     }
   }
 

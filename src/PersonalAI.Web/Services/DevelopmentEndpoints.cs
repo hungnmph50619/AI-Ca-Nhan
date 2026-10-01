@@ -9,6 +9,7 @@ public static class DevelopmentEndpoints
     {
         services.AddSingleton<IDevelopmentAgentService, DevelopmentAgentService>();
         services.AddSingleton<ILocalGitRepositoryService, LocalGitRepositoryService>();
+        services.AddSingleton<IDevelopmentWorktreeService, DevelopmentWorktreeService>();
         services.AddSingleton<IPersonalAiTool, DevelopmentWorkspaceInspectTool>();
         services.AddSingleton<IPersonalAiTool, DevelopmentTextSearchTool>();
         services.AddSingleton<IPersonalAiTool, DevelopmentGitStatusTool>();
@@ -46,6 +47,61 @@ public static class DevelopmentEndpoints
         app.MapGet("/api/development/git/capabilities", (
             ILocalGitRepositoryService git) =>
             Results.Ok(git.GetStatus()));
+
+        app.MapGet("/api/development/worktrees/status", (
+            IDevelopmentWorktreeService worktrees) =>
+            Results.Ok(worktrees.GetStatus()));
+
+        app.MapGet("/api/development/worktrees", async (
+            string? repositoryPath,
+            IDevelopmentWorktreeService worktrees,
+            CancellationToken cancellationToken) =>
+        {
+            try
+            {
+                return Results.Ok(await worktrees.GetAllAsync(
+                    repositoryPath ?? string.Empty,
+                    cancellationToken));
+            }
+            catch (DevelopmentWorktreeValidationException exception)
+            {
+                return Results.BadRequest(new ApiError(exception.Message));
+            }
+        });
+
+        app.MapPost("/api/development/worktrees", async (
+            CreateDevelopmentWorktreeRequest request,
+            IDevelopmentWorktreeService worktrees,
+            CancellationToken cancellationToken) =>
+        {
+            try
+            {
+                return Results.Ok(await worktrees.CreateAsync(
+                    request,
+                    cancellationToken));
+            }
+            catch (DevelopmentWorktreeValidationException exception)
+            {
+                return Results.BadRequest(new ApiError(exception.Message));
+            }
+        });
+
+        app.MapDelete("/api/development/worktrees", async (
+            RemoveDevelopmentWorktreeRequest request,
+            IDevelopmentWorktreeService worktrees,
+            CancellationToken cancellationToken) =>
+        {
+            try
+            {
+                return Results.Ok(await worktrees.RemoveAsync(
+                    request,
+                    cancellationToken));
+            }
+            catch (DevelopmentWorktreeValidationException exception)
+            {
+                return Results.BadRequest(new ApiError(exception.Message));
+            }
+        });
 
         app.MapGet("/api/development/git/branches", async (
             string? repositoryPath,

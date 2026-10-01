@@ -13,6 +13,7 @@ public interface ISelfCodingService
 public sealed class SelfCodingService(
     IDevelopmentRunService runs,
     IDevelopmentWorktreeService worktrees,
+    IDevelopmentRunWorktreeService runWorktrees,
     IDevelopmentLeaseService leases,
     IWorkspaceFileService workspaceFiles,
     IWorkspaceContextAccessor workspace,
@@ -145,39 +146,32 @@ public sealed class SelfCodingService(
                     "Experiment branch đang được checkout ở main worktree; từ chối sửa trực tiếp working tree chính.");
             }
 
-            var agentWorktree = allWorktrees.FirstOrDefault(x =>
-                !x.IsMainWorktree &&
-                x.Branch.Equals(
-                    experiment.ExperimentBranch,
-                    StringComparison.Ordinal));
+            var existingBinding = runWorktrees.GetByRun(run.Id);
+            var binding = await runWorktrees.EnsureAsync(
+                new EnsureDevelopmentRunWorktreeRequest(
+                    run.Id,
+                    experiment.BaseBranch,
+                    ConfirmCreateWorktree: true),
+                cancellationToken);
 
-            var worktreeCreated = false;
-            if (agentWorktree is null)
-            {
-                var created = await worktrees.CreateAsync(
-                    new CreateDevelopmentWorktreeRequest(
-                        experiment.RepositoryPath,
+            var worktreeCreated = existingBinding is null;
+            var agentWorktree = (await worktrees.GetAllAsync(
+                    experiment.RepositoryPath,
+                    cancellationToken))
+                .FirstOrDefault(x =>
+                    !x.IsMainWorktree &&
+                    x.WorktreePath.Equals(
+                        binding.WorktreePath,
+                        StringComparison.OrdinalIgnoreCase) &&
+                    x.Branch.Equals(
                         experiment.ExperimentBranch,
-                        experiment.BaseBranch,
-                        $"selfcoding-{run.Id:N}",
-                        ConfirmCreateWorktree: true),
-                    cancellationToken);
+                        StringComparison.Ordinal));
 
-                worktreeCreated = true;
-                agentWorktree = new DevelopmentWorktreeInfo(
-                    created.RepositoryPath,
-                    created.WorktreePath,
-                    created.Branch,
-                    Head: string.Empty,
-                    IsMainWorktree: false,
-                    IsDirty: false);
-            }
-
-            if (string.IsNullOrWhiteSpace(agentWorktree.WorktreePath) ||
-                agentWorktree.IsMainWorktree)
+            if (agentWorktree is null ||
+                string.IsNullOrWhiteSpace(agentWorktree.WorktreePath))
             {
                 throw new SelfCodingValidationException(
-                    "Không xác minh được isolated agent worktree.");
+                    "Không xác minh được worktree riêng của DevelopmentRun.");
             }
 
             var files = new List<SelfCodingFileResult>();

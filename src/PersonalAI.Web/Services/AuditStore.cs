@@ -12,7 +12,10 @@ public interface IAuditStore
         int limit = 50,
         string? agent = null,
         string? action = null,
-        string? result = null);
+        string? result = null,
+        string? level = null,
+        string? source = null,
+        string? correlationId = null);
 
     AuditSummary GetSummary(string workspaceId);
 }
@@ -26,7 +29,10 @@ public interface IAuditRecorder
         string reason,
         string result,
         string? tool = null,
-        string? workspaceId = null);
+        string? workspaceId = null,
+        string? level = null,
+        string? source = null,
+        string? correlationId = null);
 }
 
 public sealed class AuditRecorder(
@@ -41,7 +47,10 @@ public sealed class AuditRecorder(
         string reason,
         string result,
         string? tool = null,
-        string? workspaceId = null)
+        string? workspaceId = null,
+        string? level = null,
+        string? source = null,
+        string? correlationId = null)
     {
         try
         {
@@ -54,7 +63,10 @@ public sealed class AuditRecorder(
                 target,
                 reason,
                 result,
-                tool));
+                tool,
+                level,
+                source,
+                correlationId));
         }
         catch (Exception exception)
         {
@@ -113,30 +125,22 @@ public sealed class SqliteAuditStore : IAuditStore
         ArgumentNullException.ThrowIfNull(auditEvent);
 
         var workspaceId = NormalizeRequired(
-            auditEvent.WorkspaceId,
-            80,
-            "workspace");
+            auditEvent.WorkspaceId, 80, "workspace");
         var agent = NormalizeRequired(
-            auditEvent.Agent,
-            80,
-            "agent");
+            auditEvent.Agent, 80, "agent");
         var action = NormalizeRequired(
-            auditEvent.Action,
-            120,
-            "action");
+            auditEvent.Action, 120, "action");
         var target = NormalizeRequired(
-            auditEvent.Target,
-            240,
-            "target");
+            auditEvent.Target, 240, "target");
         var reason = NormalizeRequired(
-            auditEvent.Reason,
-            240,
-            "reason");
+            auditEvent.Reason, 240, "reason");
         var result = NormalizeRequired(
-            auditEvent.Result,
-            80,
-            "result");
+            auditEvent.Result, 80, "result");
         var tool = NormalizeNullable(auditEvent.Tool, 160);
+        var level = NormalizeLevel(auditEvent.Level, result);
+        var source = NormalizeNullable(auditEvent.Source, 120) ?? agent;
+        var correlationId = NormalizeNullable(
+            auditEvent.CorrelationId, 160);
 
         lock (_gate)
         {
@@ -156,7 +160,10 @@ public sealed class SqliteAuditStore : IAuditStore
                         tool,
                         target,
                         reason,
-                        result
+                        result,
+                        level,
+                        source,
+                        correlation_id
                     )
                     VALUES (
                         $auditId,
@@ -167,7 +174,10 @@ public sealed class SqliteAuditStore : IAuditStore
                         $tool,
                         $target,
                         $reason,
-                        $result
+                        $result,
+                        $level,
+                        $source,
+                        $correlationId
                     );
                     """;
 
@@ -184,12 +194,15 @@ public sealed class SqliteAuditStore : IAuditStore
                 command.Parameters.AddWithValue("$action", action);
                 command.Parameters.AddWithValue(
                     "$tool",
-                    string.IsNullOrWhiteSpace(tool)
-                        ? DBNull.Value
-                        : tool);
+                    DbNullable(tool));
                 command.Parameters.AddWithValue("$target", target);
                 command.Parameters.AddWithValue("$reason", reason);
                 command.Parameters.AddWithValue("$result", result);
+                command.Parameters.AddWithValue("$level", level);
+                command.Parameters.AddWithValue("$source", source);
+                command.Parameters.AddWithValue(
+                    "$correlationId",
+                    DbNullable(correlationId));
                 command.ExecuteNonQuery();
             }
 
@@ -202,16 +215,22 @@ public sealed class SqliteAuditStore : IAuditStore
         int limit = 50,
         string? agent = null,
         string? action = null,
-        string? result = null)
+        string? result = null,
+        string? level = null,
+        string? source = null,
+        string? correlationId = null)
     {
         var safeWorkspace = NormalizeRequired(
-            workspaceId,
-            80,
-            "workspace");
+            workspaceId, 80, "workspace");
         var safeLimit = Math.Clamp(limit, 1, MaximumQueryLimit);
         var safeAgent = NormalizeNullable(agent, 80);
         var safeAction = NormalizeNullable(action, 120);
         var safeResult = NormalizeNullable(result, 80);
+        var safeLevel = NormalizeNullable(level, 20)?.ToLowerInvariant();
+        if (safeLevel is not null && !SystemLogLevels.All.Contains(safeLevel))
+            throw new ArgumentException("System log level không hợp lệ.");
+        var safeSource = NormalizeNullable(source, 120);
+        var safeCorrelation = NormalizeNullable(correlationId, 160);
 
         lock (_gate)
         {
@@ -231,31 +250,38 @@ public sealed class SqliteAuditStore : IAuditStore
                     tool,
                     target,
                     reason,
-                    result
+                    result,
+                    level,
+                    source,
+                    correlation_id
                 FROM audit_events
                 WHERE workspace_id = $workspaceId
                   AND ($agent IS NULL OR agent = $agent)
                   AND ($action IS NULL OR action = $action)
                   AND ($result IS NULL OR result = $result)
+                  AND ($level IS NULL OR level = $level)
+                  AND ($source IS NULL OR source = $source)
+                  AND ($correlationId IS NULL OR correlation_id = $correlationId)
                 ORDER BY occurred_at DESC, rowid DESC
                 LIMIT $limit;
                 """;
 
             command.Parameters.AddWithValue(
-                "$workspaceId",
-                safeWorkspace);
+                "$workspaceId", safeWorkspace);
             command.Parameters.AddWithValue(
-                "$agent",
-                DbNullable(safeAgent));
+                "$agent", DbNullable(safeAgent));
             command.Parameters.AddWithValue(
-                "$action",
-                DbNullable(safeAction));
+                "$action", DbNullable(safeAction));
             command.Parameters.AddWithValue(
-                "$result",
-                DbNullable(safeResult));
+                "$result", DbNullable(safeResult));
             command.Parameters.AddWithValue(
-                "$limit",
-                safeLimit);
+                "$level", DbNullable(safeLevel));
+            command.Parameters.AddWithValue(
+                "$source", DbNullable(safeSource));
+            command.Parameters.AddWithValue(
+                "$correlationId", DbNullable(safeCorrelation));
+            command.Parameters.AddWithValue(
+                "$limit", safeLimit);
 
             using var reader = command.ExecuteReader();
             var items = new List<AuditItem>();
@@ -268,12 +294,13 @@ public sealed class SqliteAuditStore : IAuditStore
                     reader.GetString(2),
                     reader.GetString(3),
                     reader.GetString(4),
-                    reader.IsDBNull(5)
-                        ? null
-                        : reader.GetString(5),
+                    reader.IsDBNull(5) ? null : reader.GetString(5),
                     reader.GetString(6),
                     reader.GetString(7),
-                    reader.GetString(8)));
+                    reader.GetString(8),
+                    reader.IsDBNull(9) ? null : reader.GetString(9),
+                    reader.IsDBNull(10) ? null : reader.GetString(10),
+                    reader.IsDBNull(11) ? null : reader.GetString(11)));
             }
 
             return new AuditResponse(
@@ -287,9 +314,7 @@ public sealed class SqliteAuditStore : IAuditStore
     public AuditSummary GetSummary(string workspaceId)
     {
         var safeWorkspace = NormalizeRequired(
-            workspaceId,
-            80,
-            "workspace");
+            workspaceId, 80, "workspace");
 
         lock (_gate)
         {
@@ -302,44 +327,119 @@ public sealed class SqliteAuditStore : IAuditStore
                 CountAll(connection, safeWorkspace),
                 CountBy(connection, safeWorkspace, "agent"),
                 CountBy(connection, safeWorkspace, "result"),
-                CountBy(connection, safeWorkspace, "action"));
+                CountBy(connection, safeWorkspace, "action"),
+                CountBy(connection, safeWorkspace, "level"),
+                CountBy(connection, safeWorkspace, "source"));
         }
     }
 
     private void EnsureInitialized()
     {
         if (_initialized)
-        {
             return;
-        }
 
         using var connection = OpenConnection();
-        using var command = connection.CreateCommand();
-        command.CommandText =
-            """
-            CREATE TABLE IF NOT EXISTS audit_events (
-                audit_id TEXT PRIMARY KEY,
-                occurred_at TEXT NOT NULL,
-                workspace_id TEXT NOT NULL,
-                agent TEXT NOT NULL,
-                action TEXT NOT NULL,
-                tool TEXT NULL,
-                target TEXT NOT NULL,
-                reason TEXT NOT NULL,
-                result TEXT NOT NULL
-            );
+        using (var command = connection.CreateCommand())
+        {
+            command.CommandText =
+                """
+                CREATE TABLE IF NOT EXISTS audit_events (
+                    audit_id TEXT PRIMARY KEY,
+                    occurred_at TEXT NOT NULL,
+                    workspace_id TEXT NOT NULL,
+                    agent TEXT NOT NULL,
+                    action TEXT NOT NULL,
+                    tool TEXT NULL,
+                    target TEXT NOT NULL,
+                    reason TEXT NOT NULL,
+                    result TEXT NOT NULL,
+                    level TEXT NULL,
+                    source TEXT NULL,
+                    correlation_id TEXT NULL
+                );
+                """;
+            command.ExecuteNonQuery();
+        }
 
-            CREATE INDEX IF NOT EXISTS ix_audit_events_workspace_time
-                ON audit_events(workspace_id, occurred_at DESC);
+        EnsureColumn(connection, "level", "TEXT NULL");
+        EnsureColumn(connection, "source", "TEXT NULL");
+        EnsureColumn(connection, "correlation_id", "TEXT NULL");
 
-            CREATE INDEX IF NOT EXISTS ix_audit_events_action
-                ON audit_events(action);
+        using (var migrate = connection.CreateCommand())
+        {
+            migrate.CommandText =
+                """
+                UPDATE audit_events
+                SET level = CASE
+                    WHEN result = 'failed' THEN 'error'
+                    WHEN result IN ('denied', 'blocked') THEN 'security'
+                    ELSE 'info'
+                END
+                WHERE level IS NULL;
 
-            CREATE INDEX IF NOT EXISTS ix_audit_events_agent
-                ON audit_events(agent);
-            """;
-        command.ExecuteNonQuery();
+                UPDATE audit_events
+                SET source = agent
+                WHERE source IS NULL;
+                """;
+            migrate.ExecuteNonQuery();
+        }
+
+        using (var indexes = connection.CreateCommand())
+        {
+            indexes.CommandText =
+                """
+                CREATE INDEX IF NOT EXISTS ix_audit_events_workspace_time
+                    ON audit_events(workspace_id, occurred_at DESC);
+
+                CREATE INDEX IF NOT EXISTS ix_audit_events_action
+                    ON audit_events(action);
+
+                CREATE INDEX IF NOT EXISTS ix_audit_events_agent
+                    ON audit_events(agent);
+
+                CREATE INDEX IF NOT EXISTS ix_audit_events_level
+                    ON audit_events(level);
+
+                CREATE INDEX IF NOT EXISTS ix_audit_events_source
+                    ON audit_events(source);
+
+                CREATE INDEX IF NOT EXISTS ix_audit_events_correlation
+                    ON audit_events(correlation_id);
+                """;
+            indexes.ExecuteNonQuery();
+        }
+
         _initialized = true;
+    }
+
+    private static void EnsureColumn(
+        SqliteConnection connection,
+        string column,
+        string definition)
+    {
+        using var inspect = connection.CreateCommand();
+        inspect.CommandText = "PRAGMA table_info(audit_events);";
+        using var reader = inspect.ExecuteReader();
+        var exists = false;
+        while (reader.Read())
+        {
+            if (reader.GetString(1).Equals(
+                column,
+                StringComparison.OrdinalIgnoreCase))
+            {
+                exists = true;
+                break;
+            }
+        }
+
+        reader.Close();
+        if (exists)
+            return;
+
+        using var alter = connection.CreateCommand();
+        alter.CommandText =
+            $"ALTER TABLE audit_events ADD COLUMN {column} {definition};";
+        alter.ExecuteNonQuery();
     }
 
     private SqliteConnection OpenConnection()
@@ -403,8 +503,7 @@ public sealed class SqliteAuditStore : IAuditStore
             WHERE workspace_id = $workspaceId;
             """;
         command.Parameters.AddWithValue(
-            "$workspaceId",
-            workspaceId);
+            "$workspaceId", workspaceId);
         return Convert.ToInt32(command.ExecuteScalar());
     }
 
@@ -413,7 +512,8 @@ public sealed class SqliteAuditStore : IAuditStore
         string workspaceId,
         string column)
     {
-        if (column is not ("agent" or "result" or "action"))
+        if (column is not (
+            "agent" or "result" or "action" or "level" or "source"))
         {
             throw new ArgumentOutOfRangeException(nameof(column));
         }
@@ -424,23 +524,42 @@ public sealed class SqliteAuditStore : IAuditStore
             SELECT {column}, COUNT(*)
             FROM audit_events
             WHERE workspace_id = $workspaceId
+              AND {column} IS NOT NULL
             GROUP BY {column}
             ORDER BY COUNT(*) DESC, {column} ASC;
             """;
         command.Parameters.AddWithValue(
-            "$workspaceId",
-            workspaceId);
+            "$workspaceId", workspaceId);
 
         using var reader = command.ExecuteReader();
         var result = new Dictionary<string, int>(
             StringComparer.OrdinalIgnoreCase);
 
         while (reader.Read())
-        {
             result[reader.GetString(0)] = reader.GetInt32(1);
-        }
 
         return result;
+    }
+
+    private static string NormalizeLevel(
+        string? value,
+        string result)
+    {
+        if (string.IsNullOrWhiteSpace(value))
+        {
+            return result.ToLowerInvariant() switch
+            {
+                AuditResults.Failed => SystemLogLevels.Error,
+                AuditResults.Denied or AuditResults.Blocked =>
+                    SystemLogLevels.Security,
+                _ => SystemLogLevels.Info
+            };
+        }
+
+        var normalized = value.Trim().ToLowerInvariant();
+        if (!SystemLogLevels.All.Contains(normalized))
+            throw new ArgumentException("Audit level không hợp lệ.");
+        return normalized;
     }
 
     private static string NormalizeRequired(
@@ -465,9 +584,7 @@ public sealed class SqliteAuditStore : IAuditStore
         int maximumLength)
     {
         if (string.IsNullOrWhiteSpace(value))
-        {
             return null;
-        }
 
         var normalized = value.Trim();
         return normalized.Length <= maximumLength

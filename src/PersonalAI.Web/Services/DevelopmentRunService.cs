@@ -22,6 +22,7 @@ public sealed class DevelopmentRunService(
     IDevelopmentSecurityReportStore securityReports,
     IDevelopmentBenchmarkReportStore benchmarks,
     IDevelopmentGitHubReportStore githubReports,
+    IDevelopmentMergePolicyReportStore mergePolicyReports,
     ICiMonitorService ci,
     IConfiguration configuration,
     IAuditRecorder audit) : IDevelopmentRunService
@@ -120,6 +121,7 @@ public sealed class DevelopmentRunService(
                 [],
                 request.ImprovementItemId,
                 request.DiagnosisId,
+                null,
                 null,
                 null,
                 null,
@@ -267,6 +269,26 @@ public sealed class DevelopmentRunService(
                 }
             }
 
+            if (current.Stage == DevelopmentRunStages.MergePolicy)
+            {
+                if (request.MergePolicyReportId is null)
+                    throw new DevelopmentRunConflictException(
+                        "MergePolicyReportId là bắt buộc trước khi chuyển merge-policy → local-sync.");
+
+                var mergePolicyReport = mergePolicyReports.Get(
+                    request.MergePolicyReportId.Value)
+                    ?? throw new DevelopmentRunConflictException(
+                        "Không tìm thấy DevelopmentMergePolicyReport.");
+
+                if (mergePolicyReport.DevelopmentRunId != current.Id)
+                    throw new DevelopmentRunConflictException(
+                        "Merge policy report không thuộc DevelopmentRun hiện tại.");
+
+                if (!mergePolicyReport.Merged)
+                    throw new DevelopmentRunConflictException(
+                        "Pull Request chưa được merge; không được chuyển sang local-sync.");
+            }
+
             var next = NextStage(current.Stage);
             var now = DateTimeOffset.UtcNow;
 
@@ -293,6 +315,7 @@ public sealed class DevelopmentRunService(
                 SecurityReportId = request.SecurityReportId ?? current.SecurityReportId,
                 BenchmarkReportId = request.BenchmarkReportId ?? current.BenchmarkReportId,
                 GitHubReportId = request.GitHubReportId ?? current.GitHubReportId,
+                MergePolicyReportId = request.MergePolicyReportId ?? current.MergePolicyReportId,
                 History = history,
                 UpdatedAt = now,
                 CompletedAt = status == "completed" ? now : null

@@ -140,7 +140,7 @@ public sealed class CompanionService : ICompanionService
                 "Device Hub theo dõi presence/status; không tự cấp permission hoặc remote execution.",
                 "Device Identity dùng stable device ID + ECDSA public key; private key được mã hóa và capabilities chưa tự cấp.",
                 "Secure Pairing yêu cầu one-time code + ECDSA challenge proof; chỉ secure pairing mới nâng trust lên trusted, legacy pairing vẫn untrusted.",
-                "Device Capability v2.8.3 tách đăng ký khỏi permission; capability chưa đăng ký hoặc chưa được cấp quyền luôn bị từ chối, Android cần trusted trước khi được grant."
+                "Device Capability v2.8.3 tách đăng ký khỏi permission; capability chưa đăng ký hoặc chưa được cấp quyền luôn bị từ chối, Android cần trusted trước khi được grant.",
                 AllowInsecureHttp
                     ? "HTTP không mã hóa đang được cho phép bằng cấu hình explicit; chỉ dùng trên mạng tin cậy."
                     : "Client pairing và client API yêu cầu HTTPS."

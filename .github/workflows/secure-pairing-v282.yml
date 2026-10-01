@@ -1,0 +1,183 @@
+name: Secure Pairing v2.8.2
+
+on:
+  push:
+    branches:
+      - 'experiment/roadmap-v2-8-2-current'
+
+jobs:
+  validate-v282:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: '8.0.x'
+
+      - name: Restore
+        run: dotnet restore PersonalAI.sln
+
+      - name: Build
+        run: dotnet build PersonalAI.sln -c Release --no-restore
+
+      - name: Tests
+        run: dotnet test PersonalAI.sln -c Release --no-build
+
+      - name: Secure pairing expiry and replay smoke test
+        shell: bash
+        run: |
+          set -euo pipefail
+          rm -rf /tmp/personalai-v282
+          mkdir -p             /tmp/personalai-v282/workspace             /tmp/personalai-v282/companion             /tmp/personalai-v282/hub             /tmp/personalai-v282/identity             /tmp/personalai-v282/pairing
+
+          export Workspace__Root=/tmp/personalai-v282/workspace
+          export Companion__Root=/tmp/personalai-v282/companion
+          export Companion__Enabled=true
+          export Companion__AllowInsecureHttp=true
+          export DeviceHub__Root=/tmp/personalai-v282/hub
+          export DeviceIdentity__Root=/tmp/personalai-v282/identity
+          export SecurePairing__Root=/tmp/personalai-v282/pairing
+          export SecurePairing__LifetimeSeconds=2
+
+          start_app() {
+            dotnet run --project src/PersonalAI.Web/PersonalAI.Web.csproj               -c Release --no-build               --urls http://127.0.0.1:5123               >/tmp/personalai-v282/app.log 2>&1 &
+            APP_PID=$!
+            for i in {1..30}; do
+              if curl -fsS http://127.0.0.1:5123/api/companion/secure-pairing/status >/tmp/status.json; then
+                return 0
+              fi
+              sleep 1
+            done
+            return 1
+          }
+
+          stop_app() {
+            kill "$APP_PID" 2>/dev/null || true
+            wait "$APP_PID" 2>/dev/null || true
+          }
+
+          trap 'stop_app || true' EXIT
+          start_app
+
+          jq -e '
+            .version=="2.8.2"
+            and .enabled==true
+            and .pairingLifetimeSeconds==2
+            and .challengeSignatureRequired==true
+            and .pairingCodeSingleUse==true
+            and .consumedCodesPersisted==true
+            and .replayProtectionSurvivesRestart==true
+            and .trustedOnlyAfterProof==true
+            and .keyAlgorithm=="ECDSA-P256"
+          ' /tmp/status.json >/dev/null
+
+          curl -fsS -X POST http://127.0.0.1:5123/api/companion/admin/secure-pairing/start             -H 'Content-Type: application/json'             -d '{"confirmed":true}' >/tmp/ticket.json
+
+          code=$(jq -r '.code' /tmp/ticket.json)
+          challenge=$(jq -r '.challenge' /tmp/ticket.json)
+          hub_public=$(jq -r '.hubPublicKey' /tmp/ticket.json)
+
+          jq -e '
+            (.code | length)==12
+            and (.challenge | length)>20
+            and (.hubPublicKey | length)>40
+            and .keyAlgorithm=="ECDSA-P256"
+            and (.qrPayload | startswith("personalai://pair/"))
+          ' /tmp/ticket.json >/dev/null
+
+          openssl ecparam -name prime256v1 -genkey -noout             -out /tmp/personalai-v282/device.key
+          openssl pkey -in /tmp/personalai-v282/device.key             -pubout -outform DER             | base64 -w0 >/tmp/personalai-v282/device-public.b64
+          device_public=$(cat /tmp/personalai-v282/device-public.b64)
+
+          printf 'PersonalAI-SecurePairing-v1\n%s\n%s\n%s'             "$code" "$challenge" "$hub_public"             >/tmp/personalai-v282/proof.txt
+          openssl dgst -sha256             -sign /tmp/personalai-v282/device.key             /tmp/personalai-v282/proof.txt             | base64 -w0 >/tmp/personalai-v282/signature.b64
+          signature=$(cat /tmp/personalai-v282/signature.b64)
+
+          jq -n             --arg code "$code"             --arg name "Secure Android"             --arg publicKey "$device_public"             --arg signature "$signature"             '{
+              code:$code,
+              deviceName:$name,
+              devicePublicKey:$publicKey,
+              proofSignature:$signature
+            }' >/tmp/claim.json
+
+          curl -fsS -X POST http://127.0.0.1:5123/api/companion/secure-pairing/claim             -H 'Content-Type: application/json'             --data-binary @/tmp/claim.json >/tmp/claimed.json
+
+          token=$(jq -r '.token' /tmp/claimed.json)
+          device_id=$(jq -r '.device.id' /tmp/claimed.json)
+
+          jq -e '
+            .identity.deviceId=="'"$device_id"'"
+            and .identity.deviceType=="android"
+            and .identity.trustLevel=="trusted"
+            and .identity.pairedDevicePublicKey!=null
+            and (.identity.pairedDeviceFingerprintSha256 | length)==64
+            and .identity.permissionsGranted==false
+            and .identity.remoteExecutionEnabled==false
+            and .hubPublicKey=="'"$hub_public"'"
+            and .keyAlgorithm=="ECDSA-P256"
+          ' /tmp/claimed.json >/dev/null
+
+          curl -fsS             -H "Authorization: Bearer $token"             http://127.0.0.1:5123/api/companion/client/hub/identity             >/tmp/identity.json
+
+          jq -e '
+            .deviceId=="'"$device_id"'"
+            and .trustLevel=="trusted"
+            and .permissionsGranted==false
+            and .remoteExecutionEnabled==false
+          ' /tmp/identity.json >/dev/null
+
+          replay_code=$(curl -sS -o /tmp/replay.json -w '%{http_code}'             -X POST http://127.0.0.1:5123/api/companion/secure-pairing/claim             -H 'Content-Type: application/json'             --data-binary @/tmp/claim.json)
+          test "$replay_code" = "400"
+          grep -qi 'replay' /tmp/replay.json
+
+          pairing_file=/tmp/personalai-v282/pairing/secure-pairings.json
+          test -f "$pairing_file"
+          ! grep -Fq "$code" "$pairing_file"
+          ! grep -Fq -- '-----BEGIN PRIVATE KEY-----' "$pairing_file"
+          jq -e '
+            length>=1
+            and .[0].consumedAt!=null
+            and .[0].claimedDeviceId!=null
+            and (.[] | .codeSha256 | length)==64
+            and (.[] | .encryptedHubPrivateKey | length)>20
+          ' "$pairing_file" >/dev/null
+
+          stop_app
+          start_app
+
+          replay_after_restart=$(curl -sS -o /tmp/replay-restart.json -w '%{http_code}'             -X POST http://127.0.0.1:5123/api/companion/secure-pairing/claim             -H 'Content-Type: application/json'             --data-binary @/tmp/claim.json)
+          test "$replay_after_restart" = "400"
+          grep -qi 'replay' /tmp/replay-restart.json
+
+          curl -fsS -X POST http://127.0.0.1:5123/api/companion/admin/secure-pairing/start             -H 'Content-Type: application/json'             -d '{"confirmed":true}' >/tmp/expired-ticket.json
+          expired_code=$(jq -r '.code' /tmp/expired-ticket.json)
+
+          sleep 3
+
+          jq -n             --arg code "$expired_code"             --arg name "Expired Android"             --arg publicKey "$device_public"             --arg signature "$signature"             '{
+              code:$code,
+              deviceName:$name,
+              devicePublicKey:$publicKey,
+              proofSignature:$signature
+            }' >/tmp/expired-claim.json
+
+          expired_status=$(curl -sS -o /tmp/expired.json -w '%{http_code}'             -X POST http://127.0.0.1:5123/api/companion/secure-pairing/claim             -H 'Content-Type: application/json'             --data-binary @/tmp/expired-claim.json)
+          test "$expired_status" = "400"
+          grep -qi 'hết hạn' /tmp/expired.json
+
+          curl -fsS -X POST http://127.0.0.1:5123/api/companion/admin/pairing/start             -H 'Content-Type: application/json'             -d '{"confirmed":true}' >/tmp/legacy-ticket.json
+          legacy_code=$(jq -r '.code' /tmp/legacy-ticket.json)
+
+          curl -fsS -X POST http://127.0.0.1:5123/api/companion/pairing/claim             -H 'Content-Type: application/json'             -d '{
+              "code":"'"$legacy_code"'",
+              "deviceName":"Legacy Android"
+            }' >/tmp/legacy-claim.json
+
+          legacy_token=$(jq -r '.token' /tmp/legacy-claim.json)
+          curl -fsS             -H "Authorization: Bearer $legacy_token"             http://127.0.0.1:5123/api/companion/client/hub/identity             | jq -e '
+              .trustLevel=="untrusted"
+              and .permissionsGranted==false
+              and .remoteExecutionEnabled==false
+            ' >/dev/null
+
+          curl -fsS             -H "Authorization: Bearer $token"             http://127.0.0.1:5123/api/companion/client/me             | jq -e '(.capabilities | index("secure-pairing")) != null' >/dev/null

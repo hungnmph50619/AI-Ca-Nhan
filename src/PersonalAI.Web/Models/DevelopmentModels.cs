@@ -28,6 +28,7 @@ public static class DevelopmentCapabilities
     public const string DevelopmentSecurityGate = "development-security-gate";
     public const string AutomaticBenchmarkGate = "automatic-benchmark-gate";
     public const string GitHubPullRequestCi = "github-pull-request-ci";
+    public const string MergePolicy = "merge-policy";
     public const string DotnetRestore = "dotnet-restore";
     public const string DotnetBuild = "dotnet-build";
     public const string DotnetTest = "dotnet-test";

@@ -555,7 +555,7 @@ public sealed class LocalGitRepositoryService(
         string action,
         string repositoryPath,
         string reason,
-        ProcessCapture result)
+        LocalGitCommandResult result)
     {
         audit.Record(
             AuditAgents.User,

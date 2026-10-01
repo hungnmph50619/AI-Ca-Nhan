@@ -23,6 +23,7 @@ public sealed class RoadmapAutopilotService(
     IDevelopmentLeaseService leases,
     IWorkspaceFileService files,
     IWorkspaceContextAccessor workspace,
+    ILoopGuardService loopGuard,
     IAuditRecorder audit) : IRoadmapAutopilotService
 {
     public const int MaximumContextFiles = 8;
@@ -435,6 +436,8 @@ public sealed class RoadmapAutopilotService(
         }
 
         RoadmapAutopilotVerification verification;
+        string? loopStopReason = null;
+        var loopRunId = $"roadmap-autopilot:{spec.Version}";
         while (true)
         {
             verification = await VerifyAsync(request, worktreePath, cancellationToken);
@@ -458,6 +461,24 @@ public sealed class RoadmapAutopilotService(
                 verification.TestsPassed &&
                 await VersionFileUpdatedAsync(spec.Version, worktreePath, cancellationToken))
             {
+                loopGuard.Reset(
+                    workspace.CurrentWorkspaceId,
+                    LoopGuardScopes.Retry,
+                    loopRunId);
+                break;
+            }
+
+            var loopDecision = loopGuard.Check(
+                workspace.CurrentWorkspaceId,
+                new LoopGuardCheckRequest(
+                    LoopGuardScopes.Retry,
+                    loopRunId,
+                    VerificationFingerprint(verification),
+                    CostUnits: 10));
+            if (loopDecision.Blocked)
+            {
+                loopStopReason = loopDecision.StopReason
+                    ?? "Roadmap Autopilot bị loop guard chặn.";
                 break;
             }
 
@@ -508,7 +529,11 @@ public sealed class RoadmapAutopilotService(
             spec.Version,
             spec.Name,
             branchName,
-            ready ? "ready-for-commit" : "changes-required",
+            ready
+                ? "ready-for-commit"
+                : loopStopReason is not null
+                    ? "loop-blocked"
+                    : "changes-required",
             attempts,
             lastProvider,
             lastModel,
@@ -533,8 +558,18 @@ public sealed class RoadmapAutopilotService(
             AuditAgents.System,
             "roadmap-autopilot.run",
             $"roadmap-version:{spec.Version}",
-            $"branch:{branchName};worktree:{worktreePath};attempts:{attempts};files:{changed.Count}",
-            ready ? AuditResults.Prepared : AuditResults.Failed);
+            $"branch:{branchName};worktree:{worktreePath};attempts:{attempts};files:{changed.Count};loop-stop:{loopStopReason ?? "none"}",
+            ready
+                ? AuditResults.Prepared
+                : loopStopReason is not null
+                    ? AuditResults.Blocked
+                    : AuditResults.Failed,
+            workspaceId: workspace.CurrentWorkspaceId,
+            level: loopStopReason is null
+                ? SystemLogLevels.Info
+                : SystemLogLevels.Security,
+            source: "roadmap-autopilot",
+            correlationId: loopRunId);
 
         return new RoadmapAutopilotRunResult(
             PersonalAiRelease.Version,
@@ -547,7 +582,11 @@ public sealed class RoadmapAutopilotService(
             attempts,
             changed.Values.OrderBy(x => x.Path, StringComparer.OrdinalIgnoreCase).ToArray(),
             verification,
-            ready ? RoadmapAutopilotStatuses.ReadyForCommit : RoadmapAutopilotStatuses.ChangesRequired,
+            ready
+                ? RoadmapAutopilotStatuses.ReadyForCommit
+                : loopStopReason is not null
+                    ? RoadmapAutopilotStatuses.LoopBlocked
+                    : RoadmapAutopilotStatuses.ChangesRequired,
             ReadyForCommit: ready,
             Pushed: false,
             Merged: false,
@@ -597,6 +636,32 @@ public sealed class RoadmapAutopilotService(
         }
 
         return builder.ToString();
+    }
+
+    private static string VerificationFingerprint(
+        RoadmapAutopilotVerification verification)
+    {
+        var text = string.Join(
+            "|",
+            verification.RestorePassed,
+            verification.BuildPassed,
+            verification.TestsPassed,
+            TrimFingerprintInput(verification.RestoreSummary),
+            TrimFingerprintInput(verification.BuildSummary),
+            TrimFingerprintInput(verification.TestSummary));
+
+        return Convert.ToHexString(
+            SHA256.HashData(
+                Encoding.UTF8.GetBytes(text)))
+            .ToLowerInvariant();
+    }
+
+    private static string TrimFingerprintInput(string? value)
+    {
+        var normalized = (value ?? string.Empty).Trim();
+        return normalized.Length <= 2_000
+            ? normalized
+            : normalized[..2_000];
     }
 
     private static string BuildImplementationPrompt(

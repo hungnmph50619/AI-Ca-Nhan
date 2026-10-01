@@ -1,0 +1,155 @@
+name: Model Lab v2.6.5
+
+on:
+  push:
+    branches:
+      - 'experiment/roadmap-v2-6-5-current'
+  pull_request:
+    paths:
+      - 'src/PersonalAI.Web/ModelLab/PromotionGateModels.cs'
+      - 'src/PersonalAI.Web/Services/PromotionGateService.cs'
+      - 'src/PersonalAI.Web/Services/ModelLabEndpoints.cs'
+      - 'src/PersonalAI.Web/Models/SystemModels.cs'
+
+jobs:
+  validate-v265:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: '8.0.x'
+
+      - name: Restore
+        run: dotnet restore PersonalAI.sln
+
+      - name: Build
+        run: dotnet build PersonalAI.sln -c Release --no-restore
+
+      - name: Tests
+        run: dotnet test PersonalAI.sln -c Release --no-build
+
+      - name: Promotion gate smoke test
+        shell: bash
+        run: |
+          set -euo pipefail
+          rm -rf /tmp/personalai-v265
+          mkdir -p /tmp/personalai-v265/workspace /tmp/personalai-v265/model-lab
+
+          Workspace__Root=/tmp/personalai-v265/workspace           ModelLab__Root=/tmp/personalai-v265/model-lab           dotnet run --project src/PersonalAI.Web/PersonalAI.Web.csproj             -c Release --no-build             --urls http://127.0.0.1:5096             >/tmp/personalai-v265.log 2>&1 &
+          APP_PID=$!
+          trap 'kill "$APP_PID" 2>/dev/null || true' EXIT
+
+          ready=0
+          for i in {1..30}; do
+            if curl -fsS http://127.0.0.1:5096/api/model-lab/promotion-gates/status >/tmp/status.json; then
+              ready=1
+              break
+            fi
+            sleep 1
+          done
+          test "$ready" = "1"
+
+          jq -e '
+            .version == "2.6.5"
+            and .criticalRegressionAlwaysBlocks == true
+            and .autoPromotionEnabled == false
+            and .auditRequired == true
+          ' /tmp/status.json >/dev/null
+
+          workspace_id=$(curl -fsS http://127.0.0.1:5096/api/model-lab/status | jq -r '.workspaceId')
+          safe_workspace=$(printf '%s' "$workspace_id" | sed 's/[^A-Za-z0-9_-]/_/g')
+
+          mkdir -p /tmp/personalai-v265/model-lab/Comparisons
+
+          comparison_id="77777777-7777-7777-7777-777777777777"
+          candidate_id="88888888-8888-8888-8888-888888888888"
+          production_id="99999999-9999-9999-9999-999999999999"
+
+          cat > /tmp/personalai-v265/model-lab/Comparisons/registered-model-comparisons-$safe_workspace.json <<JSON
+          [
+            {
+              "id":"$comparison_id",
+              "workspaceId":"$workspace_id",
+              "family":"intent-router",
+              "candidateModelVersionId":"$candidate_id",
+              "candidateVersion":"2.0.0",
+              "productionModelVersionId":"$production_id",
+              "productionVersion":"1.0.0",
+              "candidate":{
+                "benchmarkId":"intent-suite-v1",
+                "benchmarkSha256":"1234567890abcdef1234567890abcdef1234567890abcdef1234567890abcdef",
+                "cases":100,
+                "accuracy":0.95,
+                "taskSuccessRate":0.94,
+                "averageLatencyMilliseconds":18.0,
+                "averageCostPerCase":0.001,
+                "regressionPassRate":1.0
+              },
+              "production":{
+                "benchmarkId":"intent-suite-v1",
+                "benchmarkSha256":"1234567890abcdef1234567890abcdef1234567890abcdef1234567890abcdef",
+                "cases":100,
+                "accuracy":0.91,
+                "taskSuccessRate":0.90,
+                "averageLatencyMilliseconds":20.0,
+                "averageCostPerCase":0.0012,
+                "regressionPassRate":0.99
+              },
+              "deltaCandidateMinusProduction":{
+                "accuracy":0.04,
+                "taskSuccessRate":0.04,
+                "averageLatencyMilliseconds":-2.0,
+                "averageCostPerCase":-0.0002,
+                "regressionPassRate":0.01
+              },
+              "inputSha256":"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+              "reproducibleInputs":true,
+              "productionMutationPerformed":false,
+              "createdAt":"2026-10-01T00:00:00+00:00"
+            }
+          ]
+          JSON
+
+          curl -fsS -X POST             http://127.0.0.1:5096/api/model-lab/promotion-gates/evaluate             -H 'Content-Type: application/json'             -d '{
+              "comparisonReportId":"'"$comparison_id"'",
+              "criticalRegression":false,
+              "securityPassed":true,
+              "lineagePassed":true,
+              "maximumLatencyIncreaseMilliseconds":0,
+              "maximumCostIncreasePerCase":0,
+              "minimumRegressionPassRate":0.99,
+              "maximumResourceIncreaseRatio":0.20,
+              "candidateResourceRatio":1.10
+            }' >/tmp/approved.json
+
+          jq -e '
+            .decision == "approved-for-staging"
+            and .eligibleForStaging == true
+            and .productionMutationPerformed == false
+            and ([.checks[] | select(.passed == false)] | length) == 0
+          ' /tmp/approved.json >/dev/null
+
+          curl -fsS -X POST             http://127.0.0.1:5096/api/model-lab/promotion-gates/evaluate             -H 'Content-Type: application/json'             -d '{
+              "comparisonReportId":"'"$comparison_id"'",
+              "criticalRegression":true,
+              "securityPassed":true,
+              "lineagePassed":true,
+              "maximumLatencyIncreaseMilliseconds":100,
+              "maximumCostIncreasePerCase":1,
+              "minimumRegressionPassRate":0.50,
+              "maximumResourceIncreaseRatio":10,
+              "candidateResourceRatio":1.0
+            }' >/tmp/blocked.json
+
+          jq -e '
+            .decision == "blocked"
+            and .eligibleForStaging == false
+            and any(.checks[]; .check == "critical-regression" and .passed == false and .critical == true)
+            and .productionMutationPerformed == false
+          ' /tmp/blocked.json >/dev/null
+
+          gate_id=$(jq -r '.id' /tmp/approved.json)
+          curl -fsS http://127.0.0.1:5096/api/model-lab/promotion-gates/$gate_id             | jq -e '.id == "'"$gate_id"'" and .decision == "approved-for-staging"' >/dev/null
+
+          curl -fsS http://127.0.0.1:5096/api/model-lab/promotion-gates/status             | jq -e '.decisions == 2 and .approved == 1 and .blocked == 1' >/dev/null

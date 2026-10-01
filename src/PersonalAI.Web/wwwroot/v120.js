@@ -90,7 +90,7 @@
     intro.className = "v120-browser-intro";
     intro.innerHTML =
       "<strong>Điều hướng web có guard</strong>" +
-      "<p>Browser Agent v1.2 dùng HTTP GET và snapshot text/links theo workspace. Không chạy JavaScript, không giữ cookie/login, không submit form và không tải tệp.</p>";
+      "<p>Tác nhân trình duyệt v1.2 dùng HTTP GET và bản chụp văn bản/liên kết theo không gian làm việc. Không chạy JavaScript, không giữ cookie/đăng nhập, không gửi biểu mẫu và không tải tệp.</p>";
 
     const summary = document.createElement("div");
     summary.id = "browserAgentSummary";

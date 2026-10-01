@@ -17,6 +17,7 @@ public static class DevelopmentCapabilities
     public const string GitWorktreeIsolation = "git-worktree-isolation";
     public const string DevelopmentLeases = "development-leases";
     public const string GitCredentialReferences = "git-credential-references";
+    public const string GitHubWebhookEvents = "github-webhook-events";
     public const string DotnetRestore = "dotnet-restore";
     public const string DotnetBuild = "dotnet-build";
     public const string DotnetTest = "dotnet-test";

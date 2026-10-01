@@ -170,6 +170,11 @@ jobs:
             and .validUntilGameTimeSeconds == $first[0].validUntilGameTimeSeconds
           ' /tmp/personalai-league-v301/coach-repeat.json >/dev/null
 
+          # External AI is a separate opt-in gate from the local bridge.
+          ai_no_consent_code="$(curl -sS -o /tmp/personalai-league-v301/ai-no-consent.json -w '%{http_code}'             -X POST http://127.0.0.1:5145/api/integrations/league/coach/ai             -H 'X-Xerath-Bridge: 2'             -H 'Content-Type: application/json'             -d '{"confirmExternalAi":false,"expectedAdviceId":"health-drop-low","expectedAdviceGameTimeSeconds":122}')"
+          test "$ai_no_consent_code" = "400"
+          jq -e '.error | contains("xác nhận riêng")'             /tmp/personalai-league-v301/ai-no-consent.json >/dev/null
+
           # A clear game-clock reset starts a new match session.
           jq '.sequence=4 | .gameTimeSeconds=5 | .health=700'             /tmp/personalai-league-v301/s1.json             >/tmp/personalai-league-v301/s3.json
 

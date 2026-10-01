@@ -1,0 +1,169 @@
+name: Emergency Stop v2.9.6
+
+on:
+  push:
+    branches:
+      - 'experiment/roadmap-v2-9-6-emergency-stop'
+
+jobs:
+  validate-v296:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: '8.0.x'
+
+      - name: Restore
+        run: dotnet restore PersonalAI.sln
+
+      - name: Build
+        run: dotnet build PersonalAI.sln -c Release --no-restore
+
+      - name: Tests
+        run: dotnet test PersonalAI.sln -c Release --no-build
+
+      - name: Emergency stop smoke test
+        shell: bash
+        run: |
+          set -euxo pipefail
+          rm -rf /tmp/personalai-v296
+          mkdir -p /tmp/personalai-v296/audit /tmp/personalai-v296/workspace
+
+          export Audit__Root=/tmp/personalai-v296/audit
+          export Workspace__Root=/tmp/personalai-v296/workspace
+
+          dotnet run --project src/PersonalAI.Web/PersonalAI.Web.csproj \
+            -c Release --no-build \
+            --urls http://127.0.0.1:5137 \
+            >/tmp/personalai-v296/app.log 2>&1 &
+          APP_PID=$!
+          trap 'kill "$APP_PID" 2>/dev/null || true; wait "$APP_PID" 2>/dev/null || true' EXIT
+
+          for i in {1..30}; do
+            if curl -fsS http://127.0.0.1:5137/api/system/emergency-stop/status >/tmp/stop-status.json; then
+              break
+            fi
+            sleep 1
+          done
+
+          jq -e '
+            .version=="2.9.6"
+            and .engaged==false
+            and .cancellationIssued==false
+            and .desktopControlPaused==true
+            and .newExecutionBlocked==false
+            and .auditPreserved==true
+            and .explicitReleaseRequired==true
+            and (.protectedSurfaces | index("agents"))!=null
+            and (.protectedSurfaces | index("tools"))!=null
+            and (.protectedSurfaces | index("browser"))!=null
+            and (.protectedSurfaces | index("desktop"))!=null
+            and (.protectedSurfaces | index("training"))!=null
+            and (.protectedSurfaces | index("automation"))!=null
+            and (.protectedSurfaces | index("development-autopilot"))!=null
+          ' /tmp/stop-status.json >/dev/null
+
+          no_confirm=$(curl -sS -o /tmp/no-confirm.json -w '%{http_code}' \
+            -X POST http://127.0.0.1:5137/api/system/emergency-stop/engage \
+            -H 'Content-Type: application/json' \
+            -d '{"reason":"smoke test stop","confirmStop":false}')
+          test "$no_confirm" = "400"
+
+          curl -fsS -X POST http://127.0.0.1:5137/api/system/emergency-stop/engage \
+            -H 'Content-Type: application/json' \
+            -d '{"reason":"v2.9.6 controlled emergency smoke","confirmStop":true}' \
+            >/tmp/engaged.json
+
+          jq -e '
+            .engaged==true
+            and .generation==1
+            and .cancellationIssued==true
+            and .desktopControlPaused==true
+            and .newExecutionBlocked==true
+            and .auditPreserved==true
+          ' /tmp/engaged.json >/dev/null
+
+          tool_locked=$(curl -sS -o /tmp/tool-locked.json -w '%{http_code}' \
+            -X POST http://127.0.0.1:5137/api/tools/execute \
+            -H 'Content-Type: application/json' \
+            -d '{"toolName":"local.clock","arguments":{},"approvedPermissions":["READ"],"confirmed":false}')
+          test "$tool_locked" = "423"
+
+          agent_locked=$(curl -sS -o /tmp/agent-locked.json -w '%{http_code}' \
+            -X POST http://127.0.0.1:5137/api/agents/core.personal-assistant/execute \
+            -H 'Content-Type: application/json' \
+            -d '{"goal":"Emergency stop must block this invocation."}')
+          test "$agent_locked" = "423"
+
+          automation_locked=$(curl -sS -o /tmp/automation-locked.json -w '%{http_code}' \
+            -X POST http://127.0.0.1:5137/api/automations \
+            -H 'Content-Type: application/json' \
+            -d '{}')
+          test "$automation_locked" = "423"
+
+          model_lab_locked=$(curl -sS -o /tmp/model-lab-locked.json -w '%{http_code}' \
+            -X POST http://127.0.0.1:5137/api/model-lab/synthetic/generate \
+            -H 'Content-Type: application/json' \
+            -d '{}')
+          test "$model_lab_locked" = "423"
+
+          desktop_stop=$(curl -sS -o /tmp/desktop-stop.json -w '%{http_code}' \
+            -X POST http://127.0.0.1:5137/api/computer/control/stop)
+          test "$desktop_stop" = "200"
+          jq -e '.paused==true' /tmp/desktop-stop.json >/dev/null
+
+          logs=$(curl -fsS \
+            'http://127.0.0.1:5137/api/system/logs?correlationId=emergency-stop:1')
+          echo "$logs" | jq -e '
+            any(.items[];
+              .action=="emergency-stop.engage"
+              and .result=="succeeded"
+              and .level=="security"
+              and .source=="emergency-stop")
+          ' >/dev/null
+
+          explanation=$(curl -fsS \
+            'http://127.0.0.1:5137/api/system/explanations/correlation/emergency-stop:1')
+          echo "$explanation" | jq -e '
+            .sourceGrounded==true
+            and .aiGenerated==false
+            and .hiddenReasoningExposed==false
+            and any(.evidence[]; .action=="emergency-stop.engage")
+          ' >/dev/null
+
+          release_denied=$(curl -sS -o /tmp/release-denied.json -w '%{http_code}' \
+            -X POST http://127.0.0.1:5137/api/system/emergency-stop/release \
+            -H 'Content-Type: application/json' \
+            -d '{"confirmRelease":false}')
+          test "$release_denied" = "400"
+
+          curl -fsS -X POST http://127.0.0.1:5137/api/system/emergency-stop/release \
+            -H 'Content-Type: application/json' \
+            -d '{"confirmRelease":true}' >/tmp/released.json
+
+          jq -e '
+            .engaged==false
+            and .generation==1
+            and .cancellationIssued==false
+            and .desktopControlPaused==true
+            and .newExecutionBlocked==false
+            and .auditPreserved==true
+          ' /tmp/released.json >/dev/null
+
+          clock_result=$(curl -fsS -X POST http://127.0.0.1:5137/api/tools/execute \
+            -H 'Content-Type: application/json' \
+            -d '{"toolName":"local.clock","arguments":{},"approvedPermissions":["READ"],"confirmed":false}')
+          echo "$clock_result" | jq -e '
+            .status=="succeeded"
+            and .success==true
+            and (.output.utcNow | length)>10
+          ' >/dev/null
+
+          release_logs=$(curl -fsS \
+            'http://127.0.0.1:5137/api/system/logs?correlationId=emergency-stop:1')
+          echo "$release_logs" | jq -e '
+            any(.items[]; .action=="emergency-stop.engage")
+            and any(.items[]; .action=="emergency-stop.release")
+          ' >/dev/null

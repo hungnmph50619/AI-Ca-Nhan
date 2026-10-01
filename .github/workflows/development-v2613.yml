@@ -1,0 +1,277 @@
+name: Development v2.6.13
+
+on:
+  push:
+    branches:
+      - 'experiment/roadmap-v2-6-13-current'
+  pull_request:
+    paths:
+      - 'src/PersonalAI.Web/Models/CiMonitorModels.cs'
+      - 'src/PersonalAI.Web/Services/CiMonitorService.cs'
+      - 'src/PersonalAI.Web/Models/GitHubWebhookModels.cs'
+      - 'src/PersonalAI.Web/Services/GitHubWebhookService.cs'
+      - 'src/PersonalAI.Web/Services/DevelopmentEndpoints.cs'
+      - 'src/PersonalAI.Web/Models/DevelopmentModels.cs'
+      - 'src/PersonalAI.Web/Services/DevelopmentAgentService.cs'
+      - 'src/PersonalAI.Web/Models/SystemModels.cs'
+
+jobs:
+  validate-v2613:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: '8.0.x'
+
+      - name: Restore
+        run: dotnet restore PersonalAI.sln
+
+      - name: Build
+        run: dotnet build PersonalAI.sln -c Release --no-restore
+
+      - name: Tests
+        run: dotnet test PersonalAI.sln -c Release --no-build
+
+      - name: CI monitor smoke test
+        shell: bash
+        run: |
+          set -euo pipefail
+          rm -rf /tmp/personalai-v2613
+          mkdir -p /tmp/personalai-v2613/workspace
+          mkdir -p /tmp/personalai-v2613/webhook
+          mkdir -p /tmp/personalai-v2613/events
+          mkdir -p /tmp/personalai-v2613/ci
+
+          export Workspace__Root=/tmp/personalai-v2613/workspace
+          export Development__WebhookRoot=/tmp/personalai-v2613/webhook
+          export Development__EventRoot=/tmp/personalai-v2613/events
+          export Development__CiRoot=/tmp/personalai-v2613/ci
+
+          start_app() {
+            dotnet run --project src/PersonalAI.Web/PersonalAI.Web.csproj               -c Release --no-build               --urls http://127.0.0.1:5104               >/tmp/personalai-v2613.log 2>&1 &
+            APP_PID=$!
+            ready=0
+            for i in {1..30}; do
+              if curl -fsS http://127.0.0.1:5104/api/development/ci/status >/tmp/ci-status.json; then
+                ready=1
+                break
+              fi
+              sleep 1
+            done
+            test "$ready" = "1"
+          }
+
+          stop_app() {
+            kill "$APP_PID" 2>/dev/null || true
+            wait "$APP_PID" 2>/dev/null || true
+          }
+
+          trap 'stop_app || true' EXIT
+          start_app
+
+          jq -e '
+            .version == "2.6.13"
+            and .runs == 0
+            and .maximumRepairAttempts == 3
+            and .timeoutPersisted == true
+            and .cancellationPersisted == true
+            and .failureLogsPersisted == true
+            and .fullGitHubLogDownloadEnabled == false
+          ' /tmp/ci-status.json >/dev/null
+
+          WEBHOOK_SECRET='v2613-webhook-secret-do-not-log-91af02'
+
+          curl -fsS -X POST http://127.0.0.1:5104/api/development/github-webhook/configure             -H 'Content-Type: application/json'             -d '{
+              "secret":"'"$WEBHOOK_SECRET"'",
+              "confirmStoreSecret":true
+            }' >/dev/null
+
+          sign_payload() {
+            local payload_file="$1"
+            printf 'sha256=%s' "$(openssl dgst -sha256 -hmac "$WEBHOOK_SECRET" "$payload_file" | awk '{print $2}')"
+          }
+
+          send_event() {
+            local event_type="$1"
+            local delivery="$2"
+            local payload_file="$3"
+            local sig
+            sig=$(sign_payload "$payload_file")
+
+            curl -fsS -X POST http://127.0.0.1:5104/api/development/github-webhook               -H "X-GitHub-Event: $event_type"               -H "X-GitHub-Delivery: $delivery"               -H "X-Hub-Signature-256: $sig"               -H 'Content-Type: application/json'               --data-binary @"$payload_file" >/dev/null
+          }
+
+          cat >/tmp/workflow-queued.json <<'JSON'
+          {
+            "action":"requested",
+            "workflow_run":{
+              "id":2613001,
+              "status":"queued",
+              "conclusion":null,
+              "head_sha":"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+              "head_branch":"experiment/roadmap-v2-6-13-current"
+            },
+            "repository":{"full_name":"owner/repo"}
+          }
+          JSON
+
+          cat >/tmp/workflow-failed.json <<'JSON'
+          {
+            "action":"completed",
+            "workflow_run":{
+              "id":2613001,
+              "status":"completed",
+              "conclusion":"failure",
+              "head_sha":"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+              "head_branch":"experiment/roadmap-v2-6-13-current"
+            },
+            "repository":{"full_name":"owner/repo"}
+          }
+          JSON
+
+          send_event workflow_run delivery-workflow-queued /tmp/workflow-queued.json
+          send_event workflow_run delivery-workflow-failed /tmp/workflow-failed.json
+
+          curl -fsS -X POST http://127.0.0.1:5104/api/development/ci/refresh >/tmp/refresh.json
+
+          jq -e '
+            length == 1
+            and .[0].externalId == "2613001"
+            and .[0].state == "completed"
+            and .[0].conclusion == "failure"
+            and .[0].repairAttempts == 0
+            and .[0].maximumRepairAttempts == 3
+          ' /tmp/refresh.json >/dev/null
+
+          run_id=$(jq -r '.[0].id' /tmp/refresh.json)
+
+          LOG_SECRET='ghp_V2613SECRET012345678901234567890'
+          curl -fsS -X POST             http://127.0.0.1:5104/api/development/ci/runs/$run_id/failure-log             -H 'Content-Type: application/json'             -d '{
+              "runId":"'"$run_id"'",
+              "logExcerpt":"Build failed. Authorization: Bearer '"$LOG_SECRET"'\nerror CS1002: ; expected"
+            }' >/tmp/log-result.json
+
+          jq -e '
+            .failureLogExcerpt != null
+            and (.failureLogExcerpt | contains("[REDACTED]"))
+            and .failureLogTruncated == false
+          ' /tmp/log-result.json >/dev/null
+
+          ! grep -Fq "$LOG_SECRET" /tmp/log-result.json
+
+          for attempt in 1 2 3; do
+            curl -fsS -X POST               http://127.0.0.1:5104/api/development/ci/runs/$run_id/repair               -H 'Content-Type: application/json'               -d '{
+                "runId":"'"$run_id"'",
+                "reason":"repair attempt '"$attempt"'"
+              }' >"/tmp/repair-$attempt.json"
+
+            jq -e '
+              .allowed == true
+              and .attempt == '"$attempt"'
+              and .maximumAttempts == 3
+            ' "/tmp/repair-$attempt.json" >/dev/null
+          done
+
+          fourth_code=$(curl -sS -o /tmp/repair-4.json -w '%{http_code}'             -X POST http://127.0.0.1:5104/api/development/ci/runs/$run_id/repair             -H 'Content-Type: application/json'             -d '{
+              "runId":"'"$run_id"'",
+              "reason":"must be blocked"
+            }')
+          test "$fourth_code" = "409"
+
+          cat >/tmp/check-timeout.json <<'JSON'
+          {
+            "action":"created",
+            "check_run":{
+              "id":2613002,
+              "status":"in_progress",
+              "conclusion":null,
+              "head_sha":"bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
+            },
+            "repository":{"full_name":"owner/repo"}
+          }
+          JSON
+
+          cat >/tmp/check-cancel.json <<'JSON'
+          {
+            "action":"created",
+            "check_run":{
+              "id":2613003,
+              "status":"in_progress",
+              "conclusion":null,
+              "head_sha":"cccccccccccccccccccccccccccccccccccccccc"
+            },
+            "repository":{"full_name":"owner/repo"}
+          }
+          JSON
+
+          send_event check_run delivery-check-timeout /tmp/check-timeout.json
+          send_event check_run delivery-check-cancel /tmp/check-cancel.json
+
+          curl -fsS -X POST http://127.0.0.1:5104/api/development/ci/refresh >/tmp/refresh-2.json
+
+          timeout_id=$(jq -r '.[] | select(.externalId == "2613002") | .id' /tmp/refresh-2.json)
+          cancel_id=$(jq -r '.[] | select(.externalId == "2613003") | .id' /tmp/refresh-2.json)
+
+          test -n "$timeout_id"
+          test -n "$cancel_id"
+
+          curl -fsS -X POST             http://127.0.0.1:5104/api/development/ci/runs/$timeout_id/timeout             -H 'Content-Type: application/json'             -d '{
+              "runId":"'"$timeout_id"'",
+              "reason":"CI exceeded allowed observation window"
+            }' >/tmp/timeout.json
+
+          jq -e '
+            .state == "timed-out"
+            and .conclusion == "timed_out"
+            and .completedAt != null
+          ' /tmp/timeout.json >/dev/null
+
+          curl -fsS -X POST             http://127.0.0.1:5104/api/development/ci/runs/$cancel_id/cancel             -H 'Content-Type: application/json'             -d '{
+              "runId":"'"$cancel_id"'",
+              "reason":"development run cancelled"
+            }' >/tmp/cancel.json
+
+          jq -e '
+            .state == "cancelled"
+            and .conclusion == "cancelled"
+            and .completedAt != null
+          ' /tmp/cancel.json >/dev/null
+
+          curl -fsS http://127.0.0.1:5104/api/development/ci/status >/tmp/status-before-restart.json
+          jq -e '
+            .runs == 3
+            and .failedRuns == 1
+            and .cancelledRuns == 1
+            and .timedOutRuns == 1
+          ' /tmp/status-before-restart.json >/dev/null
+
+          ci_file=$(find /tmp/personalai-v2613/ci -type f -name 'ci-runs-*.json' | head -n1)
+          test -n "$ci_file"
+          ! grep -Fq "$LOG_SECRET" "$ci_file"
+          grep -Fq '[REDACTED]' "$ci_file"
+
+          curl -fsS http://127.0.0.1:5104/api/audit?limit=100 >/tmp/audit.json
+          ! grep -Fq "$LOG_SECRET" /tmp/audit.json
+
+          stop_app
+          start_app
+
+          curl -fsS http://127.0.0.1:5104/api/development/ci/status >/tmp/status-after-restart.json
+          jq -e '
+            .runs == 3
+            and .failedRuns == 1
+            and .cancelledRuns == 1
+            and .timedOutRuns == 1
+            and .maximumRepairAttempts == 3
+          ' /tmp/status-after-restart.json >/dev/null
+
+          curl -fsS http://127.0.0.1:5104/api/development/ci/runs/$run_id             | jq -e '
+              .repairAttempts == 3
+              and .failureLogExcerpt != null
+              and (.failureLogExcerpt | contains("[REDACTED]"))
+            ' >/dev/null
+
+          curl -fsS http://127.0.0.1:5104/api/development/status             | jq -e '
+              (.availableCapabilities | index("ci-monitor")) != null
+            ' >/dev/null

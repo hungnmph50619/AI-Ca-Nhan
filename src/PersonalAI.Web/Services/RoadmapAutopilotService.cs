@@ -628,160 +628,25 @@ public sealed class RoadmapAutopilotService(
         RoadmapVersionSpec spec,
         RoadmapAutopilotVerification verification,
         string changedFiles) =>
-        $"""
-        Đây là vòng sửa lỗi cho v{{spec.Version}} - {{spec.Name}}.
-        Build/test hiện chưa đạt. Hãy sửa tối thiểu cần thiết.
-        Không thay đổi phạm vi phiên bản, không sửa .github/.git, không merge/push.
-        Trả DUY NHẤT JSON:
-        {"summary":"...","edits":[{"path":"relative/path","mode":"create|overwrite","content":"full file content"}]}
-
-        RESTORE:
-        {{verification.RestoreSummary}}
-
-        BUILD:
-        {{verification.BuildSummary}}
-
-        TEST:
-        {{verification.TestSummary}}
-
-        CÁC FILE ĐÃ THAY ĐỔI:
-        {{changedFiles}}
-        """;
-
-    private async Task ApplyEditsAsync(
-        IReadOnlyList<AutopilotEdit> edits,
-        IDictionary<string, RoadmapAutopilotFileChange> changed,
-        string worktreePath,
-        CancellationToken cancellationToken)
-    {
-        if (edits.Count is < 1 or > MaximumEditsPerAttempt)
-            throw new RoadmapAutopilotValidationException(
-                $"AI phải trả từ 1 đến {MaximumEditsPerAttempt} file edit.");
-
-        var seen = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
-        foreach (var edit in edits)
-        {
-            var path = NormalizePath(edit.Path);
-            if (!seen.Add(path) || !IsSafeSourcePath(path))
-                throw new RoadmapAutopilotValidationException(
-                    $"AI trả file path không an toàn hoặc trùng: {path}");
-
-            var mode = (edit.Mode ?? string.Empty).Trim().ToLowerInvariant();
-            if (mode is not ("create" or "overwrite"))
-                throw new RoadmapAutopilotValidationException(
-                    "AI chỉ được dùng create hoặc overwrite.");
-
-            string? expectedSha = null;
-            if (mode == "overwrite")
-            {
-                var current = await files.ReadTextAsync(
-                    PrefixWorktreePath(worktreePath, path),
-                    WorkspaceFileService.MaximumReturnedCharacters,
-                    cancellationToken);
-                if (current.Truncated)
-                    throw new RoadmapAutopilotValidationException(
-                        $"Không tự ghi đè file bị cắt ngắn: {path}");
-                expectedSha = Sha256(current.Content);
-            }
-
-            var result = await files.WriteTextAsync(
-                PrefixWorktreePath(worktreePath, path),
-                edit.Content ?? string.Empty,
-                mode,
-                expectedSha,
-                cancellationToken);
-
-            changed[path] = new RoadmapAutopilotFileChange(
-                path, mode, result.Sha256);
-            audit.Record(
-                AuditAgents.System,
-                "roadmap-autopilot.file-write",
-                $"file:{path}",
-                "ai-provider-proposed-confirmed-autopilot-edit",
-                AuditResults.Succeeded);
-        }
-    }
-
-    private async Task<RoadmapAutopilotVerification> VerifyAsync(
-        RunRoadmapAutopilotRequest request,
-        string worktreePath,
-        CancellationToken cancellationToken)
-    {
-        var targetPath = PrefixWorktreePath(
-            worktreePath,
-            request.DotnetTargetPath);
-
-        var restore = await development.DotnetRestoreAsync(
-            targetPath, cancellationToken);
-        DevelopmentProcessResult build;
-        DevelopmentProcessResult? tests = null;
-
-        if (restore.Succeeded)
-            build = await development.DotnetBuildAsync(
-                targetPath, "Release", cancellationToken);
-        else
-            build = FailedSynthetic("dotnet build", "Bỏ qua vì restore thất bại.");
-
-        if (build.Succeeded && request.RunTests)
-            tests = await development.DotnetTestAsync(
-                targetPath, "Release", cancellationToken);
-
-        var testsPassed = !request.RunTests || (tests?.Succeeded ?? false);
-        return new RoadmapAutopilotVerification(
-            restore.Succeeded,
-            build.Succeeded,
-            testsPassed,
-            TrimLog(restore.Output),
-            TrimLog(build.Output),
-            request.RunTests ? TrimLog(tests?.Output ?? "Test chưa chạy.") : "Không yêu cầu test.");
-    }
-
-    private async Task<bool> VersionFileUpdatedAsync(
-        string expectedVersion,
-        string worktreePath,
-        CancellationToken cancellationToken)
-    {
-        try
-        {
-            var file = await files.ReadTextAsync(
-                PrefixWorktreePath(
-                    worktreePath,
-                    "src/PersonalAI.Web/Models/SystemModels.cs"),
-                20_000,
-                cancellationToken);
-            return file.Content.Contains(
-                $"Version = \"{expectedVersion}\"",
-                StringComparison.Ordinal);
-        }
-        catch (ToolExecutionInputException)
-        {
-            return false;
-        }
-    }
-
-    private async Task<string> ReadChangedFilesAsync(
-        IEnumerable<string> paths,
-        string worktreePath,
-        CancellationToken cancellationToken)
-    {
-        var builder = new StringBuilder();
-        foreach (var path in paths.Take(MaximumContextFiles))
-        {
-            try
-            {
-                var file = await files.ReadTextAsync(
-                    PrefixWorktreePath(worktreePath, path),
-                    MaximumContextCharactersPerFile,
-                    cancellationToken);
-                builder.AppendLine().Append("FILE: ").AppendLine(path);
-                builder.AppendLine(file.Content);
-            }
-            catch (ToolExecutionInputException)
-            {
-            }
-        }
-        return builder.ToString();
-    }
+        string.Join(
+            Environment.NewLine,
+            $"Đây là vòng sửa lỗi cho v{spec.Version} - {spec.Name}.",
+            "Build/test hiện chưa đạt. Hãy sửa tối thiểu cần thiết.",
+            "Không thay đổi phạm vi phiên bản, không sửa .github/.git, không merge/push.",
+            "Trả DUY NHẤT JSON:",
+            "{\"summary\":\"...\",\"edits\":[{\"path\":\"relative/path\",\"mode\":\"create|overwrite\",\"content\":\"full file content\"}]}",
+            "",
+            "RESTORE:",
+            verification.RestoreSummary,
+            "",
+            "BUILD:",
+            verification.BuildSummary,
+            "",
+            "TEST:",
+            verification.TestSummary,
+            "",
+            "CÁC FILE ĐÃ THAY ĐỔI:",
+            changedFiles);
 
     private static AutopilotProposal ParseProposal(string raw)
     {

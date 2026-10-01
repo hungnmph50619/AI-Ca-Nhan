@@ -14,12 +14,15 @@ public sealed record DeviceIdentity(
     string PublicKeyAlgorithm,
     string PublicKey,
     string PublicKeyFingerprintSha256,
+    string? PairedDevicePublicKey,
+    string? PairedDeviceFingerprintSha256,
     IReadOnlyList<string> Capabilities,
     string TrustLevel,
     DateTimeOffset LastSeenAt,
     string ConnectionStatus,
     bool PermissionsGranted,
     bool RemoteExecutionEnabled,
+    DateTimeOffset? TrustedAt,
     DateTimeOffset IdentityCreatedAt,
     DateTimeOffset IdentityUpdatedAt);
 

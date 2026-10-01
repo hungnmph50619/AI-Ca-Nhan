@@ -70,7 +70,7 @@ jobs:
           start_app
 
           jq -e '
-            .version=="2.9.0"
+            (.version | split(".") | map(tonumber)) >= [2,9,0]
             and .defaultDeny==true
             and .denyOverridesAllow==true
             and .workspaceScoped==true

@@ -10,6 +10,7 @@ public static class ComputerUseCapabilities
     public const string MoveCursor = "move-cursor";
     public const string ClickLeft = "click-left";
     public const string TypeNotepadText = "type-notepad-text";
+    public const string OpenDefaultBrowser = "open-default-browser";
 }
 
 public sealed record ComputerUseStatusResponse(

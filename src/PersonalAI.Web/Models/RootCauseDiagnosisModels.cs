@@ -36,6 +36,7 @@ public sealed record RootCauseHypothesis(
     bool? Verified,
     string? VerificationMethod,
     string? VerificationResult,
+    string? VerificationEvidenceReference,
     DateTimeOffset CreatedAt,
     DateTimeOffset? VerifiedAt);
 

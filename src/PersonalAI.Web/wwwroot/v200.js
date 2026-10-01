@@ -99,18 +99,28 @@
     content.textContent = "Đang tải danh mục khả năng…";
 
     try {
-      const [statusResponse, manifestResponse] = await Promise.all([
+      const [
+        statusResponse,
+        manifestResponse,
+        productionResponse
+      ] = await Promise.all([
         fetch("/api/os/status", { headers: workspaceHeaders() }),
-        fetch("/api/os/manifest", { headers: workspaceHeaders() })
+        fetch("/api/os/manifest", { headers: workspaceHeaders() }),
+        fetch("/api/os/production-readiness", {
+          headers: workspaceHeaders()
+        })
       ]);
 
-      if (!statusResponse.ok || !manifestResponse.ok) {
+      if (!statusResponse.ok
+          || !manifestResponse.ok
+          || !productionResponse.ok) {
         throw new Error("Không đọc được trạng thái Personal AI OS.");
       }
 
       const status = await statusResponse.json();
       const manifest = await manifestResponse.json();
-      render(status, manifest);
+      const production = await productionResponse.json();
+      render(status, manifest, production);
     } catch (error) {
       content.className = "os-error";
       content.textContent = error instanceof Error
@@ -119,7 +129,7 @@
     }
   }
 
-  function render(status, manifest) {
+  function render(status, manifest, production) {
     statusText.textContent =
       `${status.workspaceName} · ${status.readiness.osContractReady ? "Hệ thống sẵn sàng" : "Hệ thống cần kiểm tra"} · trạng thái tiếp theo: ${nextStageLabel(status.nextStage)}`;
 
@@ -207,7 +217,30 @@
     });
     boundaries.append(boundariesTitle, ul);
 
-    root.append(summary, layers, boundaries);
+    const productionSection = document.createElement("section");
+    productionSection.className = "os-boundaries";
+    const productionTitle = document.createElement("h3");
+    productionTitle.textContent = production.complete
+      ? "Mức production: đã hoàn tất"
+      : "Mức production: còn việc cần hoàn thiện";
+
+    const productionSummary = document.createElement("p");
+    productionSummary.textContent =
+      `${production.completeCapabilityCount}/${production.requiredCapabilityCount} khả năng mục tiêu đã đạt mức sẵn sàng/có kiểm soát. Trạng thái này tách biệt với mức sẵn sàng của lõi v3.0.`;
+
+    const productionList = document.createElement("ul");
+    (production.blockers || []).forEach(value => {
+      const li = document.createElement("li");
+      li.textContent = localizeText(value);
+      productionList.append(li);
+    });
+
+    productionSection.append(
+      productionTitle,
+      productionSummary,
+      productionList);
+
+    root.append(summary, productionSection, layers, boundaries);
     content.className = "";
     content.replaceChildren(root);
   }

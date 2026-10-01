@@ -160,12 +160,22 @@ public static class CompanionEndpoints
 
                 try
                 {
-                    return Results.Ok(
+                    var device =
                         hub.RegisterLocalDevice(
                             workspaceContext.CurrentWorkspaceId,
-                            request));
+                            request);
+                    var identities =
+                        httpContext.RequestServices
+                            .GetRequiredService<IDeviceIdentityService>();
+                    _ = identities.EnsureDevice(device);
+                    return Results.Ok(device);
                 }
                 catch (DeviceHubValidationException exception)
+                {
+                    return Results.BadRequest(
+                        new ApiError(exception.Message));
+                }
+                catch (DeviceIdentityValidationException exception)
                 {
                     return Results.BadRequest(
                         new ApiError(exception.Message));
@@ -300,6 +310,11 @@ public static class CompanionEndpoints
                     return Results.BadRequest(
                         new ApiError(exception.Message));
                 }
+                catch (DeviceIdentityValidationException exception)
+                {
+                    return Results.BadRequest(
+                        new ApiError(exception.Message));
+                }
                 catch (KeyNotFoundException exception)
                 {
                     return Results.NotFound(
@@ -413,6 +428,16 @@ public static class CompanionEndpoints
                     return Results.Ok(claimed);
                 }
                 catch (CompanionPairingException exception)
+                {
+                    return Results.BadRequest(
+                        new ApiError(exception.Message));
+                }
+                catch (DeviceHubValidationException exception)
+                {
+                    return Results.BadRequest(
+                        new ApiError(exception.Message));
+                }
+                catch (DeviceIdentityValidationException exception)
                 {
                     return Results.BadRequest(
                         new ApiError(exception.Message));

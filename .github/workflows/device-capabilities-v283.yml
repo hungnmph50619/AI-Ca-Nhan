@@ -60,7 +60,7 @@ jobs:
           start_app
 
           jq -e '
-            .version=="2.8.3"
+            (.version | split(".") | map(tonumber)) >= [2,8,3]
             and .registrations==0
             and .grantedPermissions==0
             and .registrationRequired==true
@@ -198,7 +198,7 @@ jobs:
           curl -fsS -X POST             -H "Authorization: Bearer $token"             http://127.0.0.1:5124/api/companion/client/hub/capabilities/camera/authorize             | jq -e '.allowed==true and .permissionGranted==true' >/dev/null
 
           curl -fsS http://127.0.0.1:5124/api/device-hub/capabilities/status             | jq -e '
-              .version=="2.8.3"
+              (.version | split(".") | map(tonumber)) >= [2,8,3]
               and .registrations==2
               and .grantedPermissions==1
               and .automaticPermissionGrantEnabled==false

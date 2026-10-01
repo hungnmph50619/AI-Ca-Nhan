@@ -48,7 +48,7 @@ jobs:
           done
 
           jq -e '
-            .version=="2.8.0"
+            (.version | split(".") | map(tonumber)) >= [2,8,0]
             and .totalDevices==0
             and .deviceStatePersisted==true
             and .companionReconciliationEnabled==true

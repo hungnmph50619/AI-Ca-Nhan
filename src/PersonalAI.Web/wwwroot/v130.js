@@ -73,11 +73,11 @@
     const heading = document.createElement("div");
     const eyebrow = document.createElement("p");
     eyebrow.className = "eyebrow";
-    eyebrow.textContent = "CONTROLLED CAPABILITY · ENCRYPTED CREDENTIAL";
+    eyebrow.textContent = "KHẢ NĂNG ĐƯỢC KIỂM SOÁT · THÔNG TIN XÁC THỰC ĐƯỢC MÃ HÓA";
 
     const title = document.createElement("h2");
     title.id = "connectorTitle";
-    title.textContent = "Connectors v1.3";
+    title.textContent = "Kết nối v1.3";
     heading.append(eyebrow, title);
 
     const close = document.createElement("button");
@@ -114,7 +114,7 @@
 
     const formTitle = document.createElement("h3");
     formTitle.className = "v130-section-title";
-    formTitle.textContent = "Thêm connector";
+    formTitle.textContent = "Thêm kết nối";
 
     const form = document.createElement("form");
     form.id = "connectorForm";
@@ -133,7 +133,7 @@
     submit.id = "connectorSaveButton";
     submit.type = "submit";
     submit.className = "primary-button";
-    submit.textContent = "Lưu connector";
+    submit.textContent = "Lưu kết nối";
 
     form.append(
       nameField.wrapper,
@@ -302,7 +302,7 @@
   async function createConnector(name, baseUrl, bearerToken) {
     if (saving) return;
     saving = true;
-    setFeedback("Đang mã hóa và lưu credential…");
+    setFeedback("Đang mã hóa và lưu thông tin xác thực…");
 
     const button = document.querySelector("#connectorSaveButton");
     if (button) button.disabled = true;
@@ -321,15 +321,15 @@
       });
       const payload = await response.json().catch(() => ({}));
       if (!response.ok) {
-        throw new Error(payload.error || "Không thể lưu connector.");
+        throw new Error(payload.error || "Không thể lưu kết nối.");
       }
 
       const form = document.querySelector("#connectorForm");
       if (form) form.reset();
-      setFeedback("Đã lưu connector. Token sẽ không được hiển thị lại.");
+      setFeedback("Đã lưu kết nối. Mã truy cập sẽ không được hiển thị lại.");
       await loadConnectors();
     } catch (error) {
-      setFeedback(error.message || "Không thể lưu connector.", true);
+      setFeedback(error.message || "Không thể lưu kết nối.", true);
     } finally {
       saving = false;
       if (button) button.disabled = false;
@@ -359,13 +359,13 @@
         { method: "DELETE" });
       if (!response.ok) {
         const payload = await response.json().catch(() => ({}));
-        throw new Error(payload.error || "Không thể xóa connector.");
+        throw new Error(payload.error || "Không thể xóa kết nối.");
       }
 
-      setFeedback("Đã xóa connector và credential đã lưu.");
+      setFeedback("Đã xóa kết nối và thông tin xác thực đã lưu.");
       await loadConnectors();
     } catch (error) {
-      setFeedback(error.message || "Không thể xóa connector.", true);
+      setFeedback(error.message || "Không thể xóa kết nối.", true);
     }
   }
 

@@ -1,0 +1,203 @@
+name: Device Data Conflicts v2.8.8
+
+on:
+  push:
+    branches:
+      - 'experiment/roadmap-v2-8-8-data-conflicts'
+
+jobs:
+  validate-v288:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: '8.0.x'
+
+      - name: Restore
+        run: dotnet restore PersonalAI.sln
+
+      - name: Build
+        run: dotnet build PersonalAI.sln -c Release --no-restore
+
+      - name: Tests
+        run: dotnet test PersonalAI.sln -c Release --no-build
+
+      - name: Data conflict smoke test
+        shell: bash
+        run: |
+          set -euxo pipefail
+          rm -rf /tmp/personalai-v288
+          mkdir -p \
+            /tmp/personalai-v288/workspace \
+            /tmp/personalai-v288/companion \
+            /tmp/personalai-v288/hub \
+            /tmp/personalai-v288/conflicts
+
+          export Workspace__Root=/tmp/personalai-v288/workspace
+          export Companion__Root=/tmp/personalai-v288/companion
+          export Companion__Enabled=true
+          export Companion__AllowInsecureHttp=true
+          export DeviceHub__Root=/tmp/personalai-v288/hub
+          export DeviceConflict__Root=/tmp/personalai-v288/conflicts
+
+          start_app() {
+            dotnet run --project src/PersonalAI.Web/PersonalAI.Web.csproj \
+              -c Release --no-build \
+              --urls http://127.0.0.1:5129 \
+              >/tmp/personalai-v288/app.log 2>&1 &
+            APP_PID=$!
+            for i in {1..30}; do
+              if curl -fsS http://127.0.0.1:5129/api/device-hub/data-conflicts/status >/tmp/status.json; then
+                return 0
+              fi
+              sleep 1
+            done
+            cat /tmp/personalai-v288/app.log
+            return 1
+          }
+
+          stop_app() {
+            kill "$APP_PID" 2>/dev/null || true
+            wait "$APP_PID" 2>/dev/null || true
+          }
+
+          trap 'stop_app || true' EXIT
+          start_app
+
+          jq -e '
+            .version=="2.8.8"
+            and .persistent==true
+            and .optimisticVersionCheckEnabled==true
+            and .timestampTracked==true
+            and .resourceLockEnabled==true
+            and .expiredLocksIgnored==true
+            and .explicitApplyConfirmationRequired==true
+          ' /tmp/status.json >/dev/null
+
+          curl -fsS -X POST http://127.0.0.1:5129/api/device-hub/admin/devices \
+            -H 'Content-Type: application/json' \
+            -d '{"name":"Conflict PC A","deviceType":"pc","confirmRegister":true}' \
+            >/tmp/device-a.json
+          device_a=$(jq -r '.id' /tmp/device-a.json)
+
+          curl -fsS -X POST http://127.0.0.1:5129/api/device-hub/admin/devices \
+            -H 'Content-Type: application/json' \
+            -d '{"name":"Conflict PC B","deviceType":"pc","confirmRegister":true}' \
+            >/tmp/device-b.json
+          device_b=$(jq -r '.id' /tmp/device-b.json)
+
+          now1=$(date -u +"%Y-%m-%dT%H:%M:%SZ")
+          curl -fsS -X POST http://127.0.0.1:5129/api/device-hub/data-conflicts/apply \
+            -H 'Content-Type: application/json' \
+            -d '{
+              "resourceType":"note",
+              "resourceId":"shared-001",
+              "deviceId":"'"$device_a"'",
+              "baseVersion":0,
+              "clientUpdatedAt":"'"$now1"'",
+              "payloadHash":"aaaaaaaa11111111",
+              "policy":"reject-stale",
+              "confirmApply":true
+            }' >/tmp/first.json
+          jq -e '.decision=="accepted" and .newVersion==1' /tmp/first.json >/dev/null
+
+          stale_code=$(curl -sS -o /tmp/stale.json -w '%{http_code}' \
+            -X POST http://127.0.0.1:5129/api/device-hub/data-conflicts/apply \
+            -H 'Content-Type: application/json' \
+            -d '{
+              "resourceType":"note",
+              "resourceId":"shared-001",
+              "deviceId":"'"$device_b"'",
+              "baseVersion":0,
+              "clientUpdatedAt":"'"$now1"'",
+              "payloadHash":"bbbbbbbb22222222",
+              "policy":"reject-stale",
+              "confirmApply":true
+            }')
+          test "$stale_code" = "409"
+          jq -e '.decision=="rejected-stale" and .serverVersion==1' /tmp/stale.json >/dev/null
+
+          review_code=$(curl -sS -o /tmp/review.json -w '%{http_code}' \
+            -X POST http://127.0.0.1:5129/api/device-hub/data-conflicts/apply \
+            -H 'Content-Type: application/json' \
+            -d '{
+              "resourceType":"note",
+              "resourceId":"shared-001",
+              "deviceId":"'"$device_b"'",
+              "baseVersion":0,
+              "clientUpdatedAt":"'"$now1"'",
+              "payloadHash":"cccccccc33333333",
+              "policy":"manual-review",
+              "confirmApply":true
+            }')
+          test "$review_code" = "409"
+          jq -e '.decision=="needs-review"' /tmp/review.json >/dev/null
+
+          curl -fsS -X POST http://127.0.0.1:5129/api/device-hub/data-conflicts/locks \
+            -H 'Content-Type: application/json' \
+            -d '{
+              "resourceType":"note",
+              "resourceId":"shared-001",
+              "deviceId":"'"$device_a"'",
+              "leaseSeconds":300,
+              "confirmAcquire":true
+            }' >/tmp/lock.json
+          jq -e '.deviceId=="'"$device_a"'"' and .expiresAt!=null' /tmp/lock.json >/dev/null
+
+          locked_code=$(curl -sS -o /tmp/locked.json -w '%{http_code}' \
+            -X POST http://127.0.0.1:5129/api/device-hub/data-conflicts/apply \
+            -H 'Content-Type: application/json' \
+            -d '{
+              "resourceType":"note",
+              "resourceId":"shared-001",
+              "deviceId":"'"$device_b"'",
+              "baseVersion":1,
+              "clientUpdatedAt":"'"$now1"'",
+              "payloadHash":"dddddddd44444444",
+              "policy":"last-write-wins",
+              "confirmApply":true
+            }')
+          test "$locked_code" = "409"
+          jq -e '.decision=="rejected-locked" and .lockOwnerDeviceId=="'"$device_a"'"' /tmp/locked.json >/dev/null
+
+          curl -fsS -X POST \
+            http://127.0.0.1:5129/api/device-hub/data-conflicts/note/shared-001/locks/release \
+            -H 'Content-Type: application/json' \
+            -d '{"deviceId":"'"$device_a"'","confirmRelease":true}' >/dev/null
+
+          sleep 1
+          now2=$(date -u +"%Y-%m-%dT%H:%M:%SZ")
+          curl -fsS -X POST http://127.0.0.1:5129/api/device-hub/data-conflicts/apply \
+            -H 'Content-Type: application/json' \
+            -d '{
+              "resourceType":"note",
+              "resourceId":"shared-001",
+              "deviceId":"'"$device_b"'",
+              "baseVersion":0,
+              "clientUpdatedAt":"'"$now2"'",
+              "payloadHash":"eeeeeeee55555555",
+              "policy":"last-write-wins",
+              "confirmApply":true
+            }' >/tmp/lww.json
+          jq -e '.decision=="accepted" and .serverVersion==1 and .newVersion==2' /tmp/lww.json >/dev/null
+
+          curl -fsS http://127.0.0.1:5129/api/device-hub/data-conflicts/versions >/tmp/versions.json
+          jq -e '
+            any(.[]; .resourceType=="note"
+              and .resourceId=="shared-001"
+              and .version==2
+              and .updatedByDeviceId=="'"$device_b"'"
+              and .payloadHash=="eeeeeeee55555555")
+          ' /tmp/versions.json >/dev/null
+
+          stop_app
+          start_app
+
+          curl -fsS http://127.0.0.1:5129/api/device-hub/data-conflicts/versions >/tmp/persisted.json
+          jq -e '
+            any(.[]; .resourceType=="note"
+              and .resourceId=="shared-001"
+              and .version==2
+              and .updatedByDeviceId=="'"$device_b"'")
+          ' /tmp/persisted.json >/dev/null

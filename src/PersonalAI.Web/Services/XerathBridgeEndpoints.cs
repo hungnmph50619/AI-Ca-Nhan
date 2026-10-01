@@ -87,6 +87,61 @@ public static class XerathBridgeEndpoints
             });
         });
 
+        app.MapPost("/api/integrations/league/vision/observations", (
+            HttpContext context,
+            LeagueVisionObservationBatch batch,
+            IWorkspaceContextAccessor workspace,
+            ILeagueMatchSnapshotStore snapshots) =>
+        {
+            if (!LocalCaller(context) ||
+                context.Request.Headers["X-Xerath-Bridge"].ToString() != "2")
+                return Results.NotFound();
+
+            var error = ValidateVisionBatch(batch);
+            if (error is not null)
+                return Results.BadRequest(new { error });
+
+            var result = snapshots.AcceptVision(
+                workspace.CurrentWorkspaceId,
+                batch);
+
+            if (!result.Accepted)
+            {
+                return Results.Json(
+                    new
+                    {
+                        accepted = false,
+                        bridgeVersion = 2,
+                        result.Reason,
+                        result.MatchSessionId,
+                        result.LastSeenCount
+                    },
+                    statusCode: StatusCodes.Status409Conflict);
+            }
+
+            return Results.Ok(new
+            {
+                accepted = true,
+                bridgeVersion = 2,
+                result.MatchSessionId,
+                result.LastSeenCount
+            });
+        });
+
+        app.MapGet("/api/integrations/league/vision/last-seen", (
+            HttpContext context,
+            IWorkspaceContextAccessor workspace,
+            ILeagueMatchSnapshotStore snapshots) =>
+        {
+            if (!LocalCaller(context))
+                return Results.NotFound();
+
+            var vision = snapshots.GetVision(workspace.CurrentWorkspaceId);
+            return vision is null
+                ? Results.NotFound()
+                : Results.Ok(vision);
+        });
+
         app.MapGet("/api/integrations/league/timeline", (
             HttpContext context,
             IWorkspaceContextAccessor workspace,
@@ -199,6 +254,43 @@ public static class XerathBridgeEndpoints
         });
 
         return app;
+    }
+
+    private static string? ValidateVisionBatch(
+        LeagueVisionObservationBatch batch)
+    {
+        if (batch.BridgeVersion != 2)
+            return "BridgeVersion phải là 2.";
+        if (!Guid.TryParseExact(batch.ClientInstanceId, "N", out _))
+            return "ClientInstanceId không hợp lệ.";
+        if (batch.Sequence < 1)
+            return "Sequence phải lớn hơn 0.";
+        if (batch.Source != "minimap-local-onnx")
+            return "Source vision không được hỗ trợ.";
+        if (batch.ObservedAtUtc < DateTimeOffset.UtcNow.AddMinutes(-2) ||
+            batch.ObservedAtUtc > DateTimeOffset.UtcNow.AddMinutes(1))
+            return "ObservedAtUtc của vision nằm ngoài cửa sổ cho phép.";
+        if (!double.IsFinite(batch.GameTimeSeconds) ||
+            batch.GameTimeSeconds is < 0 or > 86400)
+            return "GameTimeSeconds của vision không hợp lệ.";
+        if (batch.Observations is null ||
+            batch.Observations.Count is < 1 or > 10)
+            return "Mỗi batch vision phải có từ 1 đến 10 quan sát.";
+
+        foreach (var item in batch.Observations)
+        {
+            if (string.IsNullOrWhiteSpace(item.Champion) ||
+                item.Champion.Length > 50)
+                return "Tên tướng quan sát không hợp lệ.";
+            if (item.Team is not ("ally" or "enemy"))
+                return "Đội của quan sát không hợp lệ.";
+            if (!FiniteRange(item.X, 0, 1) ||
+                !FiniteRange(item.Y, 0, 1) ||
+                !FiniteRange(item.Confidence, 0, 1))
+                return "Tọa độ hoặc confidence của vision không hợp lệ.";
+        }
+
+        return null;
     }
 
     private static string? ValidateSnapshot(

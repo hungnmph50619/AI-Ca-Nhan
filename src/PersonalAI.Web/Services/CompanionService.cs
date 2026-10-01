@@ -127,7 +127,8 @@ public sealed class CompanionService : ICompanionService
                 CompanionCapabilities.TasksRead,
                 CompanionCapabilities.CoreStatus,
                 CompanionCapabilities.DeviceHubStatus,
-                CompanionCapabilities.DeviceIdentity
+                CompanionCapabilities.DeviceIdentity,
+                CompanionCapabilities.SecurePairing
             ],
             [
                 "Pairing code chỉ tồn tại tạm thời và chỉ được tạo từ admin request cục bộ.",
@@ -136,7 +137,8 @@ public sealed class CompanionService : ICompanionService
                 "Task API trên Android là read-only trong v1.5.0.",
                 "Remote Memory/Documents/Files/Tools/Undo/Connector/Development mutation chưa được mở.",
                 "Device Hub theo dõi presence/status; không tự cấp permission hoặc remote execution.",
-                "Device Identity v2.8.1 dùng stable device ID + ECDSA public key; private key được mã hóa, trust mặc định untrusted và capabilities chưa tự cấp.",
+                "Device Identity dùng stable device ID + ECDSA public key; private key được mã hóa và capabilities chưa tự cấp.",
+                "Secure Pairing v2.8.2 yêu cầu one-time code + ECDSA challenge proof; chỉ secure pairing mới nâng trust lên trusted, legacy pairing vẫn untrusted.",
                 AllowInsecureHttp
                     ? "HTTP không mã hóa đang được cho phép bằng cấu hình explicit; chỉ dùng trên mạng tin cậy."
                     : "Client pairing và client API yêu cầu HTTPS."

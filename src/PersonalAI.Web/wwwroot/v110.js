@@ -44,7 +44,7 @@
     const status = document.createElement("span");
     status.id = "computerUseBadge";
     status.className = "tool-count v110-computer-badge";
-    status.setAttribute("aria-label", "Trạng thái Computer Use");
+    status.setAttribute("aria-label", "Trạng thái điều khiển máy tính");
     status.textContent = "…";
 
     button.append(icon, label, status);
@@ -102,7 +102,7 @@
     const close = document.createElement("button");
     close.type = "button";
     close.className = "dialog-close";
-    close.setAttribute("aria-label", "Đóng Computer Use");
+    close.setAttribute("aria-label", "Đóng điều khiển máy tính");
     close.textContent = "×";
     close.addEventListener("click", () => dialog.close());
     header.append(heading, close);

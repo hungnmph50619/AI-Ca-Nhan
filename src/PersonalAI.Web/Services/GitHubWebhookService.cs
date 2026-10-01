@@ -201,6 +201,7 @@ public sealed class GitHubWebhookService : IGitHubWebhookService
         string? status = null;
         string? conclusion = null;
         string? tag = null;
+        string? externalId = null;
 
         switch (eventType)
         {
@@ -224,6 +225,7 @@ public sealed class GitHubWebhookService : IGitHubWebhookService
                 break;
 
             case GitHubWebhookEvents.WorkflowRun:
+                externalId = ReadLong(root, "workflow_run", "id")?.ToString();
                 action = ReadString(root, "action");
                 status = ReadString(root, "workflow_run", "status");
                 conclusion = ReadString(root, "workflow_run", "conclusion");
@@ -232,6 +234,7 @@ public sealed class GitHubWebhookService : IGitHubWebhookService
                 break;
 
             case GitHubWebhookEvents.CheckRun:
+                externalId = ReadLong(root, "check_run", "id")?.ToString();
                 action = ReadString(root, "action");
                 status = ReadString(root, "check_run", "status");
                 conclusion = ReadString(root, "check_run", "conclusion");
@@ -258,7 +261,8 @@ public sealed class GitHubWebhookService : IGitHubWebhookService
             NormalizeOptional(status, 80),
             NormalizeOptional(conclusion, 80),
             NormalizeOptional(tag, 160),
-            DateTimeOffset.UtcNow);
+            DateTimeOffset.UtcNow,
+            NormalizeOptional(externalId, 80));
     }
 
     private string ResolveSecret()
@@ -409,6 +413,22 @@ public sealed class GitHubWebhookService : IGitHubWebhookService
 
         return current.ValueKind == JsonValueKind.String
             ? current.GetString()
+            : null;
+    }
+
+    private static long? ReadLong(JsonElement root, params string[] path)
+    {
+        var current = root;
+        foreach (var segment in path)
+        {
+            if (current.ValueKind != JsonValueKind.Object ||
+                !current.TryGetProperty(segment, out current))
+                return null;
+        }
+
+        return current.ValueKind == JsonValueKind.Number &&
+               current.TryGetInt64(out var value)
+            ? value
             : null;
     }
 

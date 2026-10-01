@@ -10,6 +10,7 @@ public static class DevelopmentEndpoints
         services.AddSingleton<IDevelopmentAgentService, DevelopmentAgentService>();
         services.AddSingleton<ILocalGitRepositoryService, LocalGitRepositoryService>();
         services.AddSingleton<IDevelopmentWorktreeService, DevelopmentWorktreeService>();
+        services.AddSingleton<IDevelopmentLeaseService, DevelopmentLeaseService>();
         services.AddSingleton<IPersonalAiTool, DevelopmentWorkspaceInspectTool>();
         services.AddSingleton<IPersonalAiTool, DevelopmentTextSearchTool>();
         services.AddSingleton<IPersonalAiTool, DevelopmentGitStatusTool>();
@@ -47,6 +48,83 @@ public static class DevelopmentEndpoints
         app.MapGet("/api/development/git/capabilities", (
             ILocalGitRepositoryService git) =>
             Results.Ok(git.GetStatus()));
+
+        app.MapGet("/api/development/leases/status", (
+            IDevelopmentLeaseService leases) =>
+            Results.Ok(leases.GetStatus()));
+
+        app.MapGet("/api/development/leases", (
+            IDevelopmentLeaseService leases) =>
+            Results.Ok(leases.GetActive()));
+
+        app.MapPost("/api/development/leases/acquire", (
+            AcquireDevelopmentLeaseRequest request,
+            IDevelopmentLeaseService leases) =>
+        {
+            try
+            {
+                return Results.Ok(leases.Acquire(request));
+            }
+            catch (DevelopmentLeaseValidationException exception)
+            {
+                return Results.BadRequest(new ApiError(exception.Message));
+            }
+            catch (DevelopmentLeaseConflictException exception)
+            {
+                return Results.Json(
+                    new ApiError(exception.Message),
+                    statusCode: StatusCodes.Status409Conflict);
+            }
+        });
+
+        app.MapPost("/api/development/leases/renew", (
+            RenewDevelopmentLeaseRequest request,
+            IDevelopmentLeaseService leases) =>
+        {
+            try
+            {
+                return Results.Ok(leases.Renew(request));
+            }
+            catch (DevelopmentLeaseValidationException exception)
+            {
+                return Results.BadRequest(new ApiError(exception.Message));
+            }
+            catch (DevelopmentLeaseConflictException exception)
+            {
+                return Results.Json(
+                    new ApiError(exception.Message),
+                    statusCode: StatusCodes.Status409Conflict);
+            }
+            catch (KeyNotFoundException exception)
+            {
+                return Results.NotFound(new ApiError(exception.Message));
+            }
+        });
+
+        app.MapPost("/api/development/leases/release", (
+            ReleaseDevelopmentLeaseRequest request,
+            IDevelopmentLeaseService leases) =>
+        {
+            try
+            {
+                leases.Release(request);
+                return Results.NoContent();
+            }
+            catch (DevelopmentLeaseValidationException exception)
+            {
+                return Results.BadRequest(new ApiError(exception.Message));
+            }
+            catch (DevelopmentLeaseConflictException exception)
+            {
+                return Results.Json(
+                    new ApiError(exception.Message),
+                    statusCode: StatusCodes.Status409Conflict);
+            }
+            catch (KeyNotFoundException exception)
+            {
+                return Results.NotFound(new ApiError(exception.Message));
+            }
+        });
 
         app.MapGet("/api/development/worktrees/status", (
             IDevelopmentWorktreeService worktrees) =>

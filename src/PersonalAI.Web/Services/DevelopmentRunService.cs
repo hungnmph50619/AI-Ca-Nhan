@@ -20,7 +20,7 @@ public sealed class DevelopmentRunService(
     IImprovementBacklogService backlog,
     IRootCauseDiagnosisService diagnoses,
     IDevelopmentSecurityReportStore securityReports,
-    IDevelopmentBenchmarkService benchmarks,
+    IDevelopmentBenchmarkReportStore benchmarks,
     IConfiguration configuration,
     IAuditRecorder audit) : IDevelopmentRunService
 {

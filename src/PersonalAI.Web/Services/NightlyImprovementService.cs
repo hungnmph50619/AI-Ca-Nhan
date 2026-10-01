@@ -173,8 +173,8 @@ public sealed class NightlyImprovementService(
         var eligible = backlog.GetAll()
             .Where(x =>
                 x.Priority == ImprovementPriorities.Low &&
-                x.State is ImprovementBacklogStates.Open or
-                    ImprovementBacklogStates.Planned &&
+                (x.State is ImprovementBacklogStates.Open or
+                    ImprovementBacklogStates.Planned) &&
                 !activeImprovementIds.Contains(x.Id))
             .OrderByDescending(x => x.Occurrences)
             .ThenBy(x => x.FirstSeenAt)

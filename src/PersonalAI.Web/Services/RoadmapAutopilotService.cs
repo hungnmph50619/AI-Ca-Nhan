@@ -629,23 +629,23 @@ public sealed class RoadmapAutopilotService(
         RoadmapAutopilotVerification verification,
         string changedFiles) =>
         $"""
-        Đây là vòng sửa lỗi cho v{spec.Version} - {spec.Name}.
+        Đây là vòng sửa lỗi cho v{{spec.Version}} - {{spec.Name}}.
         Build/test hiện chưa đạt. Hãy sửa tối thiểu cần thiết.
         Không thay đổi phạm vi phiên bản, không sửa .github/.git, không merge/push.
         Trả DUY NHẤT JSON:
-        {{"summary":"...","edits":[{{"path":"relative/path","mode":"create|overwrite","content":"full file content"}}]}}
+        {"summary":"...","edits":[{"path":"relative/path","mode":"create|overwrite","content":"full file content"}]}
 
         RESTORE:
-        {verification.RestoreSummary}
+        {{verification.RestoreSummary}}
 
         BUILD:
-        {verification.BuildSummary}
+        {{verification.BuildSummary}}
 
         TEST:
-        {verification.TestSummary}
+        {{verification.TestSummary}}
 
         CÁC FILE ĐÃ THAY ĐỔI:
-        {changedFiles}
+        {{changedFiles}}
         """;
 
     private async Task ApplyEditsAsync(

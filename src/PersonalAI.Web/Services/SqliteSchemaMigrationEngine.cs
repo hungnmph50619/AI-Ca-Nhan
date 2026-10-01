@@ -49,13 +49,12 @@ public static class SqliteSchemaMigrationEngine
                 continue;
             }
 
-            using var transaction = connection.BeginTransaction();
+            ExecuteNonQuery(connection, "BEGIN IMMEDIATE;");
             try
             {
                 step.Apply(connection);
 
                 using var insert = connection.CreateCommand();
-                insert.Transaction = transaction;
                 insert.CommandText =
                     """
                     INSERT INTO personalai_schema_migrations (
@@ -74,12 +73,18 @@ public static class SqliteSchemaMigrationEngine
                     DateTimeOffset.UtcNow.ToString("O"));
                 insert.ExecuteNonQuery();
 
-                transaction.Commit();
+                ExecuteNonQuery(connection, "COMMIT;");
                 applied[step.Id] = checksum;
             }
             catch
             {
-                transaction.Rollback();
+                try
+                {
+                    ExecuteNonQuery(connection, "ROLLBACK;");
+                }
+                catch
+                {
+                }
                 throw;
             }
         }
@@ -129,6 +134,15 @@ public static class SqliteSchemaMigrationEngine
         alter.CommandText =
             $"ALTER TABLE {table} ADD COLUMN {column} {definition};";
         alter.ExecuteNonQuery();
+    }
+
+    private static void ExecuteNonQuery(
+        SqliteConnection connection,
+        string sql)
+    {
+        using var command = connection.CreateCommand();
+        command.CommandText = sql;
+        command.ExecuteNonQuery();
     }
 
     private static void EnsureHistoryTable(SqliteConnection connection)

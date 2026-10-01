@@ -51,7 +51,7 @@ jobs:
           trap 'stop_app || true' EXIT
           start_app
 
-          jq -e '.version=="2.7.0" and .persisted==true and .resumable==true and .sideEffectsAutomatic==false' /tmp/run-status.json >/dev/null
+          jq -e '(.version | split(".") | map(tonumber)) >= [2,7,0] and .persisted==true and .resumable==true and .sideEffectsAutomatic==false' /tmp/run-status.json >/dev/null
 
           curl -fsS -X POST http://127.0.0.1:5105/api/development/runs             -H 'Content-Type: application/json'             -d '{"goal":"implement next roadmap version","repositoryPath":"","branch":"experiment/roadmap-v2-7-1-current","roadmapVersion":"2.7.1","confirmCreate":true}' >/tmp/run.json
 

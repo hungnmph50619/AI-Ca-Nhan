@@ -7,6 +7,13 @@ public static class DevelopmentCapabilities
     public const string GitStatus = "git-status";
     public const string GitDiff = "git-diff";
     public const string GitExperimentBranch = "git-experiment-branch";
+    public const string GitFetch = "git-fetch";
+    public const string GitBranch = "git-branch";
+    public const string GitCheckout = "git-checkout";
+    public const string GitLog = "git-log";
+    public const string GitPullFastForwardOnly = "git-pull-ff-only";
+    public const string GitCommit = "git-commit";
+    public const string GitPush = "git-push";
     public const string DotnetRestore = "dotnet-restore";
     public const string DotnetBuild = "dotnet-build";
     public const string DotnetTest = "dotnet-test";

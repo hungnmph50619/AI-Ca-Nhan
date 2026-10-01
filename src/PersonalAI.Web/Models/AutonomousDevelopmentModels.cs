@@ -79,6 +79,8 @@ public sealed record AutonomousEmergencyStopState(
     DateTimeOffset UpdatedAt);
 
 public sealed record AutonomousCodingResult(
+    Guid Id,
+    string WorkspaceId,
     Guid DevelopmentRunId,
     string WorktreePath,
     int FilesChanged,

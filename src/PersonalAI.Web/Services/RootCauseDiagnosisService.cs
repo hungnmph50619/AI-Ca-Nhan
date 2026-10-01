@@ -223,6 +223,7 @@ public sealed class RootCauseDiagnosisService(
                 null,
                 null,
                 null,
+                null,
                 DateTimeOffset.UtcNow,
                 null);
 
@@ -283,6 +284,7 @@ public sealed class RootCauseDiagnosisService(
                 Verified = request.Verified,
                 VerificationMethod = method,
                 VerificationResult = result,
+                VerificationEvidenceReference = reference,
                 VerifiedAt = verifiedAt
             };
 

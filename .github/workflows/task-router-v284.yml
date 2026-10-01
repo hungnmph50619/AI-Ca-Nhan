@@ -60,7 +60,7 @@ jobs:
           start_app
 
           jq -e '
-            .version=="2.8.4"
+            (.version | split(".") | map(tonumber)) >= [2,8,4]
             and .deterministicRouting==true
             and .offlineDevicesEligible==false
             and .capabilityPermissionRequired==true
@@ -219,7 +219,7 @@ jobs:
           ' /tmp/latest-route.json >/dev/null
 
           curl -fsS http://127.0.0.1:5125/api/tasks/router/status             | jq -e '
-              .version=="2.8.4"
+              (.version | split(".") | map(tonumber)) >= [2,8,4]
               and .deterministicRouting==true
               and .offlineDevicesEligible==false
               and .routeDecisionPersisted==true

@@ -25,6 +25,9 @@ public static class DevelopmentEndpoints
         services.AddScoped<IDevelopmentSecurityService, DevelopmentSecurityService>();
         services.AddSingleton<IDevelopmentBenchmarkReportStore, DevelopmentBenchmarkReportStore>();
         services.AddScoped<IDevelopmentBenchmarkService, DevelopmentBenchmarkService>();
+        services.AddSingleton<IDevelopmentGitHubReportStore, DevelopmentGitHubReportStore>();
+        services.AddScoped<IDevelopmentGitHubService, DevelopmentGitHubService>();
+        services.AddHttpClient("development-github");
         services.AddSingleton<IPersonalAiTool, DevelopmentWorkspaceInspectTool>();
         services.AddSingleton<IPersonalAiTool, DevelopmentTextSearchTool>();
         services.AddSingleton<IPersonalAiTool, DevelopmentGitStatusTool>();
@@ -62,6 +65,98 @@ public static class DevelopmentEndpoints
         app.MapGet("/api/development/git/capabilities", (
             ILocalGitRepositoryService git) =>
             Results.Ok(git.GetStatus()));
+
+        app.MapGet("/api/development/github/status", (
+            IDevelopmentGitHubService github) =>
+            Results.Ok(github.GetStatus()));
+
+        app.MapGet("/api/development/github/reports", (
+            IDevelopmentGitHubService github) =>
+            Results.Ok(github.GetAll()));
+
+        app.MapGet("/api/development/github/reports/{reportId:guid}", (
+            Guid reportId,
+            IDevelopmentGitHubService github) =>
+        {
+            var report = github.Get(reportId);
+            return report is null ? Results.NotFound() : Results.Ok(report);
+        });
+
+        app.MapPost("/api/development/github/run", async (
+            RunDevelopmentGitHubRequest request,
+            IDevelopmentGitHubService github,
+            CancellationToken cancellationToken) =>
+        {
+            try
+            {
+                return Results.Ok(await github.PushAndCreatePullRequestAsync(
+                    request,
+                    cancellationToken));
+            }
+            catch (DevelopmentGitHubValidationException exception)
+            {
+                return Results.BadRequest(new ApiError(exception.Message));
+            }
+            catch (LocalGitRepositoryValidationException exception)
+            {
+                return Results.BadRequest(new ApiError(exception.Message));
+            }
+            catch (DevelopmentWorktreeValidationException exception)
+            {
+                return Results.BadRequest(new ApiError(exception.Message));
+            }
+            catch (GitCredentialValidationException exception)
+            {
+                return Results.BadRequest(new ApiError(exception.Message));
+            }
+            catch (KeyNotFoundException exception)
+            {
+                return Results.NotFound(new ApiError(exception.Message));
+            }
+        });
+
+        app.MapPost("/api/development/github/reports/{reportId:guid}/ci/refresh", (
+            Guid reportId,
+            IDevelopmentGitHubService github) =>
+        {
+            try
+            {
+                return Results.Ok(github.RefreshCi(reportId));
+            }
+            catch (KeyNotFoundException exception)
+            {
+                return Results.NotFound(new ApiError(exception.Message));
+            }
+        });
+
+        app.MapPost("/api/development/github/reports/{reportId:guid}/ci/repair", (
+            Guid reportId,
+            DevelopmentGitHubCiRepairRequest request,
+            IDevelopmentGitHubService github) =>
+        {
+            try
+            {
+                return Results.Ok(github.RequestRepair(reportId, request));
+            }
+            catch (DevelopmentGitHubValidationException exception)
+            {
+                return Results.BadRequest(new ApiError(exception.Message));
+            }
+            catch (CiRepairLimitException exception)
+            {
+                return Results.Json(
+                    new ApiError(exception.Message),
+                    statusCode: StatusCodes.Status409Conflict);
+            }
+            catch (CiMonitorValidationException exception)
+            {
+                return Results.BadRequest(new ApiError(exception.Message));
+            }
+            catch (KeyNotFoundException exception)
+            {
+                return Results.NotFound(new ApiError(exception.Message));
+            }
+        });
 
         app.MapGet("/api/development/benchmarks/status", (
             IDevelopmentBenchmarkService benchmarks) =>

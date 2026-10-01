@@ -1,0 +1,162 @@
+name: Personal AI OS v3.0
+
+on:
+  push:
+    branches:
+      - 'experiment/roadmap-v3-0-continuous-self-improving-os'
+
+jobs:
+  validate-v300:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: '8.0.x'
+
+      - name: Restore
+        run: dotnet restore PersonalAI.sln
+
+      - name: Build
+        run: dotnet build PersonalAI.sln -c Release --no-restore
+
+      - name: Tests
+        run: dotnet test PersonalAI.sln -c Release --no-build
+
+      - name: Personal AI OS v3.0 acceptance
+        shell: bash
+        run: |
+          set -euxo pipefail
+          rm -rf /tmp/personalai-v300
+          mkdir -p             /tmp/personalai-v300/workspace             /tmp/personalai-v300/audit             /tmp/personalai-v300/undo             /tmp/personalai-v300/nightly             /tmp/personalai-v300/xdg
+
+          export Workspace__Root=/tmp/personalai-v300/workspace
+          export Audit__Root=/tmp/personalai-v300/audit
+          export Undo__Root=/tmp/personalai-v300/undo
+          export Development__Nightly__ReportRoot=/tmp/personalai-v300/nightly
+          export Development__Nightly__Enabled=false
+          export XDG_DATA_HOME=/tmp/personalai-v300/xdg
+
+          dotnet run --project src/PersonalAI.Web/PersonalAI.Web.csproj             -c Release --no-build             --urls http://127.0.0.1:5143             >/tmp/personalai-v300/app.log 2>&1 &
+          APP_PID=$!
+          trap 'kill "$APP_PID" 2>/dev/null || true; wait "$APP_PID" 2>/dev/null || true' EXIT
+
+          for i in {1..30}; do
+            if curl -fsS http://127.0.0.1:5143/api/os/status >/tmp/os-status.json; then
+              break
+            fi
+            sleep 1
+          done
+
+          jq -e '
+            .version=="3.0.0"
+            and .edition=="Personal AI OS"
+            and .stage=="v3.0"
+            and .nextStage=="continuous-stable"
+            and .readiness.osContractReady==true
+            and .readiness.capabilityCount==20
+            and any(.capabilities[]; .id=="continuous-improvement" and .state=="controlled")
+            and .continuousImprovement.available==true
+            and .continuousImprovement.enabledByDefault==false
+            and .continuousImprovement.autonomousDevelopmentControllerReady==true
+            and .continuousImprovement.nightlySchedulerAvailable==true
+            and .continuousImprovement.nightlySchedulerEnabled==false
+            and .continuousImprovement.lowRiskOnly==true
+            and .continuousImprovement.policyBypassAllowed==false
+            and .continuousImprovement.directMainPushAllowed==false
+            and .continuousImprovement.highRiskAutoMergeAllowed==false
+            and .continuousImprovement.unifiedPermissionsReady==true
+            and .continuousImprovement.systemLogReady==true
+            and .continuousImprovement.undoReady==true
+            and .continuousImprovement.resourceLimitsReady==true
+            and .continuousImprovement.loopGuardReady==true
+            and .continuousImprovement.emergencyStopReady==true
+            and .continuousImprovement.disasterRecoveryReady==true
+            and .continuousImprovement.databaseUpgradesReady==true
+            and .continuousImprovement.acceptanceBaseline=="v2.9.9/full-autonomous-development-test-v299.yml"
+            and (.continuousImprovement.blockers | length)==0
+          ' /tmp/os-status.json >/dev/null
+
+          curl -fsS http://127.0.0.1:5143/api/os/manifest >/tmp/os-manifest.json
+          jq -e '
+            .version=="3.0.0"
+            and .stage=="v3.0"
+            and (.capabilities | length)==20
+            and any(.layers[]; .id=="governance" and (.capabilityIds | index("continuous-improvement"))!=null)
+            and any(.capabilities[]; .id=="continuous-improvement" and .state=="controlled")
+            and any(.boundaries[]; contains("continuous self-improvement"))
+            and any(.boundaries[]; contains("Emergency stop"))
+            and .continuousImprovement.available==true
+          ' /tmp/os-manifest.json >/dev/null
+
+          curl -fsS http://127.0.0.1:5143/api/development/autonomous/status >/tmp/autonomous.json
+          jq -e '
+            .version=="3.0.0"
+            and .fullPipelineControllerEnabled==true
+            and .policyBypassAllowed==false
+            and .maximumTransitionsPerInvocation==20
+            and .maximumCodingEdits==4
+            and .maximumCiRepairAttempts==3
+            and .directMainPushAllowed==false
+            and .highRiskAutoMergeAllowed==false
+          ' /tmp/autonomous.json >/dev/null
+
+          curl -fsS http://127.0.0.1:5143/api/development/nightly/status >/tmp/nightly.json
+          jq -e '
+            .version=="3.0.0"
+            and .schedulerEnabled==false
+            and .lowRiskOnly==true
+            and .oneActiveNightlyRunAtATime==true
+            and .reportsPersisted==true
+            and .downstreamPullRequestUsesPolicy==true
+            and .downstreamAutoMergeUsesMergePolicy==true
+          ' /tmp/nightly.json >/dev/null
+
+          curl -fsS http://127.0.0.1:5143/api/system/permissions/status             | jq -e '.defaultDeny==true and .denyOverridesAllow==true' >/dev/null
+          curl -fsS http://127.0.0.1:5143/api/system/logs/status             | jq -e '.requestCorrelationEnabled==true and .requestBodyLoggingEnabled==false' >/dev/null
+          curl -fsS http://127.0.0.1:5143/api/undo/status             | jq -e '.explicitConfirmationRequired==true and .preconditionRevalidationRequired==true' >/dev/null
+          curl -fsS http://127.0.0.1:5143/api/system/resources/status             | jq -e '.failClosed==true' >/dev/null
+          curl -fsS http://127.0.0.1:5143/api/system/loop-guard/status             | jq -e '.failClosed==true and .stopReasonAudited==true' >/dev/null
+          curl -fsS http://127.0.0.1:5143/api/disaster-recovery/status             | jq -e '.archiveIntegrityVerificationEnabled==true and .rollbackOnRestoreFailureEnabled==true' >/dev/null
+          curl -fsS http://127.0.0.1:5143/api/system/database-upgrades/status             | jq -e '.upToDate==true and .checksumValidationEnabled==true and .atomicMigrationEnabled==true and .failClosed==true' >/dev/null
+
+          # Emergency stop must immediately invalidate continuous-improvement readiness.
+          curl -fsS -X POST http://127.0.0.1:5143/api/system/emergency-stop/engage             -H 'Content-Type: application/json'             -d '{"reason":"v3.0 acceptance emergency stop","confirmStop":true}'             >/tmp/stop-engaged.json
+          jq -e '.engaged==true and .newExecutionBlocked==true and .auditPreserved==true'             /tmp/stop-engaged.json >/dev/null
+
+          curl -fsS http://127.0.0.1:5143/api/os/status >/tmp/os-stopped.json
+          jq -e '
+            .continuousImprovement.available==false
+            and (.continuousImprovement.blockers | any(.=="Emergency stop đang engaged."))
+            and .readiness.osContractReady==false
+          ' /tmp/os-stopped.json >/dev/null
+
+          curl -fsS -X POST http://127.0.0.1:5143/api/system/emergency-stop/release             -H 'Content-Type: application/json'             -d '{"confirmRelease":true}'             >/tmp/stop-released.json
+          jq -e '.engaged==false and .newExecutionBlocked==false and .explicitReleaseRequired==true'             /tmp/stop-released.json >/dev/null
+
+          curl -fsS http://127.0.0.1:5143/api/os/status >/tmp/os-resumed.json
+          jq -e '
+            .continuousImprovement.available==true
+            and .readiness.osContractReady==true
+            and (.continuousImprovement.blockers | length)==0
+          ' /tmp/os-resumed.json >/dev/null
+
+          # v3.0 is the final roadmap catalog item.
+          next_code=$(curl -sS -o /tmp/next-version.json -w '%{http_code}'             http://127.0.0.1:5143/api/development-autopilot/next)
+          test "$next_code" = "404"
+
+          # Emergency-stop audit remains explainable after release.
+          stop_logs=$(curl -fsS             'http://127.0.0.1:5143/api/system/logs?source=emergency-stop&limit=20')
+          stop_audit_id=$(echo "$stop_logs" | jq -r '
+            [.items[] | select(.action=="emergency-stop.engage")] | first | .auditId // empty')
+          test -n "$stop_audit_id"
+
+          curl -fsS             "http://127.0.0.1:5143/api/system/explanations/audit/$stop_audit_id"             >/tmp/stop-explanation.json
+          jq -e '
+            .sourceGrounded==true
+            and .aiGenerated==false
+            and .hiddenReasoningExposed==false
+            and .action=="emergency-stop.engage"
+            and .result=="succeeded"
+          ' /tmp/stop-explanation.json >/dev/null

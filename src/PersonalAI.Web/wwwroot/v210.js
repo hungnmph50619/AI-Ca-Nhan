@@ -165,7 +165,7 @@
     const boundary = document.createElement("div");
     boundary.className = "agent-boundary";
     boundary.textContent =
-      "v2.2.5: Bạn xem trước toàn bộ bước và nguồn dữ liệu rồi mới xác nhận chạy. Quy trình nhiều bước cần bạn duyệt nội dung trước khi chuyển. Bộ lọc dữ liệu nhạy cảm không bảo đảm phát hiện mọi bí mật. Các tác nhân không tự chạy công cụ.";
+      "Bạn xem trước toàn bộ bước và nguồn dữ liệu rồi mới xác nhận chạy. Quy trình nhiều bước cần bạn duyệt nội dung trước khi chuyển. Bộ lọc dữ liệu nhạy cảm không bảo đảm phát hiện mọi bí mật. Các tác nhân không tự chạy công cụ.";
 
     feedback = document.createElement("div");
     feedback.className = "agent-feedback";

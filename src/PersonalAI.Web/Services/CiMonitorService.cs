@@ -89,7 +89,7 @@ public sealed class CiMonitorService(
             foreach (var item in events)
             {
                 var index = all.FindIndex(x =>
-                    x.DeliveryId.Equals(item.DeliveryId, StringComparison.OrdinalIgnoreCase));
+                    SameCiIdentity(x, item));
 
                 var mappedState = MapState(item.Status, item.Conclusion);
                 var completedAt = mappedState == CiMonitorStates.Completed
@@ -104,6 +104,7 @@ public sealed class CiMonitorService(
                         item.Repository,
                         item.EventType,
                         item.DeliveryId,
+                        item.ExternalId,
                         item.Ref,
                         item.Sha,
                         mappedState,
@@ -295,6 +296,26 @@ public sealed class CiMonitorService(
 
             return all[index];
         }
+    }
+
+    private static bool SameCiIdentity(
+        CiRunRecord existing,
+        DevelopmentEventEnvelope item)
+    {
+        if (!string.IsNullOrWhiteSpace(existing.ExternalId) &&
+            !string.IsNullOrWhiteSpace(item.ExternalId))
+        {
+            return existing.SourceEventType.Equals(
+                       item.EventType,
+                       StringComparison.OrdinalIgnoreCase) &&
+                   existing.ExternalId.Equals(
+                       item.ExternalId,
+                       StringComparison.OrdinalIgnoreCase);
+        }
+
+        return existing.DeliveryId.Equals(
+            item.DeliveryId,
+            StringComparison.OrdinalIgnoreCase);
     }
 
     private static string MapState(string? status, string? conclusion)

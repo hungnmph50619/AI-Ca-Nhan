@@ -121,7 +121,8 @@ public sealed class CompanionService : ICompanionService
                 CompanionCapabilities.Pairing,
                 CompanionCapabilities.Chat,
                 CompanionCapabilities.TasksRead,
-                CompanionCapabilities.CoreStatus
+                CompanionCapabilities.CoreStatus,
+                CompanionCapabilities.DeviceHubStatus
             ],
             [
                 "Pairing code chỉ tồn tại tạm thời và chỉ được tạo từ admin request cục bộ.",
@@ -129,6 +130,7 @@ public sealed class CompanionService : ICompanionService
                 "Companion chat không được đề xuất hoặc thực thi tool.",
                 "Task API trên Android là read-only trong v1.5.0.",
                 "Remote Memory/Documents/Files/Tools/Undo/Connector/Development mutation chưa được mở.",
+                "Device Hub v2.8.0 chỉ theo dõi presence/status; không tự cấp permission, trust hoặc remote execution.",
                 AllowInsecureHttp
                     ? "HTTP không mã hóa đang được cho phép bằng cấu hình explicit; chỉ dùng trên mạng tin cậy."
                     : "Client pairing và client API yêu cầu HTTPS."

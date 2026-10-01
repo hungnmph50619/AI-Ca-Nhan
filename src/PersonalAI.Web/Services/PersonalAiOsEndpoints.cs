@@ -22,6 +22,12 @@ public static class PersonalAiOsEndpoints
             CancellationToken cancellationToken) =>
             Results.Ok(await os.GetManifestAsync(cancellationToken)));
 
+        app.MapGet("/api/os/production-readiness", async (
+            IPersonalAiOsService os,
+            CancellationToken cancellationToken) =>
+            Results.Ok(
+                await os.GetProductionReadinessAsync(cancellationToken)));
+
         return app;
     }
 }

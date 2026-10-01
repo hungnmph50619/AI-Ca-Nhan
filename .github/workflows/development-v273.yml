@@ -1,0 +1,186 @@
+name: Development v2.7.3
+
+on:
+  push:
+    branches:
+      - 'experiment/roadmap-v2-7-3-current'
+
+jobs:
+  validate-v273:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: '8.0.x'
+
+      - name: Restore
+        run: dotnet restore PersonalAI.sln
+
+      - name: Build
+        run: dotnet build PersonalAI.sln -c Release --no-restore
+
+      - name: Tests
+        run: dotnet test PersonalAI.sln -c Release --no-build
+
+      - name: Worktree-only self coding smoke test
+        shell: bash
+        run: |
+          set -euo pipefail
+          rm -rf /tmp/personalai-v273
+          mkdir -p /tmp/personalai-v273/workspace/repo /tmp/personalai-v273/runs /tmp/personalai-v273/leases
+
+          cd /tmp/personalai-v273/workspace/repo
+          git init -b main
+          git config user.name "PersonalAI CI"
+          git config user.email "ci@example.invalid"
+          printf 'base\n' > source.txt
+          git add source.txt
+          git commit -m "initial"
+          printf 'user dirty change\n' >> source.txt
+          main_hash_before=$(sha256sum source.txt | awk '{print $1}')
+
+          cd "$GITHUB_WORKSPACE"
+          export Workspace__Root=/tmp/personalai-v273/workspace
+          export Development__RunRoot=/tmp/personalai-v273/runs
+          export Development__StateRoot=/tmp/personalai-v273/leases
+
+          dotnet run --project src/PersonalAI.Web/PersonalAI.Web.csproj -c Release --no-build --urls http://127.0.0.1:5108 >/tmp/personalai-v273.log 2>&1 &
+          APP_PID=$!
+          trap 'kill "$APP_PID" 2>/dev/null || true' EXIT
+
+          for i in {1..30}; do
+            if curl -fsS http://127.0.0.1:5108/api/development/status >/tmp/status.json; then break; fi
+            sleep 1
+          done
+
+          jq -e '
+            .version == "2.7.3"
+            and (.availableCapabilities | index("self-coding-worktree")) != null
+          ' /tmp/status.json >/dev/null
+
+          curl -fsS -X POST http://127.0.0.1:5108/api/development/runs             -H 'Content-Type: application/json'             -d '{
+              "goal":"self coding v2.7.3 smoke",
+              "repositoryPath":"repo",
+              "branch":"experiment/v273-smoke",
+              "confirmCreate":true
+            }' >/tmp/run.json
+          run_id=$(jq -r '.id' /tmp/run.json)
+
+          blocked_payload=$(jq -nc --arg run "$run_id" '{
+            experiment:{
+              experimentId:"exp-v273-blocked",
+              proposalId:"proposal-v273",
+              workspaceId:"personal",
+              repositoryPath:"repo",
+              baseBranch:"main",
+              experimentBranch:"experiment/v273-smoke",
+              status:"prepared",
+              isolationMode:"experiment-branch",
+              objective:"safe coding",
+              verificationPlan:"build/test",
+              rollbackPlan:"discard worktree",
+              gitAvailable:true,
+              gitWriteActionsEnabled:true,
+              branchCreationPerformed:false,
+              humanApprovalRequired:true,
+              preparedAt:"2026-10-01T00:00:00Z"
+            },
+            proposal:{
+              id:"proposal-v273",
+              area:"development",
+              severity:"medium",
+              problem:"smoke",
+              hypothesis:"isolated edit works",
+              change:"create agent file",
+              expectedImprovement:"safe edit",
+              risk:"low",
+              evidence:"ci",
+              evidenceCount:1,
+              requiresHumanApproval:true
+            },
+            edits:[{path:"agent.txt",content:"agent change\n",mode:"create"}],
+            confirmBranchCreation:true,
+            confirmFileChanges:true,
+            developmentRunId:$run
+          }')
+
+          blocked_code=$(curl -sS -o /tmp/blocked.json -w '%{http_code}'             -X POST http://127.0.0.1:5108/api/self-improvement/self-coding/run             -H 'Content-Type: application/json'             -d "$blocked_payload")
+          test "$blocked_code" = "400"
+
+          curl -fsS -X POST http://127.0.0.1:5108/api/development/runs/$run_id/advance             -H 'Content-Type: application/json'             -d '{"expectedCurrentStage":"analysis","result":"prepared"}' >/tmp/coding-stage.json
+          jq -e '.stage=="coding"' /tmp/coding-stage.json >/dev/null
+
+          workspace_id=$(jq -r '.workspaceId' /tmp/coding-stage.json)
+
+          coding_payload=$(jq -nc --arg run "$run_id" --arg ws "$workspace_id" '{
+            experiment:{
+              experimentId:"exp-v273",
+              proposalId:"proposal-v273",
+              workspaceId:$ws,
+              repositoryPath:"repo",
+              baseBranch:"main",
+              experimentBranch:"experiment/v273-smoke",
+              status:"prepared",
+              isolationMode:"worktree",
+              objective:"safe coding",
+              verificationPlan:"build/test",
+              rollbackPlan:"discard worktree",
+              gitAvailable:true,
+              gitWriteActionsEnabled:true,
+              branchCreationPerformed:false,
+              humanApprovalRequired:true,
+              preparedAt:"2026-10-01T00:00:00Z"
+            },
+            proposal:{
+              id:"proposal-v273",
+              area:"development",
+              severity:"medium",
+              problem:"smoke",
+              hypothesis:"isolated edit works",
+              change:"create agent file",
+              expectedImprovement:"safe edit",
+              risk:"low",
+              evidence:"ci",
+              evidenceCount:1,
+              requiresHumanApproval:true
+            },
+            edits:[{path:"agent.txt",content:"agent change\n",mode:"create"}],
+            confirmBranchCreation:true,
+            confirmFileChanges:true,
+            developmentRunId:$run
+          }')
+
+          curl -fsS -X POST http://127.0.0.1:5108/api/self-improvement/self-coding/run             -H 'Content-Type: application/json'             -d "$coding_payload" >/tmp/coding.json
+
+          jq -e '
+            .version=="2.7.3"
+            and .branch=="experiment/v273-smoke"
+            and .filesChanged==1
+            and .commitCreated==false
+            and .pushed==false
+            and .merged==false
+            and .developmentRunId=="'"$run_id"'"
+            and .mainWorktreeModified==false
+            and .auditPerEdit==true
+            and (.worktreePath | startswith(".personalai-worktrees/"))
+          ' /tmp/coding.json >/dev/null
+
+          worktree_path=$(jq -r '.worktreePath' /tmp/coding.json)
+          test -f "/tmp/personalai-v273/workspace/$worktree_path/agent.txt"
+          grep -q 'agent change' "/tmp/personalai-v273/workspace/$worktree_path/agent.txt"
+          test ! -f /tmp/personalai-v273/workspace/repo/agent.txt
+
+          main_hash_after=$(sha256sum /tmp/personalai-v273/workspace/repo/source.txt | awk '{print $1}')
+          test "$main_hash_before" = "$main_hash_after"
+          grep -q 'user dirty change' /tmp/personalai-v273/workspace/repo/source.txt
+
+          git -C /tmp/personalai-v273/workspace/repo branch --show-current | grep -qx main
+
+          curl -fsS 'http://127.0.0.1:5108/api/audit?limit=50&action=self-improvement.self-coding.write' >/tmp/audit-write.json
+          jq -e 'length >= 1' /tmp/audit-write.json >/dev/null
+
+          curl -fsS 'http://127.0.0.1:5108/api/audit?limit=50&action=self-improvement.self-coding.complete' >/tmp/audit-complete.json
+          jq -e 'length >= 1' /tmp/audit-complete.json >/dev/null
+
+          curl -fsS http://127.0.0.1:5108/api/development/runs/$run_id             | jq -e '.stage=="coding" and .status=="active"' >/dev/null

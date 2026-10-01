@@ -79,12 +79,18 @@ public sealed class PersonalAiOsService(
         CancellationToken cancellationToken = default)
     {
         var health = await core.GetHealthAsync(cancellationToken);
-        var capabilities = BuildCapabilities(health.Modules);
-        var readiness = BuildReadiness(health, capabilities);
+        var baseCapabilities = BuildCapabilities(health.Modules);
         var workspace = workspaceContext.CurrentWorkspace;
         var continuous = await BuildContinuousImprovementAsync(
             health,
             cancellationToken);
+        var capabilities = AppendContinuousImprovementCapability(
+            baseCapabilities,
+            continuous);
+        var readiness = BuildReadiness(
+            health,
+            capabilities,
+            continuous);
 
         return new PersonalAiOsStatusResponse(
             PersonalAiRelease.Version,
@@ -97,9 +103,7 @@ public sealed class PersonalAiOsService(
             readiness,
             BuildGovernance(),
             Layers,
-            AppendContinuousImprovementCapability(
-                capabilities,
-                continuous),
+            capabilities,
             NextStage,
             continuous);
     }
@@ -304,9 +308,16 @@ public sealed class PersonalAiOsService(
 
     private static PersonalAiOsReadiness BuildReadiness(
         SystemHealthResponse health,
-        IReadOnlyList<PersonalAiOsCapability> capabilities)
+        IReadOnlyList<PersonalAiOsCapability> capabilities,
+        PersonalAiOsContinuousImprovement? continuous = null)
     {
         var blockers = new List<string>();
+
+        if (continuous is not null && !continuous.Available)
+        {
+            blockers.Add(
+                "Continuous self-improvement safety plane chưa sẵn sàng.");
+        }
 
         RequireAvailable(
             health.Modules,

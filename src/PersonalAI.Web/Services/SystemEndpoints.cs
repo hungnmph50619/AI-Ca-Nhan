@@ -127,6 +127,8 @@ public static class SystemEndpoints
         services.AddScoped<IActionExplanationService, ActionExplanationService>();
         services.AddSingleton<ILoopGuardService, LoopGuardService>();
         services.AddSingleton<IEmergencyStopService, EmergencyStopService>();
+        services.AddSingleton<IDatabaseUpgradeService, DatabaseUpgradeService>();
+        services.AddHostedService<DatabaseUpgradeHostedService>();
         return services;
     }
 

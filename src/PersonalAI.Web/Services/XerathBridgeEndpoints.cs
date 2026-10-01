@@ -142,6 +142,21 @@ public static class XerathBridgeEndpoints
                 : Results.Ok(vision);
         });
 
+        app.MapGet("/api/integrations/league/map-situation", (
+            HttpContext context,
+            IWorkspaceContextAccessor workspace,
+            ILeagueMatchSnapshotStore snapshots) =>
+        {
+            if (!LocalCaller(context))
+                return Results.NotFound();
+
+            var situation = snapshots.GetMapSituation(
+                workspace.CurrentWorkspaceId);
+            return situation is null
+                ? Results.NotFound()
+                : Results.Ok(situation);
+        });
+
         app.MapGet("/api/integrations/league/timeline", (
             HttpContext context,
             IWorkspaceContextAccessor workspace,

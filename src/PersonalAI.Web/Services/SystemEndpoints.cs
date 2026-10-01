@@ -339,7 +339,7 @@ public static class SystemEndpoints
         });
 
         app.MapGet("/api/system/database-upgrades/status", (
-            IDatabaseUpgradeService upgrades) =>
+            [Microsoft.AspNetCore.Mvc.FromServices] IDatabaseUpgradeService upgrades) =>
             Results.Ok(upgrades.GetStatus()));
 
         app.MapGet("/api/system/health", async (

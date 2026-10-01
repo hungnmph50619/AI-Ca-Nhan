@@ -15,6 +15,9 @@ public interface IDeviceIdentityService
     DeviceIdentity EstablishTrust(
         DeviceHubDevice device,
         string pairedDevicePublicKey);
+    DeviceIdentity SetCapabilitiesMetadata(
+        DeviceHubDevice device,
+        IReadOnlyList<string> capabilities);
 }
 
 public sealed class DeviceIdentityService(
@@ -217,6 +220,55 @@ public sealed class DeviceIdentityService(
         finally
         {
             CryptographicOperations.ZeroMemory(peerBytes);
+        }
+    }
+
+    public DeviceIdentity SetCapabilitiesMetadata(
+        DeviceHubDevice device,
+        IReadOnlyList<string> capabilities)
+    {
+        ArgumentNullException.ThrowIfNull(device);
+        ArgumentNullException.ThrowIfNull(capabilities);
+
+        var workspaceId = NormalizeWorkspaceId(device.WorkspaceId);
+        _ = EnsureDevice(device);
+
+        var normalized = capabilities
+            .Select(x => (x ?? string.Empty).Trim().ToLowerInvariant())
+            .Where(x => x.Length > 0)
+            .Distinct(StringComparer.Ordinal)
+            .Order(StringComparer.Ordinal)
+            .ToArray();
+
+        lock (_gate)
+        {
+            var all = Load(workspaceId);
+            var index = all.FindIndex(x => x.DeviceId == device.Id);
+            if (index < 0)
+                throw new DeviceIdentityValidationException(
+                    "Không tìm thấy identity để cập nhật capability metadata.");
+
+            var current = all[index];
+            ValidateEncryptedPrivateKey(current);
+
+            var updated = current with
+            {
+                Capabilities = normalized,
+                UpdatedAt = DateTimeOffset.UtcNow
+            };
+
+            all[index] = updated;
+            Save(workspaceId, all);
+
+            audit.Record(
+                AuditAgents.System,
+                "device-identity.capabilities.sync",
+                $"device:{device.Id:D}",
+                $"capabilities:{normalized.Length};permission-state:not-stored-in-identity",
+                AuditResults.Succeeded,
+                workspaceId: workspaceId);
+
+            return ToPublic(updated, device);
         }
     }
 

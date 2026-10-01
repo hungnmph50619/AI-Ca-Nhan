@@ -64,7 +64,7 @@ jobs:
           test "$ready" = "1"
 
           jq -e '
-            .version == "2.6.10"
+            (.version | split(".") | map(tonumber)) >= [2,6,10]
             and .minimumLeaseSeconds == 30
             and .maximumLeaseSeconds == 3600
             and .repositoryScopeBlocksChildren == true

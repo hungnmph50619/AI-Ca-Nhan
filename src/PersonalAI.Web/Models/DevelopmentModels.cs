@@ -14,6 +14,7 @@ public static class DevelopmentCapabilities
     public const string GitPullFastForwardOnly = "git-pull-ff-only";
     public const string GitCommit = "git-commit";
     public const string GitPush = "git-push";
+    public const string GitWorktreeIsolation = "git-worktree-isolation";
     public const string DotnetRestore = "dotnet-restore";
     public const string DotnetBuild = "dotnet-build";
     public const string DotnetTest = "dotnet-test";

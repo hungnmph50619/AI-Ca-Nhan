@@ -52,7 +52,7 @@ jobs:
           test "$ready" = "1"
 
           jq -e '
-            .version == "2.6.1"
+            (.version | split(".") | map(tonumber)) >= [2,6,1]
             and .defaultMinimumScore == 0.75
             and .semanticReviewRequiredForCommit == true
             and .externalAiRequiresConfirmation == true

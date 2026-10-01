@@ -39,6 +39,21 @@ public sealed record LeagueMatchTimeline(
     double LastGameTimeSeconds,
     IReadOnlyList<LeagueMatchSnapshot> Snapshots);
 
+public sealed record LeagueMatchEvent(
+    Guid Id,
+    Guid MatchSessionId,
+    string Kind,
+    string Severity,
+    double GameTimeSeconds,
+    DateTimeOffset ObservedAtUtc,
+    string Message,
+    IReadOnlyList<string> Evidence);
+
+public sealed record LeagueMatchEventFeed(
+    Guid MatchSessionId,
+    string WorkspaceId,
+    IReadOnlyList<LeagueMatchEvent> Events);
+
 public static class LeagueMatchSessionStates
 {
     public const string Active = "active";
@@ -65,6 +80,8 @@ public interface ILeagueMatchSnapshotStore
     LeagueMatchTimeline? GetTimeline(string workspaceId);
 
     LeagueMatchSessionSummary? GetSession(string workspaceId);
+
+    LeagueMatchEventFeed? GetEvents(string workspaceId);
 }
 
 public sealed class LeagueMatchSnapshotStore : ILeagueMatchSnapshotStore
@@ -91,6 +108,7 @@ public sealed class LeagueMatchSnapshotStore : ILeagueMatchSnapshotStore
                 state.SessionId = Guid.NewGuid();
                 state.StartedAtUtc = snapshot.ObservedAtUtc;
                 state.Snapshots.Clear();
+                state.Events.Clear();
                 state.LastSequenceByClient.Clear();
             }
 
@@ -119,14 +137,26 @@ public sealed class LeagueMatchSnapshotStore : ILeagueMatchSnapshotStore
                     Reason: "stale-game-time");
             }
 
+            var previous = state.Snapshots.Count > 0
+                ? state.Snapshots.Last()
+                : null;
+
             state.LastSequenceByClient[snapshot.ClientInstanceId] =
                 snapshot.Sequence;
             state.LastGameTimeSeconds = snapshot.GameTimeSeconds;
             state.LastObservedAtUtc = snapshot.ObservedAtUtc;
             state.Snapshots.Enqueue(snapshot);
 
+            foreach (var item in BuildEvents(
+                         state.SessionId,
+                         previous,
+                         snapshot))
+                state.Events.Enqueue(item);
+
             while (state.Snapshots.Count > MaximumSnapshots)
                 state.Snapshots.Dequeue();
+            while (state.Events.Count > 240)
+                state.Events.Dequeue();
 
             return new(
                 Accepted: true,
@@ -167,6 +197,132 @@ public sealed class LeagueMatchSnapshotStore : ILeagueMatchSnapshotStore
         }
     }
 
+    public LeagueMatchEventFeed? GetEvents(string workspaceId)
+    {
+        if (!_states.TryGetValue(workspaceId, out var state))
+            return null;
+
+        lock (state.Sync)
+        {
+            if (state.SessionId == Guid.Empty)
+                return null;
+
+            return new(
+                state.SessionId,
+                workspaceId,
+                state.Events.ToArray());
+        }
+    }
+
+    private static IReadOnlyList<LeagueMatchEvent> BuildEvents(
+        Guid sessionId,
+        LeagueMatchSnapshot? previous,
+        LeagueMatchSnapshot current)
+    {
+        if (previous is null)
+            return Array.Empty<LeagueMatchEvent>();
+
+        var events = new List<LeagueMatchEvent>();
+
+        void Add(
+            string kind,
+            string severity,
+            string message,
+            params string[] evidence) =>
+            events.Add(new(
+                Guid.NewGuid(),
+                sessionId,
+                kind,
+                severity,
+                current.GameTimeSeconds,
+                current.ObservedAtUtc,
+                message,
+                evidence));
+
+        if (!previous.IsDead && current.IsDead)
+            Add(
+                "own-death",
+                "critical",
+                "Người chơi vừa bị hạ gục.",
+                $"gameTime={current.GameTimeSeconds:0.0}s");
+
+        if (previous.IsDead && !current.IsDead)
+            Add(
+                "own-respawn",
+                "info",
+                "Người chơi vừa hồi sinh.",
+                $"gameTime={current.GameTimeSeconds:0.0}s");
+
+        if (current.Level > previous.Level)
+            Add(
+                "own-level-up",
+                "info",
+                $"Cấp độ tăng từ {previous.Level} lên {current.Level}.",
+                $"level={current.Level}");
+
+        var dt = current.GameTimeSeconds - previous.GameTimeSeconds;
+        if (!current.IsDead &&
+            !previous.IsDead &&
+            dt > 0 &&
+            dt <= 5 &&
+            previous.MaxHealth > 0 &&
+            current.MaxHealth > 0)
+        {
+            var previousHealthPercent =
+                100d * previous.Health / previous.MaxHealth;
+            var currentHealthPercent =
+                100d * current.Health / current.MaxHealth;
+            var loss = previousHealthPercent - currentHealthPercent;
+
+            if (loss >= 20)
+                Add(
+                    "own-health-drop-high",
+                    loss >= 35 ? "critical" : "high",
+                    $"Máu vừa giảm {loss:0}% trong {dt:0.0} giây.",
+                    $"hpBefore={previousHealthPercent:0.0}%",
+                    $"hpNow={currentHealthPercent:0.0}%",
+                    $"observedWindow={dt:0.0}s");
+
+            if (previousHealthPercent > 25 &&
+                currentHealthPercent <= 25)
+                Add(
+                    "own-health-low",
+                    "high",
+                    $"Máu hiện còn {currentHealthPercent:0}%.",
+                    $"hpNow={currentHealthPercent:0.0}%");
+        }
+
+        if (!current.IsDead &&
+            current.ResourceType.Equals(
+                "MANA",
+                StringComparison.OrdinalIgnoreCase) &&
+            previous.MaxResource > 0 &&
+            current.MaxResource > 0)
+        {
+            var previousResourcePercent =
+                100d * previous.Resource / previous.MaxResource;
+            var currentResourcePercent =
+                100d * current.Resource / current.MaxResource;
+
+            if (previousResourcePercent > 20 &&
+                currentResourcePercent <= 20)
+                Add(
+                    "own-mana-low",
+                    "medium",
+                    $"Năng lượng hiện còn {currentResourcePercent:0}%.",
+                    $"manaNow={currentResourcePercent:0.0}%");
+        }
+
+        if (previous.Gold < 1200 && current.Gold >= 1200)
+            Add(
+                "own-gold-high",
+                "low",
+                $"Vàng hiện có đã đạt {current.Gold:0}.",
+                $"gold={current.Gold:0}");
+
+        return events;
+    }
+
     public LeagueMatchTimeline? GetTimeline(string workspaceId)
     {
         if (!_states.TryGetValue(workspaceId, out var state))
@@ -195,6 +351,7 @@ public sealed class LeagueMatchSnapshotStore : ILeagueMatchSnapshotStore
         public DateTimeOffset LastObservedAtUtc { get; set; }
         public double LastGameTimeSeconds { get; set; } = -1;
         public Queue<LeagueMatchSnapshot> Snapshots { get; } = new();
+        public Queue<LeagueMatchEvent> Events { get; } = new();
         public Dictionary<string, long> LastSequenceByClient { get; } =
             new(StringComparer.Ordinal);
     }

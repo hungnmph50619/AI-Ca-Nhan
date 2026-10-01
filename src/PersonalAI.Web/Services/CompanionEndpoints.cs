@@ -22,6 +22,7 @@ public static class CompanionEndpoints
         services.AddScoped<IDeviceCapabilityService, DeviceCapabilityService>();
         services.AddScoped<IDeviceOfflineQueueService, DeviceOfflineQueueService>();
         services.AddScoped<IDeviceDataConflictService, DeviceDataConflictService>();
+        services.AddScoped<IMobileCodeCommandService, MobileCodeCommandService>();
         services.AddScoped<IChatTurnService, ChatTurnService>();
         return services;
     }
@@ -916,6 +917,92 @@ public static class CompanionEndpoints
                 }
             });
 
+        app.MapGet(
+            "/api/companion/admin/development/commands/status",
+            (
+                HttpContext httpContext,
+                IMobileCodeCommandService commands) =>
+            {
+                if (!IsLocalAdminRequest(httpContext))
+                {
+                    return Results.Json(
+                        new ApiError(
+                            "Chỉ desktop local mới được xem Mobile Code Command status."),
+                        statusCode:
+                            StatusCodes.Status403Forbidden);
+                }
+
+                return Results.Ok(commands.GetStatus());
+            });
+
+        app.MapGet(
+            "/api/companion/admin/development/commands",
+            (
+                HttpContext httpContext,
+                IMobileCodeCommandService commands) =>
+            {
+                if (!IsLocalAdminRequest(httpContext))
+                {
+                    return Results.Json(
+                        new ApiError(
+                            "Chỉ desktop local mới được xem Mobile Code Commands."),
+                        statusCode:
+                            StatusCodes.Status403Forbidden);
+                }
+
+                return Results.Ok(commands.GetAll());
+            });
+
+        app.MapPost(
+            "/api/companion/admin/development/commands/{commandId:guid}/execute",
+            async (
+                Guid commandId,
+                ExecuteMobileCodeCommandRequest request,
+                HttpContext httpContext,
+                IMobileCodeCommandService commands,
+                CancellationToken cancellationToken) =>
+            {
+                if (!IsLocalAdminRequest(httpContext))
+                {
+                    return Results.Json(
+                        new ApiError(
+                            "Chỉ desktop local mới được duyệt lệnh sửa code."),
+                        statusCode:
+                            StatusCodes.Status403Forbidden);
+                }
+
+                try
+                {
+                    return Results.Ok(
+                        await commands.ExecuteAsync(
+                            commandId,
+                            request,
+                            cancellationToken));
+                }
+                catch (MobileCodeCommandValidationException exception)
+                {
+                    return Results.BadRequest(new ApiError(exception.Message));
+                }
+                catch (AutonomousDevelopmentValidationException exception)
+                {
+                    return Results.BadRequest(new ApiError(exception.Message));
+                }
+                catch (DevelopmentRunValidationException exception)
+                {
+                    return Results.BadRequest(new ApiError(exception.Message));
+                }
+                catch (DevelopmentRunConflictException exception)
+                {
+                    return Results.Json(
+                        new ApiError(exception.Message),
+                        statusCode: StatusCodes.Status409Conflict);
+                }
+                catch (KeyNotFoundException exception)
+                {
+                    return Results.NotFound(new ApiError(exception.Message));
+                }
+            });
+
         app.MapPost(
             "/api/companion/admin/pairing/start",
             (
@@ -1129,7 +1216,8 @@ public static class CompanionEndpoints
                             CompanionCapabilities.DeviceHubStatus,
                             CompanionCapabilities.DeviceIdentity,
                             CompanionCapabilities.SecurePairing,
-                            CompanionCapabilities.DeviceCapabilities
+                            CompanionCapabilities.DeviceCapabilities,
+                            CompanionCapabilities.MobileCodeCommand
                         ]));
             });
 
@@ -1290,6 +1378,38 @@ public static class CompanionEndpoints
                     httpContext);
                 return Results.Ok(
                     taskEngine.GetAll());
+            });
+
+        app.MapGet(
+            "/api/companion/client/development/commands",
+            (
+                HttpContext httpContext,
+                IMobileCodeCommandService commands) =>
+            {
+                var device = GetAuthenticatedDevice(httpContext);
+                return Results.Ok(
+                    commands.GetAll()
+                        .Where(x => x.CompanionDeviceId == device.Id)
+                        .OrderByDescending(x => x.UpdatedAt)
+                        .ToArray());
+            });
+
+        app.MapPost(
+            "/api/companion/client/development/commands",
+            (
+                SubmitMobileCodeCommandRequest request,
+                HttpContext httpContext,
+                IMobileCodeCommandService commands) =>
+            {
+                try
+                {
+                    var device = GetAuthenticatedDevice(httpContext);
+                    return Results.Ok(commands.Submit(device, request));
+                }
+                catch (MobileCodeCommandValidationException exception)
+                {
+                    return Results.BadRequest(new ApiError(exception.Message));
+                }
             });
 
         app.MapPost(

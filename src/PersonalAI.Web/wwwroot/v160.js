@@ -35,7 +35,7 @@
     icon.textContent = "◌";
 
     const label = document.createElement("span");
-    label.textContent = "Life Context";
+    label.textContent = "Ngữ cảnh đời sống";
 
     const badge = document.createElement("span");
     badge.id = "lifeContextBadge";
@@ -70,17 +70,17 @@
     const heading = document.createElement("div");
     const eyebrow = document.createElement("p");
     eyebrow.className = "eyebrow";
-    eyebrow.textContent = "CONSENT · RETENTION · WORKSPACE";
+    eyebrow.textContent = "ĐỒNG Ý · THỜI GIAN LƯU · KHÔNG GIAN";
 
     const title = document.createElement("h2");
     title.id = "lifeContextTitle";
-    title.textContent = "Life Context v1.6";
+    title.textContent = "Ngữ cảnh đời sống";
     heading.append(eyebrow, title);
 
     const close = document.createElement("button");
     close.type = "button";
     close.className = "dialog-close";
-    close.setAttribute("aria-label", "Đóng Life Context");
+    close.setAttribute("aria-label", "Đóng ngữ cảnh đời sống");
     close.textContent = "×";
     close.addEventListener("click", () => dialog.close());
 
@@ -90,7 +90,7 @@
     intro.className = "v160-life-intro";
     intro.innerHTML =
       "<strong>Không tự thu thập dữ liệu đời sống</strong>" +
-      "<p>v1.6 chỉ lưu snapshot được bạn chủ động nhập/import. Mỗi source có consent và retention riêng; content được mã hóa local. GPS, calendar, activity và sensor background collection vẫn tắt.</p>";
+      "<p>Chỉ lưu các bản ghi do bạn chủ động nhập hoặc nhập từ tệp. Mỗi nguồn có sự đồng ý và thời gian lưu riêng; nội dung được mã hóa trên máy. GPS, lịch, hoạt động và cảm biến không được tự động thu thập nền.</p>";
 
     const summary = document.createElement("div");
     summary.id = "lifeContextSummary";
@@ -99,13 +99,13 @@
 
     const formTitle = document.createElement("h3");
     formTitle.className = "v160-section-title";
-    formTitle.textContent = "Tạo source";
+    formTitle.textContent = "Tạo nguồn dữ liệu";
 
     const form = document.createElement("form");
     form.id = "lifeContextSourceForm";
     form.className = "v160-source-form";
 
-    const name = createInput("Tên source", "lifeSourceName", "Ví dụ: Lịch cá nhân", "text");
+    const name = createInput("Tên nguồn", "lifeSourceName", "Ví dụ: Lịch cá nhân", "text");
 
     const kindWrap = document.createElement("label");
     kindWrap.className = "v160-field";
@@ -121,7 +121,7 @@
     });
     kindWrap.append(kindLabel, kind);
 
-    const retention = createInput("Retention (ngày)", "lifeSourceRetention", "30", "number");
+    const retention = createInput("Thời gian lưu (ngày)", "lifeSourceRetention", "30", "number");
     retention.input.min = "1";
     retention.input.max = "365";
     retention.input.value = "30";
@@ -132,13 +132,13 @@
     consentCheck.id = "lifeSourceConsent";
     consentCheck.type = "checkbox";
     const consentText = document.createElement("span");
-    consentText.textContent = "Tôi đồng ý cho PersonalAI lưu và dùng dữ liệu của source này trong Context Manager theo retention đã chọn.";
+    consentText.textContent = "Tôi đồng ý cho AI Cá Nhân lưu và dùng dữ liệu của nguồn này trong Trình quản lý ngữ cảnh theo thời gian lưu đã chọn.";
     consent.append(consentCheck, consentText);
 
     const create = document.createElement("button");
     create.type = "submit";
     create.className = "primary-button";
-    create.textContent = "Tạo source";
+    create.textContent = "Tạo nguồn";
 
     form.append(name.wrapper, kindWrap, retention.wrapper, consent, create);
     form.addEventListener("submit", async event => {
@@ -152,7 +152,7 @@
 
     const sourceTitle = document.createElement("h3");
     sourceTitle.className = "v160-section-title";
-    sourceTitle.textContent = "Sources";
+    sourceTitle.textContent = "Nguồn dữ liệu";
 
     const list = document.createElement("div");
     list.id = "lifeContextSourceList";
@@ -162,7 +162,7 @@
     empty.id = "lifeContextEmpty";
     empty.className = "v160-empty";
     empty.hidden = true;
-    empty.textContent = "Chưa có Life Context source trong workspace hiện tại.";
+    empty.textContent = "Chưa có nguồn ngữ cảnh đời sống trong không gian hiện tại.";
 
     const feedback = document.createElement("div");
     feedback.id = "lifeContextFeedback";
@@ -236,13 +236,13 @@
       const payload = await responses[1].json().catch(() => ({}));
 
       if (!responses[0].ok || !responses[1].ok) {
-        throw new Error(status.error || payload.error || "Không đọc được Life Context.");
+        throw new Error(status.error || payload.error || "Không đọc được ngữ cảnh đời sống.");
       }
 
       render(status, payload);
       await refreshBadge();
     } catch (error) {
-      setFeedback(error.message || "Không đọc được Life Context.", true);
+      setFeedback(error.message || "Không đọc được ngữ cảnh đời sống.", true);
       updateBadge("OFF");
     } finally {
       loading = false;
@@ -259,10 +259,10 @@
     const active = sources.filter(source => source.enabled && source.consentGranted).length;
 
     summary.textContent =
-      "Workspace " + (payload.workspaceId || "personal")
-      + " · " + active + "/" + sources.length + " source đang dùng"
-      + " · encryption " + (status.contentEncrypted ? "bật" : "tắt")
-      + " · automatic collection " + (status.automaticCollectionEnabled ? "bật" : "tắt");
+      "Không gian " + (payload.workspaceId || "personal")
+      + " · " + active + "/" + sources.length + " nguồn đang dùng"
+      + " · mã hóa " + (status.contentEncrypted ? "bật" : "tắt")
+      + " · tự thu thập " + (status.automaticCollectionEnabled ? "bật" : "tắt");
 
     list.replaceChildren();
     sources.forEach(source => list.appendChild(sourceCard(source)));
@@ -278,18 +278,18 @@
 
     const meta = document.createElement("div");
     const name = document.createElement("strong");
-    name.textContent = source.name || "Life Context";
+    name.textContent = source.name || "Ngữ cảnh đời sống";
     const info = document.createElement("span");
     info.textContent =
       sourceKindLabel(source.kind)
-      + " · retention " + (source.retentionDays || 0)
-      + " ngày · " + (source.entryCount || 0) + " entry";
+      + " · lưu " + (source.retentionDays || 0)
+      + " ngày · " + (source.entryCount || 0) + " bản ghi";
     meta.append(name, info);
 
     const state = document.createElement("span");
     state.className = "v160-state " + (source.consentGranted && source.enabled ? "is-on" : "is-off");
     state.textContent = !source.consentGranted
-      ? "Consent revoked"
+      ? "Đã thu hồi đồng ý"
       : source.enabled
         ? "Đang dùng"
         : "Đã tắt";
@@ -301,13 +301,13 @@
     const textarea = document.createElement("textarea");
     textarea.rows = 2;
     textarea.maxLength = 2000;
-    textarea.placeholder = "Nhập snapshot đời sống bạn muốn PersonalAI được phép dùng…";
+    textarea.placeholder = "Nhập thông tin đời sống bạn muốn AI Cá Nhân được phép dùng…";
     textarea.disabled = !source.consentGranted || !source.enabled;
 
     const add = document.createElement("button");
     add.type = "button";
     add.className = "secondary-button";
-    add.textContent = "Lưu snapshot";
+    add.textContent = "Lưu bản ghi";
     add.disabled = textarea.disabled;
     add.addEventListener("click", async () => {
       await addEntry(source, textarea.value);
@@ -328,7 +328,7 @@
       const revoke = document.createElement("button");
       revoke.type = "button";
       revoke.className = "secondary-button";
-      revoke.textContent = "Thu hồi consent";
+      revoke.textContent = "Thu hồi đồng ý";
       revoke.addEventListener("click", () => revokeConsent(source));
 
       actions.append(toggle, revoke);
@@ -336,7 +336,7 @@
       const grant = document.createElement("button");
       grant.type = "button";
       grant.className = "secondary-button";
-      grant.textContent = "Cấp lại consent";
+      grant.textContent = "Cấp lại đồng ý";
       grant.addEventListener("click", () => grantConsent(source));
       actions.appendChild(grant);
     }
@@ -344,7 +344,7 @@
     const remove = document.createElement("button");
     remove.type = "button";
     remove.className = "secondary-button";
-    remove.textContent = "Xóa source";
+    remove.textContent = "Xóa nguồn";
     remove.addEventListener("click", () => deleteSource(source));
     actions.appendChild(remove);
 
@@ -354,7 +354,7 @@
 
   async function createSource(name, kind, retentionDays, consentGranted) {
     if (!consentGranted) {
-      setFeedback("Bạn phải tích consent trước khi tạo Life Context source.", true);
+      setFeedback("Bạn phải xác nhận đồng ý trước khi tạo nguồn ngữ cảnh đời sống.", true);
       return;
     }
 
@@ -371,24 +371,24 @@
         })
       });
       const payload = await response.json().catch(() => ({}));
-      if (!response.ok) throw new Error(payload.error || "Không thể tạo source.");
+      if (!response.ok) throw new Error(payload.error || "Không thể tạo nguồn.");
 
       const form = document.querySelector("#lifeContextSourceForm");
       if (form) form.reset();
       const retention = document.querySelector("#lifeSourceRetention");
       if (retention) retention.value = "30";
 
-      setFeedback("Đã tạo source với consent explicit.");
+      setFeedback("Đã tạo nguồn với sự đồng ý rõ ràng.");
       await load();
     } catch (error) {
-      setFeedback(error.message || "Không thể tạo source.", true);
+      setFeedback(error.message || "Không thể tạo nguồn.", true);
     }
   }
 
   async function addEntry(source, content) {
     const normalized = String(content || "").trim();
     if (normalized.length < 3) {
-      setFeedback("Snapshot cần ít nhất 3 ký tự.", true);
+      setFeedback("Bản ghi cần ít nhất 3 ký tự.", true);
       return;
     }
 
@@ -404,12 +404,12 @@
           })
         });
       const payload = await response.json().catch(() => ({}));
-      if (!response.ok) throw new Error(payload.error || "Không thể lưu snapshot.");
+      if (!response.ok) throw new Error(payload.error || "Không thể lưu bản ghi.");
 
-      setFeedback("Đã lưu snapshot mã hóa local.");
+      setFeedback("Đã lưu bản ghi và mã hóa trên máy.");
       await load();
     } catch (error) {
-      setFeedback(error.message || "Không thể lưu snapshot.", true);
+      setFeedback(error.message || "Không thể lưu bản ghi.", true);
     }
   }
 
@@ -423,19 +423,19 @@
           body: JSON.stringify({ enabled: enabled, confirmed: true })
         });
       const payload = await response.json().catch(() => ({}));
-      if (!response.ok) throw new Error(payload.error || "Không đổi được trạng thái source.");
+      if (!response.ok) throw new Error(payload.error || "Không đổi được trạng thái nguồn.");
 
-      setFeedback(enabled ? "Đã bật source." : "Đã tắt source.");
+      setFeedback(enabled ? "Đã bật nguồn." : "Đã tắt nguồn.");
       await load();
     } catch (error) {
-      setFeedback(error.message || "Không đổi được source.", true);
+      setFeedback(error.message || "Không đổi được nguồn.", true);
     }
   }
 
   async function revokeConsent(source) {
     const confirmed = await confirmAction(
-      "Thu hồi consent của \"" + source.name + "\" và xóa toàn bộ snapshot hiện có?\n\nSource sẽ bị tắt ngay.",
-      "Thu hồi consent",
+      "Thu hồi sự đồng ý của \"" + source.name + "\" và xóa toàn bộ bản ghi hiện có?\n\nNguồn sẽ bị tắt ngay.",
+      "Thu hồi đồng ý",
       "Thu hồi & xóa");
     if (!confirmed) return;
 
@@ -444,9 +444,9 @@
 
   async function grantConsent(source) {
     const confirmed = await confirmAction(
-      "Cấp lại consent cho \"" + source.name + "\"?\n\nSource vẫn ở trạng thái tắt cho tới khi bạn bật lại.",
-      "Cấp lại consent",
-      "Cấp consent");
+      "Cấp lại sự đồng ý cho \"" + source.name + "\"?\n\nNguồn vẫn ở trạng thái tắt cho tới khi bạn bật lại.",
+      "Cấp lại đồng ý",
+      "Đồng ý");
     if (!confirmed) return;
 
     await setConsent(source, true, false);
@@ -466,22 +466,22 @@
           })
         });
       const payload = await response.json().catch(() => ({}));
-      if (!response.ok) throw new Error(payload.error || "Không thay đổi được consent.");
+      if (!response.ok) throw new Error(payload.error || "Không thay đổi được trạng thái đồng ý.");
 
       setFeedback(granted
-        ? "Đã cấp lại consent. Bạn có thể bật source khi cần."
-        : "Đã thu hồi consent và purge snapshot.");
+        ? "Đã cấp lại sự đồng ý. Bạn có thể bật nguồn khi cần."
+        : "Đã thu hồi sự đồng ý và xóa các bản ghi cũ.");
       await load();
     } catch (error) {
-      setFeedback(error.message || "Không thay đổi được consent.", true);
+      setFeedback(error.message || "Không thay đổi được trạng thái đồng ý.", true);
     }
   }
 
   async function deleteSource(source) {
     const confirmed = await confirmAction(
-      "Xóa source \"" + source.name + "\" và toàn bộ dữ liệu liên quan?",
-      "Xóa Life Context source",
-      "Xóa source");
+      "Xóa nguồn \"" + source.name + "\" và toàn bộ dữ liệu liên quan?",
+      "Xóa nguồn ngữ cảnh đời sống",
+      "Xóa nguồn");
     if (!confirmed) return;
 
     try {
@@ -493,7 +493,7 @@
         throw new Error(payload.error || "Không thể xóa source.");
       }
 
-      setFeedback("Đã xóa source.");
+      setFeedback("Đã xóa nguồn.");
       await load();
     } catch (error) {
       setFeedback(error.message || "Không thể xóa source.", true);
@@ -536,6 +536,6 @@
       activity: "Hoạt động",
       device: "Thiết bị",
       other: "Khác"
-    }[value] || value || "Source";
+    }[value] || value || "Nguồn";
   }
 })();

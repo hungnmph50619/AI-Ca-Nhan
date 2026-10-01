@@ -139,7 +139,7 @@
 
     const intro = document.createElement("div");
     intro.className = "v094-workspace-intro";
-    intro.innerHTML = "<strong>Workspace v0.9.4</strong><p>Mỗi không gian tách riêng trí nhớ, tài liệu, tác vụ, tệp làm việc và lịch sử hội thoại. Agents và Policies đã có chỗ trong mô hình workspace nhưng được giữ ở trạng thái dành trước cho các phiên bản sau.</p>";
+    intro.innerHTML = "<strong>Không gian làm việc</strong><p>Mỗi không gian tách riêng trí nhớ, tài liệu, tác vụ, tệp làm việc và lịch sử hội thoại. Tác nhân và chính sách có vùng dữ liệu riêng nhưng chỉ được dùng khi tính năng tương ứng được bật.</p>";
 
     const form = document.createElement("form");
     form.id = "workspaceCreateForm";

@@ -82,7 +82,7 @@ jobs:
           echo "$capabilities" | jq -e '
             all(.reservedModules[]; . != "agents")
             and any(.reservedModules[]; . == "policies")
-            and .controlledModules == ["computer-use","browser-agent","connectors","software-development","android-companion","life-context","decision-engine","automation","agents"]
+            and .controlledModules == ["computer-use","browser-agent","connectors","software-development","android-companion","life-context","decision-engine","automation","agents","permissions"]
             and all(.reservedModules[]; . != "browser")
             and all(.reservedModules[]; . != "browser-agent")
             and all(.reservedModules[]; . != "computer-use")

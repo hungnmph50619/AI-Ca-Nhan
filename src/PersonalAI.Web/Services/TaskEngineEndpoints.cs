@@ -10,6 +10,7 @@ public static class TaskEngineEndpoints
         services.AddScoped<ITaskEngineService, TaskEngineService>();
         services.AddScoped<ITaskRouterService, TaskRouterService>();
         services.AddScoped<IDistributedAgentExecutionService, DistributedAgentExecutionService>();
+        services.AddScoped<IDeviceContextSyncService, DeviceContextSyncService>();
         return services;
     }
 
@@ -206,6 +207,61 @@ public static class TaskEngineEndpoints
                     new ApiError(exception.Message));
             }
             catch (DeviceIdentityValidationException exception)
+            {
+                return Results.BadRequest(
+                    new ApiError(exception.Message));
+            }
+            catch (DeviceHubValidationException exception)
+            {
+                return Results.BadRequest(
+                    new ApiError(exception.Message));
+            }
+            catch (KeyNotFoundException exception)
+            {
+                return Results.NotFound(
+                    new ApiError(exception.Message));
+            }
+        });
+
+        app.MapGet("/api/device-context-sync/status", (
+            IDeviceContextSyncService contextSync) =>
+            Results.Ok(contextSync.GetStatus()));
+
+        app.MapGet("/api/device-context-sync", (
+            IDeviceContextSyncService contextSync) =>
+            Results.Ok(contextSync.GetAll()));
+
+        app.MapGet("/api/device-context-sync/{syncId:guid}", (
+            Guid syncId,
+            IDeviceContextSyncService contextSync) =>
+        {
+            var package = contextSync.Get(syncId);
+            return package is null
+                ? Results.NotFound(
+                    new ApiError("Không tìm thấy context sync package."))
+                : Results.Ok(package);
+        });
+
+        app.MapPost("/api/tasks/distributed-executions/{correlationId:guid}/context-sync", async (
+            Guid correlationId,
+            CreateDeviceContextSyncRequest request,
+            IDeviceContextSyncService contextSync,
+            CancellationToken cancellationToken) =>
+        {
+            try
+            {
+                return Results.Ok(
+                    await contextSync.CreateAsync(
+                        correlationId,
+                        request,
+                        cancellationToken));
+            }
+            catch (DeviceContextSyncValidationException exception)
+            {
+                return Results.BadRequest(
+                    new ApiError(exception.Message));
+            }
+            catch (DeviceCapabilityValidationException exception)
             {
                 return Results.BadRequest(
                     new ApiError(exception.Message));

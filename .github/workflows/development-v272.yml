@@ -55,7 +55,7 @@ jobs:
           done
 
           jq -e '
-            .version == "2.7.2"
+            (.version | split(".") | map(tonumber)) >= [2,7,2]
             and .sourceEditAllowedBeforeDiagnosis == false
             and .evidenceRequired == true
             and .reproductionRequired == true

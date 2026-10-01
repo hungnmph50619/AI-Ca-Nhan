@@ -1,5 +1,5 @@
 (() => {
-  const VERSION = "2.2.6";
+  const VERSION = "3.0.0";
   let loading = false;
   let tasksById = new Map();
 

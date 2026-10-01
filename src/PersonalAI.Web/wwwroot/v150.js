@@ -230,7 +230,7 @@
       render(status, devices);
       updateBadge(String(Array.isArray(devices.devices) ? devices.devices.length : 0));
     } catch (error) {
-      setFeedback(error.message || "Không đọc được Android Companion.", true);
+      setFeedback(error.message || "Không đọc được ứng dụng Android đồng hành.", true);
       updateBadge("OFF");
     } finally {
       loading = false;
@@ -303,7 +303,7 @@
           `Workspace: ${payload.workspaceId || "personal"} · hết hạn ${formatDate(payload.expiresAt)}`;
       }
 
-      setFeedback("Mã chỉ dùng một lần. Nhập mã này trên app Android.");
+      setFeedback("Mã chỉ dùng một lần. Nhập mã này trên ứng dụng Android.");
     } catch (error) {
       setFeedback(error.message || "Không thể tạo mã ghép nối.", true);
     }
@@ -335,7 +335,7 @@
         throw new Error(payload.error || "Không thể thu hồi thiết bị.");
       }
 
-      setFeedback("Đã thu hồi device token.");
+      setFeedback("Đã thu hồi mã truy cập của thiết bị.");
       await load();
     } catch (error) {
       setFeedback(error.message || "Không thể thu hồi thiết bị.", true);

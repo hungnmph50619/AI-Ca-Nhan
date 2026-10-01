@@ -151,6 +151,17 @@ jobs:
             and any(.events[]; .kind == "own-gold-high")
           ' /tmp/personalai-league-v301/events.json >/dev/null
 
+          curl -fsS http://127.0.0.1:5145/api/integrations/league/coach/current             >/tmp/personalai-league-v301/coach.json
+          jq -e '
+            .id == "health-drop-low"
+            and .category == "danger"
+            and .priority == 95
+            and .confidence >= 0.9
+            and .usedLanguageModel == false
+            and (.evidence | length) >= 2
+            and .validUntilGameTimeSeconds > .gameTimeSeconds
+          ' /tmp/personalai-league-v301/coach.json >/dev/null
+
           # A clear game-clock reset starts a new match session.
           jq '.sequence=4 | .gameTimeSeconds=5 | .health=700'             /tmp/personalai-league-v301/s1.json             >/tmp/personalai-league-v301/s3.json
 

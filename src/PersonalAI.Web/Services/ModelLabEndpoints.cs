@@ -25,6 +25,7 @@ public static class ModelLabEndpoints
         services.AddScoped<IRegisteredModelComparisonService, RegisteredModelComparisonService>();
         services.AddScoped<IPromotionGateService, PromotionGateService>();
         services.AddScoped<IModelRolloutService, ModelRolloutService>();
+        services.AddScoped<IRollbackService, RollbackService>();
         services.AddScoped<ISyntheticCriticService, SyntheticCriticService>();
         services.AddScoped<ISyntheticVerificationService, SyntheticVerificationService>();
         services.AddScoped<ISyntheticDataService, SyntheticDataService>();
@@ -315,6 +316,54 @@ public static class ModelLabEndpoints
                     $"stage:{model.Stage}",
                     AuditResults.Succeeded);
                 return Results.Ok(model);
+            }
+            catch (ModelRegistryValidationException exception)
+            {
+                return Results.BadRequest(new ApiError(exception.Message));
+            }
+            catch (ModelRegistryConflictException exception)
+            {
+                return Results.Json(
+                    new ApiError(exception.Message),
+                    statusCode: StatusCodes.Status409Conflict);
+            }
+            catch (KeyNotFoundException exception)
+            {
+                return Results.NotFound(new ApiError(exception.Message));
+            }
+        });
+
+        endpoints.MapGet("/api/model-lab/rollbacks/status", (
+            IRollbackService rollbacks) =>
+            Results.Ok(rollbacks.GetStatus()));
+
+        endpoints.MapGet("/api/model-lab/rollbacks", (
+            IRollbackService rollbacks) =>
+            Results.Ok(rollbacks.GetAll()));
+
+        endpoints.MapGet("/api/model-lab/rollbacks/{decisionId:guid}", (
+            Guid decisionId,
+            IRollbackService rollbacks) =>
+        {
+            var decision = rollbacks.Get(decisionId);
+            return decision is null ? Results.NotFound() : Results.Ok(decision);
+        });
+
+        endpoints.MapPost("/api/model-lab/rollbacks/evaluate", (
+            EvaluateRollbackRequest request,
+            IRollbackService rollbacks) =>
+        {
+            try
+            {
+                return Results.Ok(rollbacks.Evaluate(request));
+            }
+            catch (RollbackValidationException exception)
+            {
+                return Results.BadRequest(new ApiError(exception.Message));
+            }
+            catch (ModelRolloutValidationException exception)
+            {
+                return Results.BadRequest(new ApiError(exception.Message));
             }
             catch (ModelRegistryValidationException exception)
             {

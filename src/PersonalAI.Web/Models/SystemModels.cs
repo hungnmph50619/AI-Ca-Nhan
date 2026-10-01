@@ -2,7 +2,7 @@ namespace PersonalAI.Web.Models;
 
 public static class PersonalAiRelease
 {
-    public const string Version = "2.8.5";
+    public const string Version = "2.8.6";
     public const string ApiContractVersion = "1";
     public const string Channel = "controlled";
 }

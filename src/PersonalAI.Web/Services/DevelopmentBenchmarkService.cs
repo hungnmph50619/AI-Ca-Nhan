@@ -125,6 +125,7 @@ public sealed class DevelopmentBenchmarkService(
             .ToHashSet(StringComparer.OrdinalIgnoreCase);
 
         var results = new List<EvaluationResult>();
+        var evaluationFailures = 0;
 
         foreach (var item in dataset)
         {
@@ -155,15 +156,7 @@ public sealed class DevelopmentBenchmarkService(
             }
             catch (EvaluationEngineException)
             {
-                // Failed evaluator execution is reflected through failed case count below.
-                results.Add(new EvaluationResult
-                {
-                    CaseId = item.Id,
-                    Category = item.Category,
-                    Score = 0,
-                    Errors = ["evaluation-engine-error"],
-                    Metrics = new Dictionary<string, double>()
-                });
+                evaluationFailures++;
             }
         }
 
@@ -237,10 +230,10 @@ public sealed class DevelopmentBenchmarkService(
         {
             gates.Add(new(
                 DevelopmentBenchmarkGateNames.Agent,
-                Passed: true,
+                Passed: false,
                 Observed: null,
-                Threshold: null,
-                Detail: "Agent benchmark không được yêu cầu; gate được coi là pass theo cấu hình run hiện tại."));
+                Threshold: request.MinimumAgentPassRate,
+                Detail: "Agent benchmark là gate bắt buộc; cần IncludeAgentBenchmark=true và explicit external confirmation."));
         }
 
         stopwatch.Stop();
@@ -262,8 +255,8 @@ public sealed class DevelopmentBenchmarkService(
             request.MaximumWorkingSetBytes,
             $"workingSetBytes={observedWorkingSet}; maxWorkingSetBytes={request.MaximumWorkingSetBytes}"));
 
-        var failedCases = results.Count(x =>
-            x.Errors.Count > 0 || x.Score < 0);
+        var failedCases = evaluationFailures +
+            results.Count(x => x.Errors.Count > 0);
 
         var passed = gates.All(x => x.Passed);
 

@@ -11,7 +11,8 @@ public sealed record RunDevelopmentReviewRequest(
     Guid TestReportId,
     string CodingAgentId,
     string ReviewerId,
-    bool ConfirmReview = false);
+    bool ConfirmReview = false,
+    bool ConfirmExternalReviewer = false);
 
 public sealed record DevelopmentReviewCheck(
     string Category,

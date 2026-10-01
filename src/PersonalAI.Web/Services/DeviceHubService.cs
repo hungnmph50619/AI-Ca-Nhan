@@ -332,11 +332,11 @@ public sealed class DeviceHubService(
 
     private static DeviceHubDevice RefreshStatus(DeviceHubDevice device)
     {
-        if (device.Source == DeviceHubSources.LocalAdmin)
+        if (device.Source == DeviceHubSources.LocalAdmin &&
+            device.ConnectionStatus == DeviceHubConnectionStatuses.Unknown)
         {
             return device with
             {
-                ConnectionStatus = DeviceHubConnectionStatuses.Unknown,
                 PermissionsGranted = false,
                 RemoteExecutionEnabled = false
             };

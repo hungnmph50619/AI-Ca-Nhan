@@ -254,17 +254,6 @@ public sealed class DeviceCapabilityService(
                     Reason: "capability-not-registered");
             }
 
-            if (!registration.PermissionGranted)
-            {
-                return new(
-                    deviceId,
-                    normalizedCapability,
-                    Registered: true,
-                    PermissionGranted: false,
-                    Allowed: false,
-                    Reason: "permission-not-granted");
-            }
-
             var unifiedDecision = permissions.Evaluate(
                 new EvaluateUnifiedPermissionRequest(
                     UnifiedPermissionSubjectTypes.Device,
@@ -278,7 +267,7 @@ public sealed class DeviceCapabilityService(
                     deviceId,
                     normalizedCapability,
                     Registered: true,
-                    PermissionGranted: registration.PermissionGranted,
+                    PermissionGranted: unifiedDecision.Allowed,
                     Allowed: unifiedDecision.Allowed,
                     Reason: unifiedDecision.Reason);
             }

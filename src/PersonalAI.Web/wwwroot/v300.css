@@ -586,3 +586,159 @@ body {
     scroll-behavior: auto;
   }
 }
+
+
+/* ---------- v3.0.1 modal + navigation fixes ---------- */
+
+/* Keep sidebar labels on one readable line. */
+.settings-button > span:nth-child(2),
+.settings-button[href="vision.html"] > span {
+  min-width: 0;
+  flex: 1 1 auto;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.settings-button[href="vision.html"] {
+  display: grid !important;
+  grid-template-columns: 17px minmax(0, 1fr);
+  align-items: center;
+  gap: 10px !important;
+  width: 100%;
+}
+
+/* One scroll owner per dialog. This prevents content from leaking above
+   the sticky header while the inner card is scrolled. */
+.settings-dialog {
+  overflow: hidden;
+}
+
+.settings-dialog > .settings-card {
+  width: 100%;
+  max-height: min(86vh, 820px);
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  scrollbar-gutter: stable;
+  padding: 0 26px 24px;
+}
+
+.settings-dialog .settings-header {
+  top: 0;
+  margin: 0 0 18px;
+  padding: 20px 0 14px;
+  background: rgba(255,255,255,.985);
+  border-bottom: 1px solid #edf1ed;
+  box-shadow: 0 8px 18px rgba(255,255,255,.94);
+}
+
+/* Never inherit text-field dimensions for checkboxes/radios. */
+.settings-card input[type="checkbox"],
+.settings-card input[type="radio"] {
+  width: 18px !important;
+  min-width: 18px;
+  height: 18px !important;
+  min-height: 18px;
+  padding: 0 !important;
+  margin: 0;
+  flex: 0 0 18px;
+  border-radius: 4px;
+  accent-color: #b7df16;
+}
+
+.agent-context-options label,
+.v170-toggle,
+.v160-consent {
+  min-height: 36px;
+  align-items: center;
+}
+
+.agent-context-options {
+  gap: 8px 18px;
+  padding: 10px 12px;
+  border: 1px solid #e1e7e2;
+  border-radius: 12px;
+  background: #f9fbf8;
+}
+
+.agent-context-options label {
+  flex: 1 1 150px;
+  white-space: normal;
+}
+
+.v170-context-toggles {
+  align-items: center;
+  gap: 8px 16px;
+  padding: 10px 12px;
+}
+
+.v170-toggle {
+  flex: 1 1 130px;
+}
+
+.v160-consent {
+  padding: 10px 12px;
+  border: 1px solid #e1e7e2;
+  border-radius: 10px;
+  background: #f9fbf8;
+}
+
+/* Keep important actions reachable without being visually clipped. */
+.v180-actions,
+.v160-actions,
+.v170-decision-actions {
+  position: sticky;
+  bottom: 0;
+  z-index: 2;
+  padding: 10px 0 2px;
+  background: linear-gradient(to top, #fff 78%, rgba(255,255,255,0));
+}
+
+.v180-automation-form,
+.v160-source-form,
+.v170-decision-form {
+  padding-bottom: 4px;
+}
+
+.v180-automation-card,
+.v160-life-card,
+.v170-decision-card,
+.agent-card,
+.knowledge-card,
+.os-card {
+  scroll-padding-top: 92px;
+  scroll-padding-bottom: 72px;
+}
+
+/* Vietnamese UI uses slightly wider labels than English; prevent squeeze. */
+.v160-source-form {
+  grid-template-columns: minmax(0,1.25fr) minmax(150px,.85fr) minmax(130px,.65fr);
+}
+
+@media (max-width: 760px) {
+  .settings-dialog > .settings-card {
+    max-height: calc(100dvh - 20px);
+    padding: 0 16px 18px;
+  }
+
+  .settings-dialog .settings-header {
+    padding-top: 16px;
+  }
+
+  .agent-context-options,
+  .v170-context-toggles {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+  }
+
+  .v160-source-form {
+    grid-template-columns: 1fr;
+  }
+}
+
+@media (max-width: 480px) {
+  .agent-context-options,
+  .v170-context-toggles {
+    grid-template-columns: 1fr;
+  }
+}

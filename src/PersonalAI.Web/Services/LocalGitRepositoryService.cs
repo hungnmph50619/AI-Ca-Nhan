@@ -637,7 +637,7 @@ public sealed class LocalGitRepositoryService(
                     await File.WriteAllTextAsync(
                         temporarySshKey,
                         credential.Secret,
-                        Encoding.UTF8,
+                        new UTF8Encoding(encoderShouldEmitUTF8Identifier: false),
                         cancellationToken);
 
                     if (!OperatingSystem.IsWindows())

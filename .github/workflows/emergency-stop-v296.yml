@@ -49,7 +49,7 @@ jobs:
           done
 
           jq -e '
-            .version=="2.9.6"
+            (.version | split(".") | map(tonumber)) >= [2,9,6]
             and .engaged==false
             and .cancellationIssued==false
             and .desktopControlPaused==true

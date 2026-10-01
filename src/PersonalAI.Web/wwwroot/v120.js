@@ -75,13 +75,13 @@
 
     const title = document.createElement("h2");
     title.id = "browserAgentTitle";
-    title.textContent = "Browser Agent v1.2";
+    title.textContent = "Tác nhân trình duyệt";
     heading.append(eyebrow, title);
 
     const close = document.createElement("button");
     close.type = "button";
     close.className = "dialog-close";
-    close.setAttribute("aria-label", "Đóng Browser Agent");
+    close.setAttribute("aria-label", "Đóng tác nhân trình duyệt");
     close.textContent = "×";
     close.addEventListener("click", () => dialog.close());
     header.append(heading, close);

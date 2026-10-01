@@ -70,17 +70,17 @@
     const heading = document.createElement("div");
     const eyebrow = document.createElement("p");
     eyebrow.className = "eyebrow";
-    eyebrow.textContent = "EVIDENCE · TRADE-OFF · USER DECIDES";
+    eyebrow.textContent = "BẰNG CHỨNG · CÂN NHẮC · BẠN QUYẾT ĐỊNH";
 
     const title = document.createElement("h2");
     title.id = "decisionEngineTitle";
-    title.textContent = "Decision Engine v1.7";
+    title.textContent = "Bộ hỗ trợ quyết định";
     heading.append(eyebrow, title);
 
     const close = document.createElement("button");
     close.type = "button";
     close.className = "dialog-close";
-    close.setAttribute("aria-label", "Đóng Decision Engine");
+    close.setAttribute("aria-label", "Đóng bộ hỗ trợ quyết định");
     close.textContent = "×";
     close.addEventListener("click", () => dialog.close());
     header.append(heading, close);
@@ -89,7 +89,7 @@
     intro.className = "v170-decision-intro";
     intro.innerHTML =
       "<strong>Phân tích để hỗ trợ quyết định, không hành động thay bạn</strong>" +
-      "<p>Decision Engine dùng context đã được phép trong workspace để so sánh lựa chọn, nêu trade-off và uncertainty. Recommendation không tự chạy tool, task hay action.</p>";
+      "<p>Bộ hỗ trợ quyết định dùng ngữ cảnh đã được bạn cho phép trong không gian hiện tại để so sánh lựa chọn, nêu điểm được–mất và mức độ chưa chắc chắn. Đề xuất không tự chạy công cụ, công việc hay hành động.</p>";
 
     const status = document.createElement("div");
     status.id = "decisionEngineStatus";
@@ -129,9 +129,9 @@
     const toggles = document.createElement("div");
     toggles.className = "v170-context-toggles";
     const knowledge = createToggle("Tài liệu", true);
-    const memory = createToggle("Memory", true);
-    const tasks = createToggle("Tasks", true);
-    const life = createToggle("Life Context", true);
+    const memory = createToggle("Trí nhớ", true);
+    const tasks = createToggle("Công việc", true);
+    const life = createToggle("Ngữ cảnh đời sống", true);
     toggles.append(
       knowledge.label,
       memory.label,
@@ -141,7 +141,7 @@
     const note = document.createElement("p");
     note.className = "v170-decision-note";
     note.textContent =
-      "Preview chỉ chọn context cục bộ, không gọi AI. Phân tích mới gửi phần context đã chọn tới provider AI đang cấu hình.";
+      "Xem trước chỉ chọn ngữ cảnh cục bộ, không gọi AI. Chỉ khi bấm Phân tích, phần ngữ cảnh đã chọn mới được gửi tới nhà cung cấp AI đang cấu hình.";
 
     const actions = document.createElement("div");
     actions.className = "v170-decision-actions";
@@ -150,7 +150,7 @@
     preview.id = "decisionPreviewButton";
     preview.type = "button";
     preview.className = "secondary-button";
-    preview.textContent = "Preview context";
+    preview.textContent = "Xem trước ngữ cảnh";
 
     const analyze = document.createElement("button");
     analyze.id = "decisionAnalyzeButton";
@@ -200,7 +200,7 @@
     const boundary = document.createElement("div");
     boundary.className = "v170-decision-boundary";
     boundary.textContent =
-      "Decision Engine không có execute endpoint. Quyết định cuối cùng và mọi hành động tiếp theo thuộc về bạn.";
+      "Bộ hỗ trợ quyết định không có chức năng tự thực thi. Quyết định cuối cùng và mọi hành động tiếp theo thuộc về bạn.";
 
     result.append(
       resultMeta,
@@ -279,7 +279,7 @@
         if (!response.ok) {
           throw new Error(
             payload.error
-            || "Decision Engine không xử lý được yêu cầu.");
+            || "Bộ hỗ trợ quyết định không xử lý được yêu cầu.");
         }
 
         renderResult(
@@ -287,12 +287,12 @@
           withAi);
         setFeedback(
           withAi
-            ? "Đã hoàn tất phân tích. Recommendation không được tự thực thi."
-            : "Preview hoàn tất. Chưa gọi nhà cung cấp AI.");
+            ? "Đã hoàn tất phân tích. Đề xuất không được tự thực thi."
+            : "Đã xem trước ngữ cảnh. Chưa gọi nhà cung cấp AI.");
       } catch (error) {
         setFeedback(
           error.message
-          || "Decision Engine không xử lý được yêu cầu.",
+          || "Bộ hỗ trợ quyết định không xử lý được yêu cầu.",
           true);
       } finally {
         busy = false;
@@ -329,13 +329,13 @@
       if (!response.ok) {
         throw new Error(
           payload.error
-          || "Không đọc được Decision Engine status.");
+          || "Không đọc được trạng thái bộ hỗ trợ quyết định.");
       }
 
       const status = document.querySelector("#decisionEngineStatus");
       if (status) {
         status.textContent =
-          `Sẵn sàng · tối đa ${payload.maximumOptions || 0} lựa chọn · ${payload.maximumCriteria || 0} tiêu chí · auto-action: ${payload.autoActionEnabled ? "bật" : "tắt"} · tool execution: ${payload.toolExecutionEnabled ? "bật" : "tắt"}`;
+          `Sẵn sàng · tối đa ${payload.maximumOptions || 0} lựa chọn · ${payload.maximumCriteria || 0} tiêu chí · tự hành động: ${payload.autoActionEnabled ? "bật" : "tắt"} · chạy công cụ: ${payload.toolExecutionEnabled ? "bật" : "tắt"}`;
       }
 
       updateBadge(
@@ -345,7 +345,7 @@
     } catch (error) {
       setFeedback(
         error.message
-        || "Không đọc được Decision Engine status.",
+        || "Không đọc được trạng thái bộ hỗ trợ quyết định.",
         true);
       updateBadge(false);
     }
@@ -361,19 +361,19 @@
 
     section.hidden = false;
     meta.textContent =
-      `Decision ${payload.decisionId || "—"} · ${withAi ? (payload.provider || "AI") + " / " + (payload.model || "model") : "local context preview"}`;
+      `Quyết định ${payload.decisionId || "—"} · ${withAi ? (payload.provider || "AI") + " / " + (payload.model || "mô hình") : "xem trước ngữ cảnh cục bộ"}`;
 
     const report = payload.context || {};
     const budget = report.budget || {};
     context.textContent =
-      `Context: ${Number(report.selectedMemories) || 0} memory · ${Number(report.selectedDocuments) || 0} document · ${Number(report.selectedTasks) || 0} task · ${Number(report.selectedLifeContext) || 0} life context · ${Number(budget.usedCharacters) || 0}/${Number(budget.maximumCharacters) || 0} ký tự`;
+      `Ngữ cảnh: ${Number(report.selectedMemories) || 0} trí nhớ · ${Number(report.selectedDocuments) || 0} tài liệu · ${Number(report.selectedTasks) || 0} công việc · ${Number(report.selectedLifeContext) || 0} ngữ cảnh đời sống · ${Number(budget.usedCharacters) || 0}/${Number(budget.maximumCharacters) || 0} ký tự`;
 
     if (withAi) {
       analysis.textContent = payload.analysis || "Không có nội dung phân tích.";
       analysis.hidden = false;
     } else {
       analysis.textContent =
-        "Preview không gọi AI. Hãy kiểm tra context rồi bấm Phân tích nếu muốn tiếp tục.";
+        "Xem trước không gọi AI. Hãy kiểm tra ngữ cảnh rồi bấm Phân tích nếu muốn tiếp tục.";
       analysis.hidden = false;
     }
 

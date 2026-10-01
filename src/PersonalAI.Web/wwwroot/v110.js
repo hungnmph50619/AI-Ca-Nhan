@@ -277,14 +277,14 @@
       const response = await fetch("/api/computer/status", { cache: "no-store" });
       const payload = await response.json().catch(() => ({}));
       if (!response.ok) {
-        throw new Error(payload.error || "Không đọc được trạng thái Computer Use.");
+        throw new Error(payload.error || "Không đọc được trạng thái điều khiển máy tính.");
       }
 
       renderStatus(payload);
       updateBadge(payload.supported === true && payload.interactiveSession === true,
         payload.desktopActionsPaused !== false);
     } catch (error) {
-      setFeedback(error.message || "Không đọc được trạng thái Computer Use.", true);
+      setFeedback(error.message || "Không đọc được trạng thái điều khiển máy tính.", true);
       updateBadge(false);
     } finally {
       loading = false;
@@ -323,7 +323,7 @@
     if (items.length === 0) {
       const empty = document.createElement("span");
       empty.className = "v110-capability-empty";
-      empty.textContent = "Không có capability desktop đang hoạt động trong phiên này.";
+      empty.textContent = "Không có khả năng điều khiển máy tính đang hoạt động trong phiên này.";
       capabilities.appendChild(empty);
     } else {
       items.forEach(item => {

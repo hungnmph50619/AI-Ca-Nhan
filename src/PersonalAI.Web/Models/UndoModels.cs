@@ -106,7 +106,7 @@ public sealed record UndoSystemStatus(
     int MaximumQueryLimit,
     int MaximumSnapshotBytes,
     bool ExplicitConfirmationRequired,
-    bool PreconditionAssessmentRequired,
+    bool PreconditionRevalidationRequired,
     bool WorkspaceScoped,
     bool InvocationCorrelationEnabled,
     bool AuditTrailEnabled,

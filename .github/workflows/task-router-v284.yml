@@ -1,0 +1,226 @@
+name: Task Router v2.8.4
+
+on:
+  push:
+    branches:
+      - 'experiment/roadmap-v2-8-4-current'
+
+jobs:
+  validate-v284:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: '8.0.x'
+
+      - name: Restore
+        run: dotnet restore PersonalAI.sln
+
+      - name: Build
+        run: dotnet build PersonalAI.sln -c Release --no-restore
+
+      - name: Tests
+        run: dotnet test PersonalAI.sln -c Release --no-build
+
+      - name: Deterministic task routing smoke test
+        shell: bash
+        run: |
+          set -euo pipefail
+          rm -rf /tmp/personalai-v284
+          mkdir -p             /tmp/personalai-v284/workspace             /tmp/personalai-v284/companion             /tmp/personalai-v284/hub             /tmp/personalai-v284/identity             /tmp/personalai-v284/capabilities             /tmp/personalai-v284/router
+
+          export Workspace__Root=/tmp/personalai-v284/workspace
+          export Companion__Root=/tmp/personalai-v284/companion
+          export Companion__Enabled=true
+          export Companion__AllowInsecureHttp=true
+          export DeviceHub__Root=/tmp/personalai-v284/hub
+          export DeviceIdentity__Root=/tmp/personalai-v284/identity
+          export DeviceCapability__Root=/tmp/personalai-v284/capabilities
+          export TaskRouter__Root=/tmp/personalai-v284/router
+
+          start_app() {
+            dotnet run --project src/PersonalAI.Web/PersonalAI.Web.csproj               -c Release --no-build               --urls http://127.0.0.1:5125               >/tmp/personalai-v284/app.log 2>&1 &
+            APP_PID=$!
+            for i in {1..30}; do
+              if curl -fsS http://127.0.0.1:5125/api/tasks/router/status >/tmp/router-status.json; then
+                return 0
+              fi
+              sleep 1
+            done
+            return 1
+          }
+
+          stop_app() {
+            kill "$APP_PID" 2>/dev/null || true
+            wait "$APP_PID" 2>/dev/null || true
+          }
+
+          trap 'stop_app || true' EXIT
+          start_app
+
+          jq -e '
+            .version=="2.8.4"
+            and .deterministicRouting==true
+            and .offlineDevicesEligible==false
+            and .capabilityPermissionRequired==true
+            and .companionTrustRequired==true
+            and .localAdminRegistrationAcceptedAsTrustBoundary==true
+            and .routeDecisionPersisted==true
+            and (.stableTieBreakOrder | join(","))=="trust-rank,device-type-rank,stable-device-id"
+          ' /tmp/router-status.json >/dev/null
+
+          register_local() {
+            local name="$1"
+            local type="$2"
+            curl -fsS -X POST http://127.0.0.1:5125/api/device-hub/admin/devices               -H 'Content-Type: application/json'               -d '{
+                "name":"'"$name"'",
+                "deviceType":"'"$type"'",
+                "confirmRegister":true
+              }'
+          }
+
+          register_local "Router PC" pc >/tmp/pc.json
+          register_local "Router Laptop" laptop >/tmp/laptop.json
+          pc_id=$(jq -r '.id' /tmp/pc.json)
+          laptop_id=$(jq -r '.id' /tmp/laptop.json)
+
+          for id in "$pc_id" "$laptop_id"; do
+            curl -fsS -X POST               http://127.0.0.1:5125/api/device-hub/admin/devices/$id/heartbeat               -H 'Content-Type: application/json'               -d '{"confirmHeartbeat":true}' >/dev/null
+
+            curl -fsS -X POST               http://127.0.0.1:5125/api/device-hub/admin/devices/$id/capabilities               -H 'Content-Type: application/json'               -d '{"capability":"build","confirmRegister":true}' >/dev/null
+
+            curl -fsS -X POST               http://127.0.0.1:5125/api/device-hub/admin/devices/$id/capabilities/build/permission               -H 'Content-Type: application/json'               -d '{"permissionGranted":true,"confirmPermissionChange":true}' >/dev/null
+          done
+
+          curl -fsS -X POST http://127.0.0.1:5125/api/companion/admin/pairing/start             -H 'Content-Type: application/json'             -d '{"confirmed":true}' >/tmp/legacy-ticket.json
+          legacy_code=$(jq -r '.code' /tmp/legacy-ticket.json)
+
+          curl -fsS -X POST http://127.0.0.1:5125/api/companion/pairing/claim             -H 'Content-Type: application/json'             -d '{
+              "code":"'"$legacy_code"'",
+              "deviceName":"Router Legacy Android"
+            }' >/tmp/legacy.json
+          legacy_token=$(jq -r '.token' /tmp/legacy.json)
+
+          curl -fsS             -H "Authorization: Bearer $legacy_token"             http://127.0.0.1:5125/api/companion/client/hub/identity             >/tmp/legacy-identity.json
+          android_id=$(jq -r '.deviceId' /tmp/legacy-identity.json)
+          jq -e '.trustLevel=="untrusted"' /tmp/legacy-identity.json >/dev/null
+
+          curl -fsS -X POST             http://127.0.0.1:5125/api/device-hub/admin/devices/$android_id/capabilities             -H 'Content-Type: application/json'             -d '{"capability":"build","confirmRegister":true}' >/dev/null
+
+          android_grant=$(curl -sS -o /tmp/android-grant.json -w '%{http_code}'             -X POST             http://127.0.0.1:5125/api/device-hub/admin/devices/$android_id/capabilities/build/permission             -H 'Content-Type: application/json'             -d '{"permissionGranted":true,"confirmPermissionChange":true}')
+          test "$android_grant" = "400"
+
+          curl -fsS -X POST http://127.0.0.1:5125/api/tasks/prepare             -H 'Content-Type: application/json'             -d '{
+              "goal":"Route deterministic build task",
+              "plan":"Read workspace after selecting a build-capable device.",
+              "steps":[{
+                "title":"List workspace",
+                "description":"Safe local read step for routing fixture.",
+                "toolName":"workspace.list",
+                "arguments":{"path":".","maxEntries":20},
+                "dependsOn":[]
+              }]
+            }' >/tmp/task.json
+          task_id=$(jq -r '.id' /tmp/task.json)
+
+          no_confirm=$(curl -sS -o /tmp/no-confirm.json -w '%{http_code}'             -X POST http://127.0.0.1:5125/api/tasks/$task_id/route             -H 'Content-Type: application/json'             -d '{"requiredCapability":"build","confirmRoute":false}')
+          test "$no_confirm" = "400"
+
+          curl -fsS -X POST http://127.0.0.1:5125/api/tasks/$task_id/route             -H 'Content-Type: application/json'             -d '{"requiredCapability":"build","confirmRoute":true}'             >/tmp/route1.json
+
+          jq -e '
+            .decision=="routed"
+            and .deviceId=="'"$pc_id"'"
+            and .deviceType=="pc"
+            and .requiredCapability=="build"
+            and .reason=="deterministic-eligible-device-selected"
+          ' /tmp/route1.json >/dev/null
+
+          jq -e '
+            (.candidates[] | select(.deviceId=="'"$pc_id"'") |
+              .eligible==true
+              and .connectionStatus=="online"
+              and .permissionGranted==true
+              and .trustRank==0
+              and .deviceTypeRank==0)
+            and
+            (.candidates[] | select(.deviceId=="'"$laptop_id"'") |
+              .eligible==true
+              and .connectionStatus=="online"
+              and .permissionGranted==true
+              and .trustRank==0
+              and .deviceTypeRank==1)
+            and
+            (.candidates[] | select(.deviceId=="'"$android_id"'") |
+              .eligible==false
+              and .reason=="device-not-trusted")
+          ' /tmp/route1.json >/dev/null
+
+          curl -fsS -X POST http://127.0.0.1:5125/api/tasks/$task_id/route             -H 'Content-Type: application/json'             -d '{"requiredCapability":"build","confirmRoute":true}'             >/tmp/route2.json
+          test "$(jq -r '.deviceId' /tmp/route2.json)" = "$pc_id"
+
+          hub_file=/tmp/personalai-v284/hub/device-hub-personal.json
+          jq --arg id "$pc_id" '
+            map(if .id==$id then
+              .lastSeenAt="2026-01-01T00:00:00+00:00"
+              | .connectionStatus="online"
+            else . end)
+          ' "$hub_file" >/tmp/hub-pc-offline.json
+          mv /tmp/hub-pc-offline.json "$hub_file"
+
+          curl -fsS -X POST http://127.0.0.1:5125/api/tasks/$task_id/route             -H 'Content-Type: application/json'             -d '{"requiredCapability":"build","confirmRoute":true}'             >/tmp/route3.json
+
+          jq -e '
+            .decision=="routed"
+            and .deviceId=="'"$laptop_id"'"
+            and (.candidates[] | select(.deviceId=="'"$pc_id"'") |
+              .eligible==false
+              and .reason=="device-offline")
+          ' /tmp/route3.json >/dev/null
+
+          jq --arg id "$laptop_id" '
+            map(if .id==$id then
+              .lastSeenAt="2026-01-01T00:00:00+00:00"
+              | .connectionStatus="online"
+            else . end)
+          ' "$hub_file" >/tmp/hub-all-local-offline.json
+          mv /tmp/hub-all-local-offline.json "$hub_file"
+
+          unroutable=$(curl -sS -o /tmp/unroutable.json -w '%{http_code}'             -X POST http://127.0.0.1:5125/api/tasks/$task_id/route             -H 'Content-Type: application/json'             -d '{"requiredCapability":"build","confirmRoute":true}')
+          test "$unroutable" = "409"
+
+          jq -e '
+            .decision=="unroutable"
+            and .deviceId==null
+            and (.candidates[] | select(.deviceId=="'"$pc_id"'") |
+              .reason=="device-offline")
+            and (.candidates[] | select(.deviceId=="'"$laptop_id"'") |
+              .reason=="device-offline")
+            and (.candidates[] | select(.deviceId=="'"$android_id"'") |
+              .reason=="device-not-trusted")
+          ' /tmp/unroutable.json >/dev/null
+
+          curl -fsS http://127.0.0.1:5125/api/tasks/routes >/tmp/routes.json
+          jq -e '
+            length==4
+            and ([.[] | select(.decision=="routed")] | length)==3
+            and ([.[] | select(.decision=="unroutable")] | length)==1
+          ' /tmp/routes.json >/dev/null
+
+          stop_app
+          start_app
+
+          curl -fsS http://127.0.0.1:5125/api/tasks/$task_id/route             >/tmp/latest-route.json
+          jq -e '
+            .decision=="unroutable"
+            and .requiredCapability=="build"
+            and .deviceId==null
+          ' /tmp/latest-route.json >/dev/null
+
+          curl -fsS http://127.0.0.1:5125/api/tasks/router/status             | jq -e '
+              .version=="2.8.4"
+              and .deterministicRouting==true
+              and .offlineDevicesEligible==false
+              and .routeDecisionPersisted==true
+            ' >/dev/null

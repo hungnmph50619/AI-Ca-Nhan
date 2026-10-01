@@ -664,7 +664,7 @@ public static class DevelopmentEndpoints
             {
                 return Results.BadRequest(new ApiError(exception.Message));
             }
-            catch (WorkspaceFileValidationException exception)
+            catch (ToolExecutionInputException exception)
             {
                 return Results.BadRequest(new ApiError(exception.Message));
             }

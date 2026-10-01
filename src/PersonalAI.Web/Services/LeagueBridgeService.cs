@@ -54,6 +54,43 @@ public sealed record LeagueMatchEventFeed(
     string WorkspaceId,
     IReadOnlyList<LeagueMatchEvent> Events);
 
+public sealed record LeagueVisibleChampionObservation(
+    string Champion,
+    string Team,
+    double X,
+    double Y,
+    double Confidence);
+
+public sealed record LeagueVisionObservationBatch(
+    int BridgeVersion,
+    string ClientInstanceId,
+    long Sequence,
+    DateTimeOffset ObservedAtUtc,
+    string Source,
+    double GameTimeSeconds,
+    IReadOnlyList<LeagueVisibleChampionObservation> Observations);
+
+public sealed record LeagueChampionLastSeen(
+    string Champion,
+    string Team,
+    double X,
+    double Y,
+    double Confidence,
+    double GameTimeSeconds,
+    DateTimeOffset ObservedAtUtc,
+    int ObservationCount);
+
+public sealed record LeagueVisionState(
+    Guid MatchSessionId,
+    string WorkspaceId,
+    IReadOnlyList<LeagueChampionLastSeen> LastSeen);
+
+public sealed record LeagueVisionAcceptResult(
+    bool Accepted,
+    Guid MatchSessionId,
+    int LastSeenCount,
+    string Reason);
+
 public static class LeagueMatchSessionStates
 {
     public const string Active = "active";
@@ -82,6 +119,12 @@ public interface ILeagueMatchSnapshotStore
     LeagueMatchSessionSummary? GetSession(string workspaceId);
 
     LeagueMatchEventFeed? GetEvents(string workspaceId);
+
+    LeagueVisionAcceptResult AcceptVision(
+        string workspaceId,
+        LeagueVisionObservationBatch batch);
+
+    LeagueVisionState? GetVision(string workspaceId);
 }
 
 public sealed class LeagueMatchSnapshotStore : ILeagueMatchSnapshotStore
@@ -109,7 +152,9 @@ public sealed class LeagueMatchSnapshotStore : ILeagueMatchSnapshotStore
                 state.StartedAtUtc = snapshot.ObservedAtUtc;
                 state.Snapshots.Clear();
                 state.Events.Clear();
+                state.VisionLastSeen.Clear();
                 state.LastSequenceByClient.Clear();
+                state.LastVisionSequenceByClient.Clear();
             }
 
             if (state.LastSequenceByClient.TryGetValue(
@@ -164,6 +209,99 @@ public sealed class LeagueMatchSnapshotStore : ILeagueMatchSnapshotStore
                 MatchSessionId: state.SessionId,
                 TimelineCount: state.Snapshots.Count,
                 Reason: "accepted");
+        }
+    }
+
+    public LeagueVisionAcceptResult AcceptVision(
+        string workspaceId,
+        LeagueVisionObservationBatch batch)
+    {
+        if (!_states.TryGetValue(workspaceId, out var state))
+            return new(false, Guid.Empty, 0, "no-active-match-session");
+
+        lock (state.Sync)
+        {
+            if (state.SessionId == Guid.Empty || state.Snapshots.Count == 0)
+                return new(false, Guid.Empty, 0, "no-active-match-session");
+
+            if (state.LastVisionSequenceByClient.TryGetValue(
+                    batch.ClientInstanceId,
+                    out var lastSequence) &&
+                batch.Sequence <= lastSequence)
+            {
+                return new(
+                    false,
+                    state.SessionId,
+                    state.VisionLastSeen.Count,
+                    "duplicate-or-out-of-order-sequence");
+            }
+
+            if (Math.Abs(batch.GameTimeSeconds - state.LastGameTimeSeconds) > 10)
+            {
+                return new(
+                    false,
+                    state.SessionId,
+                    state.VisionLastSeen.Count,
+                    "vision-game-time-outside-current-window");
+            }
+
+            state.LastVisionSequenceByClient[batch.ClientInstanceId] =
+                batch.Sequence;
+
+            foreach (var observation in batch.Observations)
+            {
+                var key = VisionKey(
+                    observation.Team,
+                    observation.Champion);
+                var count = state.VisionLastSeen.TryGetValue(
+                    key,
+                    out var previous)
+                    ? previous.ObservationCount + 1
+                    : 1;
+
+                state.VisionLastSeen[key] = new(
+                    observation.Champion,
+                    observation.Team,
+                    observation.X,
+                    observation.Y,
+                    observation.Confidence,
+                    batch.GameTimeSeconds,
+                    batch.ObservedAtUtc,
+                    count);
+            }
+
+            var cutoff = state.LastGameTimeSeconds - 180;
+            foreach (var key in state.VisionLastSeen
+                         .Where(pair => pair.Value.GameTimeSeconds < cutoff)
+                         .Select(pair => pair.Key)
+                         .ToArray())
+                state.VisionLastSeen.Remove(key);
+
+            return new(
+                true,
+                state.SessionId,
+                state.VisionLastSeen.Count,
+                "accepted");
+        }
+    }
+
+    public LeagueVisionState? GetVision(string workspaceId)
+    {
+        if (!_states.TryGetValue(workspaceId, out var state))
+            return null;
+
+        lock (state.Sync)
+        {
+            if (state.SessionId == Guid.Empty)
+                return null;
+
+            return new(
+                state.SessionId,
+                workspaceId,
+                state.VisionLastSeen.Values
+                    .OrderBy(item => item.Team)
+                    .ThenBy(item => item.Champion)
+                    .ToArray());
         }
     }
 
@@ -343,6 +481,10 @@ public sealed class LeagueMatchSnapshotStore : ILeagueMatchSnapshotStore
         }
     }
 
+    private static string VisionKey(string team, string champion) =>
+        team.Trim().ToLowerInvariant() + ":" +
+        champion.Trim().ToLowerInvariant();
+
     private sealed class WorkspaceState
     {
         public object Sync { get; } = new();
@@ -352,7 +494,11 @@ public sealed class LeagueMatchSnapshotStore : ILeagueMatchSnapshotStore
         public double LastGameTimeSeconds { get; set; } = -1;
         public Queue<LeagueMatchSnapshot> Snapshots { get; } = new();
         public Queue<LeagueMatchEvent> Events { get; } = new();
+        public Dictionary<string, LeagueChampionLastSeen> VisionLastSeen { get; } =
+            new(StringComparer.OrdinalIgnoreCase);
         public Dictionary<string, long> LastSequenceByClient { get; } =
+            new(StringComparer.Ordinal);
+        public Dictionary<string, long> LastVisionSequenceByClient { get; } =
             new(StringComparer.Ordinal);
     }
 }

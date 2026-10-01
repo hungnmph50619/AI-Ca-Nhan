@@ -107,7 +107,7 @@ jobs:
             -d '{"capability":"git","confirmRegister":true}' >/dev/null
 
           pre_grant=$(curl -sS -o /tmp/pre-grant.json -w '%{http_code}' \
-            -X POST http://127.0.0.1:5131/api/device-hub/devices/$device_id/capabilities/git/authorize)
+            http://127.0.0.1:5131/api/device-hub/admin/devices/$device_id/capabilities/git/access)
           test "$pre_grant" = "403"
 
           curl -fsS -X POST \
@@ -124,8 +124,7 @@ jobs:
               and .effect=="allow")
           ' >/dev/null
 
-          curl -fsS -X POST \
-            http://127.0.0.1:5131/api/device-hub/devices/$device_id/capabilities/git/authorize \
+          curl -fsS http://127.0.0.1:5131/api/device-hub/admin/devices/$device_id/capabilities/git/access \
             >/tmp/authorized.json
           jq -e '.allowed==true' /tmp/authorized.json >/dev/null
 
@@ -142,7 +141,7 @@ jobs:
           deny_rule_id=$(jq -r '.id' /tmp/deny-rule.json)
 
           denied=$(curl -sS -o /tmp/denied.json -w '%{http_code}' \
-            -X POST http://127.0.0.1:5131/api/device-hub/devices/$device_id/capabilities/git/authorize)
+            http://127.0.0.1:5131/api/device-hub/admin/devices/$device_id/capabilities/git/access)
           test "$denied" = "403"
           jq -e '.allowed==false and .reason=="explicit-deny"' /tmp/denied.json >/dev/null
 
@@ -150,7 +149,7 @@ jobs:
           start_app
 
           persisted_denied=$(curl -sS -o /tmp/persisted-denied.json -w '%{http_code}' \
-            -X POST http://127.0.0.1:5131/api/device-hub/devices/$device_id/capabilities/git/authorize)
+            http://127.0.0.1:5131/api/device-hub/admin/devices/$device_id/capabilities/git/access)
           test "$persisted_denied" = "403"
 
           curl -fsS -X DELETE \
@@ -158,8 +157,7 @@ jobs:
             -H 'Content-Type: application/json' \
             -d '{"confirmRevoke":true}' >/dev/null
 
-          curl -fsS -X POST \
-            http://127.0.0.1:5131/api/device-hub/devices/$device_id/capabilities/git/authorize \
+          curl -fsS http://127.0.0.1:5131/api/device-hub/admin/devices/$device_id/capabilities/git/access \
             >/tmp/reallowed.json
           jq -e '.allowed==true and .reason=="explicit-allow"' /tmp/reallowed.json >/dev/null
 

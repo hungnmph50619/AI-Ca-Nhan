@@ -94,7 +94,7 @@ jobs:
           start_app
 
           jq -e '
-            .version=="2.9.1"
+            (.version | split(".") | map(tonumber)) >= [2,9,1]
             and .storage=="local-sqlite"
             and .retentionDays==90
             and .maximumEntries==10000

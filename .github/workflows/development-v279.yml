@@ -92,7 +92,7 @@ jobs:
           done
 
           jq -e '
-            .version=="2.7.9"
+            (.version | split(".") | map(tonumber)) >= [2,7,9]
             and .lowRiskAutoMergeEnabled==true
             and .highRiskAutoMergeAllowed==false
             and .highRiskRequiresUserConfirmation==true

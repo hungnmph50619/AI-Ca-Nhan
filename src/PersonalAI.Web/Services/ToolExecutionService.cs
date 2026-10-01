@@ -95,6 +95,7 @@ public sealed class ToolExecutionService(
     IToolInputValidator validator,
     IToolPolicy policy,
     IUndoService undo,
+    IEmergencyStopService emergencyStop,
     ILogger<ToolExecutionService> logger) : IToolExecutionService
 {
     public async Task<ToolExecutionResponse> ExecuteAsync(
@@ -122,6 +123,21 @@ public sealed class ToolExecutionService(
         }
 
         var definition = tool.Definition;
+        if (emergencyStop.IsEngaged)
+        {
+            return Complete(
+                invocationId,
+                definition.Name,
+                ToolExecutionStatuses.Denied,
+                false,
+                null,
+                "Emergency stop đang bật; tool execution bị khóa.",
+                stopwatch,
+                startedAt,
+                definition.RequiredPermissions,
+                NormalizeApproved(request.ApprovedPermissions));
+        }
+
         var validation = validator.Validate(definition.InputSchema, request.Arguments);
         if (!validation.IsValid)
         {
@@ -157,7 +173,10 @@ public sealed class ToolExecutionService(
                 policyDecision.ApprovedPermissions);
         }
 
-        using var timeoutCts = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
+        var emergencyToken = emergencyStop.CurrentToken;
+        using var timeoutCts = CancellationTokenSource.CreateLinkedTokenSource(
+            cancellationToken,
+            emergencyToken);
         timeoutCts.CancelAfter(definition.TimeoutMs);
         UndoPreparation? undoPreparation = null;
 
@@ -213,6 +232,22 @@ public sealed class ToolExecutionService(
                     ? NormalizeOutput(output)
                     : null,
                 exception.Message,
+                stopwatch,
+                startedAt,
+                definition.RequiredPermissions,
+                policyDecision.ApprovedPermissions);
+        }
+        catch (OperationCanceledException) when (
+            emergencyToken.IsCancellationRequested)
+        {
+            undo.Abandon(undoPreparation);
+            return Complete(
+                invocationId,
+                definition.Name,
+                ToolExecutionStatuses.Denied,
+                false,
+                null,
+                "Emergency stop đã hủy tool execution đang chạy.",
                 stopwatch,
                 startedAt,
                 definition.RequiredPermissions,

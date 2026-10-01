@@ -1,0 +1,170 @@
+name: System Log v2.9.1
+
+on:
+  push:
+    branches:
+      - 'experiment/roadmap-v2-9-1-system-log'
+
+jobs:
+  validate-v291:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: '8.0.x'
+
+      - name: Restore
+        run: dotnet restore PersonalAI.sln
+
+      - name: Build
+        run: dotnet build PersonalAI.sln -c Release --no-restore
+
+      - name: Tests
+        run: dotnet test PersonalAI.sln -c Release --no-build
+
+      - name: System log smoke test
+        shell: bash
+        run: |
+          set -euxo pipefail
+          rm -rf /tmp/personalai-v291
+          mkdir -p /tmp/personalai-v291/audit /tmp/personalai-v291/workspace
+
+          # Seed the old audit schema to prove in-place migration works.
+          python3 - <<'PY'
+          import sqlite3
+          p = "/tmp/personalai-v291/audit/audit.db"
+          con = sqlite3.connect(p)
+          con.execute("""
+          CREATE TABLE audit_events (
+            audit_id TEXT PRIMARY KEY,
+            occurred_at TEXT NOT NULL,
+            workspace_id TEXT NOT NULL,
+            agent TEXT NOT NULL,
+            action TEXT NOT NULL,
+            tool TEXT NULL,
+            target TEXT NOT NULL,
+            reason TEXT NOT NULL,
+            result TEXT NOT NULL
+          )
+          """)
+          con.execute("""
+          INSERT INTO audit_events
+          (audit_id, occurred_at, workspace_id, agent, action, tool, target, reason, result)
+          VALUES
+          ('11111111-1111-1111-1111-111111111111',
+           '2026-10-01T00:00:00.0000000+00:00',
+           'personal',
+           'system',
+           'legacy.event',
+           NULL,
+           'legacy-target',
+           'legacy-reason',
+           'succeeded')
+          """)
+          con.commit()
+          con.close()
+          PY
+
+          export Audit__Root=/tmp/personalai-v291/audit
+          export Workspace__Root=/tmp/personalai-v291/workspace
+
+          start_app() {
+            dotnet run --project src/PersonalAI.Web/PersonalAI.Web.csproj \
+              -c Release --no-build \
+              --urls http://127.0.0.1:5132 \
+              >/tmp/personalai-v291/app.log 2>&1 &
+            APP_PID=$!
+            for i in {1..30}; do
+              if curl -fsS http://127.0.0.1:5132/api/system/logs/status >/tmp/log-status.json; then
+                return 0
+              fi
+              sleep 1
+            done
+            cat /tmp/personalai-v291/app.log
+            return 1
+          }
+
+          stop_app() {
+            kill "$APP_PID" 2>/dev/null || true
+            wait "$APP_PID" 2>/dev/null || true
+          }
+
+          trap 'stop_app || true' EXIT
+          start_app
+
+          jq -e '
+            .version=="2.9.1"
+            and .storage=="local-sqlite"
+            and .retentionDays==90
+            and .maximumEntries==10000
+            and .maximumQueryLimit==200
+            and .requestCorrelationEnabled==true
+            and .requestBodyLoggingEnabled==false
+            and .authorizationHeaderLoggingEnabled==false
+            and .queryStringLoggingEnabled==false
+            and .backwardCompatibleAuditApi==true
+          ' /tmp/log-status.json >/dev/null
+
+          legacy=$(curl -fsS 'http://127.0.0.1:5132/api/system/logs?action=legacy.event')
+          echo "$legacy" | jq -e '
+            (.items | length)==1
+            and .items[0].level=="info"
+            and .items[0].source=="system"
+          ' >/dev/null
+
+          curl -sS -D /tmp/status-headers.txt \
+            -H 'Authorization: Bearer SUPER_SECRET_TOKEN_291' \
+            'http://127.0.0.1:5132/api/status?secret_query=DO_NOT_LOG_QUERY_291' \
+            >/tmp/status-response.json
+
+          request_id=$(awk 'BEGIN{IGNORECASE=1} /^X-PersonalAI-Request-Id:/ {gsub("\r","",$2); print $2}' /tmp/status-headers.txt)
+          test -n "$request_id"
+
+          correlated=$(curl -fsS \
+            "http://127.0.0.1:5132/api/system/logs?correlationId=$request_id")
+          echo "$correlated" | jq -e --arg rid "$request_id" '
+            (.items | length)==1
+            and .items[0].correlationId==$rid
+            and .items[0].source=="http"
+            and .items[0].level=="info"
+            and .items[0].action=="http.request"
+            and .items[0].target=="GET /api/status"
+            and (.items[0].reason | startswith("status:200;duration-ms:"))
+          ' >/dev/null
+
+          body_marker="DO_NOT_LOG_BODY_291"
+          curl -sS -o /tmp/eval.json \
+            -X POST http://127.0.0.1:5132/api/system/permissions/evaluate \
+            -H 'Content-Type: application/json' \
+            -H 'Authorization: Bearer SUPER_SECRET_TOKEN_291' \
+            -d '{
+              "subjectType":"device",
+              "subjectId":"DO_NOT_LOG_BODY_291",
+              "resource":"capability:git",
+              "action":"use"
+            }' || true
+
+          all_logs=$(curl -fsS 'http://127.0.0.1:5132/api/system/logs?limit=200')
+          ! echo "$all_logs" | grep -Fq 'SUPER_SECRET_TOKEN_291'
+          ! echo "$all_logs" | grep -Fq 'DO_NOT_LOG_QUERY_291'
+          ! echo "$all_logs" | grep -Fq "$body_marker"
+
+          audit_compat=$(curl -fsS 'http://127.0.0.1:5132/api/audit?limit=10')
+          echo "$audit_compat" | jq -e '.storage=="local-sqlite" and (.items | length)>=1' >/dev/null
+
+          summary=$(curl -fsS http://127.0.0.1:5132/api/system/logs/summary)
+          echo "$summary" | jq -e '
+            .totalEvents>=3
+            and (.byLevel.info // 0)>=1
+            and (.bySource.http // 0)>=1
+          ' >/dev/null
+
+          stop_app
+          start_app
+
+          persisted=$(curl -fsS \
+            "http://127.0.0.1:5132/api/system/logs?correlationId=$request_id")
+          echo "$persisted" | jq -e --arg rid "$request_id" '
+            any(.items[]; .correlationId==$rid and .target=="GET /api/status")
+          ' >/dev/null

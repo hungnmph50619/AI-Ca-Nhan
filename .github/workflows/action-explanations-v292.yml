@@ -58,7 +58,7 @@ jobs:
           start_app
 
           jq -e '
-            .version=="2.9.2"
+            (.version | split(".") | map(tonumber)) >= [2,9,2]
             and .auditGrounded==true
             and .correlationTimelineSupported==true
             and .aiGenerated==false
@@ -85,7 +85,7 @@ jobs:
             >/tmp/audit-explanation.json
 
           jq -e --arg rid "$request_id" '
-            .version=="2.9.2"
+            (.version | split(".") | map(tonumber)) >= [2,9,2]
             and .explanationType=="audit-event"
             and .sourceGrounded==true
             and .aiGenerated==false

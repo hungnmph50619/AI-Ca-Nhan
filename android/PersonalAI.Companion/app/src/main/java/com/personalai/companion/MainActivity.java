@@ -39,6 +39,10 @@ public final class MainActivity extends Activity {
     private EditText messageInput;
     private Button sendButton;
     private TextView tasksText;
+    private EditText codeGoalInput;
+    private EditText repositoryHintInput;
+    private Button sendCodeCommandButton;
+    private TextView codeCommandsText;
     private TextView errorText;
     private Button refreshButton;
     private Button disconnectButton;
@@ -53,6 +57,7 @@ public final class MainActivity extends Activity {
 
         pairButton.setOnClickListener(view -> pair());
         sendButton.setOnClickListener(view -> sendMessage());
+        sendCodeCommandButton.setOnClickListener(view -> sendCodeCommand());
         refreshButton.setOnClickListener(view -> refreshConnectedData());
         disconnectButton.setOnClickListener(view -> disconnectLocal());
 
@@ -83,6 +88,10 @@ public final class MainActivity extends Activity {
         messageInput = findViewById(R.id.messageInput);
         sendButton = findViewById(R.id.sendButton);
         tasksText = findViewById(R.id.tasksText);
+        codeGoalInput = findViewById(R.id.codeGoalInput);
+        repositoryHintInput = findViewById(R.id.repositoryHintInput);
+        sendCodeCommandButton = findViewById(R.id.sendCodeCommandButton);
+        codeCommandsText = findViewById(R.id.codeCommandsText);
         errorText = findViewById(R.id.errorText);
         refreshButton = findViewById(R.id.refreshButton);
         disconnectButton = findViewById(R.id.disconnectButton);
@@ -214,13 +223,16 @@ public final class MainActivity extends Activity {
                 JSONObject me = api.me(token);
                 JSONObject core = api.core(token);
                 JSONObject tasks = api.tasks(token);
+                JSONObject codeCommands = api.developmentCommands(token);
 
                 String status = formatStatus(me, core);
                 String taskText = formatTasks(tasks);
+                String commandText = formatCodeCommands(codeCommands);
 
                 runOnUiThread(() -> {
                     connectionStatus.setText(status);
                     tasksText.setText(taskText);
+                    codeCommandsText.setText(commandText);
                     setBusy(false);
                 });
             } catch (Exception exception) {
@@ -293,6 +305,93 @@ public final class MainActivity extends Activity {
                 });
             }
         });
+    }
+
+    private void sendCodeCommand() {
+        String goal = codeGoalInput.getText().toString().trim();
+        String repositoryHint =
+                repositoryHintInput.getText().toString().trim();
+
+        if (goal.length() < 3 || !tokenStore.isPaired()) {
+            showError("Hãy mô tả yêu cầu sửa code rõ hơn.");
+            return;
+        }
+
+        clearError();
+        setBusy(true);
+
+        String server = tokenStore.getServerUrl();
+        String token = tokenStore.getToken();
+
+        executor.execute(() -> {
+            try {
+                ApiClient api = new ApiClient(server);
+                JSONObject command = api.submitDevelopmentCommand(
+                        token,
+                        goal,
+                        repositoryHint);
+
+                runOnUiThread(() -> {
+                    codeGoalInput.setText("");
+                    repositoryHintInput.setText("");
+                    codeCommandsText.setText(
+                            "Đã gửi · "
+                            + command.optString(
+                                    "status",
+                                    "pending-desktop-approval")
+                            + "\n"
+                            + command.optString("goal", goal));
+                    setBusy(false);
+                    Toast.makeText(
+                            this,
+                            "Đã gửi yêu cầu. Desktop cần duyệt trước khi sửa code.",
+                            Toast.LENGTH_LONG).show();
+                    refreshConnectedData();
+                });
+            } catch (Exception exception) {
+                runOnUiThread(() -> {
+                    setBusy(false);
+                    showError(safeMessage(exception));
+                });
+            }
+        });
+    }
+
+    private String formatCodeCommands(JSONObject response) {
+        JSONArray commands = response.optJSONArray("commands");
+        if (commands == null || commands.length() == 0) {
+            return "Chưa có yêu cầu sửa code.";
+        }
+
+        StringBuilder builder = new StringBuilder();
+        int limit = Math.min(commands.length(), 10);
+        for (int i = 0; i < limit; i++) {
+            JSONObject command = commands.optJSONObject(i);
+            if (command == null) {
+                continue;
+            }
+
+            if (builder.length() > 0) {
+                builder.append("\n\n");
+            }
+
+            builder.append("• ")
+                    .append(command.optString("goal", "Code command"))
+                    .append("\n  ")
+                    .append(command.optString("status", "unknown"));
+
+            long pr = command.optLong("pullRequestNumber", 0);
+            if (pr > 0) {
+                builder.append(" · PR #").append(pr);
+            }
+
+            String stop = command.optString("stopReason", "");
+            if (!stop.isEmpty()) {
+                builder.append("\n  ").append(stop);
+            }
+        }
+
+        return builder.toString();
     }
 
     private void trimConversation() {
@@ -397,6 +496,7 @@ public final class MainActivity extends Activity {
         transcript.setLength(0);
         chatTranscript.setText("Chưa có tin nhắn.");
         tasksText.setText("Chưa tải tasks.");
+        codeCommandsText.setText("Chưa có yêu cầu sửa code.");
         hydratePairingFields();
         updateMode();
         Toast.makeText(
@@ -409,6 +509,7 @@ public final class MainActivity extends Activity {
         pairButton.setEnabled(!busy);
         sendButton.setEnabled(!busy);
         refreshButton.setEnabled(!busy);
+        sendCodeCommandButton.setEnabled(!busy);
     }
 
     private void clearError() {

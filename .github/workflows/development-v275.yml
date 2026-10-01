@@ -1,0 +1,101 @@
+name: Development v2.7.5
+
+on:
+  push:
+    branches:
+      - 'experiment/roadmap-v2-7-5-current'
+
+jobs:
+  validate-v275:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: '8.0.x'
+
+      - name: Restore
+        run: dotnet restore PersonalAI.sln
+
+      - name: Build
+        run: dotnet build PersonalAI.sln -c Release --no-restore
+
+      - name: Tests
+        run: dotnet test PersonalAI.sln -c Release --no-build
+
+      - name: Independent reviewer safety smoke test
+        shell: bash
+        run: |
+          set -euo pipefail
+          rm -rf /tmp/personalai-v275
+          mkdir -p /tmp/personalai-v275/workspace /tmp/personalai-v275/runs /tmp/personalai-v275/reviews
+
+          export Workspace__Root=/tmp/personalai-v275/workspace
+          export Development__RunRoot=/tmp/personalai-v275/runs
+          export Development__ReviewRoot=/tmp/personalai-v275/reviews
+
+          dotnet run --project src/PersonalAI.Web/PersonalAI.Web.csproj -c Release --no-build --urls http://127.0.0.1:5110 >/tmp/personalai-v275.log 2>&1 &
+          APP_PID=$!
+          trap 'kill "$APP_PID" 2>/dev/null || true' EXIT
+
+          for i in {1..30}; do
+            if curl -fsS http://127.0.0.1:5110/api/development/reviews/status >/tmp/review-status.json; then break; fi
+            sleep 1
+          done
+
+          jq -e '
+            .version=="2.7.5"
+            and .reportsPersisted==true
+            and .independentReviewerRequired==true
+            and .developerSelfApprovalAllowed==false
+            and (.requiredChecks | sort)==(["architecture","correctness","regression"] | sort)
+          ' /tmp/review-status.json >/dev/null
+
+          curl -fsS -X POST http://127.0.0.1:5110/api/development/runs             -H 'Content-Type: application/json'             -d '{"goal":"v2.7.5 review smoke","repositoryPath":"","branch":"experiment/v275-smoke","confirmCreate":true}' >/tmp/run.json
+          run_id=$(jq -r '.id' /tmp/run.json)
+
+          for transition in             'analysis prepared'             'coding succeeded'             'testing passed'; do
+            set -- $transition
+            curl -fsS -X POST http://127.0.0.1:5110/api/development/runs/$run_id/advance               -H 'Content-Type: application/json'               -d '{"expectedCurrentStage":"'"$1"'","result":"'"$2"'"}' >/tmp/advance.json
+          done
+
+          jq -e '.stage=="review"' /tmp/advance.json >/dev/null
+
+          self_code=$(curl -sS -o /tmp/self-review.json -w '%{http_code}'             -X POST http://127.0.0.1:5110/api/development/reviews/run             -H 'Content-Type: application/json'             -d '{
+              "developmentRunId":"'"$run_id"'",
+              "testReportId":"11111111-1111-1111-1111-111111111111",
+              "codingAgentId":"quality.reviewer",
+              "reviewerId":"quality.reviewer",
+              "confirmReview":true,
+              "confirmExternalReviewer":true
+            }')
+          test "$self_code" = "400"
+          grep -qi 'không được tự review' /tmp/self-review.json
+
+          wrong_reviewer=$(curl -sS -o /tmp/wrong-reviewer.json -w '%{http_code}'             -X POST http://127.0.0.1:5110/api/development/reviews/run             -H 'Content-Type: application/json'             -d '{
+              "developmentRunId":"'"$run_id"'",
+              "testReportId":"11111111-1111-1111-1111-111111111111",
+              "codingAgentId":"coding.agent",
+              "reviewerId":"coding.agent.2",
+              "confirmReview":true,
+              "confirmExternalReviewer":true
+            }')
+          test "$wrong_reviewer" = "400"
+
+          no_external=$(curl -sS -o /tmp/no-external.json -w '%{http_code}'             -X POST http://127.0.0.1:5110/api/development/reviews/run             -H 'Content-Type: application/json'             -d '{
+              "developmentRunId":"'"$run_id"'",
+              "testReportId":"11111111-1111-1111-1111-111111111111",
+              "codingAgentId":"coding.agent",
+              "reviewerId":"quality.reviewer",
+              "confirmReview":true,
+              "confirmExternalReviewer":false
+            }')
+          test "$no_external" = "400"
+
+          grep -Fq 'ReviewerFrameworkAgent.AgentId' src/PersonalAI.Web/Services/DevelopmentReviewService.cs
+          grep -Fq 'testReport.Succeeded' src/PersonalAI.Web/Services/DevelopmentReviewService.cs
+          grep -Fq '"correctness"' src/PersonalAI.Web/Services/DevelopmentReviewService.cs
+          grep -Fq '"architecture"' src/PersonalAI.Web/Services/DevelopmentReviewService.cs
+          grep -Fq '"regression"' src/PersonalAI.Web/Services/DevelopmentReviewService.cs
+
+          curl -fsS http://127.0.0.1:5110/api/development/status             | jq -e '(.availableCapabilities | index("independent-code-review")) != null' >/dev/null

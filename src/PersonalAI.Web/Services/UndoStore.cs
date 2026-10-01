@@ -473,37 +473,48 @@ public sealed class SqliteUndoStore : IUndoStore
     private void EnsureInitialized()
     {
         if (_initialized)
-        {
             return;
-        }
 
         using var connection = OpenConnection();
-        using var command = connection.CreateCommand();
-        command.CommandText =
-            """
-            CREATE TABLE IF NOT EXISTS undo_entries (
-                undo_id TEXT PRIMARY KEY,
-                invocation_id TEXT NOT NULL,
-                created_at TEXT NOT NULL,
-                expires_at TEXT NOT NULL,
-                workspace_id TEXT NOT NULL,
-                tool_name TEXT NOT NULL,
-                operation TEXT NOT NULL,
-                primary_path TEXT NOT NULL,
-                secondary_path TEXT NULL,
-                before_sha256 TEXT NULL,
-                post_sha256 TEXT NULL,
-                snapshot BLOB NULL,
-                status TEXT NOT NULL
-            );
+        _ = SqliteSchemaMigrationEngine.Apply(
+            connection,
+            "undo",
+            [
+                new SqliteMigrationStep(
+                    "undo-001-baseline",
+                    "Create undo entry schema and indexes.",
+                    "undo-v1-baseline-2026-10-02",
+                    static connection =>
+                    {
+                        using var command = connection.CreateCommand();
+                        command.CommandText =
+                            """
+                            CREATE TABLE IF NOT EXISTS undo_entries (
+                                undo_id TEXT PRIMARY KEY,
+                                invocation_id TEXT NOT NULL,
+                                created_at TEXT NOT NULL,
+                                expires_at TEXT NOT NULL,
+                                workspace_id TEXT NOT NULL,
+                                tool_name TEXT NOT NULL,
+                                operation TEXT NOT NULL,
+                                primary_path TEXT NOT NULL,
+                                secondary_path TEXT NULL,
+                                before_sha256 TEXT NULL,
+                                post_sha256 TEXT NULL,
+                                snapshot BLOB NULL,
+                                status TEXT NOT NULL
+                            );
 
-            CREATE INDEX IF NOT EXISTS ix_undo_workspace_created
-                ON undo_entries(workspace_id, created_at DESC);
+                            CREATE INDEX IF NOT EXISTS ix_undo_workspace_created
+                                ON undo_entries(workspace_id, created_at DESC);
 
-            CREATE INDEX IF NOT EXISTS ix_undo_invocation
-                ON undo_entries(invocation_id);
-            """;
-        command.ExecuteNonQuery();
+                            CREATE INDEX IF NOT EXISTS ix_undo_invocation
+                                ON undo_entries(invocation_id);
+                            """;
+                        command.ExecuteNonQuery();
+                    })
+            ]);
+
         _initialized = true;
     }
 

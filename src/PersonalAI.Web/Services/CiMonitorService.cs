@@ -128,6 +128,8 @@ public sealed class CiMonitorService(
                 {
                     Repository = item.Repository,
                     SourceEventType = item.EventType,
+                    DeliveryId = item.DeliveryId,
+                    ExternalId = item.ExternalId ?? existing.ExternalId,
                     Ref = item.Ref ?? existing.Ref,
                     Sha = item.Sha ?? existing.Sha,
                     State = mappedState,

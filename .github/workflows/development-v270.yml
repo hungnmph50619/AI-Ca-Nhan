@@ -1,0 +1,101 @@
+name: Development v2.7.0
+
+on:
+  push:
+    branches:
+      - 'experiment/roadmap-v2-7-0-current'
+
+jobs:
+  validate-v270:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: '8.0.x'
+
+      - name: Restore
+        run: dotnet restore PersonalAI.sln
+
+      - name: Build
+        run: dotnet build PersonalAI.sln -c Release --no-restore
+
+      - name: Tests
+        run: dotnet test PersonalAI.sln -c Release --no-build
+
+      - name: DevelopmentRun persistence and resume smoke test
+        shell: bash
+        run: |
+          set -euo pipefail
+          rm -rf /tmp/personalai-v270
+          mkdir -p /tmp/personalai-v270/workspace /tmp/personalai-v270/runs
+
+          export Workspace__Root=/tmp/personalai-v270/workspace
+          export Development__RunRoot=/tmp/personalai-v270/runs
+
+          start_app() {
+            dotnet run --project src/PersonalAI.Web/PersonalAI.Web.csproj -c Release --no-build --urls http://127.0.0.1:5105 >/tmp/personalai-v270.log 2>&1 &
+            APP_PID=$!
+            for i in {1..30}; do
+              if curl -fsS http://127.0.0.1:5105/api/development/runs/status >/tmp/run-status.json; then return 0; fi
+              sleep 1
+            done
+            return 1
+          }
+
+          stop_app() {
+            kill "$APP_PID" 2>/dev/null || true
+            wait "$APP_PID" 2>/dev/null || true
+          }
+
+          trap 'stop_app || true' EXIT
+          start_app
+
+          jq -e '.version=="2.7.0" and .persisted==true and .resumable==true and .sideEffectsAutomatic==false' /tmp/run-status.json >/dev/null
+
+          curl -fsS -X POST http://127.0.0.1:5105/api/development/runs             -H 'Content-Type: application/json'             -d '{"goal":"implement next roadmap version","repositoryPath":"","branch":"experiment/roadmap-v2-7-1-current","roadmapVersion":"2.7.1","confirmCreate":true}' >/tmp/run.json
+
+          run_id=$(jq -r '.id' /tmp/run.json)
+          jq -e '.stage=="analysis" and .status=="active"' /tmp/run.json >/dev/null
+
+          duplicate_code=$(curl -sS -o /tmp/duplicate.json -w '%{http_code}' -X POST http://127.0.0.1:5105/api/development/runs             -H 'Content-Type: application/json'             -d '{"goal":"duplicate","repositoryPath":"","branch":"experiment/roadmap-v2-7-1-current","confirmCreate":true}')
+          test "$duplicate_code" = "409"
+
+          advance() {
+            current="$1"
+            result="$2"
+            curl -fsS -X POST http://127.0.0.1:5105/api/development/runs/$run_id/advance               -H 'Content-Type: application/json'               -d '{"expectedCurrentStage":"'"$current"'","result":"'"$result"'","evidence":"v2.7.0 smoke"}' >/tmp/advance.json
+          }
+
+          advance analysis prepared
+          jq -e '.stage=="coding"' /tmp/advance.json >/dev/null
+
+          wrong_stage=$(curl -sS -o /tmp/wrong-stage.json -w '%{http_code}' -X POST http://127.0.0.1:5105/api/development/runs/$run_id/advance             -H 'Content-Type: application/json'             -d '{"expectedCurrentStage":"analysis","result":"passed"}')
+          test "$wrong_stage" = "409"
+
+          advance coding succeeded
+          jq -e '.stage=="testing" and (.history|length)==2' /tmp/advance.json >/dev/null
+
+          stop_app
+          start_app
+
+          curl -fsS -X POST http://127.0.0.1:5105/api/development/runs/$run_id/resume >/tmp/resumed.json
+          jq -e '.stage=="testing" and .status=="active" and (.history|length)==2' /tmp/resumed.json >/dev/null
+
+          advance testing passed
+          advance review approved
+          advance security passed
+          advance benchmark passed
+          advance push succeeded
+          advance ci passed
+          advance merge-policy approved
+          advance local-sync succeeded
+
+          jq -e '.stage=="completed" and .status=="completed" and .completedAt!=null and (.history|length)==10' /tmp/advance.json >/dev/null
+
+          resume_completed=$(curl -sS -o /tmp/resume-completed.json -w '%{http_code}' -X POST http://127.0.0.1:5105/api/development/runs/$run_id/resume)
+          test "$resume_completed" = "400"
+
+          curl -fsS http://127.0.0.1:5105/api/development/runs/status             | jq -e '.runs==1 and .activeRuns==0 and .completedRuns==1' >/dev/null
+
+          curl -fsS http://127.0.0.1:5105/api/development/status             | jq -e '(.availableCapabilities | index("development-run-orchestration")) != null' >/dev/null

@@ -17,6 +17,7 @@ public static class DevelopmentEndpoints
         services.AddSingleton<ICiMonitorService, CiMonitorService>();
         services.AddSingleton<IDevelopmentRunService, DevelopmentRunService>();
         services.AddSingleton<IImprovementBacklogService, ImprovementBacklogService>();
+        services.AddSingleton<IRootCauseDiagnosisService, RootCauseDiagnosisService>();
         services.AddSingleton<IPersonalAiTool, DevelopmentWorkspaceInspectTool>();
         services.AddSingleton<IPersonalAiTool, DevelopmentTextSearchTool>();
         services.AddSingleton<IPersonalAiTool, DevelopmentGitStatusTool>();
@@ -54,6 +55,127 @@ public static class DevelopmentEndpoints
         app.MapGet("/api/development/git/capabilities", (
             ILocalGitRepositoryService git) =>
             Results.Ok(git.GetStatus()));
+
+        app.MapGet("/api/development/diagnoses/status", (
+            IRootCauseDiagnosisService diagnoses) =>
+            Results.Ok(diagnoses.GetStatus()));
+
+        app.MapGet("/api/development/diagnoses", (
+            IRootCauseDiagnosisService diagnoses) =>
+            Results.Ok(diagnoses.GetAll()));
+
+        app.MapGet("/api/development/diagnoses/{diagnosisId:guid}", (
+            Guid diagnosisId,
+            IRootCauseDiagnosisService diagnoses) =>
+        {
+            var diagnosis = diagnoses.Get(diagnosisId);
+            return diagnosis is null ? Results.NotFound() : Results.Ok(diagnosis);
+        });
+
+        app.MapPost("/api/development/diagnoses", (
+            StartRootCauseDiagnosisRequest request,
+            IRootCauseDiagnosisService diagnoses) =>
+        {
+            try
+            {
+                return Results.Ok(diagnoses.Start(request));
+            }
+            catch (RootCauseDiagnosisConflictException exception)
+            {
+                return Results.Json(
+                    new ApiError(exception.Message),
+                    statusCode: StatusCodes.Status409Conflict);
+            }
+            catch (RootCauseDiagnosisValidationException exception)
+            {
+                return Results.BadRequest(new ApiError(exception.Message));
+            }
+            catch (KeyNotFoundException exception)
+            {
+                return Results.NotFound(new ApiError(exception.Message));
+            }
+        });
+
+        app.MapPost("/api/development/diagnoses/{diagnosisId:guid}/reproduction", (
+            Guid diagnosisId,
+            RecordReproductionRequest request,
+            IRootCauseDiagnosisService diagnoses) =>
+        {
+            try
+            {
+                return Results.Ok(diagnoses.RecordReproduction(
+                    diagnosisId,
+                    request));
+            }
+            catch (RootCauseDiagnosisConflictException exception)
+            {
+                return Results.Json(
+                    new ApiError(exception.Message),
+                    statusCode: StatusCodes.Status409Conflict);
+            }
+            catch (RootCauseDiagnosisValidationException exception)
+            {
+                return Results.BadRequest(new ApiError(exception.Message));
+            }
+            catch (KeyNotFoundException exception)
+            {
+                return Results.NotFound(new ApiError(exception.Message));
+            }
+        });
+
+        app.MapPost("/api/development/diagnoses/{diagnosisId:guid}/hypotheses", (
+            Guid diagnosisId,
+            ProposeRootCauseHypothesisRequest request,
+            IRootCauseDiagnosisService diagnoses) =>
+        {
+            try
+            {
+                return Results.Ok(diagnoses.ProposeHypothesis(
+                    diagnosisId,
+                    request));
+            }
+            catch (RootCauseDiagnosisConflictException exception)
+            {
+                return Results.Json(
+                    new ApiError(exception.Message),
+                    statusCode: StatusCodes.Status409Conflict);
+            }
+            catch (RootCauseDiagnosisValidationException exception)
+            {
+                return Results.BadRequest(new ApiError(exception.Message));
+            }
+            catch (KeyNotFoundException exception)
+            {
+                return Results.NotFound(new ApiError(exception.Message));
+            }
+        });
+
+        app.MapPost("/api/development/diagnoses/{diagnosisId:guid}/verify", (
+            Guid diagnosisId,
+            VerifyRootCauseHypothesisRequest request,
+            IRootCauseDiagnosisService diagnoses) =>
+        {
+            try
+            {
+                return Results.Ok(diagnoses.VerifyHypothesis(
+                    diagnosisId,
+                    request));
+            }
+            catch (RootCauseDiagnosisConflictException exception)
+            {
+                return Results.Json(
+                    new ApiError(exception.Message),
+                    statusCode: StatusCodes.Status409Conflict);
+            }
+            catch (RootCauseDiagnosisValidationException exception)
+            {
+                return Results.BadRequest(new ApiError(exception.Message));
+            }
+            catch (KeyNotFoundException exception)
+            {
+                return Results.NotFound(new ApiError(exception.Message));
+            }
+        });
 
         app.MapGet("/api/development/improvements/status", (
             IImprovementBacklogService backlog) =>

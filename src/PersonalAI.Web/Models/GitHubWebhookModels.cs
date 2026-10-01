@@ -49,7 +49,8 @@ public sealed record DevelopmentEventEnvelope(
     string? Status,
     string? Conclusion,
     string? Tag,
-    DateTimeOffset ReceivedAt);
+    DateTimeOffset ReceivedAt,
+    string? ExternalId = null);
 
 public sealed record GitHubWebhookReceiveResult(
     string DeliveryId,

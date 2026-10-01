@@ -252,11 +252,11 @@ jobs:
             (.version | test("^[0-9]+\\.[0-9]+\\.[0-9]+$"))
             and .apiContractVersion == "1"
             and .edition == "Personal AI OS"
-            and .stage == "v2.2.6"
+            and .stage == "v3.0"
             and .workspaceId == "personal"
             and .readiness.osContractReady == true
             and .readiness.readyForV21Foundation == true
-            and .readiness.capabilityCount == 19
+            and .readiness.capabilityCount == 20
             and .governance.workspaceIsolation == true
             and .governance.permissionPolicy == true
             and .governance.explicitConfirmationForSideEffects == true
@@ -268,13 +268,28 @@ jobs:
             and .governance.parallelToolCalls == false
             and .governance.multiAgentFramework == true
             and .governance.agentOrchestration == true
-            and .nextStage == "v2.2.7-workflow-usability"
+            and .nextStage == "continuous-stable"
             and any(.capabilities[]; .id == "memory" and .state == "ready")
             and any(.capabilities[]; .id == "browser" and .state == "controlled")
             and any(.capabilities[]; .id == "email" and .state == "foundation")
             and any(.capabilities[]; .id == "calendar" and .state == "foundation")
             and any(.capabilities[]; .id == "agent-framework" and .state == "controlled")
             and any(.capabilities[]; .id == "desktop" and (.state == "unconfigured" or .state == "controlled"))
+            and any(.capabilities[]; .id == "continuous-improvement" and .state == "controlled")
+            and .continuousImprovement.available == true
+            and .continuousImprovement.enabledByDefault == false
+            and .continuousImprovement.autonomousDevelopmentControllerReady == true
+            and .continuousImprovement.policyBypassAllowed == false
+            and .continuousImprovement.directMainPushAllowed == false
+            and .continuousImprovement.highRiskAutoMergeAllowed == false
+            and .continuousImprovement.unifiedPermissionsReady == true
+            and .continuousImprovement.systemLogReady == true
+            and .continuousImprovement.undoReady == true
+            and .continuousImprovement.resourceLimitsReady == true
+            and .continuousImprovement.loopGuardReady == true
+            and .continuousImprovement.emergencyStopReady == true
+            and .continuousImprovement.disasterRecoveryReady == true
+            and .continuousImprovement.databaseUpgradesReady == true
           ' >/dev/null
 
           os_manifest=$(curl -fsS http://127.0.0.1:5077/api/os/manifest)
@@ -283,13 +298,15 @@ jobs:
             and .edition == "Personal AI OS"
             and .stage == "v2.2.6"
             and (.layers | length) == 6
-            and (.capabilities | length) == 19
+            and (.capabilities | length) == 20
             and any(.layers[]; .id == "knowledge" and (.capabilityIds | index("memory")) != null and (.capabilityIds | index("knowledge")) != null)
             and any(.layers[]; .id == "interfaces" and (.capabilityIds | index("email")) != null and (.capabilityIds | index("calendar")) != null)
             and any(.layers[]; .id == "coordination" and (.capabilityIds | index("agent-framework")) != null)
-            and any(.boundaries[]; contains("xác nhận trước"))
-            and any(.boundaries[]; contains("chuyển đầu ra"))
-            and any(.boundaries[]; contains("Gmail/Outlook"))
+            and any(.layers[]; .id == "governance" and (.capabilityIds | index("continuous-improvement")) != null)
+            and any(.boundaries[]; contains("continuous self-improvement"))
+            and any(.boundaries[]; contains("Emergency stop"))
+            and any(.boundaries[]; contains("External AI"))
+            and .continuousImprovement.available == true
           ' >/dev/null
 
           custom_os_status=$(curl -fsS -H 'X-PersonalAI-Workspace: work' http://127.0.0.1:5077/api/os/status)

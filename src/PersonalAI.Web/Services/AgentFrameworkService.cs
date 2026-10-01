@@ -276,6 +276,7 @@ public interface IAgentFrameworkService
 public sealed class AgentFrameworkService(
     IAgentRegistry registry,
     IWorkspaceContextAccessor workspaceContext,
+    IEmergencyStopService emergencyStop,
     IAuditRecorder audit,
     ILogger<AgentFrameworkService> logger) : IAgentFrameworkService
 {
@@ -322,6 +323,16 @@ public sealed class AgentFrameworkService(
     {
         ArgumentNullException.ThrowIfNull(request);
         ValidateRequest(request);
+        if (emergencyStop.IsEngaged)
+            throw new AgentValidationException(
+                "Emergency stop đang bật; agent execution bị khóa.");
+
+        var emergencyToken = emergencyStop.CurrentToken;
+        using var linkedCancellation =
+            CancellationTokenSource.CreateLinkedTokenSource(
+                cancellationToken,
+                emergencyToken);
+        var executionToken = linkedCancellation.Token;
 
         if (!registry.TryGet(agentId, out var agent)
             || agent is null)
@@ -332,7 +343,7 @@ public sealed class AgentFrameworkService(
 
         if (!await ExecutionGate.WaitAsync(
             0,
-            cancellationToken))
+            executionToken))
         {
             audit.Record(
                 agent.Definition.Id,
@@ -364,7 +375,7 @@ public sealed class AgentFrameworkService(
                     executionId,
                     workspaceId,
                     request),
-                cancellationToken);
+                executionToken);
 
             var completedAt = DateTimeOffset.UtcNow;
             audit.Record(
@@ -396,6 +407,22 @@ public sealed class AgentFrameworkService(
                 Operator: result.Operator,
                 Reviewer: result.Reviewer,
                 Security: result.Security);
+        }
+        catch (OperationCanceledException)
+            when (emergencyToken.IsCancellationRequested)
+        {
+            audit.Record(
+                agent.Definition.Id,
+                "agent.execute",
+                $"agent-execution:{executionId:D}",
+                "emergency-stop",
+                AuditResults.Cancelled,
+                workspaceId: workspaceId,
+                level: SystemLogLevels.Security,
+                source: "emergency-stop",
+                correlationId: $"emergency-stop:{emergencyStop.GetStatus().Generation}");
+            throw new AgentValidationException(
+                "Agent execution đã bị emergency stop hủy.");
         }
         catch (OperationCanceledException)
             when (cancellationToken.IsCancellationRequested)

@@ -264,6 +264,10 @@ public static class DevelopmentEndpoints
             {
                 return Results.BadRequest(new ApiError(exception.Message));
             }
+            catch (KeyNotFoundException exception)
+            {
+                return Results.NotFound(new ApiError(exception.Message));
+            }
         });
 
         app.MapPost("/api/development/runs/{runId:guid}/advance", (

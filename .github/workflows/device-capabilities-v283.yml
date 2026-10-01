@@ -1,0 +1,205 @@
+name: Device Capabilities v2.8.3
+
+on:
+  push:
+    branches:
+      - 'experiment/roadmap-v2-8-3-current'
+
+jobs:
+  validate-v283:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: '8.0.x'
+
+      - name: Restore
+        run: dotnet restore PersonalAI.sln
+
+      - name: Build
+        run: dotnet build PersonalAI.sln -c Release --no-restore
+
+      - name: Tests
+        run: dotnet test PersonalAI.sln -c Release --no-build
+
+      - name: Per-device capability permission smoke test
+        shell: bash
+        run: |
+          set -euo pipefail
+          rm -rf /tmp/personalai-v283
+          mkdir -p             /tmp/personalai-v283/workspace             /tmp/personalai-v283/companion             /tmp/personalai-v283/hub             /tmp/personalai-v283/identity             /tmp/personalai-v283/pairing             /tmp/personalai-v283/capabilities
+
+          export Workspace__Root=/tmp/personalai-v283/workspace
+          export Companion__Root=/tmp/personalai-v283/companion
+          export Companion__Enabled=true
+          export Companion__AllowInsecureHttp=true
+          export DeviceHub__Root=/tmp/personalai-v283/hub
+          export DeviceIdentity__Root=/tmp/personalai-v283/identity
+          export SecurePairing__Root=/tmp/personalai-v283/pairing
+          export DeviceCapability__Root=/tmp/personalai-v283/capabilities
+
+          start_app() {
+            dotnet run --project src/PersonalAI.Web/PersonalAI.Web.csproj               -c Release --no-build               --urls http://127.0.0.1:5124               >/tmp/personalai-v283/app.log 2>&1 &
+            APP_PID=$!
+            for i in {1..30}; do
+              if curl -fsS http://127.0.0.1:5124/api/device-hub/capabilities/status >/tmp/cap-status.json; then
+                return 0
+              fi
+              sleep 1
+            done
+            return 1
+          }
+
+          stop_app() {
+            kill "$APP_PID" 2>/dev/null || true
+            wait "$APP_PID" 2>/dev/null || true
+          }
+
+          trap 'stop_app || true' EXIT
+          start_app
+
+          jq -e '
+            .version=="2.8.3"
+            and .registrations==0
+            and .grantedPermissions==0
+            and .registrationRequired==true
+            and .explicitPermissionRequired==true
+            and .unregisteredInvocationBlocked==true
+            and .companionTrustRequiredForPermissionGrant==true
+            and .automaticPermissionGrantEnabled==false
+            and (.supportedCapabilities | sort)==(["build","camera","git","gpu","gps","notification","voice"] | sort)
+          ' /tmp/cap-status.json >/dev/null
+
+          curl -fsS -X POST http://127.0.0.1:5124/api/companion/admin/secure-pairing/start             -H 'Content-Type: application/json'             -d '{"confirmed":true}' >/tmp/ticket.json
+
+          code=$(jq -r '.code' /tmp/ticket.json)
+          challenge=$(jq -r '.challenge' /tmp/ticket.json)
+          hub_public=$(jq -r '.hubPublicKey' /tmp/ticket.json)
+
+          openssl ecparam -name prime256v1 -genkey -noout             -out /tmp/personalai-v283/device.key
+          openssl pkey -in /tmp/personalai-v283/device.key             -pubout -outform DER             | base64 -w0 >/tmp/personalai-v283/device-public.b64
+          device_public=$(cat /tmp/personalai-v283/device-public.b64)
+
+          printf 'PersonalAI-SecurePairing-v1\n%s\n%s\n%s'             "$code" "$challenge" "$hub_public"             >/tmp/personalai-v283/proof.txt
+          openssl dgst -sha256             -sign /tmp/personalai-v283/device.key             /tmp/personalai-v283/proof.txt             | base64 -w0 >/tmp/personalai-v283/signature.b64
+          signature=$(cat /tmp/personalai-v283/signature.b64)
+
+          jq -n             --arg code "$code"             --arg name "Capability Android"             --arg publicKey "$device_public"             --arg signature "$signature"             '{
+              code:$code,
+              deviceName:$name,
+              devicePublicKey:$publicKey,
+              proofSignature:$signature
+            }' >/tmp/claim.json
+
+          curl -fsS -X POST http://127.0.0.1:5124/api/companion/secure-pairing/claim             -H 'Content-Type: application/json'             --data-binary @/tmp/claim.json >/tmp/claimed.json
+
+          token=$(jq -r '.token' /tmp/claimed.json)
+          companion_id=$(jq -r '.device.id' /tmp/claimed.json)
+          hub_device_id=$(jq -r '.identity.deviceId' /tmp/claimed.json)
+          test "$companion_id" = "$(jq -r '.device.id' /tmp/claimed.json)"
+          jq -e '.identity.trustLevel=="trusted"' /tmp/claimed.json >/dev/null
+
+          unregistered=$(curl -sS -o /tmp/unregistered.json -w '%{http_code}'             -X POST             -H "Authorization: Bearer $token"             http://127.0.0.1:5124/api/companion/client/hub/capabilities/camera/authorize)
+          test "$unregistered" = "403"
+          jq -e '
+            .registered==false
+            and .permissionGranted==false
+            and .allowed==false
+            and .reason=="capability-not-registered"
+          ' /tmp/unregistered.json >/dev/null
+
+          no_confirm=$(curl -sS -o /tmp/no-confirm.json -w '%{http_code}'             -X POST http://127.0.0.1:5124/api/device-hub/admin/devices/$hub_device_id/capabilities             -H 'Content-Type: application/json'             -d '{"capability":"camera","confirmRegister":false}')
+          test "$no_confirm" = "400"
+
+          curl -fsS -X POST             http://127.0.0.1:5124/api/device-hub/admin/devices/$hub_device_id/capabilities             -H 'Content-Type: application/json'             -d '{"capability":"camera","confirmRegister":true}'             >/tmp/registered.json
+
+          jq -e '
+            .capability=="camera"
+            and .registered==true
+            and .permissionGranted==false
+          ' /tmp/registered.json >/dev/null
+
+          denied=$(curl -sS -o /tmp/denied.json -w '%{http_code}'             -X POST             -H "Authorization: Bearer $token"             http://127.0.0.1:5124/api/companion/client/hub/capabilities/camera/authorize)
+          test "$denied" = "403"
+          jq -e '
+            .registered==true
+            and .permissionGranted==false
+            and .allowed==false
+            and .reason=="permission-not-granted"
+          ' /tmp/denied.json >/dev/null
+
+          curl -fsS http://127.0.0.1:5124/api/device-hub/identities/$hub_device_id             | jq -e '
+              (.capabilities | index("camera")) != null
+              and .trustLevel=="trusted"
+              and .permissionsGranted==false
+              and .remoteExecutionEnabled==false
+            ' >/dev/null
+
+          permission_no_confirm=$(curl -sS -o /tmp/permission-no-confirm.json -w '%{http_code}'             -X POST             http://127.0.0.1:5124/api/device-hub/admin/devices/$hub_device_id/capabilities/camera/permission             -H 'Content-Type: application/json'             -d '{"permissionGranted":true,"confirmPermissionChange":false}')
+          test "$permission_no_confirm" = "400"
+
+          curl -fsS -X POST             http://127.0.0.1:5124/api/device-hub/admin/devices/$hub_device_id/capabilities/camera/permission             -H 'Content-Type: application/json'             -d '{"permissionGranted":true,"confirmPermissionChange":true}'             >/tmp/granted.json
+
+          jq -e '
+            .capability=="camera"
+            and .registered==true
+            and .permissionGranted==true
+          ' /tmp/granted.json >/dev/null
+
+          curl -fsS -X POST             -H "Authorization: Bearer $token"             http://127.0.0.1:5124/api/companion/client/hub/capabilities/camera/authorize             >/tmp/allowed.json
+
+          jq -e '
+            .registered==true
+            and .permissionGranted==true
+            and .allowed==true
+            and .reason=="allowed"
+          ' /tmp/allowed.json >/dev/null
+
+          unsupported=$(curl -sS -o /tmp/unsupported.json -w '%{http_code}'             -X POST             http://127.0.0.1:5124/api/device-hub/admin/devices/$hub_device_id/capabilities             -H 'Content-Type: application/json'             -d '{"capability":"shell","confirmRegister":true}')
+          test "$unsupported" = "400"
+
+          curl -fsS -X POST http://127.0.0.1:5124/api/companion/admin/pairing/start             -H 'Content-Type: application/json'             -d '{"confirmed":true}' >/tmp/legacy-ticket.json
+          legacy_code=$(jq -r '.code' /tmp/legacy-ticket.json)
+
+          curl -fsS -X POST http://127.0.0.1:5124/api/companion/pairing/claim             -H 'Content-Type: application/json'             -d '{
+              "code":"'"$legacy_code"'",
+              "deviceName":"Untrusted Legacy Android"
+            }' >/tmp/legacy.json
+
+          legacy_token=$(jq -r '.token' /tmp/legacy.json)
+
+          curl -fsS             -H "Authorization: Bearer $legacy_token"             http://127.0.0.1:5124/api/companion/client/hub/identity             >/tmp/legacy-identity.json
+          legacy_hub_id=$(jq -r '.deviceId' /tmp/legacy-identity.json)
+          jq -e '.trustLevel=="untrusted"' /tmp/legacy-identity.json >/dev/null
+
+          curl -fsS -X POST             http://127.0.0.1:5124/api/device-hub/admin/devices/$legacy_hub_id/capabilities             -H 'Content-Type: application/json'             -d '{"capability":"notification","confirmRegister":true}'             >/tmp/legacy-cap.json
+
+          legacy_grant=$(curl -sS -o /tmp/legacy-grant.json -w '%{http_code}'             -X POST             http://127.0.0.1:5124/api/device-hub/admin/devices/$legacy_hub_id/capabilities/notification/permission             -H 'Content-Type: application/json'             -d '{"permissionGranted":true,"confirmPermissionChange":true}')
+          test "$legacy_grant" = "400"
+          grep -qi 'trusted' /tmp/legacy-grant.json
+
+          legacy_denied=$(curl -sS -o /tmp/legacy-denied.json -w '%{http_code}'             -X POST             -H "Authorization: Bearer $legacy_token"             http://127.0.0.1:5124/api/companion/client/hub/capabilities/notification/authorize)
+          test "$legacy_denied" = "403"
+
+          curl -fsS             -H "Authorization: Bearer $token"             http://127.0.0.1:5124/api/companion/client/me             | jq -e '(.capabilities | index("device-capabilities")) != null' >/dev/null
+
+          capability_file=/tmp/personalai-v283/capabilities/device-capabilities-personal.json
+          test -f "$capability_file"
+          jq -e '
+            length==2
+            and ([.[] | select(.capability=="camera")][0].permissionGranted)==true
+            and ([.[] | select(.capability=="notification")][0].permissionGranted)==false
+          ' "$capability_file" >/dev/null
+
+          stop_app
+          start_app
+
+          curl -fsS -X POST             -H "Authorization: Bearer $token"             http://127.0.0.1:5124/api/companion/client/hub/capabilities/camera/authorize             | jq -e '.allowed==true and .permissionGranted==true' >/dev/null
+
+          curl -fsS http://127.0.0.1:5124/api/device-hub/capabilities/status             | jq -e '
+              .version=="2.8.3"
+              and .registrations==2
+              and .grantedPermissions==1
+              and .automaticPermissionGrantEnabled==false
+            ' >/dev/null

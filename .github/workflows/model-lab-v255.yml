@@ -57,13 +57,13 @@ jobs:
           fi
 
           curl -fsS http://127.0.0.1:5085/api/model-lab/training/providers             | jq -e '
-                length == 1
-                and .[0].providerId == "mock"
-                and .[0].externalService == false
-                and .[0].supportsFullFineTune == true
-                and .[0].supportsLoRa == false
-                and .[0].supportsCancellation == true
-                and (. [0].supportedMethods | index("full")) != null
+                map(select(.providerId == "mock")) as $mock
+                | ($mock | length) == 1
+                and $mock[0].externalService == false
+                and $mock[0].supportsFullFineTune == true
+                and $mock[0].supportsLoRa == false
+                and $mock[0].supportsCancellation == true
+                and ($mock[0].supportedMethods | index("full")) != null
               ' >/dev/null
 
           curl -fsS -X POST             http://127.0.0.1:5085/api/model-lab/training/providers/mock/validate             -H 'Content-Type: application/json'             -d '{"providerId":"ignored","baseModel":"test-model","trainingMethod":"full","hyperparameters":{"epochs":1}}'             | jq -e '

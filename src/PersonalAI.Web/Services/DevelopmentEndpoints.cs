@@ -19,6 +19,7 @@ public static class DevelopmentEndpoints
         services.AddSingleton<IImprovementBacklogService, ImprovementBacklogService>();
         services.AddSingleton<IRootCauseDiagnosisService, RootCauseDiagnosisService>();
         services.AddScoped<IDevelopmentAutoTestService, DevelopmentAutoTestService>();
+        services.AddScoped<IDevelopmentReviewService, DevelopmentReviewService>();
         services.AddSingleton<IPersonalAiTool, DevelopmentWorkspaceInspectTool>();
         services.AddSingleton<IPersonalAiTool, DevelopmentTextSearchTool>();
         services.AddSingleton<IPersonalAiTool, DevelopmentGitStatusTool>();
@@ -56,6 +57,63 @@ public static class DevelopmentEndpoints
         app.MapGet("/api/development/git/capabilities", (
             ILocalGitRepositoryService git) =>
             Results.Ok(git.GetStatus()));
+
+        app.MapGet("/api/development/reviews/status", (
+            IDevelopmentReviewService reviews) =>
+            Results.Ok(reviews.GetStatus()));
+
+        app.MapGet("/api/development/reviews", (
+            IDevelopmentReviewService reviews) =>
+            Results.Ok(reviews.GetAll()));
+
+        app.MapGet("/api/development/reviews/{reportId:guid}", (
+            Guid reportId,
+            IDevelopmentReviewService reviews) =>
+        {
+            var report = reviews.Get(reportId);
+            return report is null ? Results.NotFound() : Results.Ok(report);
+        });
+
+        app.MapPost("/api/development/reviews/run", async (
+            RunDevelopmentReviewRequest request,
+            IDevelopmentReviewService reviews,
+            CancellationToken cancellationToken) =>
+        {
+            try
+            {
+                return Results.Ok(await reviews.RunAsync(
+                    request,
+                    cancellationToken));
+            }
+            catch (DevelopmentReviewValidationException exception)
+            {
+                return Results.BadRequest(new ApiError(exception.Message));
+            }
+            catch (LocalGitRepositoryValidationException exception)
+            {
+                return Results.BadRequest(new ApiError(exception.Message));
+            }
+            catch (AgentValidationException exception)
+            {
+                return Results.BadRequest(new ApiError(exception.Message));
+            }
+            catch (AgentBusyException exception)
+            {
+                return Results.Json(
+                    new ApiError(exception.Message),
+                    statusCode: StatusCodes.Status409Conflict);
+            }
+            catch (ReviewerOutputException exception)
+            {
+                return Results.Json(
+                    new ApiError(exception.Message),
+                    statusCode: StatusCodes.Status502BadGateway);
+            }
+            catch (KeyNotFoundException exception)
+            {
+                return Results.NotFound(new ApiError(exception.Message));
+            }
+        });
 
         app.MapGet("/api/development/tests/status", (
             IDevelopmentAutoTestService tests) =>

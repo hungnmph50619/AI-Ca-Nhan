@@ -66,6 +66,7 @@ public static class RoadmapAutopilotStatuses
 {
     public const string ReadyForCommit = "ready-for-commit";
     public const string ChangesRequired = "changes-required";
+    public const string LoopBlocked = "loop-blocked";
 }
 
 public sealed class RoadmapAutopilotValidationException(string message)

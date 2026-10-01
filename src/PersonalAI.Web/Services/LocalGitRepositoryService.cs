@@ -610,119 +610,136 @@ public sealed class LocalGitRepositoryService(
         };
 
         string? temporarySshKey = null;
-        if (credential is not null)
+
+        try
         {
-            if (credential.Kind == GitCredentialKinds.HttpsToken)
+            if (credential is not null)
             {
-                var username = string.IsNullOrWhiteSpace(credential.Username)
-                    ? "x-access-token"
-                    : credential.Username!;
-                var basic = Convert.ToBase64String(
-                    Encoding.UTF8.GetBytes($"{username}:{credential.Secret}"));
-
-                start.Environment["GIT_CONFIG_COUNT"] = "1";
-                start.Environment["GIT_CONFIG_KEY_0"] = "http.extraHeader";
-                start.Environment["GIT_CONFIG_VALUE_0"] = $"Authorization: Basic {basic}";
-                start.Environment["GIT_TERMINAL_PROMPT"] = "0";
-            }
-            else if (credential.Kind == GitCredentialKinds.SshPrivateKey)
-            {
-                temporarySshKey = Path.Combine(
-                    Path.GetTempPath(),
-                    $"personalai-git-{Guid.NewGuid():N}.key");
-                await File.WriteAllTextAsync(
-                    temporarySshKey,
-                    credential.Secret,
-                    Encoding.UTF8,
-                    cancellationToken);
-
-                if (!OperatingSystem.IsWindows())
+                if (credential.Kind == GitCredentialKinds.HttpsToken)
                 {
-                    File.SetUnixFileMode(
-                        temporarySshKey,
-                        UnixFileMode.UserRead | UnixFileMode.UserWrite);
-                }
+                    var username = string.IsNullOrWhiteSpace(credential.Username)
+                        ? "x-access-token"
+                        : credential.Username!;
+                    var basic = Convert.ToBase64String(
+                        Encoding.UTF8.GetBytes($"{username}:{credential.Secret}"));
 
-                start.Environment["GIT_SSH_COMMAND"] =
-                    $"ssh -i \"{temporarySshKey}\" -o IdentitiesOnly=yes";
-                start.Environment["GIT_TERMINAL_PROMPT"] = "0";
+                    start.Environment["GIT_CONFIG_COUNT"] = "1";
+                    start.Environment["GIT_CONFIG_KEY_0"] = "http.extraHeader";
+                    start.Environment["GIT_CONFIG_VALUE_0"] = $"Authorization: Basic {basic}";
+                    start.Environment["GIT_TERMINAL_PROMPT"] = "0";
+                }
+                else if (credential.Kind == GitCredentialKinds.SshPrivateKey)
+                {
+                    temporarySshKey = Path.Combine(
+                        Path.GetTempPath(),
+                        $"personalai-git-{Guid.NewGuid():N}.key");
+
+                    await File.WriteAllTextAsync(
+                        temporarySshKey,
+                        credential.Secret,
+                        Encoding.UTF8,
+                        cancellationToken);
+
+                    if (!OperatingSystem.IsWindows())
+                    {
+                        File.SetUnixFileMode(
+                            temporarySshKey,
+                            UnixFileMode.UserRead | UnixFileMode.UserWrite);
+                    }
+
+                    start.Environment["GIT_SSH_COMMAND"] =
+                        $"ssh -i \"{temporarySshKey}\" -o IdentitiesOnly=yes";
+                    start.Environment["GIT_TERMINAL_PROMPT"] = "0";
+                }
+                else
+                {
+                    throw new LocalGitRepositoryValidationException(
+                        "Loại Git credential chưa được hỗ trợ.");
+                }
             }
-            else
+
+            start.ArgumentList.Add("-c");
+            start.ArgumentList.Add("core.fsmonitor=false");
+            start.ArgumentList.Add("-c");
+            start.ArgumentList.Add("color.ui=false");
+
+            foreach (var argument in arguments)
+                start.ArgumentList.Add(argument);
+
+            using var process = new Process { StartInfo = start };
+            var started = Stopwatch.StartNew();
+
+            try
+            {
+                if (!process.Start())
+                    throw new LocalGitRepositoryValidationException(
+                        "Không khởi động được git process.");
+            }
+            catch (Exception exception) when (
+                exception is InvalidOperationException or
+                System.ComponentModel.Win32Exception)
             {
                 throw new LocalGitRepositoryValidationException(
-                    "Loại Git credential chưa được hỗ trợ.");
+                    $"Không khởi động được git: {exception.Message}");
+            }
+
+            var stdoutTask = process.StandardOutput.ReadToEndAsync(cancellationToken);
+            var stderrTask = process.StandardError.ReadToEndAsync(cancellationToken);
+
+            using var timeout = CancellationTokenSource.CreateLinkedTokenSource(
+                cancellationToken);
+            timeout.CancelAfter(timeoutMs);
+            var timedOut = false;
+
+            try
+            {
+                await process.WaitForExitAsync(timeout.Token);
+            }
+            catch (OperationCanceledException) when (
+                !cancellationToken.IsCancellationRequested)
+            {
+                timedOut = true;
+                try { process.Kill(entireProcessTree: true); } catch { }
+                await process.WaitForExitAsync(CancellationToken.None);
+            }
+
+            cancellationToken.ThrowIfCancellationRequested();
+
+            var stdout = await stdoutTask;
+            var stderr = await stderrTask;
+            var output = string.Join(
+                Environment.NewLine,
+                new[] { stdout.TrimEnd(), stderr.TrimEnd() }
+                    .Where(x => !string.IsNullOrWhiteSpace(x)));
+
+            var truncated = output.Length > MaximumOutputCharacters;
+            if (truncated)
+                output = output[..MaximumOutputCharacters];
+
+            started.Stop();
+
+            return new ProcessCapture(
+                timedOut ? -1 : process.ExitCode,
+                timedOut,
+                (int)Math.Min(int.MaxValue, started.ElapsedMilliseconds),
+                output,
+                truncated);
+        }
+        finally
+        {
+            if (!string.IsNullOrWhiteSpace(temporarySshKey))
+            {
+                try
+                {
+                    if (File.Exists(temporarySshKey))
+                        File.Delete(temporarySshKey);
+                }
+                catch
+                {
+                    // Best-effort secret cleanup; never include key material in errors/logs.
+                }
             }
         }
-
-        start.ArgumentList.Add("-c");
-        start.ArgumentList.Add("core.fsmonitor=false");
-        start.ArgumentList.Add("-c");
-        start.ArgumentList.Add("color.ui=false");
-
-        foreach (var argument in arguments)
-            start.ArgumentList.Add(argument);
-
-        using var process = new Process { StartInfo = start };
-        var started = Stopwatch.StartNew();
-
-        try
-        {
-            if (!process.Start())
-                throw new LocalGitRepositoryValidationException(
-                    "Không khởi động được git process.");
-        }
-        catch (Exception exception) when (
-            exception is InvalidOperationException or
-            System.ComponentModel.Win32Exception)
-        {
-            throw new LocalGitRepositoryValidationException(
-                $"Không khởi động được git: {exception.Message}");
-        }
-
-        var stdoutTask = process.StandardOutput.ReadToEndAsync(cancellationToken);
-        var stderrTask = process.StandardError.ReadToEndAsync(cancellationToken);
-
-        using var timeout = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
-        timeout.CancelAfter(timeoutMs);
-        var timedOut = false;
-
-        try
-        {
-            await process.WaitForExitAsync(timeout.Token);
-        }
-        catch (OperationCanceledException) when (!cancellationToken.IsCancellationRequested)
-        {
-            timedOut = true;
-            try { process.Kill(entireProcessTree: true); } catch { }
-            await process.WaitForExitAsync(CancellationToken.None);
-        }
-
-        cancellationToken.ThrowIfCancellationRequested();
-
-        var stdout = await stdoutTask;
-        var stderr = await stderrTask;
-        var output = string.Join(
-            Environment.NewLine,
-            new[] { stdout.TrimEnd(), stderr.TrimEnd() }
-                .Where(x => !string.IsNullOrWhiteSpace(x)));
-
-        var truncated = output.Length > MaximumOutputCharacters;
-        if (truncated)
-            output = output[..MaximumOutputCharacters];
-
-        started.Stop();
-
-        if (!string.IsNullOrWhiteSpace(temporarySshKey))
-        {
-            try { File.Delete(temporarySshKey); } catch { }
-        }
-
-        return new ProcessCapture(
-            timedOut ? -1 : process.ExitCode,
-            timedOut,
-            (int)Math.Min(int.MaxValue, started.ElapsedMilliseconds),
-            output,
-            truncated);
     }
 
     private static void EnsureSucceeded(ProcessCapture result, string message)

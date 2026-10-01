@@ -19,6 +19,7 @@ public sealed class RoadmapAutopilotService(
     IAutopilotProviderRouter providerRouter,
     IRoadmapAutopilotCheckpointStore checkpoints,
     IDevelopmentAgentService development,
+    IDevelopmentWorktreeService worktrees,
     IWorkspaceFileService files,
     IWorkspaceContextAccessor workspace,
     IAuditRecorder audit) : IRoadmapAutopilotService
@@ -316,11 +317,6 @@ public sealed class RoadmapAutopilotService(
         if (!request.ConfirmBranchCreation || !request.ConfirmFileChanges)
             throw new RoadmapAutopilotValidationException(
                 "Cần xác nhận tạo experiment branch và thay đổi file.");
-        if (!request.BaseBranch.Equals("main", StringComparison.Ordinal) &&
-            !request.BaseBranch.Equals("master", StringComparison.Ordinal))
-            throw new RoadmapAutopilotValidationException(
-                "BaseBranch chỉ được là main hoặc master.");
-
         var spec = GetNextVersion()
             ?? throw new RoadmapAutopilotValidationException(
                 "Không còn phiên bản tự động nào trong catalog hiện tại.");
@@ -335,26 +331,32 @@ public sealed class RoadmapAutopilotService(
             HardMaximumRepairAttempts);
         var startedAt = DateTimeOffset.UtcNow;
         var branchName = $"experiment/roadmap-v{spec.Version.Replace('.', '-')}";
-        var current = await development.GetCurrentBranchAsync(
-            request.RepositoryPath, cancellationToken);
-        if (!current.Succeeded)
-            throw new RoadmapAutopilotValidationException(
-                "Không đọc được branch hiện tại.");
-
-        if (!string.Equals(current.Branch, branchName, StringComparison.Ordinal))
-        {
-            if (!string.Equals(current.Branch, request.BaseBranch, StringComparison.Ordinal))
-                throw new RoadmapAutopilotValidationException(
-                    $"Repo phải ở '{request.BaseBranch}' hoặc '{branchName}'.");
-            var created = await development.CreateExperimentBranchAsync(
+        var worktreeId = $"roadmap-v{spec.Version.Replace('.', '-')}";
+        var existingWorktree = (await worktrees.GetAllAsync(
                 request.RepositoryPath,
-                request.BaseBranch,
-                branchName,
-                confirmed: true,
-                cancellationToken);
-            if (!created.Succeeded)
+                cancellationToken))
+            .FirstOrDefault(item =>
+                item.Branch.Equals(branchName, StringComparison.Ordinal));
+
+        string worktreePath;
+        if (existingWorktree is not null)
+        {
+            worktreePath = existingWorktree.WorktreePath;
+            if (existingWorktree.IsDirty && checkpoints.Get() is null)
                 throw new RoadmapAutopilotValidationException(
-                    "Không tạo được experiment branch.");
+                    "Agent worktree đã dirty nhưng không có checkpoint để resume; từ chối ghi đè.");
+        }
+        else
+        {
+            var created = await worktrees.CreateAsync(
+                new CreateDevelopmentWorktreeRequest(
+                    request.RepositoryPath,
+                    branchName,
+                    request.BaseBranch,
+                    worktreeId,
+                    ConfirmCreateWorktree: true),
+                cancellationToken);
+            worktreePath = created.WorktreePath;
         }
 
         var saved = checkpoints.Get();
@@ -395,14 +397,14 @@ public sealed class RoadmapAutopilotService(
                 null,
                 DateTimeOffset.UtcNow));
 
-            var context = await CollectContextAsync(spec, cancellationToken);
+            var context = await CollectContextAsync(spec, worktreePath, cancellationToken);
             var draft = await providerRouter.ReplyAsync(
                 [new ChatMessage("user", BuildImplementationPrompt(spec, context))],
                 cancellationToken);
             lastProvider = draft.Provider;
             lastModel = draft.Model;
             var proposal = ParseProposal(draft.Content);
-            await ApplyEditsAsync(proposal.Edits, changed, cancellationToken);
+            await ApplyEditsAsync(proposal.Edits, changed, worktreePath, cancellationToken);
 
             checkpoints.Save(new RoadmapAutopilotCheckpoint(
                 workspace.CurrentWorkspaceId,
@@ -423,7 +425,7 @@ public sealed class RoadmapAutopilotService(
         RoadmapAutopilotVerification verification;
         while (true)
         {
-            verification = await VerifyAsync(request, cancellationToken);
+            verification = await VerifyAsync(request, worktreePath, cancellationToken);
             checkpoints.Save(new RoadmapAutopilotCheckpoint(
                 workspace.CurrentWorkspaceId,
                 spec.Version,
@@ -442,7 +444,7 @@ public sealed class RoadmapAutopilotService(
             if (verification.RestorePassed &&
                 verification.BuildPassed &&
                 verification.TestsPassed &&
-                await VersionFileUpdatedAsync(spec.Version, cancellationToken))
+                await VersionFileUpdatedAsync(spec.Version, worktreePath, cancellationToken))
             {
                 break;
             }
@@ -451,7 +453,7 @@ public sealed class RoadmapAutopilotService(
                 break;
 
             var repairContext = await ReadChangedFilesAsync(
-                changed.Keys, cancellationToken);
+                changed.Keys, worktreePath, cancellationToken);
             var repair = await providerRouter.ReplyAsync(
                 [new ChatMessage(
                     "user",
@@ -460,7 +462,11 @@ public sealed class RoadmapAutopilotService(
             lastProvider = repair.Provider;
             lastModel = repair.Model;
             var repairProposal = ParseProposal(repair.Content);
-            await ApplyEditsAsync(repairProposal.Edits, changed, cancellationToken);
+            await ApplyEditsAsync(
+                repairProposal.Edits,
+                changed,
+                worktreePath,
+                cancellationToken);
             attempts++;
 
             checkpoints.Save(new RoadmapAutopilotCheckpoint(
@@ -483,7 +489,7 @@ public sealed class RoadmapAutopilotService(
             verification.RestorePassed &&
             verification.BuildPassed &&
             verification.TestsPassed &&
-            await VersionFileUpdatedAsync(spec.Version, cancellationToken);
+            await VersionFileUpdatedAsync(spec.Version, worktreePath, cancellationToken);
 
         checkpoints.Save(new RoadmapAutopilotCheckpoint(
             workspace.CurrentWorkspaceId,
@@ -504,7 +510,7 @@ public sealed class RoadmapAutopilotService(
             AuditAgents.System,
             "roadmap-autopilot.run",
             $"roadmap-version:{spec.Version}",
-            $"branch:{branchName};attempts:{attempts};files:{changed.Count}",
+            $"branch:{branchName};worktree:{worktreePath};attempts:{attempts};files:{changed.Count}",
             ready ? AuditResults.Prepared : AuditResults.Failed);
 
         return new RoadmapAutopilotRunResult(
@@ -528,6 +534,7 @@ public sealed class RoadmapAutopilotService(
 
     private async Task<string> CollectContextAsync(
         RoadmapVersionSpec spec,
+        string worktreePath,
         CancellationToken cancellationToken)
     {
         var selected = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
@@ -554,7 +561,9 @@ public sealed class RoadmapAutopilotService(
             try
             {
                 var file = await files.ReadTextAsync(
-                    path, MaximumContextCharactersPerFile, cancellationToken);
+                    PrefixWorktreePath(worktreePath, path),
+                    MaximumContextCharactersPerFile,
+                    cancellationToken);
                 builder.AppendLine().Append("FILE: ").AppendLine(path);
                 builder.AppendLine(file.Content);
             }
@@ -619,6 +628,7 @@ public sealed class RoadmapAutopilotService(
     private async Task ApplyEditsAsync(
         IReadOnlyList<AutopilotEdit> edits,
         IDictionary<string, RoadmapAutopilotFileChange> changed,
+        string worktreePath,
         CancellationToken cancellationToken)
     {
         if (edits.Count is < 1 or > MaximumEditsPerAttempt)
@@ -642,7 +652,9 @@ public sealed class RoadmapAutopilotService(
             if (mode == "overwrite")
             {
                 var current = await files.ReadTextAsync(
-                    path, WorkspaceFileService.MaximumReturnedCharacters, cancellationToken);
+                    PrefixWorktreePath(worktreePath, path),
+                    WorkspaceFileService.MaximumReturnedCharacters,
+                    cancellationToken);
                 if (current.Truncated)
                     throw new RoadmapAutopilotValidationException(
                         $"Không tự ghi đè file bị cắt ngắn: {path}");
@@ -650,7 +662,7 @@ public sealed class RoadmapAutopilotService(
             }
 
             var result = await files.WriteTextAsync(
-                path,
+                PrefixWorktreePath(worktreePath, path),
                 edit.Content ?? string.Empty,
                 mode,
                 expectedSha,
@@ -669,16 +681,21 @@ public sealed class RoadmapAutopilotService(
 
     private async Task<RoadmapAutopilotVerification> VerifyAsync(
         RunRoadmapAutopilotRequest request,
+        string worktreePath,
         CancellationToken cancellationToken)
     {
+        var targetPath = PrefixWorktreePath(
+            worktreePath,
+            request.DotnetTargetPath);
+
         var restore = await development.DotnetRestoreAsync(
-            request.DotnetTargetPath, cancellationToken);
+            targetPath, cancellationToken);
         DevelopmentProcessResult build;
         DevelopmentProcessResult? tests = null;
 
         if (restore.Succeeded)
             build = await development.DotnetBuildAsync(
-                request.DotnetTargetPath, "Release", cancellationToken);
+                targetPath, "Release", cancellationToken);
         else
             build = FailedSynthetic("dotnet build", "Bỏ qua vì restore thất bại.");
 
@@ -698,12 +715,15 @@ public sealed class RoadmapAutopilotService(
 
     private async Task<bool> VersionFileUpdatedAsync(
         string expectedVersion,
+        string worktreePath,
         CancellationToken cancellationToken)
     {
         try
         {
             var file = await files.ReadTextAsync(
-                "src/PersonalAI.Web/Models/SystemModels.cs",
+                PrefixWorktreePath(
+                    worktreePath,
+                    "src/PersonalAI.Web/Models/SystemModels.cs"),
                 20_000,
                 cancellationToken);
             return file.Content.Contains(
@@ -718,6 +738,7 @@ public sealed class RoadmapAutopilotService(
 
     private async Task<string> ReadChangedFilesAsync(
         IEnumerable<string> paths,
+        string worktreePath,
         CancellationToken cancellationToken)
     {
         var builder = new StringBuilder();
@@ -726,7 +747,9 @@ public sealed class RoadmapAutopilotService(
             try
             {
                 var file = await files.ReadTextAsync(
-                    path, MaximumContextCharactersPerFile, cancellationToken);
+                    PrefixWorktreePath(worktreePath, path),
+                    MaximumContextCharactersPerFile,
+                    cancellationToken);
                 builder.AppendLine().Append("FILE: ").AppendLine(path);
                 builder.AppendLine(file.Content);
             }
@@ -781,6 +804,18 @@ public sealed class RoadmapAutopilotService(
                normalized.StartsWith("tests/", StringComparison.OrdinalIgnoreCase) ||
                normalized.StartsWith("docs/", StringComparison.OrdinalIgnoreCase) ||
                normalized.EndsWith(".sln", StringComparison.OrdinalIgnoreCase);
+    }
+
+    private static string PrefixWorktreePath(
+        string worktreePath,
+        string relativePath)
+    {
+        var prefix = NormalizePath(worktreePath);
+        var path = NormalizePath(relativePath);
+        if (prefix.Length == 0 || path.Length == 0)
+            throw new RoadmapAutopilotValidationException(
+                "Worktree/path không hợp lệ.");
+        return $"{prefix}/{path}";
     }
 
     private static string NormalizePath(string? value)

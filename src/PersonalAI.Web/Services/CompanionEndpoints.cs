@@ -20,6 +20,7 @@ public static class CompanionEndpoints
         services.AddScoped<IDeviceIdentityService, DeviceIdentityService>();
         services.AddScoped<ISecurePairingService, SecurePairingService>();
         services.AddScoped<IDeviceCapabilityService, DeviceCapabilityService>();
+        services.AddScoped<IDeviceOfflineQueueService, DeviceOfflineQueueService>();
         services.AddScoped<IChatTurnService, ChatTurnService>();
         return services;
     }
@@ -490,6 +491,126 @@ public static class CompanionEndpoints
                                 StatusCodes.Status403Forbidden);
                 }
                 catch (DeviceCapabilityValidationException exception)
+                {
+                    return Results.BadRequest(
+                        new ApiError(exception.Message));
+                }
+                catch (KeyNotFoundException exception)
+                {
+                    return Results.NotFound(
+                        new ApiError(exception.Message));
+                }
+            });
+
+        app.MapGet(
+            "/api/device-hub/offline-queue/status",
+            (
+                HttpContext httpContext,
+                IDeviceOfflineQueueService offlineQueue) =>
+            {
+                if (!IsLocalAdminRequest(httpContext))
+                {
+                    return Results.Json(
+                        new ApiError(
+                            "Chỉ desktop local mới được xem Offline Queue status."),
+                        statusCode:
+                            StatusCodes.Status403Forbidden);
+                }
+
+                return Results.Ok(offlineQueue.GetStatus());
+            });
+
+        app.MapGet(
+            "/api/device-hub/offline-queue",
+            (
+                Guid? deviceId,
+                HttpContext httpContext,
+                IDeviceOfflineQueueService offlineQueue) =>
+            {
+                if (!IsLocalAdminRequest(httpContext))
+                {
+                    return Results.Json(
+                        new ApiError(
+                            "Chỉ desktop local mới được xem Offline Queue."),
+                        statusCode:
+                            StatusCodes.Status403Forbidden);
+                }
+
+                return Results.Ok(
+                    offlineQueue.GetAll(deviceId));
+            });
+
+        app.MapPost(
+            "/api/device-hub/admin/devices/{deviceId:guid}/offline-queue",
+            (
+                Guid deviceId,
+                EnqueueDeviceOfflineItemRequest request,
+                HttpContext httpContext,
+                IDeviceOfflineQueueService offlineQueue) =>
+            {
+                if (!IsLocalAdminRequest(httpContext))
+                {
+                    return Results.Json(
+                        new ApiError(
+                            "Chỉ desktop local mới được xếp Offline Queue."),
+                        statusCode:
+                            StatusCodes.Status403Forbidden);
+                }
+
+                try
+                {
+                    return Results.Ok(
+                        offlineQueue.Enqueue(
+                            deviceId,
+                            request));
+                }
+                catch (DeviceOfflineQueueValidationException exception)
+                {
+                    return Results.BadRequest(
+                        new ApiError(exception.Message));
+                }
+                catch (DeviceHubValidationException exception)
+                {
+                    return Results.BadRequest(
+                        new ApiError(exception.Message));
+                }
+                catch (KeyNotFoundException exception)
+                {
+                    return Results.NotFound(
+                        new ApiError(exception.Message));
+                }
+            });
+
+        app.MapPost(
+            "/api/device-hub/admin/devices/{deviceId:guid}/offline-queue/sync",
+            (
+                Guid deviceId,
+                SyncDeviceOfflineQueueRequest request,
+                HttpContext httpContext,
+                IDeviceOfflineQueueService offlineQueue) =>
+            {
+                if (!IsLocalAdminRequest(httpContext))
+                {
+                    return Results.Json(
+                        new ApiError(
+                            "Chỉ desktop local mới được đồng bộ Offline Queue."),
+                        statusCode:
+                            StatusCodes.Status403Forbidden);
+                }
+
+                try
+                {
+                    return Results.Ok(
+                        offlineQueue.Sync(
+                            deviceId,
+                            request));
+                }
+                catch (DeviceOfflineQueueValidationException exception)
+                {
+                    return Results.BadRequest(
+                        new ApiError(exception.Message));
+                }
+                catch (DeviceHubValidationException exception)
                 {
                     return Results.BadRequest(
                         new ApiError(exception.Message));

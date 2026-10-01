@@ -133,7 +133,7 @@ public static class SystemEndpoints
 
         app.MapDelete("/api/system/permissions/{ruleId:guid}", (
             Guid ruleId,
-            RevokeUnifiedPermissionRequest request,
+            [Microsoft.AspNetCore.Mvc.FromBody] RevokeUnifiedPermissionRequest request,
             IUnifiedPermissionService permissions) =>
         {
             try

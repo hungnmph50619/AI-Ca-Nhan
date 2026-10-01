@@ -94,7 +94,7 @@
     intro.className = "v100-core-intro";
     intro.innerHTML =
       "<strong>Stable Personal AI Core v1.0.0</strong>" +
-      "<p>Kiểm tra readiness của dữ liệu và các nền tảng cục bộ. Kiểm tra này không gửi prompt hay gọi nhà cung cấp AI bên ngoài.</p>";
+      "<p>Kiểm tra mức sẵn sàng của dữ liệu và các nền tảng cục bộ. Kiểm tra này không gửi prompt hay gọi nhà cung cấp AI bên ngoài.</p>";
 
     const summary = document.createElement("div");
     summary.id = "coreHealthSummary";
@@ -284,9 +284,9 @@
       tools: "Tool Registry",
       audit: "Audit",
       undo: "Undo",
-      "computer-use": "Computer Use",
-      "browser-agent": "Browser Agent",
-      connectors: "Connectors",
+      "computer-use": "Điều khiển máy tính",
+      "browser-agent": "Tác nhân trình duyệt",
+      connectors: "Kết nối tài khoản",
       "software-development": "Software Development",
       "android-companion": "Android Companion",
       "life-context": "Life Context",

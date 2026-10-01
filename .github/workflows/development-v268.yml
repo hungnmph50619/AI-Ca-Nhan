@@ -1,0 +1,168 @@
+name: Development v2.6.8
+
+on:
+  push:
+    branches:
+      - 'experiment/roadmap-v2-6-8-current'
+  pull_request:
+    paths:
+      - 'src/PersonalAI.Web/Models/LocalGitRepositoryModels.cs'
+      - 'src/PersonalAI.Web/Models/DevelopmentModels.cs'
+      - 'src/PersonalAI.Web/Services/LocalGitRepositoryService.cs'
+      - 'src/PersonalAI.Web/Services/DevelopmentAgentService.cs'
+      - 'src/PersonalAI.Web/Services/DevelopmentEndpoints.cs'
+      - 'src/PersonalAI.Web/Models/SystemModels.cs'
+
+jobs:
+  validate-v268:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: '8.0.x'
+
+      - name: Restore
+        run: dotnet restore PersonalAI.sln
+
+      - name: Build
+        run: dotnet build PersonalAI.sln -c Release --no-restore
+
+      - name: Tests
+        run: dotnet test PersonalAI.sln -c Release --no-build
+
+      - name: Safe local Git repository smoke test
+        shell: bash
+        run: |
+          set -euo pipefail
+          rm -rf /tmp/personalai-v268
+          mkdir -p /tmp/personalai-v268/workspace/repo
+
+          git init --bare /tmp/personalai-v268/remote.git
+
+          cd /tmp/personalai-v268/workspace/repo
+          git init -b main
+          git config user.name "PersonalAI CI"
+          git config user.email "ci@example.invalid"
+          printf 'initial\n' > README.md
+          git add README.md
+          git commit -m "initial"
+          git remote add origin /tmp/personalai-v268/remote.git
+          git push -u origin main
+
+          cd "$GITHUB_WORKSPACE"
+
+          Workspace__Root=/tmp/personalai-v268/workspace           dotnet run --project src/PersonalAI.Web/PersonalAI.Web.csproj             -c Release --no-build             --urls http://127.0.0.1:5099             >/tmp/personalai-v268.log 2>&1 &
+          APP_PID=$!
+          trap 'kill "$APP_PID" 2>/dev/null || true' EXIT
+
+          ready=0
+          for i in {1..30}; do
+            if curl -fsS http://127.0.0.1:5099/api/development/git/capabilities >/tmp/capabilities.json; then
+              ready=1
+              break
+            fi
+            sleep 1
+          done
+          test "$ready" = "1"
+
+          jq -e '
+            .version == "2.6.8"
+            and .gitAvailable == true
+            and .fetchEnabled == true
+            and .checkoutEnabled == true
+            and .pullFastForwardOnly == true
+            and .commitEnabled == true
+            and .pushEnabled == true
+            and .forcePushEnabled == false
+            and .resetEnabled == false
+            and .genericShellEnabled == false
+          ' /tmp/capabilities.json >/dev/null
+
+          curl -fsS             'http://127.0.0.1:5099/api/development/git/status?repositoryPath=repo'             | jq -e '.succeeded == true and (.output | contains("main"))' >/dev/null
+
+          curl -fsS             'http://127.0.0.1:5099/api/development/git/branches?repositoryPath=repo'             | jq -e '.currentBranch == "main" and (.localBranches | index("main")) != null' >/dev/null
+
+          no_confirm=$(curl -sS -o /tmp/no-confirm.json -w '%{http_code}'             -X POST http://127.0.0.1:5099/api/development/git/branches             -H 'Content-Type: application/json'             -d '{
+              "repositoryPath":"repo",
+              "branch":"experiment/v268-smoke",
+              "startPoint":"main",
+              "checkout":true,
+              "confirmGitWrite":false
+            }')
+          test "$no_confirm" = "400"
+
+          curl -fsS -X POST http://127.0.0.1:5099/api/development/git/branches             -H 'Content-Type: application/json'             -d '{
+              "repositoryPath":"repo",
+              "branch":"experiment/v268-smoke",
+              "startPoint":"main",
+              "checkout":true,
+              "confirmGitWrite":true
+            }'             | jq -e '.succeeded == true' >/dev/null
+
+          printf 'feature\n' > /tmp/personalai-v268/workspace/repo/feature.txt
+
+          curl -fsS -X POST http://127.0.0.1:5099/api/development/git/diff             -H 'Content-Type: application/json'             -d '{"repositoryPath":"repo","staged":false}'             | jq -e '.succeeded == true' >/dev/null
+
+          curl -fsS -X POST http://127.0.0.1:5099/api/development/git/commit             -H 'Content-Type: application/json'             -d '{
+              "repositoryPath":"repo",
+              "message":"feat: add smoke file",
+              "paths":["feature.txt"],
+              "confirmGitWrite":true
+            }'             | jq -e '.succeeded == true' >/dev/null
+
+          curl -fsS -X POST http://127.0.0.1:5099/api/development/git/log             -H 'Content-Type: application/json'             -d '{"repositoryPath":"repo","maximumEntries":5}'             | jq -e '.succeeded == true and (.output | contains("feat: add smoke file"))' >/dev/null
+
+          curl -fsS -X POST http://127.0.0.1:5099/api/development/git/push             -H 'Content-Type: application/json'             -d '{
+              "repositoryPath":"repo",
+              "remote":"origin",
+              "branch":"experiment/v268-smoke",
+              "confirmGitWrite":true
+            }'             | jq -e '.succeeded == true' >/dev/null
+
+          git --git-dir=/tmp/personalai-v268/remote.git             rev-parse --verify refs/heads/experiment/v268-smoke >/dev/null
+
+          git clone /tmp/personalai-v268/remote.git /tmp/personalai-v268/writer
+          cd /tmp/personalai-v268/writer
+          git config user.name "PersonalAI CI Writer"
+          git config user.email "writer@example.invalid"
+          git checkout experiment/v268-smoke
+          printf 'remote advance\n' > remote.txt
+          git add remote.txt
+          git commit -m "test: advance remote"
+          git push origin experiment/v268-smoke
+
+          cd "$GITHUB_WORKSPACE"
+
+          curl -fsS -X POST http://127.0.0.1:5099/api/development/git/fetch             -H 'Content-Type: application/json'             -d '{
+              "repositoryPath":"repo",
+              "remote":"origin",
+              "confirmGitWrite":true
+            }'             | jq -e '.succeeded == true' >/dev/null
+
+          curl -fsS -X POST http://127.0.0.1:5099/api/development/git/pull             -H 'Content-Type: application/json'             -d '{
+              "repositoryPath":"repo",
+              "remote":"origin",
+              "branch":"experiment/v268-smoke",
+              "confirmGitWrite":true
+            }'             | jq -e '
+              .succeeded == true
+              and .operation == "pull-ff-only"
+            ' >/dev/null
+
+          test -f /tmp/personalai-v268/workspace/repo/remote.txt
+
+          curl -fsS -X POST http://127.0.0.1:5099/api/development/git/checkout             -H 'Content-Type: application/json'             -d '{
+              "repositoryPath":"repo",
+              "branch":"main",
+              "confirmGitWrite":true
+            }'             | jq -e '.succeeded == true' >/dev/null
+
+          curl -fsS             'http://127.0.0.1:5099/api/development/git/branches?repositoryPath=repo'             | jq -e '.currentBranch == "main"' >/dev/null
+
+          curl -fsS http://127.0.0.1:5099/api/development/status             | jq -e '
+              .gitWriteActionsEnabled == true
+              and (.availableCapabilities | index("git-pull-ff-only")) != null
+              and (.availableCapabilities | index("git-commit")) != null
+              and (.availableCapabilities | index("git-push")) != null
+            ' >/dev/null

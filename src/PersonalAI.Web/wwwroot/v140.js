@@ -44,7 +44,7 @@
     status.id = "developmentAgentBadge";
     status.className = "tool-count v140-development-badge";
     status.textContent = "…";
-    status.setAttribute("aria-label", "Trạng thái Software Development Agent");
+    status.setAttribute("aria-label", "Trạng thái tác nhân phát triển phần mềm");
 
     button.append(icon, label, status);
 
@@ -76,17 +76,17 @@
     const heading = document.createElement("div");
     const eyebrow = document.createElement("p");
     eyebrow.className = "eyebrow";
-    eyebrow.textContent = "CONTROLLED CAPABILITY · NO ARBITRARY SHELL";
+    eyebrow.textContent = "KHẢ NĂNG CÓ KIỂM SOÁT · KHÔNG CHẠY LỆNH TÙY Ý";
 
     const title = document.createElement("h2");
     title.id = "developmentAgentTitle";
-    title.textContent = "Software Development Agent v1.4";
+    title.textContent = "Tác nhân phát triển phần mềm";
     heading.append(eyebrow, title);
 
     const close = document.createElement("button");
     close.type = "button";
     close.className = "dialog-close";
-    close.setAttribute("aria-label", "Đóng Software Development Agent");
+    close.setAttribute("aria-label", "Đóng tác nhân phát triển phần mềm");
     close.textContent = "×";
     close.addEventListener("click", () => dialog.close());
     header.append(heading, close);
@@ -116,7 +116,7 @@
 
     const limitationTitle = document.createElement("h3");
     limitationTitle.className = "v140-section-title";
-    limitationTitle.textContent = "Guardrails";
+    limitationTitle.textContent = "Hàng rào an toàn";
 
     const limitations = document.createElement("ul");
     limitations.id = "developmentAgentLimitations";

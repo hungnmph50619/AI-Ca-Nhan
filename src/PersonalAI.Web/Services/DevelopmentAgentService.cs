@@ -87,6 +87,7 @@ public sealed class DevelopmentAgentService(
         new(
             [
                 ".git",
+                ".personalai-worktrees",
                 ".vs",
                 ".idea",
                 ".vscode",
@@ -147,6 +148,7 @@ public sealed class DevelopmentAgentService(
                 DevelopmentCapabilities.GitPullFastForwardOnly,
                 DevelopmentCapabilities.GitCommit,
                 DevelopmentCapabilities.GitPush,
+                DevelopmentCapabilities.GitWorktreeIsolation,
                 DevelopmentCapabilities.DotnetRestore,
                 DevelopmentCapabilities.DotnetBuild,
                 DevelopmentCapabilities.DotnetTest,
@@ -156,6 +158,7 @@ public sealed class DevelopmentAgentService(
             [
                 "Không có generic shell, command string, cmd /c hoặc PowerShell execution.",
                 "Git write chỉ qua API có kiểm soát và xác nhận; pull luôn --ff-only, push không force, không có reset/merge/rebase.",
+                "Agent worktree được cô lập dưới .personalai-worktrees; dirty worktree không bị cleanup tự động.",
                 "Chỉ dotnet restore/build/test với target project/solution nằm trong workspace; publish/rollback chỉ tác động deployment candidate trong local app data.",
                 "Không nhận arbitrary process arguments từ tool input.",
                 "dotnet build/test có thể thực thi MSBuild targets hoặc test code của project; vì vậy luôn cần xác nhận.",

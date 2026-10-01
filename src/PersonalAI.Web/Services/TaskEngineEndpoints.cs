@@ -9,6 +9,7 @@ public static class TaskEngineEndpoints
         services.AddSingleton<IPersonalTaskStore, SqlitePersonalTaskStore>();
         services.AddScoped<ITaskEngineService, TaskEngineService>();
         services.AddScoped<ITaskRouterService, TaskRouterService>();
+        services.AddScoped<IDistributedAgentExecutionService, DistributedAgentExecutionService>();
         return services;
     }
 
@@ -56,6 +57,145 @@ public static class TaskEngineEndpoints
                             StatusCodes.Status409Conflict);
             }
             catch (TaskRouterValidationException exception)
+            {
+                return Results.BadRequest(
+                    new ApiError(exception.Message));
+            }
+            catch (DeviceCapabilityValidationException exception)
+            {
+                return Results.BadRequest(
+                    new ApiError(exception.Message));
+            }
+            catch (DeviceIdentityValidationException exception)
+            {
+                return Results.BadRequest(
+                    new ApiError(exception.Message));
+            }
+            catch (DeviceHubValidationException exception)
+            {
+                return Results.BadRequest(
+                    new ApiError(exception.Message));
+            }
+            catch (KeyNotFoundException exception)
+            {
+                return Results.NotFound(
+                    new ApiError(exception.Message));
+            }
+        });
+
+        app.MapGet("/api/tasks/distributed-execution/status", (
+            IDistributedAgentExecutionService distributed) =>
+            Results.Ok(distributed.GetStatus()));
+
+        app.MapGet("/api/tasks/distributed-executions", (
+            IDistributedAgentExecutionService distributed) =>
+            Results.Ok(distributed.GetAll()));
+
+        app.MapGet("/api/tasks/distributed-executions/{correlationId:guid}", (
+            Guid correlationId,
+            IDistributedAgentExecutionService distributed) =>
+        {
+            var execution = distributed.Get(correlationId);
+            return execution is null
+                ? Results.NotFound(
+                    new ApiError(
+                        "Không tìm thấy distributed execution."))
+                : Results.Ok(execution);
+        });
+
+        app.MapPost("/api/tasks/{taskId:guid}/distributed-executions", (
+            Guid taskId,
+            DispatchDistributedAgentRequest request,
+            IDistributedAgentExecutionService distributed) =>
+        {
+            try
+            {
+                return Results.Ok(
+                    distributed.Dispatch(taskId, request));
+            }
+            catch (DistributedAgentExecutionValidationException exception)
+            {
+                return Results.BadRequest(
+                    new ApiError(exception.Message));
+            }
+            catch (DeviceCapabilityValidationException exception)
+            {
+                return Results.BadRequest(
+                    new ApiError(exception.Message));
+            }
+            catch (DeviceIdentityValidationException exception)
+            {
+                return Results.BadRequest(
+                    new ApiError(exception.Message));
+            }
+            catch (DeviceHubValidationException exception)
+            {
+                return Results.BadRequest(
+                    new ApiError(exception.Message));
+            }
+            catch (KeyNotFoundException exception)
+            {
+                return Results.NotFound(
+                    new ApiError(exception.Message));
+            }
+        });
+
+        app.MapPost("/api/devices/{deviceId:guid}/distributed-executions/{correlationId:guid}/claim", (
+            Guid deviceId,
+            Guid correlationId,
+            ClaimDistributedAgentRequest request,
+            IDistributedAgentExecutionService distributed) =>
+        {
+            try
+            {
+                return Results.Ok(
+                    distributed.Claim(
+                        correlationId,
+                        deviceId,
+                        request));
+            }
+            catch (DistributedAgentExecutionValidationException exception)
+            {
+                return Results.BadRequest(
+                    new ApiError(exception.Message));
+            }
+            catch (DeviceCapabilityValidationException exception)
+            {
+                return Results.BadRequest(
+                    new ApiError(exception.Message));
+            }
+            catch (DeviceIdentityValidationException exception)
+            {
+                return Results.BadRequest(
+                    new ApiError(exception.Message));
+            }
+            catch (DeviceHubValidationException exception)
+            {
+                return Results.BadRequest(
+                    new ApiError(exception.Message));
+            }
+            catch (KeyNotFoundException exception)
+            {
+                return Results.NotFound(
+                    new ApiError(exception.Message));
+            }
+        });
+
+        app.MapPost("/api/devices/{deviceId:guid}/distributed-executions/{correlationId:guid}/complete", (
+            Guid deviceId,
+            Guid correlationId,
+            CompleteDistributedAgentRequest request,
+            IDistributedAgentExecutionService distributed) =>
+        {
+            try
+            {
+                return Results.Ok(
+                    distributed.Complete(
+                        correlationId,
+                        deviceId,
+                        request));
+            }
+            catch (DistributedAgentExecutionValidationException exception)
             {
                 return Results.BadRequest(
                     new ApiError(exception.Message));

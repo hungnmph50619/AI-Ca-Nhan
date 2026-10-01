@@ -122,9 +122,7 @@ public sealed class DevelopmentRunWorktreeService(
 
             var refreshed = existing with
             {
-                State = actual.IsDirty
-                    ? DevelopmentRunWorktreeStates.CleanupDeferredDirty
-                    : DevelopmentRunWorktreeStates.Active,
+                State = DevelopmentRunWorktreeStates.Active,
                 Dirty = actual.IsDirty,
                 UpdatedAt = DateTimeOffset.UtcNow
             };

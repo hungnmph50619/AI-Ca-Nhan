@@ -1,5 +1,6 @@
 using System.Text.Json;
 using PersonalAI.Web.ModelLab;
+using PersonalAI.Web.Models;
 
 namespace PersonalAI.Web.Services;
 

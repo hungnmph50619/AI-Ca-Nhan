@@ -224,7 +224,7 @@ public sealed class DevelopmentSecurityService(
                 builder.AppendLine(file.Content);
             }
             catch (Exception exception) when (
-                exception is WorkspaceFileValidationException or
+                exception is ToolExecutionInputException or
                 IOException or
                 UnauthorizedAccessException)
             {

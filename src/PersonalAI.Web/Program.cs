@@ -86,6 +86,7 @@ app.Use(async (context, next) =>
 });
 
 app.UseSystemHardening();
+app.UseEmergencyStop();
 app.UseV19Hardening();
 app.UseCompanionAuthentication();
 app.UseWorkspaceValidation();

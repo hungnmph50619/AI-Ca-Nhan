@@ -52,6 +52,27 @@ public sealed record PersonalAiOsReadiness(
     int UnavailableCount,
     IReadOnlyList<string> Blockers);
 
+public sealed record PersonalAiOsContinuousImprovement(
+    bool Available,
+    bool EnabledByDefault,
+    bool AutonomousDevelopmentControllerReady,
+    bool NightlySchedulerAvailable,
+    bool NightlySchedulerEnabled,
+    bool LowRiskOnly,
+    bool PolicyBypassAllowed,
+    bool DirectMainPushAllowed,
+    bool HighRiskAutoMergeAllowed,
+    bool UnifiedPermissionsReady,
+    bool SystemLogReady,
+    bool UndoReady,
+    bool ResourceLimitsReady,
+    bool LoopGuardReady,
+    bool EmergencyStopReady,
+    bool DisasterRecoveryReady,
+    bool DatabaseUpgradesReady,
+    string AcceptanceBaseline,
+    IReadOnlyList<string> Blockers);
+
 public sealed record PersonalAiOsStatusResponse(
     string Version,
     string ApiContractVersion,
@@ -64,7 +85,8 @@ public sealed record PersonalAiOsStatusResponse(
     PersonalAiOsGovernance Governance,
     IReadOnlyList<PersonalAiOsLayer> Layers,
     IReadOnlyList<PersonalAiOsCapability> Capabilities,
-    string NextStage);
+    string NextStage,
+    PersonalAiOsContinuousImprovement? ContinuousImprovement = null);
 
 public sealed record PersonalAiOsManifestResponse(
     string Version,
@@ -73,4 +95,5 @@ public sealed record PersonalAiOsManifestResponse(
     IReadOnlyList<PersonalAiOsLayer> Layers,
     IReadOnlyList<PersonalAiOsCapability> Capabilities,
     PersonalAiOsGovernance Governance,
-    IReadOnlyList<string> Boundaries);
+    IReadOnlyList<string> Boundaries,
+    PersonalAiOsContinuousImprovement? ContinuousImprovement = null);

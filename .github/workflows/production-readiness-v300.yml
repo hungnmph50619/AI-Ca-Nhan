@@ -1,0 +1,90 @@
+name: Personal AI OS v3.0 Production Readiness
+
+on:
+  push:
+    branches:
+      - 'experiment/roadmap-v3-0-continuous-self-improving-os'
+    paths:
+      - 'src/PersonalAI.Web/Models/PersonalAiOsModels.cs'
+      - 'src/PersonalAI.Web/Services/PersonalAiOsService.cs'
+      - 'src/PersonalAI.Web/Services/PersonalAiOsEndpoints.cs'
+      - '.github/workflows/production-readiness-v300.yml'
+  pull_request:
+    paths:
+      - 'src/PersonalAI.Web/Models/PersonalAiOsModels.cs'
+      - 'src/PersonalAI.Web/Services/PersonalAiOsService.cs'
+      - 'src/PersonalAI.Web/Services/PersonalAiOsEndpoints.cs'
+      - '.github/workflows/production-readiness-v300.yml'
+
+jobs:
+  production-readiness:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup .NET
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: '8.0.x'
+
+      - name: Restore
+        run: dotnet restore PersonalAI.sln
+
+      - name: Build
+        run: dotnet build PersonalAI.sln --configuration Release --no-restore
+
+      - name: Run tests
+        run: dotnet test PersonalAI.sln --configuration Release --no-build
+
+      - name: Production readiness contract
+        shell: bash
+        run: |
+          set -euo pipefail
+          rm -rf /tmp/personalai-production-readiness
+          mkdir -p /tmp/personalai-production-readiness/workspace                    /tmp/personalai-production-readiness/audit                    /tmp/personalai-production-readiness/undo                    /tmp/personalai-production-readiness/nightly                    /tmp/personalai-production-readiness/xdg
+
+          export XDG_DATA_HOME=/tmp/personalai-production-readiness/xdg
+          export Workspace__Root=/tmp/personalai-production-readiness/workspace
+          export Audit__Root=/tmp/personalai-production-readiness/audit
+          export Undo__Root=/tmp/personalai-production-readiness/undo
+          export Development__Nightly__ReportRoot=/tmp/personalai-production-readiness/nightly
+          export Development__Nightly__Enabled=false
+
+          dotnet run --project src/PersonalAI.Web/PersonalAI.Web.csproj             --configuration Release --no-build             --urls http://127.0.0.1:5144             >/tmp/personalai-production-readiness/app.log 2>&1 &
+          APP_PID=$!
+          trap 'kill "$APP_PID" 2>/dev/null || true' EXIT
+
+          ready=0
+          for i in {1..30}; do
+            if curl -fsS http://127.0.0.1:5144/api/os/production-readiness               >/tmp/personalai-production-readiness/readiness.json; then
+              ready=1
+              break
+            fi
+            sleep 1
+          done
+
+          if [ "$ready" -ne 1 ]; then
+            cat /tmp/personalai-production-readiness/app.log
+            exit 1
+          fi
+
+          jq -e '
+            .complete == false
+            and .requiredCapabilityCount == 6
+            and (.requiredCapabilities | index("email")) != null
+            and (.requiredCapabilities | index("calendar")) != null
+            and (.requiredCapabilities | index("browser")) != null
+            and (.requiredCapabilities | index("android")) != null
+            and (.requiredCapabilities | index("agent-framework")) != null
+            and (.requiredCapabilities | index("continuous-improvement")) != null
+            and (.blockers | length) == 6
+            and any(.blockers[]; contains("Gmail/Outlook OAuth"))
+            and any(.blockers[]; contains("provider-specific sync"))
+            and any(.blockers[]; contains("interactive login/form-submit"))
+            and any(.blockers[]; contains("remote tool execution"))
+            and any(.blockers[]; contains("automatic delegation"))
+            and any(.blockers[]; contains("GitHub production E2E"))
+          ' /tmp/personalai-production-readiness/readiness.json >/dev/null
+
+          curl -fsS http://127.0.0.1:5144/api/os/status             | jq -e '.readiness.osContractReady == true' >/dev/null

@@ -15,6 +15,9 @@ public static class DevelopmentEndpoints
         services.AddScoped<IDevelopmentRecoveryService, DevelopmentRecoveryService>();
         services.AddScoped<IDependencyMaintenanceService, DependencyMaintenanceService>();
         services.AddScoped<INightlyImprovementService, NightlyImprovementService>();
+        services.AddScoped<IAutonomousEmergencyStopService, AutonomousEmergencyStopService>();
+        services.AddScoped<IAutonomousCodingService, AutonomousCodingService>();
+        services.AddScoped<IAutonomousDevelopmentService, AutonomousDevelopmentService>();
         services.AddHostedService<NightlyImprovementBackgroundService>();
         services.AddSingleton<IDevelopmentLeaseService, DevelopmentLeaseService>();
         services.AddSingleton<IGitCredentialService, GitCredentialService>();
@@ -74,6 +77,113 @@ public static class DevelopmentEndpoints
         app.MapGet("/api/development/git/capabilities", (
             ILocalGitRepositoryService git) =>
             Results.Ok(git.GetStatus()));
+
+        app.MapGet("/api/development/autonomous/status", (
+            IAutonomousDevelopmentService autonomous) =>
+            Results.Ok(autonomous.GetStatus()));
+
+        app.MapGet("/api/development/autonomous/emergency-stop", (
+            IAutonomousEmergencyStopService emergency) =>
+            Results.Ok(emergency.Get()));
+
+        app.MapPost("/api/development/autonomous/emergency-stop", (
+            SetAutonomousEmergencyStopRequest request,
+            IAutonomousEmergencyStopService emergency) =>
+        {
+            try
+            {
+                return Results.Ok(emergency.Set(request));
+            }
+            catch (AutonomousDevelopmentValidationException exception)
+            {
+                return Results.BadRequest(new ApiError(exception.Message));
+            }
+        });
+
+        app.MapPost("/api/development/autonomous/run", async (
+            RunAutonomousDevelopmentRequest request,
+            IAutonomousDevelopmentService autonomous,
+            CancellationToken cancellationToken) =>
+        {
+            try
+            {
+                return Results.Ok(await autonomous.RunAsync(
+                    request,
+                    cancellationToken));
+            }
+            catch (AutonomousDevelopmentValidationException exception)
+            {
+                return Results.BadRequest(new ApiError(exception.Message));
+            }
+            catch (DevelopmentRunValidationException exception)
+            {
+                return Results.BadRequest(new ApiError(exception.Message));
+            }
+            catch (DevelopmentRunConflictException exception)
+            {
+                return Results.Json(
+                    new ApiError(exception.Message),
+                    statusCode: StatusCodes.Status409Conflict);
+            }
+            catch (DevelopmentRunWorktreeValidationException exception)
+            {
+                return Results.BadRequest(new ApiError(exception.Message));
+            }
+            catch (DevelopmentWorktreeValidationException exception)
+            {
+                return Results.BadRequest(new ApiError(exception.Message));
+            }
+            catch (DevelopmentTestValidationException exception)
+            {
+                return Results.BadRequest(new ApiError(exception.Message));
+            }
+            catch (DevelopmentReviewValidationException exception)
+            {
+                return Results.BadRequest(new ApiError(exception.Message));
+            }
+            catch (DevelopmentSecurityValidationException exception)
+            {
+                return Results.BadRequest(new ApiError(exception.Message));
+            }
+            catch (DevelopmentBenchmarkValidationException exception)
+            {
+                return Results.BadRequest(new ApiError(exception.Message));
+            }
+            catch (DevelopmentGitHubValidationException exception)
+            {
+                return Results.BadRequest(new ApiError(exception.Message));
+            }
+            catch (DevelopmentMergePolicyValidationException exception)
+            {
+                return Results.BadRequest(new ApiError(exception.Message));
+            }
+            catch (DevelopmentLocalSyncValidationException exception)
+            {
+                return Results.BadRequest(new ApiError(exception.Message));
+            }
+            catch (GitCredentialValidationException exception)
+            {
+                return Results.BadRequest(new ApiError(exception.Message));
+            }
+            catch (ToolExecutionInputException exception)
+            {
+                return Results.BadRequest(new ApiError(exception.Message));
+            }
+            catch (AgentValidationException exception)
+            {
+                return Results.BadRequest(new ApiError(exception.Message));
+            }
+            catch (AgentBusyException exception)
+            {
+                return Results.Json(
+                    new ApiError(exception.Message),
+                    statusCode: StatusCodes.Status409Conflict);
+            }
+            catch (KeyNotFoundException exception)
+            {
+                return Results.NotFound(new ApiError(exception.Message));
+            }
+        });
 
         app.MapGet("/api/development/nightly/status", (
             INightlyImprovementService nightly) =>

@@ -143,7 +143,7 @@ jobs:
               "leaseSeconds":300,
               "confirmAcquire":true
             }' >/tmp/lock.json
-          jq -e '.deviceId=="'"$device_a"'"' and .expiresAt!=null' /tmp/lock.json >/dev/null
+          jq -e --arg device "$device_a" '.deviceId==$device and .expiresAt!=null' /tmp/lock.json >/dev/null
 
           locked_code=$(curl -sS -o /tmp/locked.json -w '%{http_code}' \
             -X POST http://127.0.0.1:5129/api/device-hub/data-conflicts/apply \
@@ -159,7 +159,7 @@ jobs:
               "confirmApply":true
             }')
           test "$locked_code" = "409"
-          jq -e '.decision=="rejected-locked" and .lockOwnerDeviceId=="'"$device_a"'"' /tmp/locked.json >/dev/null
+          jq -e --arg device "$device_a" '.decision=="rejected-locked" and .lockOwnerDeviceId==$device' /tmp/locked.json >/dev/null
 
           curl -fsS -X POST \
             http://127.0.0.1:5129/api/device-hub/data-conflicts/note/shared-001/locks/release \

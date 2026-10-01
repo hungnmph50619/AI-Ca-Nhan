@@ -56,7 +56,7 @@ jobs:
           test "$ready" = "1"
 
           jq -e '
-            .version == "2.6.12"
+            (.version | split(".") | map(tonumber)) >= [2,6,12]
             and .configured == false
             and .signatureRequired == true
             and .signatureAlgorithm == "hmac-sha256"

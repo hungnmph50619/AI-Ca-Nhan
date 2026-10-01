@@ -48,7 +48,7 @@ jobs:
           done
 
           jq -e '
-            .version=="2.7.14"
+            (.version | split(".") | map(tonumber)) >= [2,7,14]
             and .schedulerEnabled==false
             and .maximumItemsPerNight==1
             and .maximumRuntimeMinutes==60

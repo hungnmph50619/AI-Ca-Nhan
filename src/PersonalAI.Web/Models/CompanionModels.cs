@@ -10,6 +10,7 @@ public static class CompanionCapabilities
     public const string DeviceIdentity = "device-identity";
     public const string SecurePairing = "secure-pairing";
     public const string DeviceCapabilities = "device-capabilities";
+    public const string MobileCodeCommand = "mobile-code-command";
 }
 
 public sealed record CompanionStatusResponse(

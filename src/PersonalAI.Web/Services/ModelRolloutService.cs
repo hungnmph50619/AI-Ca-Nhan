@@ -11,6 +11,7 @@ public interface IModelRolloutService
     ModelRolloutState? Get(Guid id);
     ModelRolloutState Start(StartModelRolloutRequest request);
     ModelRolloutState Advance(Guid rolloutId, AdvanceModelRolloutRequest request);
+    ModelRolloutState Rollback(Guid rolloutId, string reason);
 }
 
 public sealed class ModelRolloutService(
@@ -36,6 +37,7 @@ public sealed class ModelRolloutService(
             all.Count(x => x.Stage == RolloutStages.Canary),
             all.Count(x => x.Stage == RolloutStages.Completed),
             all.Count(x => x.Stage == RolloutStages.Blocked),
+            all.Count(x => x.Stage == RolloutStages.RolledBack),
             DirectProductionPromotionEnabled: false,
             Persisted: true,
             ExplicitConfirmationRequired: true);
@@ -200,6 +202,64 @@ public sealed class ModelRolloutService(
                 "model-lab.rollout.advance",
                 $"rollout:{current.Id:D}",
                 $"stage:canary;traffic:{traffic}%",
+                AuditResults.Succeeded);
+
+            return all[index];
+        }
+    }
+
+    public ModelRolloutState Rollback(Guid rolloutId, string reason)
+    {
+        var normalizedReason = (reason ?? string.Empty).Trim();
+        if (normalizedReason.Length is < 1 or > 1000)
+            throw new ModelRolloutValidationException(
+                "Rollback reason phải có từ 1 đến 1000 ký tự.");
+
+        lock (_gate)
+        {
+            var all = Load();
+            var index = all.FindIndex(x => x.Id == rolloutId);
+            if (index < 0)
+                throw new KeyNotFoundException("Không tìm thấy rollout.");
+
+            var current = all[index];
+            if (current.Stage is not (RolloutStages.Staging or RolloutStages.Canary))
+                throw new ModelRolloutValidationException(
+                    "Chỉ rollout staging/canary đang hoạt động mới có thể rollback.");
+
+            var candidate = registry.Get(current.CandidateModelVersionId)
+                ?? throw new KeyNotFoundException("Không tìm thấy candidate model version.");
+            var production = registry.Get(current.ProductionModelVersionId)
+                ?? throw new KeyNotFoundException("Không tìm thấy production baseline.");
+
+            if (production.Stage != ModelDeploymentStages.Production)
+                throw new ModelRolloutValidationException(
+                    "Production baseline không còn ở stage production.");
+
+            if (candidate.Stage is not (ModelDeploymentStages.Staging or ModelDeploymentStages.Canary))
+                throw new ModelRolloutValidationException(
+                    "Candidate không còn ở staging/canary.");
+
+            registry.UpdateStage(
+                candidate.Id,
+                new UpdateModelDeploymentStageRequest(
+                    ModelDeploymentStages.Rejected,
+                    $"rollback:{current.Id:D};reason:{normalizedReason}"));
+
+            all[index] = current with
+            {
+                Stage = RolloutStages.RolledBack,
+                TrafficPercent = 0,
+                ProductionMutationPerformed = false,
+                UpdatedAt = DateTimeOffset.UtcNow
+            };
+            Save(all);
+
+            audit.Record(
+                AuditAgents.System,
+                "model-lab.rollout.rollback",
+                $"rollout:{current.Id:D}",
+                $"candidate:{candidate.Id:D};production:{production.Id:D};reason:{normalizedReason}",
                 AuditResults.Succeeded);
 
             return all[index];

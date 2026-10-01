@@ -22,6 +22,7 @@ public sealed record RollbackDecision(
     Guid RolloutId,
     Guid CandidateModelVersionId,
     Guid ProductionModelVersionId,
+    EvaluateRollbackRequest Evaluation,
     IReadOnlyList<RollbackTrigger> Triggers,
     bool RollbackRequired,
     bool RollbackPerformed,

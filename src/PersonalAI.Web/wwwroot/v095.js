@@ -28,8 +28,8 @@
     const badge = document.createElement("span");
     badge.id = "contextManagerBadge";
     badge.className = "context-manager-badge";
-    badge.textContent = "Context Manager";
-    badge.title = "v1.6 chọn Memory, Documents, Tasks và Life Context đã consent trong workspace hiện tại, theo ngân sách context.";
+    badge.textContent = "Trình quản lý ngữ cảnh";
+    badge.title = "Chọn Trí nhớ, Tài liệu, Công việc và Ngữ cảnh đời sống đã được bạn cho phép trong không gian hiện tại, theo giới hạn ngữ cảnh.";
     clearButton.before(badge);
   }
 })();

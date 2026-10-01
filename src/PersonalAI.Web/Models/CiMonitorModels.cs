@@ -15,6 +15,7 @@ public sealed record CiRunRecord(
     string Repository,
     string SourceEventType,
     string DeliveryId,
+    string? ExternalId,
     string? Ref,
     string? Sha,
     string State,

@@ -701,7 +701,7 @@ public sealed class RoadmapAutopilotService(
 
         if (build.Succeeded && request.RunTests)
             tests = await development.DotnetTestAsync(
-                request.DotnetTargetPath, "Release", cancellationToken);
+                targetPath, "Release", cancellationToken);
 
         var testsPassed = !request.RunTests || (tests?.Succeeded ?? false);
         return new RoadmapAutopilotVerification(

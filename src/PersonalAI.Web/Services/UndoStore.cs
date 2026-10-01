@@ -9,6 +9,9 @@ public interface IUndoStore
     void MarkAvailable(Guid undoId, string? postSha256);
     void Abandon(Guid undoId);
     StoredUndoItem? Get(Guid undoId, string workspaceId);
+    IReadOnlyList<UndoItem> GetByInvocation(
+        Guid invocationId,
+        string workspaceId);
     UndoListResponse GetRecent(string workspaceId, int limit = 50);
     UndoItem MarkUndone(Guid undoId, string workspaceId);
 }
@@ -259,6 +262,58 @@ public sealed class SqliteUndoStore : IUndoStore
             return reader.Read()
                 ? ReadStored(reader)
                 : null;
+        }
+    }
+
+    public IReadOnlyList<UndoItem> GetByInvocation(
+        Guid invocationId,
+        string workspaceId)
+    {
+        lock (_gate)
+        {
+            EnsureInitialized();
+            using var connection = OpenConnection();
+            Cleanup(connection);
+
+            using var command = connection.CreateCommand();
+            command.CommandText =
+                """
+                SELECT
+                    undo_id,
+                    invocation_id,
+                    created_at,
+                    expires_at,
+                    workspace_id,
+                    tool_name,
+                    operation,
+                    primary_path,
+                    secondary_path,
+                    before_sha256,
+                    post_sha256,
+                    snapshot,
+                    status
+                FROM undo_entries
+                WHERE invocation_id = $invocationId
+                  AND workspace_id = $workspaceId
+                  AND status != $abandoned
+                ORDER BY created_at DESC, rowid DESC;
+                """;
+            command.Parameters.AddWithValue(
+                "$invocationId",
+                invocationId.ToString("D"));
+            command.Parameters.AddWithValue(
+                "$workspaceId",
+                NormalizeWorkspace(workspaceId));
+            command.Parameters.AddWithValue(
+                "$abandoned",
+                UndoStatuses.Abandoned);
+
+            using var reader = command.ExecuteReader();
+            var items = new List<UndoItem>();
+            while (reader.Read())
+                items.Add(ToPublic(ReadStored(reader)));
+
+            return items;
         }
     }
 

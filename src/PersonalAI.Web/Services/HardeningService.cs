@@ -1423,6 +1423,20 @@ public sealed class HardeningApiGuardMiddleware(
         {
             await next(context);
         }
+        catch (BadHttpRequestException exception) when (
+            exception.StatusCode == StatusCodes.Status413PayloadTooLarge)
+        {
+            metrics.RecordPayloadRejected();
+            if (context.Response.HasStarted)
+                throw;
+
+            context.Response.Clear();
+            context.Response.StatusCode =
+                StatusCodes.Status413PayloadTooLarge;
+            await context.Response.WriteAsJsonAsync(
+                new ApiError(
+                    "Yêu cầu vượt quá giới hạn kích thước của hệ thống."));
+        }
         finally
         {
             metrics.RecordCompleted();

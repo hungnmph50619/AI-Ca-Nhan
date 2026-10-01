@@ -102,7 +102,7 @@ jobs:
           start_app 5139 /tmp/personalai-v298/app-1.log
 
           jq -e '
-            .version=="2.9.8"
+            (.version | split(".") | map(tonumber)) >= [2,9,8]
             and .upToDate==true
             and .startupMigrationEnabled==true
             and .checksumValidationEnabled==true

@@ -212,6 +212,18 @@ jobs:
             and (has("predictedPosition") | not)
           ' /tmp/personalai-league-v301/vision-state.json >/dev/null
 
+          curl -fsS http://127.0.0.1:5145/api/integrations/league/map-situation             >/tmp/personalai-league-v301/map-situation.json
+          jq -e '
+            .currentGameTimeSeconds == 122
+            and .recentEnemyCount == 1
+            and .evidenceOnly == true
+            and .hiddenPositionInference == false
+            and (.sightings | length) == 1
+            and .sightings[0].champion == "LeeSin"
+            and .sightings[0].lastSeenAgeSeconds == 0
+            and (has("predictedPosition") | not)
+          ' /tmp/personalai-league-v301/map-situation.json >/dev/null
+
           vision_duplicate_code="$(curl -sS -o /tmp/personalai-league-v301/vision-duplicate.json -w '%{http_code}'             -X POST http://127.0.0.1:5145/api/integrations/league/vision/observations             -H 'X-Xerath-Bridge: 2'             -H 'Content-Type: application/json'             --data-binary @/tmp/personalai-league-v301/vision.json)"
           test "$vision_duplicate_code" = "409"
           jq -e '.accepted == false and .reason == "duplicate-or-out-of-order-sequence"'             /tmp/personalai-league-v301/vision-duplicate.json >/dev/null

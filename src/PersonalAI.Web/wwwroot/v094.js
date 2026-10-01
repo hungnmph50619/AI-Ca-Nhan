@@ -123,7 +123,7 @@
     const heading = document.createElement("div");
     const eyebrow = document.createElement("p");
     eyebrow.className = "eyebrow";
-    eyebrow.textContent = "MEMORY · DOCUMENTS · TASKS · FILES · CONVERSATIONS";
+    eyebrow.textContent = "TRÍ NHỚ · TÀI LIỆU · TÁC VỤ · TỆP · HỘI THOẠI";
     const title = document.createElement("h2");
     title.id = "workspaceDialogTitle";
     title.textContent = "Không gian làm việc";
@@ -205,7 +205,7 @@
 
     const note = document.createElement("p");
     note.className = "security-copy";
-    note.textContent = "Đổi workspace không di chuyển dữ liệu giữa các không gian. v0.9.4 cũng chưa cho xóa workspace để tránh vô tình làm mất hoặc bỏ mồ côi dữ liệu.";
+    note.textContent = "Đổi không gian làm việc không di chuyển dữ liệu giữa các không gian. v0.9.4 cũng chưa cho xóa không gian làm việc để tránh vô tình làm mất hoặc bỏ mồ côi dữ liệu.";
 
     card.append(header, intro, form, feedback, listHeader, list, note);
     dialog.appendChild(card);

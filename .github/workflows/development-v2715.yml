@@ -68,7 +68,7 @@ jobs:
           done
 
           jq -e '
-            .version=="2.7.15"
+            (.version | split(".") | map(tonumber)) >= [2,7,15]
             and .fullPipelineControllerEnabled==true
             and .emergencyStopActive==false
             and .policyBypassAllowed==false

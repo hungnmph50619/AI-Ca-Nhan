@@ -160,18 +160,13 @@ public sealed class DeviceIdentityService(
         ArgumentNullException.ThrowIfNull(device);
         var workspaceId = NormalizeWorkspaceId(device.WorkspaceId);
         var peerBytes = ValidatePublicKey(pairedDevicePublicKey);
+        _ = EnsureDevice(device);
         try
         {
             lock (_gate)
             {
                 var all = Load(workspaceId);
                 var index = all.FindIndex(x => x.DeviceId == device.Id);
-                if (index < 0)
-                {
-                    _ = EnsureDevice(device);
-                    all = Load(workspaceId);
-                    index = all.FindIndex(x => x.DeviceId == device.Id);
-                }
 
                 if (index < 0)
                     throw new DeviceIdentityValidationException(
@@ -233,8 +228,9 @@ public sealed class DeviceIdentityService(
             bytes = Convert.FromBase64String((value ?? string.Empty).Trim());
             using var key = ECDsa.Create();
             key.ImportSubjectPublicKeyInfo(bytes, out var read);
-            if (read != bytes.Length)
-                throw new CryptographicException("Public key có dữ liệu dư.");
+            if (read != bytes.Length || key.KeySize != 256)
+                throw new CryptographicException(
+                    "Public key không phải ECDSA P-256.");
             return bytes;
         }
         catch (Exception exception) when (

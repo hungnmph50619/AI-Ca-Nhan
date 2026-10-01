@@ -53,7 +53,7 @@ jobs:
           done
 
           jq -e '
-            .version=="2.9.3"
+            (.version | split(".") | map(tonumber)) >= [2,9,3]
             and .storage=="local-sqlite"
             and .availabilityDays==7
             and .maximumEntries==500

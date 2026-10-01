@@ -20,6 +20,7 @@ public sealed class RoadmapAutopilotService(
     IRoadmapAutopilotCheckpointStore checkpoints,
     IDevelopmentAgentService development,
     IDevelopmentWorktreeService worktrees,
+    IDevelopmentLeaseService leases,
     IWorkspaceFileService files,
     IWorkspaceContextAccessor workspace,
     IAuditRecorder audit) : IRoadmapAutopilotService
@@ -332,6 +333,15 @@ public sealed class RoadmapAutopilotService(
         var startedAt = DateTimeOffset.UtcNow;
         var branchName = $"experiment/roadmap-v{spec.Version.Replace('.', '-')}";
         var worktreeId = $"roadmap-v{spec.Version.Replace('.', '-')}";
+        var leaseOwner = $"roadmap-autopilot:{workspace.CurrentWorkspaceId}:{spec.Version}";
+        var branchLease = leases.Acquire(
+            new AcquireDevelopmentLeaseRequest(
+                leaseOwner,
+                DevelopmentLeaseResourceTypes.Branch,
+                request.RepositoryPath,
+                branchName,
+                null,
+                DevelopmentLeaseService.MaximumLeaseSeconds));
         var existingWorktree = (await worktrees.GetAllAsync(
                 request.RepositoryPath,
                 cancellationToken))
@@ -505,6 +515,17 @@ public sealed class RoadmapAutopilotService(
             verification.BuildPassed,
             verification.TestsPassed,
             DateTimeOffset.UtcNow));
+
+        try
+        {
+            leases.Release(new ReleaseDevelopmentLeaseRequest(
+                branchLease.Id,
+                leaseOwner));
+        }
+        catch
+        {
+            // Lease has expiry; failure to release must not rewrite development result.
+        }
 
         audit.Record(
             AuditAgents.System,

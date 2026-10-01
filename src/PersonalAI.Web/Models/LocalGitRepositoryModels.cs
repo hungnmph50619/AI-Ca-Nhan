@@ -32,7 +32,8 @@ public sealed record LocalGitBranchList(
 public sealed record LocalGitFetchRequest(
     string RepositoryPath,
     string Remote = "origin",
-    bool ConfirmGitWrite = false);
+    bool ConfirmGitWrite = false,
+    string? CredentialRef = null);
 
 public sealed record LocalGitCheckoutRequest(
     string RepositoryPath,
@@ -58,7 +59,8 @@ public sealed record LocalGitPullRequest(
     string RepositoryPath,
     string Remote = "origin",
     string? Branch = null,
-    bool ConfirmGitWrite = false);
+    bool ConfirmGitWrite = false,
+    string? CredentialRef = null);
 
 public sealed record LocalGitCommitRequest(
     string RepositoryPath,
@@ -70,7 +72,8 @@ public sealed record LocalGitPushRequest(
     string RepositoryPath,
     string Remote = "origin",
     string? Branch = null,
-    bool ConfirmGitWrite = false);
+    bool ConfirmGitWrite = false,
+    string? CredentialRef = null);
 
 public sealed class LocalGitRepositoryValidationException(string message)
     : Exception(message);

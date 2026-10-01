@@ -1,0 +1,139 @@
+name: League Game Coach v3.0.1
+
+on:
+  push:
+    branches:
+      - 'experiment/roadmap-v3-0-continuous-self-improving-os'
+    paths:
+      - 'src/PersonalAI.Web/Services/XerathBridgeEndpoints.cs'
+      - 'src/PersonalAI.Web/Services/LeagueBridgeService.cs'
+      - 'src/PersonalAI.Web/Program.cs'
+      - '.github/workflows/league-game-coach-v301.yml'
+  pull_request:
+    paths:
+      - 'src/PersonalAI.Web/Services/XerathBridgeEndpoints.cs'
+      - 'src/PersonalAI.Web/Services/LeagueBridgeService.cs'
+      - 'src/PersonalAI.Web/Program.cs'
+      - '.github/workflows/league-game-coach-v301.yml'
+
+jobs:
+  bridge-v2:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: '8.0.x'
+
+      - name: Restore
+        run: dotnet restore PersonalAI.sln
+
+      - name: Build
+        run: dotnet build PersonalAI.sln --configuration Release --no-restore
+
+      - name: Test
+        run: dotnet test PersonalAI.sln --configuration Release --no-build
+
+      - name: League Bridge v2 acceptance
+        shell: bash
+        run: |
+          set -euo pipefail
+          rm -rf /tmp/personalai-league-v301
+          mkdir -p /tmp/personalai-league-v301/workspace                    /tmp/personalai-league-v301/audit                    /tmp/personalai-league-v301/undo                    /tmp/personalai-league-v301/xdg
+
+          export XDG_DATA_HOME=/tmp/personalai-league-v301/xdg
+          export Workspace__Root=/tmp/personalai-league-v301/workspace
+          export Audit__Root=/tmp/personalai-league-v301/audit
+          export Undo__Root=/tmp/personalai-league-v301/undo
+
+          dotnet run --project src/PersonalAI.Web/PersonalAI.Web.csproj             --configuration Release --no-build             --urls http://127.0.0.1:5145             >/tmp/personalai-league-v301/app.log 2>&1 &
+          APP_PID=$!
+          trap 'kill "$APP_PID" 2>/dev/null || true' EXIT
+
+          ready=0
+          for i in {1..30}; do
+            if curl -fsS http://127.0.0.1:5145/api/integrations/league/status               >/tmp/personalai-league-v301/status.json; then
+              ready=1
+              break
+            fi
+            sleep 1
+          done
+          if [ "$ready" -ne 1 ]; then
+            cat /tmp/personalai-league-v301/app.log
+            exit 1
+          fi
+
+          # Legacy v1 endpoint stays compatible.
+          curl -fsS http://127.0.0.1:5145/api/integrations/xerath/status             | jq -e '.online == true and .bridgeVersion == 1' >/dev/null
+
+          jq -e '
+            .online == true
+            and .bridgeVersion == 2
+            and .mode == "riot-live-client-factual-snapshots"
+            and .languageModelEnabled == false
+            and .automaticGameControl == false
+            and .timelineCount == 0
+          ' /tmp/personalai-league-v301/status.json >/dev/null
+
+          client="11111111111111111111111111111111"
+          now="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
+
+          cat >/tmp/personalai-league-v301/s1.json <<JSON
+          {
+            "bridgeVersion": 2,
+            "clientInstanceId": "$client",
+            "sequence": 1,
+            "observedAtUtc": "$now",
+            "source": "riot-live-client-data",
+            "gameTimeSeconds": 120,
+            "level": 3,
+            "health": 500,
+            "maxHealth": 700,
+            "resource": 300,
+            "maxResource": 500,
+            "resourceType": "MANA",
+            "gold": 450,
+            "abilityPower": 40,
+            "isDead": false
+          }
+          JSON
+
+          curl -fsS -X POST http://127.0.0.1:5145/api/integrations/league/snapshot             -H 'X-Xerath-Bridge: 2'             -H 'Content-Type: application/json'             --data-binary @/tmp/personalai-league-v301/s1.json             >/tmp/personalai-league-v301/r1.json
+
+          first_session="$(jq -r '.matchSessionId' /tmp/personalai-league-v301/r1.json)"
+          jq -e '
+            .accepted == true
+            and .bridgeVersion == 2
+            and .newMatchSession == true
+            and .timelineCount == 1
+          ' /tmp/personalai-league-v301/r1.json >/dev/null
+
+          duplicate_code="$(curl -sS -o /tmp/personalai-league-v301/duplicate.json -w '%{http_code}'             -X POST http://127.0.0.1:5145/api/integrations/league/snapshot             -H 'X-Xerath-Bridge: 2'             -H 'Content-Type: application/json'             --data-binary @/tmp/personalai-league-v301/s1.json)"
+          test "$duplicate_code" = "409"
+          jq -e '.accepted == false and .reason == "duplicate-or-out-of-order-sequence"'             /tmp/personalai-league-v301/duplicate.json >/dev/null
+
+          jq '.sequence=2 | .gameTimeSeconds=121 | .health=480'             /tmp/personalai-league-v301/s1.json             >/tmp/personalai-league-v301/s2.json
+
+          curl -fsS -X POST http://127.0.0.1:5145/api/integrations/league/snapshot             -H 'X-Xerath-Bridge: 2'             -H 'Content-Type: application/json'             --data-binary @/tmp/personalai-league-v301/s2.json             | jq -e '.accepted == true and .newMatchSession == false and .timelineCount == 2'             >/dev/null
+
+          curl -fsS http://127.0.0.1:5145/api/integrations/league/timeline             >/tmp/personalai-league-v301/timeline.json
+          jq -e '
+            .lastGameTimeSeconds == 121
+            and (.snapshots | length) == 2
+            and .snapshots[0].sequence == 1
+            and .snapshots[1].sequence == 2
+          ' /tmp/personalai-league-v301/timeline.json >/dev/null
+
+          # A clear game-clock reset starts a new match session.
+          jq '.sequence=3 | .gameTimeSeconds=5 | .health=700'             /tmp/personalai-league-v301/s1.json             >/tmp/personalai-league-v301/s3.json
+
+          curl -fsS -X POST http://127.0.0.1:5145/api/integrations/league/snapshot             -H 'X-Xerath-Bridge: 2'             -H 'Content-Type: application/json'             --data-binary @/tmp/personalai-league-v301/s3.json             >/tmp/personalai-league-v301/r3.json
+
+          second_session="$(jq -r '.matchSessionId' /tmp/personalai-league-v301/r3.json)"
+          test "$first_session" != "$second_session"
+          jq -e '
+            .accepted == true
+            and .newMatchSession == true
+            and .timelineCount == 1
+          ' /tmp/personalai-league-v301/r3.json >/dev/null

@@ -213,10 +213,10 @@ public sealed class TaskRouterService(
         DeviceHubDevice device,
         DeviceIdentity? identity)
     {
-        if (identity?.TrustLevel == DeviceTrustLevels.Trusted)
+        if (device.Source == DeviceHubSources.LocalAdmin)
             return 0;
 
-        if (device.Source == DeviceHubSources.LocalAdmin)
+        if (identity?.TrustLevel == DeviceTrustLevels.Trusted)
             return 1;
 
         return 9;

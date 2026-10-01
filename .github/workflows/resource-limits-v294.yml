@@ -75,21 +75,25 @@ jobs:
           test "$accepted" -ge "$((baseline + 2))"
 
           python3 - <<'PY'
-          with open('/tmp/personalai-v294/oversized.bin', 'wb') as f:
-              f.write(b'x' * (12 * 1024 * 1024 + 1))
+          prefix = b'{"subjectType":"device","subjectId":"'
+          suffix = b'","resource":"capability:git","action":"use"}'
+          target = 12 * 1024 * 1024 + 1
+          padding = b'x' * (target - len(prefix) - len(suffix))
+          with open('/tmp/personalai-v294/oversized.json', 'wb') as f:
+              f.write(prefix + padding + suffix)
           PY
 
           oversized_code=$(curl -sS -o /tmp/oversized-response.json -w '%{http_code}' \
             -X POST http://127.0.0.1:5135/api/system/permissions/evaluate \
-            -H 'Content-Type: application/octet-stream' \
-            --data-binary @/tmp/personalai-v294/oversized.bin)
+            -H 'Content-Type: application/json' \
+            --data-binary @/tmp/personalai-v294/oversized.json)
           test "$oversized_code" = "413"
 
           chunked_code=$(curl -sS -o /tmp/chunked-response.json -w '%{http_code}' \
             -X POST http://127.0.0.1:5135/api/system/permissions/evaluate \
-            -H 'Content-Type: application/octet-stream' \
+            -H 'Content-Type: application/json' \
             -H 'Transfer-Encoding: chunked' \
-            --data-binary @/tmp/personalai-v294/oversized.bin)
+            --data-binary @/tmp/personalai-v294/oversized.json)
           test "$chunked_code" = "413"
 
           curl -fsS http://127.0.0.1:5135/api/system/resources/status >/tmp/resources-after-reject.json

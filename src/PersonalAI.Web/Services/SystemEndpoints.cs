@@ -126,6 +126,7 @@ public static class SystemEndpoints
         services.AddScoped<IUnifiedPermissionService, UnifiedPermissionService>();
         services.AddScoped<IActionExplanationService, ActionExplanationService>();
         services.AddSingleton<ILoopGuardService, LoopGuardService>();
+        services.AddSingleton<IEmergencyStopService, EmergencyStopService>();
         return services;
     }
 
@@ -189,6 +190,44 @@ public static class SystemEndpoints
                     : Results.NotFound();
             }
             catch (UnifiedPermissionValidationException exception)
+            {
+                return Results.BadRequest(new ApiError(exception.Message));
+            }
+        });
+
+        app.MapGet("/api/system/emergency-stop/status", (
+            IEmergencyStopService emergencyStop) =>
+            Results.Ok(emergencyStop.GetStatus()));
+
+        app.MapPost("/api/system/emergency-stop/engage", (
+            EngageEmergencyStopRequest request,
+            IEmergencyStopService emergencyStop,
+            IWorkspaceContextAccessor workspace) =>
+        {
+            try
+            {
+                return Results.Ok(emergencyStop.Engage(
+                    workspace.CurrentWorkspaceId,
+                    request));
+            }
+            catch (EmergencyStopValidationException exception)
+            {
+                return Results.BadRequest(new ApiError(exception.Message));
+            }
+        });
+
+        app.MapPost("/api/system/emergency-stop/release", (
+            ReleaseEmergencyStopRequest request,
+            IEmergencyStopService emergencyStop,
+            IWorkspaceContextAccessor workspace) =>
+        {
+            try
+            {
+                return Results.Ok(emergencyStop.Release(
+                    workspace.CurrentWorkspaceId,
+                    request));
+            }
+            catch (EmergencyStopValidationException exception)
             {
                 return Results.BadRequest(new ApiError(exception.Message));
             }

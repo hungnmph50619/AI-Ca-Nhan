@@ -1,0 +1,181 @@
+name: Mobile Code Command v2.8.9
+
+on:
+  push:
+    branches:
+      - 'experiment/roadmap-v2-8-9-mobile-code-command'
+
+jobs:
+  validate-v289:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: '8.0.x'
+
+      - name: Restore
+        run: dotnet restore PersonalAI.sln
+
+      - name: Build
+        run: dotnet build PersonalAI.sln -c Release --no-restore
+
+      - name: Tests
+        run: dotnet test PersonalAI.sln -c Release --no-build
+
+      - name: Mobile code command smoke test
+        shell: bash
+        run: |
+          set -euxo pipefail
+          rm -rf /tmp/personalai-v289
+          mkdir -p \
+            /tmp/personalai-v289/workspace \
+            /tmp/personalai-v289/companion \
+            /tmp/personalai-v289/hub \
+            /tmp/personalai-v289/capabilities \
+            /tmp/personalai-v289/commands
+
+          export Workspace__Root=/tmp/personalai-v289/workspace
+          export Companion__Root=/tmp/personalai-v289/companion
+          export Companion__Enabled=true
+          export Companion__AllowInsecureHttp=true
+          export DeviceHub__Root=/tmp/personalai-v289/hub
+          export DeviceCapability__Root=/tmp/personalai-v289/capabilities
+          export MobileCodeCommand__Root=/tmp/personalai-v289/commands
+
+          start_app() {
+            dotnet run --project src/PersonalAI.Web/PersonalAI.Web.csproj \
+              -c Release --no-build \
+              --urls http://127.0.0.1:5130 \
+              >/tmp/personalai-v289/app.log 2>&1 &
+            APP_PID=$!
+            for i in {1..30}; do
+              if curl -fsS http://127.0.0.1:5130/api/companion/admin/development/commands/status >/tmp/status.json; then
+                return 0
+              fi
+              sleep 1
+            done
+            cat /tmp/personalai-v289/app.log
+            return 1
+          }
+
+          stop_app() {
+            kill "$APP_PID" 2>/dev/null || true
+            wait "$APP_PID" 2>/dev/null || true
+          }
+
+          trap 'stop_app || true' EXIT
+          start_app
+
+          jq -e '
+            .version=="2.8.9"
+            and .companionRequestEnabled==true
+            and .directRemoteShellEnabled==false
+            and .directMainPushAllowed==false
+            and .desktopApprovalRequired==true
+            and .gitHubCredentialAcceptedFromPhone==false
+            and .pullRequestRequired==true
+            and .testGateRequired==true
+          ' /tmp/status.json >/dev/null
+
+          pairing=$(curl -fsS -X POST http://127.0.0.1:5130/api/companion/admin/pairing/start \
+            -H 'Content-Type: application/json' \
+            -d '{"confirmed":true}')
+          pairing_code=$(echo "$pairing" | jq -r '.code')
+
+          claim=$(curl -fsS -X POST http://127.0.0.1:5130/api/companion/pairing/claim \
+            -H 'Content-Type: application/json' \
+            -d '{"code":"'"$pairing_code"'","deviceName":"Mobile Dev CI"}')
+          token=$(echo "$claim" | jq -r '.token')
+
+          me=$(curl -fsS http://127.0.0.1:5130/api/companion/client/me \
+            -H "Authorization: Bearer $token")
+          echo "$me" | jq -e '
+            .version=="2.8.9"
+            and any(.capabilities[]; .=="mobile-code-command")
+          ' >/dev/null
+
+          no_confirm=$(curl -sS -o /tmp/no-command.json -w '%{http_code}' \
+            -X POST http://127.0.0.1:5130/api/companion/client/development/commands \
+            -H "Authorization: Bearer $token" \
+            -H 'Content-Type: application/json' \
+            -d '{
+              "goal":"Update the README with a mobile command note.",
+              "repositoryHint":"AI-Ca-Nhan",
+              "confirmRequest":false
+            }')
+          test "$no_confirm" = "400"
+
+          curl -fsS -X POST http://127.0.0.1:5130/api/companion/client/development/commands \
+            -H "Authorization: Bearer $token" \
+            -H 'Content-Type: application/json' \
+            -d '{
+              "goal":"Update the README with a mobile command note.",
+              "repositoryHint":"AI-Ca-Nhan",
+              "confirmRequest":true
+            }' >/tmp/command.json
+
+          command_id=$(jq -r '.id' /tmp/command.json)
+          jq -e '
+            .status=="pending-desktop-approval"
+            and .targetDeviceId==null
+            and .developmentRunId==null
+            and .pullRequestUrl==null
+          ' /tmp/command.json >/dev/null
+
+          list=$(curl -fsS http://127.0.0.1:5130/api/companion/client/development/commands \
+            -H "Authorization: Bearer $token")
+          echo "$list" | jq -e '
+            (.commands | length)==1
+            and .commands[0].status=="pending-desktop-approval"
+          ' >/dev/null
+
+          curl -fsS -X POST http://127.0.0.1:5130/api/device-hub/admin/devices \
+            -H 'Content-Type: application/json' \
+            -d '{"name":"Developer PC","deviceType":"pc","confirmRegister":true}' \
+            >/tmp/pc.json
+          pc_id=$(jq -r '.id' /tmp/pc.json)
+
+          curl -fsS -X POST http://127.0.0.1:5130/api/device-hub/admin/devices/$pc_id/heartbeat \
+            -H 'Content-Type: application/json' \
+            -d '{"confirmHeartbeat":true}' >/dev/null
+
+          for capability in git build; do
+            curl -fsS -X POST \
+              http://127.0.0.1:5130/api/device-hub/admin/devices/$pc_id/capabilities \
+              -H 'Content-Type: application/json' \
+              -d '{"capability":"'"$capability"'","confirmRegister":true}' >/dev/null
+            curl -fsS -X POST \
+              http://127.0.0.1:5130/api/device-hub/admin/devices/$pc_id/capabilities/$capability/permission \
+              -H 'Content-Type: application/json' \
+              -d '{"permissionGranted":true,"confirmPermissionChange":true}' >/dev/null
+          done
+
+          no_desktop_approval=$(curl -sS -o /tmp/no-desktop.json -w '%{http_code}' \
+            -X POST http://127.0.0.1:5130/api/companion/admin/development/commands/$command_id/execute \
+            -H 'Content-Type: application/json' \
+            -d '{
+              "targetDeviceId":"'"$pc_id"'",
+              "repositoryPath":".",
+              "baseBranch":"master",
+              "gitHubRepository":"hungnmph50619/AI-Ca-Nhan",
+              "credentialRef":"local-github",
+              "confirmDesktopApproval":false,
+              "confirmExternalAi":false,
+              "confirmGitHubSideEffects":false
+            }')
+          test "$no_desktop_approval" = "400"
+
+          stop_app
+          start_app
+
+          persisted=$(curl -fsS http://127.0.0.1:5130/api/companion/admin/development/commands)
+          echo "$persisted" | jq -e '
+            any(.[]; .id=="'"$command_id"'"
+              and .status=="pending-desktop-approval"
+              and .developmentRunId==null)
+          ' >/dev/null
+
+      - name: Build Android Companion
+        working-directory: android/PersonalAI.Companion
+        run: ./gradlew assembleDebug

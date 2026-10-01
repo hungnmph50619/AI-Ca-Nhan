@@ -342,6 +342,11 @@ public sealed class LocalGitRepositoryService(
             throw new LocalGitRepositoryValidationException(
                 "Push chỉ được phép với branch hiện tại.");
 
+        if (branch.Equals("main", StringComparison.OrdinalIgnoreCase) ||
+            branch.Equals("master", StringComparison.OrdinalIgnoreCase))
+            throw new LocalGitRepositoryValidationException(
+                "Push trực tiếp main/master bị chặn; hãy dùng experiment branch và Pull Request.");
+
         var credential = ResolveCredential(request.CredentialRef);
         var result = await RunGitAsync(
             repo,

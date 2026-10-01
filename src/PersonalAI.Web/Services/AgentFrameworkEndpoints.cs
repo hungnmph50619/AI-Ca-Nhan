@@ -19,6 +19,7 @@ public static class AgentFrameworkEndpoints
         services.AddScoped<IAgentRegistry, AgentRegistry>();
         services.AddScoped<IAgentFrameworkService, AgentFrameworkService>();
         services.AddScoped<IAgentOrchestrationService, AgentOrchestrationService>();
+        services.AddScoped<IDistributedAgentService, DistributedAgentService>();
         return services;
     }
 
@@ -114,6 +115,57 @@ public static class AgentFrameworkEndpoints
             {
                 return Results.Json(new ApiError(exception.Message),
                     statusCode: StatusCodes.Status409Conflict);
+            }
+        });
+
+        app.MapGet("/api/agents/distributed/status", (
+            IDistributedAgentService distributed) =>
+            Results.Ok(distributed.GetStatus()));
+
+        app.MapGet("/api/agents/distributed/executions", (
+            IDistributedAgentService distributed) =>
+            Results.Ok(distributed.GetAll()));
+
+        app.MapGet("/api/agents/distributed/executions/{executionId:guid}", (
+            Guid executionId,
+            IDistributedAgentService distributed) =>
+        {
+            var execution = distributed.Get(executionId);
+            return execution is null
+                ? Results.NotFound(
+                    new ApiError(
+                        "Không tìm thấy distributed execution."))
+                : Results.Ok(execution);
+        });
+
+        app.MapPost("/api/agents/distributed/dispatch", (
+            DispatchDistributedAgentRequest request,
+            IDistributedAgentService distributed) =>
+        {
+            try
+            {
+                return Results.Ok(
+                    distributed.Dispatch(request));
+            }
+            catch (DistributedAgentValidationException exception)
+            {
+                return Results.BadRequest(
+                    new ApiError(exception.Message));
+            }
+            catch (DeviceCapabilityValidationException exception)
+            {
+                return Results.BadRequest(
+                    new ApiError(exception.Message));
+            }
+            catch (DeviceIdentityValidationException exception)
+            {
+                return Results.BadRequest(
+                    new ApiError(exception.Message));
+            }
+            catch (DeviceHubValidationException exception)
+            {
+                return Results.BadRequest(
+                    new ApiError(exception.Message));
             }
         });
 

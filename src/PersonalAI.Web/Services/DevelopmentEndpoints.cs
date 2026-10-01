@@ -18,6 +18,7 @@ public static class DevelopmentEndpoints
         services.AddSingleton<IDevelopmentRunService, DevelopmentRunService>();
         services.AddSingleton<IImprovementBacklogService, ImprovementBacklogService>();
         services.AddSingleton<IRootCauseDiagnosisService, RootCauseDiagnosisService>();
+        services.AddScoped<IDevelopmentAutoTestService, DevelopmentAutoTestService>();
         services.AddSingleton<IPersonalAiTool, DevelopmentWorkspaceInspectTool>();
         services.AddSingleton<IPersonalAiTool, DevelopmentTextSearchTool>();
         services.AddSingleton<IPersonalAiTool, DevelopmentGitStatusTool>();
@@ -55,6 +56,51 @@ public static class DevelopmentEndpoints
         app.MapGet("/api/development/git/capabilities", (
             ILocalGitRepositoryService git) =>
             Results.Ok(git.GetStatus()));
+
+        app.MapGet("/api/development/tests/status", (
+            IDevelopmentAutoTestService tests) =>
+            Results.Ok(tests.GetStatus()));
+
+        app.MapGet("/api/development/tests/reports", (
+            IDevelopmentAutoTestService tests) =>
+            Results.Ok(tests.GetAll()));
+
+        app.MapGet("/api/development/tests/reports/{reportId:guid}", (
+            Guid reportId,
+            IDevelopmentAutoTestService tests) =>
+        {
+            var report = tests.Get(reportId);
+            return report is null ? Results.NotFound() : Results.Ok(report);
+        });
+
+        app.MapPost("/api/development/tests/run", async (
+            RunDevelopmentTestsRequest request,
+            IDevelopmentAutoTestService tests,
+            CancellationToken cancellationToken) =>
+        {
+            try
+            {
+                return Results.Ok(await tests.RunAsync(
+                    request,
+                    cancellationToken));
+            }
+            catch (DevelopmentTestValidationException exception)
+            {
+                return Results.BadRequest(new ApiError(exception.Message));
+            }
+            catch (DevelopmentWorktreeValidationException exception)
+            {
+                return Results.BadRequest(new ApiError(exception.Message));
+            }
+            catch (ToolExecutionInputException exception)
+            {
+                return Results.BadRequest(new ApiError(exception.Message));
+            }
+            catch (KeyNotFoundException exception)
+            {
+                return Results.NotFound(new ApiError(exception.Message));
+            }
+        });
 
         app.MapGet("/api/development/diagnoses/status", (
             IRootCauseDiagnosisService diagnoses) =>

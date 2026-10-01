@@ -12,6 +12,9 @@ public interface IDeviceIdentityService
     IReadOnlyList<DeviceIdentity> GetAll(string workspaceId);
     DeviceIdentity? Get(string workspaceId, Guid deviceId);
     DeviceIdentity EnsureDevice(DeviceHubDevice device);
+    DeviceIdentity EstablishTrust(
+        DeviceHubDevice device,
+        string pairedDevicePublicKey);
 }
 
 public sealed class DeviceIdentityService(
@@ -122,8 +125,11 @@ public sealed class DeviceIdentityService(
                     Sha256(publicBytes),
                     _protector.Protect(
                         Convert.ToBase64String(privateBytes)),
-                    [],
+                    PairedDevicePublicKey: null,
+                    PairedDeviceFingerprintSha256: null,
+                    Capabilities: [],
                     DeviceTrustLevels.Untrusted,
+                    TrustedAt: null,
                     now,
                     now);
 
@@ -144,6 +150,98 @@ public sealed class DeviceIdentityService(
             {
                 CryptographicOperations.ZeroMemory(privateBytes);
             }
+        }
+    }
+
+    public DeviceIdentity EstablishTrust(
+        DeviceHubDevice device,
+        string pairedDevicePublicKey)
+    {
+        ArgumentNullException.ThrowIfNull(device);
+        var workspaceId = NormalizeWorkspaceId(device.WorkspaceId);
+        var peerBytes = ValidatePublicKey(pairedDevicePublicKey);
+        try
+        {
+            lock (_gate)
+            {
+                var all = Load(workspaceId);
+                var index = all.FindIndex(x => x.DeviceId == device.Id);
+                if (index < 0)
+                {
+                    _ = EnsureDevice(device);
+                    all = Load(workspaceId);
+                    index = all.FindIndex(x => x.DeviceId == device.Id);
+                }
+
+                if (index < 0)
+                    throw new DeviceIdentityValidationException(
+                        "Không tạo được identity trước khi trust.");
+
+                var current = all[index];
+                ValidateEncryptedPrivateKey(current);
+
+                var fingerprint = Sha256(peerBytes);
+                if (current.TrustLevel == DeviceTrustLevels.Trusted)
+                {
+                    if (!string.Equals(
+                            current.PairedDeviceFingerprintSha256,
+                            fingerprint,
+                            StringComparison.Ordinal))
+                    {
+                        throw new DeviceIdentityValidationException(
+                            "Thiết bị đã trusted với public key khác; từ chối thay key tự động.");
+                    }
+
+                    return ToPublic(current, device);
+                }
+
+                var now = DateTimeOffset.UtcNow;
+                var updated = current with
+                {
+                    PairedDevicePublicKey = pairedDevicePublicKey.Trim(),
+                    PairedDeviceFingerprintSha256 = fingerprint,
+                    TrustLevel = DeviceTrustLevels.Trusted,
+                    TrustedAt = now,
+                    UpdatedAt = now
+                };
+
+                all[index] = updated;
+                Save(workspaceId, all);
+
+                audit.Record(
+                    AuditAgents.System,
+                    "device-identity.trust",
+                    $"device:{device.Id:D}",
+                    $"trust:{DeviceTrustLevels.Trusted};peer-fingerprint:{fingerprint};permissions-granted:false;remote-execution:false",
+                    AuditResults.Succeeded,
+                    workspaceId: workspaceId);
+
+                return ToPublic(updated, device);
+            }
+        }
+        finally
+        {
+            CryptographicOperations.ZeroMemory(peerBytes);
+        }
+    }
+
+    private static byte[] ValidatePublicKey(string value)
+    {
+        byte[] bytes;
+        try
+        {
+            bytes = Convert.FromBase64String((value ?? string.Empty).Trim());
+            using var key = ECDsa.Create();
+            key.ImportSubjectPublicKeyInfo(bytes, out var read);
+            if (read != bytes.Length)
+                throw new CryptographicException("Public key có dữ liệu dư.");
+            return bytes;
+        }
+        catch (Exception exception) when (
+            exception is FormatException or CryptographicException)
+        {
+            throw new DeviceIdentityValidationException(
+                "Device public key không phải ECDSA P-256 SubjectPublicKeyInfo hợp lệ.");
         }
     }
 
@@ -182,12 +280,15 @@ public sealed class DeviceIdentityService(
             KeyAlgorithm,
             identity.PublicKey,
             identity.PublicKeyFingerprintSha256,
+            identity.PairedDevicePublicKey,
+            identity.PairedDeviceFingerprintSha256,
             identity.Capabilities.ToArray(),
             identity.TrustLevel,
             device.LastSeenAt,
             device.ConnectionStatus,
             PermissionsGranted: false,
             RemoteExecutionEnabled: false,
+            identity.TrustedAt,
             identity.CreatedAt,
             identity.UpdatedAt);
 
@@ -261,8 +362,11 @@ public sealed class DeviceIdentityService(
         string PublicKey,
         string PublicKeyFingerprintSha256,
         string EncryptedPrivateKey,
+        string? PairedDevicePublicKey,
+        string? PairedDeviceFingerprintSha256,
         IReadOnlyList<string> Capabilities,
         string TrustLevel,
+        DateTimeOffset? TrustedAt,
         DateTimeOffset CreatedAt,
         DateTimeOffset UpdatedAt);
 }

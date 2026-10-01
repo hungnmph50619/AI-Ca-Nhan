@@ -29,6 +29,8 @@ public static class DevelopmentEndpoints
         services.AddScoped<IDevelopmentGitHubService, DevelopmentGitHubService>();
         services.AddSingleton<IDevelopmentMergePolicyReportStore, DevelopmentMergePolicyReportStore>();
         services.AddScoped<IDevelopmentMergePolicyService, DevelopmentMergePolicyService>();
+        services.AddSingleton<IDevelopmentLocalSyncReportStore, DevelopmentLocalSyncReportStore>();
+        services.AddScoped<IDevelopmentLocalSyncService, DevelopmentLocalSyncService>();
         services.AddHttpClient("development-github");
         services.AddSingleton<IPersonalAiTool, DevelopmentWorkspaceInspectTool>();
         services.AddSingleton<IPersonalAiTool, DevelopmentTextSearchTool>();
@@ -67,6 +69,51 @@ public static class DevelopmentEndpoints
         app.MapGet("/api/development/git/capabilities", (
             ILocalGitRepositoryService git) =>
             Results.Ok(git.GetStatus()));
+
+        app.MapGet("/api/development/local-sync/status", (
+            IDevelopmentLocalSyncService sync) =>
+            Results.Ok(sync.GetStatus()));
+
+        app.MapGet("/api/development/local-sync/reports", (
+            IDevelopmentLocalSyncService sync) =>
+            Results.Ok(sync.GetAll()));
+
+        app.MapGet("/api/development/local-sync/reports/{reportId:guid}", (
+            Guid reportId,
+            IDevelopmentLocalSyncService sync) =>
+        {
+            var report = sync.Get(reportId);
+            return report is null ? Results.NotFound() : Results.Ok(report);
+        });
+
+        app.MapPost("/api/development/local-sync/run", async (
+            RunDevelopmentLocalSyncRequest request,
+            IDevelopmentLocalSyncService sync,
+            CancellationToken cancellationToken) =>
+        {
+            try
+            {
+                return Results.Ok(await sync.RunAsync(
+                    request,
+                    cancellationToken));
+            }
+            catch (DevelopmentLocalSyncValidationException exception)
+            {
+                return Results.BadRequest(new ApiError(exception.Message));
+            }
+            catch (LocalGitRepositoryValidationException exception)
+            {
+                return Results.BadRequest(new ApiError(exception.Message));
+            }
+            catch (GitCredentialValidationException exception)
+            {
+                return Results.BadRequest(new ApiError(exception.Message));
+            }
+            catch (KeyNotFoundException exception)
+            {
+                return Results.NotFound(new ApiError(exception.Message));
+            }
+        });
 
         app.MapGet("/api/development/merge-policy/status", (
             IDevelopmentMergePolicyService policy) =>

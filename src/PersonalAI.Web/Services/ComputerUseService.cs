@@ -25,6 +25,8 @@ public interface IComputerUseService
     ComputerActionResponse ClickLeft(string windowId, int x, int y);
 
     ComputerActionResponse TypeNotepadText(string windowId, string text);
+
+    ComputerActionResponse OpenDefaultBrowser(string? url = null);
 }
 
 public sealed class WindowsComputerUseService(
@@ -62,7 +64,8 @@ public sealed class WindowsComputerUseService(
                 ComputerUseCapabilities.FocusWindow,
                 ComputerUseCapabilities.MoveCursor,
                 ComputerUseCapabilities.ClickLeft,
-                ComputerUseCapabilities.TypeNotepadText
+                ComputerUseCapabilities.TypeNotepadText,
+                ComputerUseCapabilities.OpenDefaultBrowser
             }
             : Array.Empty<string>();
 
@@ -70,7 +73,7 @@ public sealed class WindowsComputerUseService(
         {
             "Không chụp ảnh màn hình trong v1.1.0.",
             "Chỉ hỗ trợ nhấp trái từng lần và nhập một dòng tối đa 32 ký tự vào Notepad có xác nhận; chưa có nhấp phải, nhấp đúp, kéo thả, cuộn hoặc phím tắt.",
-            "Không mở ứng dụng, chạy shell hoặc thực thi lệnh hệ thống.",
+            "Không chạy shell hoặc thực thi lệnh hệ thống tùy ý. Chỉ cho phép mở trình duyệt mặc định của Windows tới URL HTTP/HTTPS đã kiểm tra.",
             "Các hành động thay đổi focus/cursor phải đi qua Tool Framework và xác nhận.",
             "Điều khiển được khóa lúc khởi động; phải cho phép thủ công. Nút dừng chỉ chặn các lệnh mới qua dịch vụ, không phải phím dừng toàn hệ thống.",
             "Nhấp chuột có thể kích hoạt hành động trong ứng dụng khác; chỉ thử trên cửa sổ thử nghiệm không chứa dữ liệu quan trọng.",
@@ -348,6 +351,60 @@ public sealed class WindowsComputerUseService(
             ComputerUseCapabilities.ClickLeft,
             true,
             "Đã gửi một lần nhấp chuột trái tại tọa độ đã xác nhận.");
+    }
+
+    public ComputerActionResponse OpenDefaultBrowser(string? url = null) =>
+        control.RunAllowed(() => OpenDefaultBrowserCore(url));
+
+    private ComputerActionResponse OpenDefaultBrowserCore(string? url)
+    {
+        EnsureAvailable();
+
+        var target = string.IsNullOrWhiteSpace(url)
+            ? "https://www.google.com/"
+            : url.Trim();
+
+        if (target.Length > 2048 ||
+            !Uri.TryCreate(target, UriKind.Absolute, out var uri) ||
+            (uri.Scheme != Uri.UriSchemeHttp &&
+             uri.Scheme != Uri.UriSchemeHttps) ||
+            string.IsNullOrWhiteSpace(uri.Host))
+        {
+            throw new ToolExecutionInputException(
+                "Chỉ được mở URL HTTP/HTTPS tuyệt đối, tối đa 2048 ký tự.");
+        }
+
+        try
+        {
+            using var process = Process.Start(new ProcessStartInfo
+            {
+                FileName = uri.ToString(),
+                UseShellExecute = true
+            });
+
+            if (process is null)
+            {
+                throw new ToolExecutionInputException(
+                    "Windows không khởi chạy được trình duyệt mặc định.");
+            }
+        }
+        catch (ToolExecutionInputException)
+        {
+            throw;
+        }
+        catch (Exception exception) when (
+            exception is InvalidOperationException or
+            System.ComponentModel.Win32Exception or
+            NotSupportedException)
+        {
+            throw new ToolExecutionInputException(
+                "Không thể mở trình duyệt mặc định bằng Windows shell.");
+        }
+
+        return new ComputerActionResponse(
+            ComputerUseCapabilities.OpenDefaultBrowser,
+            true,
+            $"Đã yêu cầu Windows mở trình duyệt mặc định tới {uri.Scheme}://{uri.Host}.");
     }
 
     public ComputerActionResponse TypeNotepadText(

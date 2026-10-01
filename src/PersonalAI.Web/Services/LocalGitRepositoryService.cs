@@ -52,6 +52,7 @@ public interface ILocalGitRepositoryService
 public sealed class LocalGitRepositoryService(
     IWorkspaceFileService workspaceFiles,
     IWorkspaceContextAccessor workspace,
+    IGitCredentialService credentials,
     IAuditRecorder audit) : ILocalGitRepositoryService
 {
     public const int GitTimeoutMs = 30_000;
@@ -100,12 +101,14 @@ public sealed class LocalGitRepositoryService(
         var repo = await ResolveRepositoryAsync(request.RepositoryPath, cancellationToken);
         var remote = NormalizeRemote(request.Remote);
 
+        var credential = ResolveCredential(request.CredentialRef);
         var result = await RunGitAsync(
             repo,
             "fetch",
             ["fetch", "--prune", remote],
             NetworkGitTimeoutMs,
-            cancellationToken);
+            cancellationToken,
+            credential);
 
         AuditWrite("development.git.fetch", repo.RelativePath, $"remote:{remote}", result);
         return result;
@@ -259,12 +262,14 @@ public sealed class LocalGitRepositoryService(
 
         await EnsureCleanWorktreeAsync(repo, cancellationToken);
 
+        var credential = ResolveCredential(request.CredentialRef);
         var result = await RunGitAsync(
             repo,
             "pull-ff-only",
             ["pull", "--ff-only", remote, branch],
             NetworkGitTimeoutMs,
-            cancellationToken);
+            cancellationToken,
+            credential);
 
         AuditWrite(
             "development.git.pull",
@@ -337,12 +342,14 @@ public sealed class LocalGitRepositoryService(
             throw new LocalGitRepositoryValidationException(
                 "Push chỉ được phép với branch hiện tại.");
 
+        var credential = ResolveCredential(request.CredentialRef);
         var result = await RunGitAsync(
             repo,
             "push",
             ["push", remote, branch],
             NetworkGitTimeoutMs,
-            cancellationToken);
+            cancellationToken,
+            credential);
 
         AuditWrite(
             "development.git.push",
@@ -520,6 +527,25 @@ public sealed class LocalGitRepositoryService(
                 $"Git {action} cần ConfirmGitWrite=true.");
     }
 
+    private GitCredentialMaterial? ResolveCredential(string? credentialRef)
+    {
+        if (string.IsNullOrWhiteSpace(credentialRef))
+            return null;
+
+        try
+        {
+            return credentials.Resolve(credentialRef);
+        }
+        catch (GitCredentialValidationException)
+        {
+            throw;
+        }
+        catch (KeyNotFoundException exception)
+        {
+            throw new LocalGitRepositoryValidationException(exception.Message);
+        }
+    }
+
     private void AuditWrite(
         string action,
         string repositoryPath,
@@ -536,18 +562,20 @@ public sealed class LocalGitRepositoryService(
                 : AuditResults.Failed);
     }
 
-    private static async Task<LocalGitCommandResult> RunGitAsync(
+    private async Task<LocalGitCommandResult> RunGitAsync(
         RepositoryContext repo,
         string operation,
         IReadOnlyList<string> arguments,
         int timeoutMs,
-        CancellationToken cancellationToken)
+        CancellationToken cancellationToken,
+        GitCredentialMaterial? credential = null)
     {
         var result = await RunGitRawAsync(
             repo.FullPath,
             arguments,
             timeoutMs,
-            cancellationToken);
+            cancellationToken,
+            credential);
 
         return new LocalGitCommandResult(
             operation,
@@ -564,7 +592,8 @@ public sealed class LocalGitRepositoryService(
         string workingDirectory,
         IReadOnlyList<string> arguments,
         int timeoutMs,
-        CancellationToken cancellationToken)
+        CancellationToken cancellationToken,
+        GitCredentialMaterial? credential = null)
     {
         var executable = FindGitExecutable()
             ?? throw new LocalGitRepositoryValidationException(
@@ -579,6 +608,51 @@ public sealed class LocalGitRepositoryService(
             RedirectStandardError = true,
             CreateNoWindow = true
         };
+
+        string? temporarySshKey = null;
+        if (credential is not null)
+        {
+            if (credential.Kind == GitCredentialKinds.HttpsToken)
+            {
+                var username = string.IsNullOrWhiteSpace(credential.Username)
+                    ? "x-access-token"
+                    : credential.Username!;
+                var basic = Convert.ToBase64String(
+                    Encoding.UTF8.GetBytes($"{username}:{credential.Secret}"));
+
+                start.Environment["GIT_CONFIG_COUNT"] = "1";
+                start.Environment["GIT_CONFIG_KEY_0"] = "http.extraHeader";
+                start.Environment["GIT_CONFIG_VALUE_0"] = $"Authorization: Basic {basic}";
+                start.Environment["GIT_TERMINAL_PROMPT"] = "0";
+            }
+            else if (credential.Kind == GitCredentialKinds.SshPrivateKey)
+            {
+                temporarySshKey = Path.Combine(
+                    Path.GetTempPath(),
+                    $"personalai-git-{Guid.NewGuid():N}.key");
+                await File.WriteAllTextAsync(
+                    temporarySshKey,
+                    credential.Secret,
+                    Encoding.UTF8,
+                    cancellationToken);
+
+                if (!OperatingSystem.IsWindows())
+                {
+                    File.SetUnixFileMode(
+                        temporarySshKey,
+                        UnixFileMode.UserRead | UnixFileMode.UserWrite);
+                }
+
+                start.Environment["GIT_SSH_COMMAND"] =
+                    $"ssh -i \"{temporarySshKey}\" -o IdentitiesOnly=yes";
+                start.Environment["GIT_TERMINAL_PROMPT"] = "0";
+            }
+            else
+            {
+                throw new LocalGitRepositoryValidationException(
+                    "Loại Git credential chưa được hỗ trợ.");
+            }
+        }
 
         start.ArgumentList.Add("-c");
         start.ArgumentList.Add("core.fsmonitor=false");
@@ -637,6 +711,12 @@ public sealed class LocalGitRepositoryService(
             output = output[..MaximumOutputCharacters];
 
         started.Stop();
+
+        if (!string.IsNullOrWhiteSpace(temporarySshKey))
+        {
+            try { File.Delete(temporarySshKey); } catch { }
+        }
+
         return new ProcessCapture(
             timedOut ? -1 : process.ExitCode,
             timedOut,

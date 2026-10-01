@@ -22,6 +22,8 @@ public static class DevelopmentEndpoints
         services.AddScoped<IDevelopmentReviewService, DevelopmentReviewService>();
         services.AddSingleton<IDevelopmentSecurityReportStore, DevelopmentSecurityReportStore>();
         services.AddScoped<IDevelopmentSecurityService, DevelopmentSecurityService>();
+        services.AddSingleton<IDevelopmentBenchmarkReportStore, DevelopmentBenchmarkReportStore>();
+        services.AddScoped<IDevelopmentBenchmarkService, DevelopmentBenchmarkService>();
         services.AddSingleton<IPersonalAiTool, DevelopmentWorkspaceInspectTool>();
         services.AddSingleton<IPersonalAiTool, DevelopmentTextSearchTool>();
         services.AddSingleton<IPersonalAiTool, DevelopmentGitStatusTool>();
@@ -59,6 +61,57 @@ public static class DevelopmentEndpoints
         app.MapGet("/api/development/git/capabilities", (
             ILocalGitRepositoryService git) =>
             Results.Ok(git.GetStatus()));
+
+        app.MapGet("/api/development/benchmarks/status", (
+            IDevelopmentBenchmarkService benchmarks) =>
+            Results.Ok(benchmarks.GetStatus()));
+
+        app.MapGet("/api/development/benchmarks/reports", (
+            IDevelopmentBenchmarkService benchmarks) =>
+            Results.Ok(benchmarks.GetAll()));
+
+        app.MapGet("/api/development/benchmarks/reports/{reportId:guid}", (
+            Guid reportId,
+            IDevelopmentBenchmarkService benchmarks) =>
+        {
+            var report = benchmarks.Get(reportId);
+            return report is null ? Results.NotFound() : Results.Ok(report);
+        });
+
+        app.MapPost("/api/development/benchmarks/run", async (
+            RunDevelopmentBenchmarkRequest request,
+            IDevelopmentBenchmarkService benchmarks,
+            CancellationToken cancellationToken) =>
+        {
+            try
+            {
+                return Results.Ok(await benchmarks.RunAsync(
+                    request,
+                    cancellationToken));
+            }
+            catch (DevelopmentBenchmarkValidationException exception)
+            {
+                return Results.BadRequest(new ApiError(exception.Message));
+            }
+            catch (AgentBenchmarkValidationException exception)
+            {
+                return Results.BadRequest(new ApiError(exception.Message));
+            }
+            catch (AgentValidationException exception)
+            {
+                return Results.BadRequest(new ApiError(exception.Message));
+            }
+            catch (AgentBusyException exception)
+            {
+                return Results.Json(
+                    new ApiError(exception.Message),
+                    statusCode: StatusCodes.Status409Conflict);
+            }
+            catch (KeyNotFoundException exception)
+            {
+                return Results.NotFound(new ApiError(exception.Message));
+            }
+        });
 
         app.MapGet("/api/development/security/status", (
             IDevelopmentSecurityService security) =>

@@ -7,6 +7,7 @@ public static class RolloutStages
     public const string Canary = "canary";
     public const string Completed = "completed";
     public const string Blocked = "blocked";
+    public const string RolledBack = "rolled-back";
 }
 
 public sealed record StartModelRolloutRequest(
@@ -40,6 +41,7 @@ public sealed record ModelRolloutStatus(
     int Canary,
     int Completed,
     int Blocked,
+    int RolledBack,
     bool DirectProductionPromotionEnabled,
     bool Persisted,
     bool ExplicitConfirmationRequired);

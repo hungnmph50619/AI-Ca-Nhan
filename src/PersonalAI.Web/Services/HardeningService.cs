@@ -1422,6 +1422,12 @@ public sealed class HardeningApiGuardMiddleware(
         try
         {
             await next(context);
+
+            if (context.Response.StatusCode
+                == StatusCodes.Status413PayloadTooLarge)
+            {
+                metrics.RecordPayloadRejected();
+            }
         }
         catch (BadHttpRequestException exception) when (
             exception.StatusCode == StatusCodes.Status413PayloadTooLarge)

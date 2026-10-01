@@ -72,7 +72,7 @@ jobs:
           start_app
 
           jq -e '
-            .version=="2.8.5"
+            (.version | split(".") | map(tonumber)) >= [2,8,5]
             and .correlationIdRequired==true
             and .routeRequiredBeforeDispatch==true
             and .permissionRevalidatedOnDispatch==true

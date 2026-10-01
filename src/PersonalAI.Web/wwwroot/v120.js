@@ -71,7 +71,7 @@
     const heading = document.createElement("div");
     const eyebrow = document.createElement("p");
     eyebrow.className = "eyebrow";
-    eyebrow.textContent = "CONTROLLED CAPABILITY · HTTP/HTML";
+    eyebrow.textContent = "KHẢ NĂNG ĐƯỢC KIỂM SOÁT · HTTP/HTML";
 
     const title = document.createElement("h2");
     title.id = "browserAgentTitle";
@@ -166,13 +166,13 @@
       const response = await fetch("/api/browser/status", { cache: "no-store" });
       const payload = await response.json().catch(() => ({}));
       if (!response.ok) {
-        throw new Error(payload.error || "Không đọc được trạng thái Browser Agent.");
+        throw new Error(payload.error || "Không đọc được trạng thái tác nhân trình duyệt.");
       }
 
       renderStatus(payload);
       updateBadge(payload.supported === true);
     } catch (error) {
-      setFeedback(error.message || "Không đọc được trạng thái Browser Agent.", true);
+      setFeedback(error.message || "Không đọc được trạng thái tác nhân trình duyệt.", true);
       updateBadge(false);
     } finally {
       loading = false;
@@ -214,7 +214,7 @@
   function updateBadge(available) {
     const badge = document.querySelector("#browserAgentBadge");
     if (!badge) return;
-    badge.textContent = available ? "ON" : "OFF";
+    badge.textContent = available ? "BẬT" : "TẮT";
     badge.className =
       `tool-count v120-browser-badge ${available ? "is-ready" : "is-off"}`;
   }

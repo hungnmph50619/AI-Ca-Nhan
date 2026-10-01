@@ -22,6 +22,19 @@ public static class AuditResults
     public const string Interrupted = "interrupted";
 }
 
+public static class SystemLogLevels
+{
+    public const string Info = "info";
+    public const string Warning = "warning";
+    public const string Error = "error";
+    public const string Security = "security";
+
+    public static readonly IReadOnlySet<string> All =
+        new HashSet<string>(
+            [Info, Warning, Error, Security],
+            StringComparer.Ordinal);
+}
+
 public sealed record AuditEvent(
     string WorkspaceId,
     string Agent,
@@ -29,7 +42,10 @@ public sealed record AuditEvent(
     string Target,
     string Reason,
     string Result,
-    string? Tool = null);
+    string? Tool = null,
+    string? Level = null,
+    string? Source = null,
+    string? CorrelationId = null);
 
 public sealed record AuditItem(
     Guid AuditId,
@@ -40,7 +56,10 @@ public sealed record AuditItem(
     string? Tool,
     string Target,
     string Reason,
-    string Result);
+    string Result,
+    string? Level = null,
+    string? Source = null,
+    string? CorrelationId = null);
 
 public sealed record AuditResponse(
     string Storage,
@@ -53,4 +72,20 @@ public sealed record AuditSummary(
     int TotalEvents,
     IReadOnlyDictionary<string, int> ByAgent,
     IReadOnlyDictionary<string, int> ByResult,
-    IReadOnlyDictionary<string, int> ByAction);
+    IReadOnlyDictionary<string, int> ByAction,
+    IReadOnlyDictionary<string, int>? ByLevel = null,
+    IReadOnlyDictionary<string, int>? BySource = null);
+
+public sealed record SystemLogStatus(
+    string Version,
+    string WorkspaceId,
+    string Storage,
+    int RetentionDays,
+    int MaximumEntries,
+    int MaximumQueryLimit,
+    bool RequestCorrelationEnabled,
+    bool RequestBodyLoggingEnabled,
+    bool AuthorizationHeaderLoggingEnabled,
+    bool QueryStringLoggingEnabled,
+    bool BackwardCompatibleAuditApi,
+    IReadOnlyList<string> Levels);

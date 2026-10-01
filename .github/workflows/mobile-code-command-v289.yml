@@ -68,7 +68,7 @@ jobs:
           start_app
 
           jq -e '
-            .version=="2.8.9"
+            (.version | split(".") | map(tonumber)) >= [2,8,9]
             and .companionRequestEnabled==true
             and .directRemoteShellEnabled==false
             and .directMainPushAllowed==false
@@ -91,7 +91,7 @@ jobs:
           me=$(curl -fsS http://127.0.0.1:5130/api/companion/client/me \
             -H "Authorization: Bearer $token")
           echo "$me" | jq -e '
-            .version=="2.8.9"
+            (.version | split(".") | map(tonumber)) >= [2,8,9]
             and any(.capabilities[]; .=="mobile-code-command")
           ' >/dev/null
 

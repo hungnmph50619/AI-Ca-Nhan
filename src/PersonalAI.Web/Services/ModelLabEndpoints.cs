@@ -24,6 +24,7 @@ public static class ModelLabEndpoints
         services.AddScoped<ICandidateTrainingService, CandidateTrainingService>();
         services.AddScoped<IRegisteredModelComparisonService, RegisteredModelComparisonService>();
         services.AddScoped<IPromotionGateService, PromotionGateService>();
+        services.AddScoped<IModelRolloutService, ModelRolloutService>();
         services.AddScoped<ISyntheticCriticService, SyntheticCriticService>();
         services.AddScoped<ISyntheticVerificationService, SyntheticVerificationService>();
         services.AddScoped<ISyntheticDataService, SyntheticDataService>();
@@ -314,6 +315,79 @@ public static class ModelLabEndpoints
                     $"stage:{model.Stage}",
                     AuditResults.Succeeded);
                 return Results.Ok(model);
+            }
+            catch (ModelRegistryValidationException exception)
+            {
+                return Results.BadRequest(new ApiError(exception.Message));
+            }
+            catch (ModelRegistryConflictException exception)
+            {
+                return Results.Json(
+                    new ApiError(exception.Message),
+                    statusCode: StatusCodes.Status409Conflict);
+            }
+            catch (KeyNotFoundException exception)
+            {
+                return Results.NotFound(new ApiError(exception.Message));
+            }
+        });
+
+        endpoints.MapGet("/api/model-lab/rollouts/status", (
+            IModelRolloutService rollouts) =>
+            Results.Ok(rollouts.GetStatus()));
+
+        endpoints.MapGet("/api/model-lab/rollouts", (
+            IModelRolloutService rollouts) =>
+            Results.Ok(rollouts.GetAll()));
+
+        endpoints.MapGet("/api/model-lab/rollouts/{rolloutId:guid}", (
+            Guid rolloutId,
+            IModelRolloutService rollouts) =>
+        {
+            var rollout = rollouts.Get(rolloutId);
+            return rollout is null ? Results.NotFound() : Results.Ok(rollout);
+        });
+
+        endpoints.MapPost("/api/model-lab/rollouts/start", (
+            StartModelRolloutRequest request,
+            IModelRolloutService rollouts) =>
+        {
+            try
+            {
+                return Results.Ok(rollouts.Start(request));
+            }
+            catch (ModelRolloutValidationException exception)
+            {
+                return Results.BadRequest(new ApiError(exception.Message));
+            }
+            catch (ModelRegistryValidationException exception)
+            {
+                return Results.BadRequest(new ApiError(exception.Message));
+            }
+            catch (ModelRegistryConflictException exception)
+            {
+                return Results.Json(
+                    new ApiError(exception.Message),
+                    statusCode: StatusCodes.Status409Conflict);
+            }
+            catch (KeyNotFoundException exception)
+            {
+                return Results.NotFound(new ApiError(exception.Message));
+            }
+        });
+
+        endpoints.MapPost("/api/model-lab/rollouts/{rolloutId:guid}/advance", (
+            Guid rolloutId,
+            AdvanceModelRolloutRequest request,
+            IModelRolloutService rollouts) =>
+        {
+            try
+            {
+                return Results.Ok(rollouts.Advance(rolloutId, request));
+            }
+            catch (ModelRolloutValidationException exception)
+            {
+                return Results.BadRequest(new ApiError(exception.Message));
             }
             catch (ModelRegistryValidationException exception)
             {

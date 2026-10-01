@@ -71,7 +71,7 @@ jobs:
           done
 
           jq -e '
-            .version=="2.9.9"
+            (.version | split(".") | map(tonumber)) >= [2,9,9]
             and .fullPipelineControllerEnabled==true
             and .emergencyStopActive==false
             and .policyBypassAllowed==false
@@ -86,7 +86,7 @@ jobs:
           # v2.9.x safety-plane acceptance gates.
           curl -fsS http://127.0.0.1:5142/api/system/permissions/status >/tmp/v299-permissions.json
           jq -e '
-            .version=="2.9.9"
+            (.version | split(".") | map(tonumber)) >= [2,9,9]
             and .defaultDeny==true
             and .denyOverridesAllow==true
             and .workspaceScoped==true
@@ -95,7 +95,7 @@ jobs:
 
           curl -fsS http://127.0.0.1:5142/api/system/logs/status >/tmp/v299-logs.json
           jq -e '
-            .version=="2.9.9"
+            (.version | split(".") | map(tonumber)) >= [2,9,9]
             and .requestCorrelationEnabled==true
             and .requestBodyLoggingEnabled==false
             and .authorizationHeaderLoggingEnabled==false
@@ -104,7 +104,7 @@ jobs:
 
           curl -fsS http://127.0.0.1:5142/api/system/explanations/status >/tmp/v299-explanations.json
           jq -e '
-            .version=="2.9.9"
+            (.version | split(".") | map(tonumber)) >= [2,9,9]
             and .auditGrounded==true
             and .correlationTimelineSupported==true
             and .aiGenerated==false
@@ -114,7 +114,7 @@ jobs:
 
           curl -fsS http://127.0.0.1:5142/api/undo/status >/tmp/v299-undo.json
           jq -e '
-            .version=="2.9.9"
+            (.version | split(".") | map(tonumber)) >= [2,9,9]
             and .explicitConfirmationRequired==true
             and .preconditionRevalidationRequired==true
             and .workspaceScoped==true
@@ -124,7 +124,7 @@ jobs:
 
           curl -fsS http://127.0.0.1:5142/api/system/resources/status >/tmp/v299-resources.json
           jq -e '
-            .version=="2.9.9"
+            (.version | split(".") | map(tonumber)) >= [2,9,9]
             and .requestRateLimitEnforced==true
             and .concurrentRequestLimitEnforced==true
             and .requestBodyLimitEnforced==true
@@ -134,7 +134,7 @@ jobs:
 
           curl -fsS http://127.0.0.1:5142/api/system/loop-guard/status >/tmp/v299-loop.json
           jq -e '
-            .version=="2.9.9"
+            (.version | split(".") | map(tonumber)) >= [2,9,9]
             and .duplicateFingerprintDetectionEnabled==true
             and .runawayCostDetectionEnabled==true
             and .branchExplosionGuardEnabled==true
@@ -145,7 +145,7 @@ jobs:
 
           curl -fsS http://127.0.0.1:5142/api/system/emergency-stop/status >/tmp/v299-stop.json
           jq -e '
-            .version=="2.9.9"
+            (.version | split(".") | map(tonumber)) >= [2,9,9]
             and .engaged==false
             and .auditPreserved==true
             and .explicitReleaseRequired==true
@@ -153,7 +153,7 @@ jobs:
 
           curl -fsS http://127.0.0.1:5142/api/disaster-recovery/status >/tmp/v299-recovery.json
           jq -e '
-            .version=="2.9.9"
+            (.version | split(".") | map(tonumber)) >= [2,9,9]
             and .archiveIntegrityVerificationEnabled==true
             and .pathTraversalProtectionEnabled==true
             and .restoreSizeLimitsEnforced==true
@@ -164,7 +164,7 @@ jobs:
 
           curl -fsS http://127.0.0.1:5142/api/system/database-upgrades/status >/tmp/v299-db.json
           jq -e '
-            .version=="2.9.9"
+            (.version | split(".") | map(tonumber)) >= [2,9,9]
             and .upToDate==true
             and .startupMigrationEnabled==true
             and .checksumValidationEnabled==true

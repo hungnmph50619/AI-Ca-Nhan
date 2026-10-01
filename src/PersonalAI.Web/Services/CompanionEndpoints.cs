@@ -21,6 +21,7 @@ public static class CompanionEndpoints
         services.AddScoped<ISecurePairingService, SecurePairingService>();
         services.AddScoped<IDeviceCapabilityService, DeviceCapabilityService>();
         services.AddScoped<IDeviceOfflineQueueService, DeviceOfflineQueueService>();
+        services.AddScoped<IDeviceDataConflictService, DeviceDataConflictService>();
         services.AddScoped<IChatTurnService, ChatTurnService>();
         return services;
     }
@@ -619,6 +620,159 @@ public static class CompanionEndpoints
                 {
                     return Results.NotFound(
                         new ApiError(exception.Message));
+                }
+            });
+
+        app.MapGet(
+            "/api/device-hub/data-conflicts/status",
+            (
+                HttpContext httpContext,
+                IDeviceDataConflictService conflicts) =>
+            {
+                if (!IsLocalAdminRequest(httpContext))
+                {
+                    return Results.Json(
+                        new ApiError(
+                            "Chỉ desktop local mới được xem Data Conflict status."),
+                        statusCode:
+                            StatusCodes.Status403Forbidden);
+                }
+
+                return Results.Ok(conflicts.GetStatus());
+            });
+
+        app.MapGet(
+            "/api/device-hub/data-conflicts/locks",
+            (
+                HttpContext httpContext,
+                IDeviceDataConflictService conflicts) =>
+            {
+                if (!IsLocalAdminRequest(httpContext))
+                {
+                    return Results.Json(
+                        new ApiError(
+                            "Chỉ desktop local mới được xem data locks."),
+                        statusCode:
+                            StatusCodes.Status403Forbidden);
+                }
+
+                return Results.Ok(conflicts.GetLocks());
+            });
+
+        app.MapGet(
+            "/api/device-hub/data-conflicts/versions",
+            (
+                HttpContext httpContext,
+                IDeviceDataConflictService conflicts) =>
+            {
+                if (!IsLocalAdminRequest(httpContext))
+                {
+                    return Results.Json(
+                        new ApiError(
+                            "Chỉ desktop local mới được xem data versions."),
+                        statusCode:
+                            StatusCodes.Status403Forbidden);
+                }
+
+                return Results.Ok(conflicts.GetVersions());
+            });
+
+        app.MapPost(
+            "/api/device-hub/data-conflicts/locks",
+            (
+                AcquireDeviceDataLockRequest request,
+                HttpContext httpContext,
+                IDeviceDataConflictService conflicts) =>
+            {
+                if (!IsLocalAdminRequest(httpContext))
+                {
+                    return Results.Json(
+                        new ApiError(
+                            "Chỉ desktop local mới được giữ data lock."),
+                        statusCode:
+                            StatusCodes.Status403Forbidden);
+                }
+
+                try
+                {
+                    return Results.Ok(conflicts.AcquireLock(request));
+                }
+                catch (DeviceDataConflictValidationException exception)
+                {
+                    return Results.BadRequest(new ApiError(exception.Message));
+                }
+                catch (KeyNotFoundException exception)
+                {
+                    return Results.NotFound(new ApiError(exception.Message));
+                }
+            });
+
+        app.MapPost(
+            "/api/device-hub/data-conflicts/{resourceType}/{resourceId}/locks/release",
+            (
+                string resourceType,
+                string resourceId,
+                ReleaseDeviceDataLockRequest request,
+                HttpContext httpContext,
+                IDeviceDataConflictService conflicts) =>
+            {
+                if (!IsLocalAdminRequest(httpContext))
+                {
+                    return Results.Json(
+                        new ApiError(
+                            "Chỉ desktop local mới được nhả data lock."),
+                        statusCode:
+                            StatusCodes.Status403Forbidden);
+                }
+
+                try
+                {
+                    return conflicts.ReleaseLock(
+                        resourceType,
+                        resourceId,
+                        request)
+                        ? Results.Ok()
+                        : Results.NotFound();
+                }
+                catch (DeviceDataConflictValidationException exception)
+                {
+                    return Results.BadRequest(new ApiError(exception.Message));
+                }
+            });
+
+        app.MapPost(
+            "/api/device-hub/data-conflicts/apply",
+            (
+                ApplyDeviceDataMutationRequest request,
+                HttpContext httpContext,
+                IDeviceDataConflictService conflicts) =>
+            {
+                if (!IsLocalAdminRequest(httpContext))
+                {
+                    return Results.Json(
+                        new ApiError(
+                            "Chỉ desktop local mới được áp dụng data mutation."),
+                        statusCode:
+                            StatusCodes.Status403Forbidden);
+                }
+
+                try
+                {
+                    var result = conflicts.Apply(request);
+                    return result.Decision == DeviceDataConflictDecisions.Accepted
+                        ? Results.Ok(result)
+                        : Results.Json(
+                            result,
+                            statusCode:
+                                StatusCodes.Status409Conflict);
+                }
+                catch (DeviceDataConflictValidationException exception)
+                {
+                    return Results.BadRequest(new ApiError(exception.Message));
+                }
+                catch (KeyNotFoundException exception)
+                {
+                    return Results.NotFound(new ApiError(exception.Message));
                 }
             });
 

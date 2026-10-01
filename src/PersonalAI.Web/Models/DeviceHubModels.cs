@@ -31,6 +31,9 @@ public sealed record RegisterDeviceHubDeviceRequest(
     string DeviceType,
     bool ConfirmRegister = false);
 
+public sealed record RecordDeviceHubHeartbeatRequest(
+    bool ConfirmHeartbeat = false);
+
 public sealed record DeviceHubDevice(
     Guid Id,
     string WorkspaceId,

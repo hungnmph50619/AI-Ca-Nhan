@@ -376,107 +376,100 @@ public sealed class SqliteAuditStore : IAuditStore
             return;
 
         using var connection = OpenConnection();
-        using (var command = connection.CreateCommand())
-        {
-            command.CommandText =
-                """
-                CREATE TABLE IF NOT EXISTS audit_events (
-                    audit_id TEXT PRIMARY KEY,
-                    occurred_at TEXT NOT NULL,
-                    workspace_id TEXT NOT NULL,
-                    agent TEXT NOT NULL,
-                    action TEXT NOT NULL,
-                    tool TEXT NULL,
-                    target TEXT NOT NULL,
-                    reason TEXT NOT NULL,
-                    result TEXT NOT NULL,
-                    level TEXT NULL,
-                    source TEXT NULL,
-                    correlation_id TEXT NULL
-                );
-                """;
-            command.ExecuteNonQuery();
-        }
+        _ = SqliteSchemaMigrationEngine.Apply(
+            connection,
+            "audit",
+            [
+                new SqliteMigrationStep(
+                    "audit-001-baseline",
+                    "Create baseline audit event schema and core indexes.",
+                    "audit-v1-baseline-2026-10-02",
+                    static connection =>
+                    {
+                        using var command = connection.CreateCommand();
+                        command.CommandText =
+                            """
+                            CREATE TABLE IF NOT EXISTS audit_events (
+                                audit_id TEXT PRIMARY KEY,
+                                occurred_at TEXT NOT NULL,
+                                workspace_id TEXT NOT NULL,
+                                agent TEXT NOT NULL,
+                                action TEXT NOT NULL,
+                                tool TEXT NULL,
+                                target TEXT NOT NULL,
+                                reason TEXT NOT NULL,
+                                result TEXT NOT NULL
+                            );
 
-        EnsureColumn(connection, "level", "TEXT NULL");
-        EnsureColumn(connection, "source", "TEXT NULL");
-        EnsureColumn(connection, "correlation_id", "TEXT NULL");
+                            CREATE INDEX IF NOT EXISTS ix_audit_events_workspace_time
+                                ON audit_events(workspace_id, occurred_at DESC);
 
-        using (var migrate = connection.CreateCommand())
-        {
-            migrate.CommandText =
-                """
-                UPDATE audit_events
-                SET level = CASE
-                    WHEN result = 'failed' THEN 'error'
-                    WHEN result IN ('denied', 'blocked') THEN 'security'
-                    ELSE 'info'
-                END
-                WHERE level IS NULL;
+                            CREATE INDEX IF NOT EXISTS ix_audit_events_action
+                                ON audit_events(action);
 
-                UPDATE audit_events
-                SET source = agent
-                WHERE source IS NULL;
-                """;
-            migrate.ExecuteNonQuery();
-        }
+                            CREATE INDEX IF NOT EXISTS ix_audit_events_agent
+                                ON audit_events(agent);
+                            """;
+                        command.ExecuteNonQuery();
+                    }),
+                new SqliteMigrationStep(
+                    "audit-002-system-log",
+                    "Add level, source and correlation fields for system-wide logging.",
+                    "audit-v2-system-log-level-source-correlation-2026-10-02",
+                    static connection =>
+                    {
+                        SqliteSchemaMigrationEngine.EnsureColumn(
+                            connection,
+                            "audit_events",
+                            "level",
+                            "TEXT NULL");
+                        SqliteSchemaMigrationEngine.EnsureColumn(
+                            connection,
+                            "audit_events",
+                            "source",
+                            "TEXT NULL");
+                        SqliteSchemaMigrationEngine.EnsureColumn(
+                            connection,
+                            "audit_events",
+                            "correlation_id",
+                            "TEXT NULL");
 
-        using (var indexes = connection.CreateCommand())
-        {
-            indexes.CommandText =
-                """
-                CREATE INDEX IF NOT EXISTS ix_audit_events_workspace_time
-                    ON audit_events(workspace_id, occurred_at DESC);
+                        using (var migrate = connection.CreateCommand())
+                        {
+                            migrate.CommandText =
+                                """
+                                UPDATE audit_events
+                                SET level = CASE
+                                    WHEN result = 'failed' THEN 'error'
+                                    WHEN result IN ('denied', 'blocked') THEN 'security'
+                                    ELSE 'info'
+                                END
+                                WHERE level IS NULL;
 
-                CREATE INDEX IF NOT EXISTS ix_audit_events_action
-                    ON audit_events(action);
+                                UPDATE audit_events
+                                SET source = agent
+                                WHERE source IS NULL;
+                                """;
+                            migrate.ExecuteNonQuery();
+                        }
 
-                CREATE INDEX IF NOT EXISTS ix_audit_events_agent
-                    ON audit_events(agent);
+                        using var indexes = connection.CreateCommand();
+                        indexes.CommandText =
+                            """
+                            CREATE INDEX IF NOT EXISTS ix_audit_events_level
+                                ON audit_events(level);
 
-                CREATE INDEX IF NOT EXISTS ix_audit_events_level
-                    ON audit_events(level);
+                            CREATE INDEX IF NOT EXISTS ix_audit_events_source
+                                ON audit_events(source);
 
-                CREATE INDEX IF NOT EXISTS ix_audit_events_source
-                    ON audit_events(source);
-
-                CREATE INDEX IF NOT EXISTS ix_audit_events_correlation
-                    ON audit_events(correlation_id);
-                """;
-            indexes.ExecuteNonQuery();
-        }
+                            CREATE INDEX IF NOT EXISTS ix_audit_events_correlation
+                                ON audit_events(correlation_id);
+                            """;
+                        indexes.ExecuteNonQuery();
+                    })
+            ]);
 
         _initialized = true;
-    }
-
-    private static void EnsureColumn(
-        SqliteConnection connection,
-        string column,
-        string definition)
-    {
-        using var inspect = connection.CreateCommand();
-        inspect.CommandText = "PRAGMA table_info(audit_events);";
-        using var reader = inspect.ExecuteReader();
-        var exists = false;
-        while (reader.Read())
-        {
-            if (reader.GetString(1).Equals(
-                column,
-                StringComparison.OrdinalIgnoreCase))
-            {
-                exists = true;
-                break;
-            }
-        }
-
-        reader.Close();
-        if (exists)
-            return;
-
-        using var alter = connection.CreateCommand();
-        alter.CommandText =
-            $"ALTER TABLE audit_events ADD COLUMN {column} {definition};";
-        alter.ExecuteNonQuery();
     }
 
     private SqliteConnection OpenConnection()

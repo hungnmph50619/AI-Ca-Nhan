@@ -175,6 +175,47 @@ jobs:
           test "$ai_no_consent_code" = "400"
           jq -e '.error | contains("xác nhận riêng")'             /tmp/personalai-league-v301/ai-no-consent.json >/dev/null
 
+          # Factual minimap observations are stored as last-seen evidence only.
+          vision_now="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
+          cat >/tmp/personalai-league-v301/vision.json <<JSON
+          {
+            "bridgeVersion": 2,
+            "clientInstanceId": "$client",
+            "sequence": 1,
+            "observedAtUtc": "$vision_now",
+            "source": "minimap-local-onnx",
+            "gameTimeSeconds": 122,
+            "observations": [
+              {
+                "champion": "LeeSin",
+                "team": "enemy",
+                "x": 0.31,
+                "y": 0.24,
+                "confidence": 0.93
+              }
+            ]
+          }
+          JSON
+
+          curl -fsS -X POST http://127.0.0.1:5145/api/integrations/league/vision/observations             -H 'X-Xerath-Bridge: 2'             -H 'Content-Type: application/json'             --data-binary @/tmp/personalai-league-v301/vision.json             | jq -e '.accepted == true and .lastSeenCount == 1' >/dev/null
+
+          curl -fsS http://127.0.0.1:5145/api/integrations/league/vision/last-seen             >/tmp/personalai-league-v301/vision-state.json
+          jq -e '
+            (.lastSeen | length) == 1
+            and .lastSeen[0].champion == "LeeSin"
+            and .lastSeen[0].team == "enemy"
+            and .lastSeen[0].x == 0.31
+            and .lastSeen[0].y == 0.24
+            and .lastSeen[0].confidence == 0.93
+            and .lastSeen[0].gameTimeSeconds == 122
+            and .lastSeen[0].observationCount == 1
+            and (has("predictedPosition") | not)
+          ' /tmp/personalai-league-v301/vision-state.json >/dev/null
+
+          vision_duplicate_code="$(curl -sS -o /tmp/personalai-league-v301/vision-duplicate.json -w '%{http_code}'             -X POST http://127.0.0.1:5145/api/integrations/league/vision/observations             -H 'X-Xerath-Bridge: 2'             -H 'Content-Type: application/json'             --data-binary @/tmp/personalai-league-v301/vision.json)"
+          test "$vision_duplicate_code" = "409"
+          jq -e '.accepted == false and .reason == "duplicate-or-out-of-order-sequence"'             /tmp/personalai-league-v301/vision-duplicate.json >/dev/null
+
           # A clear game-clock reset starts a new match session.
           jq '.sequence=4 | .gameTimeSeconds=5 | .health=700'             /tmp/personalai-league-v301/s1.json             >/tmp/personalai-league-v301/s3.json
 

@@ -16,6 +16,7 @@ public static class DevelopmentEndpoints
         services.AddSingleton<IGitHubWebhookService, GitHubWebhookService>();
         services.AddSingleton<ICiMonitorService, CiMonitorService>();
         services.AddSingleton<IDevelopmentRunService, DevelopmentRunService>();
+        services.AddSingleton<IImprovementBacklogService, ImprovementBacklogService>();
         services.AddSingleton<IPersonalAiTool, DevelopmentWorkspaceInspectTool>();
         services.AddSingleton<IPersonalAiTool, DevelopmentTextSearchTool>();
         services.AddSingleton<IPersonalAiTool, DevelopmentGitStatusTool>();
@@ -53,6 +54,59 @@ public static class DevelopmentEndpoints
         app.MapGet("/api/development/git/capabilities", (
             ILocalGitRepositoryService git) =>
             Results.Ok(git.GetStatus()));
+
+        app.MapGet("/api/development/improvements/status", (
+            IImprovementBacklogService backlog) =>
+            Results.Ok(backlog.GetStatus()));
+
+        app.MapGet("/api/development/improvements", (
+            IImprovementBacklogService backlog) =>
+            Results.Ok(backlog.GetAll()));
+
+        app.MapGet("/api/development/improvements/{itemId:guid}", (
+            Guid itemId,
+            IImprovementBacklogService backlog) =>
+        {
+            var item = backlog.Get(itemId);
+            return item is null ? Results.NotFound() : Results.Ok(item);
+        });
+
+        app.MapPost("/api/development/improvements", (
+            CreateImprovementBacklogRequest request,
+            IImprovementBacklogService backlog) =>
+        {
+            try
+            {
+                return Results.Ok(backlog.Add(request));
+            }
+            catch (ImprovementBacklogValidationException exception)
+            {
+                return Results.BadRequest(new ApiError(exception.Message));
+            }
+        });
+
+        app.MapPost("/api/development/improvements/{itemId:guid}/state", (
+            Guid itemId,
+            UpdateImprovementBacklogStateRequest request,
+            IImprovementBacklogService backlog) =>
+        {
+            try
+            {
+                return Results.Ok(backlog.UpdateState(itemId, request));
+            }
+            catch (ImprovementBacklogValidationException exception)
+            {
+                return Results.BadRequest(new ApiError(exception.Message));
+            }
+            catch (KeyNotFoundException exception)
+            {
+                return Results.NotFound(new ApiError(exception.Message));
+            }
+        });
+
+        app.MapPost("/api/development/improvements/import-ci", (
+            IImprovementBacklogService backlog) =>
+            Results.Ok(backlog.ImportFailedCiRuns()));
 
         app.MapGet("/api/development/runs/status", (
             IDevelopmentRunService runs) =>

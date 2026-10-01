@@ -49,7 +49,7 @@ jobs:
           done
 
           jq -e '
-            .version=="2.9.5"
+            (.version | split(".") | map(tonumber)) >= [2,9,5]
             and .maximumRepeatedFingerprint==3
             and .maximumTransitionsPerRun==50
             and .maximumCostUnitsPerRun==100

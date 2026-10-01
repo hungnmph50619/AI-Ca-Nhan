@@ -101,6 +101,20 @@ public static class XerathBridgeEndpoints
                 : Results.Ok(timeline);
         });
 
+        app.MapGet("/api/integrations/league/session", (
+            HttpContext context,
+            IWorkspaceContextAccessor workspace,
+            ILeagueMatchSnapshotStore snapshots) =>
+        {
+            if (!LocalCaller(context))
+                return Results.NotFound();
+
+            var session = snapshots.GetSession(workspace.CurrentWorkspaceId);
+            return session is null
+                ? Results.NotFound()
+                : Results.Ok(session);
+        });
+
         app.MapPost("/api/integrations/xerath/notice", (HttpContext context, Signal signal) =>
         {
             if (!LocalCaller(context) ||

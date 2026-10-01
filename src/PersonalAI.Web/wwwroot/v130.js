@@ -42,7 +42,7 @@
     count.id = "connectorBadge";
     count.className = "tool-count v130-connector-badge";
     count.textContent = "…";
-    count.setAttribute("aria-label", "Số connector của workspace hiện tại");
+    count.setAttribute("aria-label", "Số kết nối của không gian hiện tại");
 
     button.append(icon, label, count);
 
@@ -83,7 +83,7 @@
     const close = document.createElement("button");
     close.type = "button";
     close.className = "dialog-close";
-    close.setAttribute("aria-label", "Đóng Connectors");
+    close.setAttribute("aria-label", "Đóng kết nối");
     close.textContent = "×";
     close.addEventListener("click", () => dialog.close());
     header.append(heading, close);
@@ -91,8 +91,8 @@
     const intro = document.createElement("div");
     intro.className = "v130-connector-intro";
     intro.innerHTML =
-      "<strong>Authenticated read-only connector</strong>" +
-      "<p>v1.3.0 lưu Bearer token bằng Data Protection và chỉ cho HTTPS GET cùng origin. Token không được hiển thị lại, không đi qua Browser Agent và không được đưa vào Tool Activity/Audit.</p>";
+      "<strong>Kết nối chỉ đọc có xác thực</strong>" +
+      "<p>v1.3.0 lưu mã Bearer bằng Data Protection và chỉ cho HTTPS GET cùng địa chỉ gốc. Mã truy cập không được hiển thị lại, không đi qua tác nhân trình duyệt và không được đưa vào nhật ký hoạt động công cụ/kiểm toán.</p>";
 
     const summary = document.createElement("div");
     summary.id = "connectorSummary";
@@ -109,8 +109,8 @@
     empty.className = "v130-connector-empty";
     empty.hidden = true;
     empty.innerHTML =
-      "<strong>Chưa có connector</strong>" +
-      "<p>Thêm một HTTPS API origin và Bearer token để dùng tool connector.http.get.</p>";
+      "<strong>Chưa có kết nối</strong>" +
+      "<p>Thêm một địa chỉ gốc HTTPS API và mã Bearer để dùng công cụ connector.http.get.</p>";
 
     const formTitle = document.createElement("h3");
     formTitle.className = "v130-section-title";
@@ -120,14 +120,14 @@
     form.id = "connectorForm";
     form.className = "v130-connector-form";
 
-    const nameField = field("Tên", "connectorName", "Ví dụ: Internal API", "text");
-    const urlField = field("Base URL", "connectorBaseUrl", "https://api.example.com/", "url");
-    const tokenField = field("Bearer token", "connectorBearerToken", "Token sẽ được mã hóa local", "password");
+    const nameField = field("Tên", "connectorName", "Ví dụ: API nội bộ", "text");
+    const urlField = field("URL gốc", "connectorBaseUrl", "https://api.example.com/", "url");
+    const tokenField = field("Mã Bearer", "connectorBearerToken", "Mã sẽ được mã hóa trên máy", "password");
 
     const note = document.createElement("p");
     note.className = "security-copy";
     note.textContent =
-      "Base URL phải là public HTTPS origin trên cổng 443. v1.3 chưa hỗ trợ Gmail/Calendar OAuth, POST, upload hoặc webhook send.";
+      "URL gốc phải là địa chỉ HTTPS công khai trên cổng 443. v1.3 chưa hỗ trợ Gmail/Calendar OAuth, POST, tải lên hoặc gửi webhook.";
 
     const submit = document.createElement("button");
     submit.id = "connectorSaveButton";
@@ -228,14 +228,14 @@
         throw new Error(
           status.error
           || list.error
-          || "Không đọc được Connector Foundation.");
+          || "Không đọc được nền tảng kết nối.");
       }
 
       renderConnectors(status, list);
       await refreshConnectorBadge();
     } catch (error) {
       setFeedback(
-        error.message || "Không đọc được Connector Foundation.",
+        error.message || "Không đọc được nền tảng kết nối.",
         true);
     } finally {
       loading = false;
@@ -253,7 +253,7 @@
       : [];
 
     summary.textContent =
-      `${items.length}/${Number(response.maximumConnections) || 20} connector · credential encryption: ${status.secretsEncrypted ? "bật" : "tắt"} · write actions: ${status.writeActionsEnabled ? "bật" : "tắt"}`;
+      `${items.length}/${Number(response.maximumConnections) || 20} kết nối · mã hóa thông tin xác thực: ${status.secretsEncrypted ? "bật" : "tắt"} · thao tác ghi: ${status.writeActionsEnabled ? "bật" : "tắt"}`;
 
     list.replaceChildren();
     items.forEach(item => list.appendChild(createConnectorItem(item)));
@@ -283,7 +283,7 @@
     const meta = document.createElement("p");
     meta.className = "v130-connector-meta";
     meta.textContent =
-      `${item.kind || "http-bearer"} · credential: ${item.hasCredential ? "đã lưu" : "thiếu"}`;
+      `${item.kind || "http-bearer"} · thông tin xác thực: ${item.hasCredential ? "đã lưu" : "thiếu"}`;
 
     const actions = document.createElement("div");
     actions.className = "v130-connector-actions";
@@ -344,10 +344,10 @@
     }
 
     const confirmed = await ask(
-      `Xóa connector "${item.name || "Connector"}"?\n\nCredential đã mã hóa của connector này cũng sẽ bị xóa khỏi máy.`,
+      `Xóa kết nối "${item.name || "Kết nối"}"?\n\nThông tin xác thực đã mã hóa của kết nối này cũng sẽ bị xóa khỏi máy.`,
       {
-        title: "Xác nhận xóa connector",
-        confirmText: "Xóa connector",
+        title: "Xác nhận xóa kết nối",
+        confirmText: "Xóa kết nối",
         danger: true
       });
 

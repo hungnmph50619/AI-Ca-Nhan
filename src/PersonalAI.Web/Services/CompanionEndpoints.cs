@@ -16,6 +16,7 @@ public static class CompanionEndpoints
         this IServiceCollection services)
     {
         services.AddSingleton<ICompanionService, CompanionService>();
+        services.AddScoped<IDeviceHubService, DeviceHubService>();
         services.AddScoped<IChatTurnService, ChatTurnService>();
         return services;
     }
@@ -99,6 +100,114 @@ public static class CompanionEndpoints
         app.MapGet("/api/companion/status", (
             ICompanionService companion) =>
             Results.Ok(companion.GetStatus()));
+
+        app.MapGet(
+            "/api/device-hub/status",
+            (
+                HttpContext httpContext,
+                IDeviceHubService hub) =>
+            {
+                if (!IsLocalAdminRequest(httpContext))
+                {
+                    return Results.Json(
+                        new ApiError(
+                            "Chỉ desktop local mới được xem Device Hub."),
+                        statusCode:
+                            StatusCodes.Status403Forbidden);
+                }
+
+                return Results.Ok(hub.GetStatus());
+            });
+
+        app.MapGet(
+            "/api/device-hub/devices",
+            (
+                HttpContext httpContext,
+                IDeviceHubService hub,
+                IWorkspaceContextAccessor workspaceContext) =>
+            {
+                if (!IsLocalAdminRequest(httpContext))
+                {
+                    return Results.Json(
+                        new ApiError(
+                            "Chỉ desktop local mới được xem thiết bị Device Hub."),
+                        statusCode:
+                            StatusCodes.Status403Forbidden);
+                }
+
+                return Results.Ok(
+                    hub.GetWorkspaceStatus(
+                        workspaceContext.CurrentWorkspaceId));
+            });
+
+        app.MapPost(
+            "/api/device-hub/admin/devices",
+            (
+                RegisterDeviceHubDeviceRequest request,
+                HttpContext httpContext,
+                IDeviceHubService hub,
+                IWorkspaceContextAccessor workspaceContext) =>
+            {
+                if (!IsLocalAdminRequest(httpContext))
+                {
+                    return Results.Json(
+                        new ApiError(
+                            "Chỉ desktop local mới được đăng ký thiết bị Device Hub."),
+                        statusCode:
+                            StatusCodes.Status403Forbidden);
+                }
+
+                try
+                {
+                    return Results.Ok(
+                        hub.RegisterLocalDevice(
+                            workspaceContext.CurrentWorkspaceId,
+                            request));
+                }
+                catch (DeviceHubValidationException exception)
+                {
+                    return Results.BadRequest(
+                        new ApiError(exception.Message));
+                }
+            });
+
+        app.MapPost(
+            "/api/device-hub/admin/devices/{deviceId:guid}/heartbeat",
+            (
+                Guid deviceId,
+                RecordDeviceHubHeartbeatRequest request,
+                HttpContext httpContext,
+                IDeviceHubService hub,
+                IWorkspaceContextAccessor workspaceContext) =>
+            {
+                if (!IsLocalAdminRequest(httpContext))
+                {
+                    return Results.Json(
+                        new ApiError(
+                            "Chỉ desktop local mới được heartbeat thiết bị local."),
+                        statusCode:
+                            StatusCodes.Status403Forbidden);
+                }
+
+                try
+                {
+                    return Results.Ok(
+                        hub.RecordLocalHeartbeat(
+                            workspaceContext.CurrentWorkspaceId,
+                            deviceId,
+                            request));
+                }
+                catch (DeviceHubValidationException exception)
+                {
+                    return Results.BadRequest(
+                        new ApiError(exception.Message));
+                }
+                catch (KeyNotFoundException exception)
+                {
+                    return Results.NotFound(
+                        new ApiError(exception.Message));
+                }
+            });
 
         app.MapPost(
             "/api/companion/admin/pairing/start",
@@ -288,8 +397,30 @@ public static class CompanionEndpoints
                         [
                             CompanionCapabilities.Chat,
                             CompanionCapabilities.TasksRead,
-                            CompanionCapabilities.CoreStatus
+                            CompanionCapabilities.CoreStatus,
+                            CompanionCapabilities.DeviceHubStatus
                         ]));
+            });
+
+        app.MapPost(
+            "/api/companion/client/hub/heartbeat",
+            (
+                HttpContext httpContext,
+                IDeviceHubService hub) =>
+            {
+                try
+                {
+                    var device =
+                        GetAuthenticatedDevice(httpContext);
+                    return Results.Ok(
+                        hub.RecordCompanionHeartbeat(
+                            device));
+                }
+                catch (DeviceHubValidationException exception)
+                {
+                    return Results.BadRequest(
+                        new ApiError(exception.Message));
+                }
             });
 
         app.MapGet(

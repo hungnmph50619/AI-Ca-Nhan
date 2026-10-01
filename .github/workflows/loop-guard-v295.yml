@@ -1,0 +1,153 @@
+name: Loop Guard v2.9.5
+
+on:
+  push:
+    branches:
+      - 'experiment/roadmap-v2-9-5-loop-guard'
+
+jobs:
+  validate-v295:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: '8.0.x'
+
+      - name: Restore
+        run: dotnet restore PersonalAI.sln
+
+      - name: Build
+        run: dotnet build PersonalAI.sln -c Release --no-restore
+
+      - name: Tests
+        run: dotnet test PersonalAI.sln -c Release --no-build
+
+      - name: Loop guard smoke test
+        shell: bash
+        run: |
+          set -euxo pipefail
+          rm -rf /tmp/personalai-v295
+          mkdir -p /tmp/personalai-v295/audit /tmp/personalai-v295/workspace
+
+          export Audit__Root=/tmp/personalai-v295/audit
+          export Workspace__Root=/tmp/personalai-v295/workspace
+
+          dotnet run --project src/PersonalAI.Web/PersonalAI.Web.csproj \
+            -c Release --no-build \
+            --urls http://127.0.0.1:5136 \
+            >/tmp/personalai-v295/app.log 2>&1 &
+          APP_PID=$!
+          trap 'kill "$APP_PID" 2>/dev/null || true; wait "$APP_PID" 2>/dev/null || true' EXIT
+
+          for i in {1..30}; do
+            if curl -fsS http://127.0.0.1:5136/api/system/loop-guard/status >/tmp/loop-status.json; then
+              break
+            fi
+            sleep 1
+          done
+
+          jq -e '
+            .version=="2.9.5"
+            and .maximumRepeatedFingerprint==3
+            and .maximumTransitionsPerRun==50
+            and .maximumCostUnitsPerRun==100
+            and .windowMinutes==60
+            and .maximumTrackedRuns==256
+            and .maximumTrackedFingerprints==2048
+            and .duplicateFingerprintDetectionEnabled==true
+            and .runawayCostDetectionEnabled==true
+            and .branchExplosionGuardEnabled==true
+            and .duplicateTaskGuardEnabled==true
+            and .stopReasonAudited==true
+            and .failClosed==true
+          ' /tmp/loop-status.json >/dev/null
+
+          no_confirm=$(curl -sS -o /tmp/no-confirm.json -w '%{http_code}' \
+            -X POST 'http://127.0.0.1:5136/api/system/loop-guard/check' \
+            -H 'Content-Type: application/json' \
+            -d '{"scope":"retry","runId":"loop-run-295","fingerprint":"same-failure","costUnits":1}')
+          test "$no_confirm" = "403"
+
+          for n in 1 2 3; do
+            curl -fsS -X POST \
+              'http://127.0.0.1:5136/api/system/loop-guard/check?confirmed=true' \
+              -H 'Content-Type: application/json' \
+              -d '{"scope":"retry","runId":"loop-run-295","fingerprint":"same-failure","costUnits":1}' \
+              >"/tmp/allowed-$n.json"
+            jq -e --argjson n "$n" '
+              .allowed==true
+              and .blocked==false
+              and .fingerprintOccurrences==$n
+            ' "/tmp/allowed-$n.json" >/dev/null
+          done
+
+          blocked_code=$(curl -sS -o /tmp/blocked.json -w '%{http_code}' \
+            -X POST 'http://127.0.0.1:5136/api/system/loop-guard/check?confirmed=true' \
+            -H 'Content-Type: application/json' \
+            -d '{"scope":"retry","runId":"loop-run-295","fingerprint":"same-failure","costUnits":1}')
+          test "$blocked_code" = "409"
+          jq -e '
+            .allowed==false
+            and .blocked==true
+            and .reason=="repeated-fingerprint"
+            and .fingerprintOccurrences==4
+            and (.stopReason | length)>0
+          ' /tmp/blocked.json >/dev/null
+
+          logs=$(curl -fsS \
+            'http://127.0.0.1:5136/api/system/logs?correlationId=loop-run-295')
+          echo "$logs" | jq -e '
+            any(.items[];
+              .action=="loop-guard.blocked"
+              and .result=="blocked"
+              and .level=="security"
+              and .source=="loop-guard"
+              and .correlationId=="loop-run-295"
+              and (.reason | contains("repeated-fingerprint")))
+          ' >/dev/null
+
+          explanation=$(curl -fsS \
+            'http://127.0.0.1:5136/api/system/explanations/correlation/loop-run-295')
+          echo "$explanation" | jq -e '
+            .sourceGrounded==true
+            and .aiGenerated==false
+            and .hiddenReasoningExposed==false
+            and any(.evidence[]; .action=="loop-guard.blocked")
+          ' >/dev/null
+
+          curl -fsS -X DELETE \
+            'http://127.0.0.1:5136/api/system/loop-guard/retry/loop-run-295?confirmed=true' >/dev/null
+
+          curl -fsS -X POST \
+            'http://127.0.0.1:5136/api/system/loop-guard/check?confirmed=true' \
+            -H 'Content-Type: application/json' \
+            -d '{"scope":"retry","runId":"loop-run-295","fingerprint":"same-failure","costUnits":1}' \
+            >/tmp/after-reset.json
+          jq -e '.allowed==true and .fingerprintOccurrences==1' /tmp/after-reset.json >/dev/null
+
+          curl -fsS -X POST \
+            'http://127.0.0.1:5136/api/system/loop-guard/check?confirmed=true' \
+            -H 'Content-Type: application/json' \
+            -d '{"scope":"development","runId":"cost-run-295","fingerprint":"attempt-1","costUnits":60}' \
+            >/tmp/cost-1.json
+          jq -e '.allowed==true and .runCostUnits==60' /tmp/cost-1.json >/dev/null
+
+          cost_code=$(curl -sS -o /tmp/cost-block.json -w '%{http_code}' \
+            -X POST 'http://127.0.0.1:5136/api/system/loop-guard/check?confirmed=true' \
+            -H 'Content-Type: application/json' \
+            -d '{"scope":"development","runId":"cost-run-295","fingerprint":"attempt-2","costUnits":60}')
+          test "$cost_code" = "409"
+          jq -e '
+            .blocked==true
+            and .reason=="cost-budget-exceeded"
+            and .runCostUnits==120
+          ' /tmp/cost-block.json >/dev/null
+
+          curl -fsS http://127.0.0.1:5136/api/system/loop-guard/status >/tmp/loop-status-after.json
+          jq -e '
+            .blockedChecks>=2
+            and .trackedRuns>=2
+            and .trackedFingerprints>=3
+          ' /tmp/loop-status-after.json >/dev/null

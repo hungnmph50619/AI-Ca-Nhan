@@ -30,8 +30,8 @@ public sealed class DeviceContextSyncService(
     public const int MaximumTaskCharacters = 1_500;
     public const int MaximumLifeContextEntries = 4;
 
-    private readonly object _gate = new();
-    private readonly List<DeviceContextSyncPackage> _packages = [];
+    private static readonly object PackageGate = new();
+    private static readonly List<DeviceContextSyncPackage> Packages = [];
 
     public DeviceContextSyncStatus GetStatus() =>
         new(
@@ -49,8 +49,8 @@ public sealed class DeviceContextSyncService(
 
     public IReadOnlyList<DeviceContextSyncPackage> GetAll()
     {
-        lock (_gate)
-            return _packages
+        lock (PackageGate)
+            return Packages
                 .Where(x => x.WorkspaceId == workspace.CurrentWorkspaceId)
                 .OrderByDescending(x => x.CreatedAt)
                 .ToArray();
@@ -58,8 +58,8 @@ public sealed class DeviceContextSyncService(
 
     public DeviceContextSyncPackage? Get(Guid syncId)
     {
-        lock (_gate)
-            return _packages.FirstOrDefault(x =>
+        lock (PackageGate)
+            return Packages.FirstOrDefault(x =>
                 x.SyncId == syncId &&
                 x.WorkspaceId == workspace.CurrentWorkspaceId);
     }
@@ -198,8 +198,8 @@ public sealed class DeviceContextSyncService(
             DateTimeOffset.UtcNow,
             items);
 
-        lock (_gate)
-            _packages.Add(package);
+        lock (PackageGate)
+            Packages.Add(package);
 
         audit.Record(
             AuditAgents.System,

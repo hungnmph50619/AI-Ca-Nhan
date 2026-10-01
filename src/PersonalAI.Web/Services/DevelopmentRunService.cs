@@ -17,6 +17,8 @@ public interface IDevelopmentRunService
 
 public sealed class DevelopmentRunService(
     IWorkspaceContextAccessor workspace,
+    IImprovementBacklogService backlog,
+    IRootCauseDiagnosisService diagnoses,
     IConfiguration configuration,
     IAuditRecorder audit) : IDevelopmentRunService
 {
@@ -68,6 +70,26 @@ public sealed class DevelopmentRunService(
             ? null
             : NormalizeText(request.RoadmapVersion, 1, 40, "RoadmapVersion");
 
+        if (request.DiagnosisId is not null && request.ImprovementItemId is null)
+            throw new DevelopmentRunValidationException(
+                "DiagnosisId yêu cầu ImprovementItemId.");
+
+        if (request.ImprovementItemId is not null)
+        {
+            var improvement = backlog.Get(request.ImprovementItemId.Value)
+                ?? throw new KeyNotFoundException("Không tìm thấy improvement backlog item.");
+
+            if (request.DiagnosisId is not null)
+            {
+                var diagnosis = diagnoses.Get(request.DiagnosisId.Value)
+                    ?? throw new KeyNotFoundException("Không tìm thấy root-cause diagnosis.");
+
+                if (diagnosis.ImprovementItemId != improvement.Id)
+                    throw new DevelopmentRunValidationException(
+                        "Diagnosis không thuộc ImprovementItemId đã chọn.");
+            }
+        }
+
         lock (_gate)
         {
             var all = Load();
@@ -92,6 +114,8 @@ public sealed class DevelopmentRunService(
                 "active",
                 null,
                 [],
+                request.ImprovementItemId,
+                request.DiagnosisId,
                 now,
                 now,
                 null);
@@ -133,6 +157,25 @@ public sealed class DevelopmentRunService(
 
             var result = NormalizeResult(request.Result);
             var evidence = NormalizeOptional(request.Evidence, 4000);
+
+            if (current.Stage == DevelopmentRunStages.Analysis &&
+                current.ImprovementItemId is not null)
+            {
+                if (current.DiagnosisId is null)
+                    throw new DevelopmentRunConflictException(
+                        "Improvement-driven DevelopmentRun chưa có DiagnosisId; không được chuyển sang coding.");
+
+                var diagnosis = diagnoses.Get(current.DiagnosisId.Value)
+                    ?? throw new DevelopmentRunConflictException(
+                        "Không tìm thấy diagnosis của DevelopmentRun.");
+
+                if (diagnosis.ImprovementItemId != current.ImprovementItemId.Value ||
+                    !diagnoses.IsDiagnosed(diagnosis.Id))
+                {
+                    throw new DevelopmentRunConflictException(
+                        "Root-cause diagnosis chưa ở trạng thái diagnosed; không được chuyển sang coding.");
+                }
+            }
 
             var next = NextStage(current.Stage);
             var now = DateTimeOffset.UtcNow;

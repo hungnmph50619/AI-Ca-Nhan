@@ -86,7 +86,7 @@ public sealed class AutonomousDevelopmentService(
                 emergency: true);
 
         var run = request.DevelopmentRunId is null
-            ? DetectEligibleRun(request, baseBranch)
+            ? DetectEligibleRun(request)
             : runs.Get(request.DevelopmentRunId.Value);
 
         if (run is null)
@@ -124,7 +124,7 @@ public sealed class AutonomousDevelopmentService(
                         new(
                             DevelopmentRunStages.Analysis,
                             "prepared",
-                            $"autonomous:diagnosis:{run.DiagnosisId:D}"));
+                            $"autonomous:diagnosis:{run.DiagnosisId.Value:D}"));
 
                     AddStep(stageBefore, run.Stage, "verified-diagnosis", "advanced", run.DiagnosisId);
                     transitions++;
@@ -624,8 +624,7 @@ public sealed class AutonomousDevelopmentService(
     }
 
     private DevelopmentRun? DetectEligibleRun(
-        RunAutonomousDevelopmentRequest request,
-        string baseBranch)
+        RunAutonomousDevelopmentRequest request)
     {
         var activeIds = runs.GetAll()
             .Where(x =>

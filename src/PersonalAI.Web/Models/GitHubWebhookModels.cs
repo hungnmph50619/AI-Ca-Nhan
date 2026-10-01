@@ -61,3 +61,6 @@ public sealed record GitHubWebhookReceiveResult(
 
 public sealed class GitHubWebhookValidationException(string message)
     : Exception(message);
+
+public sealed class GitHubWebhookSignatureException(string message)
+    : Exception(message);

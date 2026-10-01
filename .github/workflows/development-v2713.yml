@@ -71,7 +71,7 @@ jobs:
           done
 
           jq -e '
-            .version=="2.7.13"
+            (.version | split(".") | map(tonumber)) >= [2,7,13]
             and .majorAutoUpgradeAllowed==false
             and .worktreeOnly==true
             and .shaGuardEnabled==true

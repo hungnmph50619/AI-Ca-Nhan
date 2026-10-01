@@ -1387,11 +1387,13 @@ public static class CompanionEndpoints
                 IMobileCodeCommandService commands) =>
             {
                 var device = GetAuthenticatedDevice(httpContext);
-                return Results.Ok(
-                    commands.GetAll()
+                return Results.Ok(new
+                {
+                    commands = commands.GetAll()
                         .Where(x => x.CompanionDeviceId == device.Id)
                         .OrderByDescending(x => x.UpdatedAt)
-                        .ToArray());
+                        .ToArray()
+                });
             });
 
         app.MapPost(

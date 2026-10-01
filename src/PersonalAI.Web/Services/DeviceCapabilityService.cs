@@ -27,6 +27,7 @@ public interface IDeviceCapabilityService
 public sealed class DeviceCapabilityService(
     IDeviceHubService hub,
     IDeviceIdentityService identities,
+    IUnifiedPermissionService permissions,
     IConfiguration configuration,
     IAuditRecorder audit) : IDeviceCapabilityService
 {
@@ -202,6 +203,18 @@ public sealed class DeviceCapabilityService(
             Save(normalized, all);
         }
 
+        _ = permissions.Set(
+            new SetUnifiedPermissionRequest(
+                UnifiedPermissionSubjectTypes.Device,
+                deviceId.ToString("D"),
+                $"capability:{normalizedCapability}",
+                "use",
+                updated.PermissionGranted
+                    ? UnifiedPermissionEffects.Allow
+                    : UnifiedPermissionEffects.Deny,
+                ExpiresAt: null,
+                ConfirmChange: true));
+
         audit.Record(
             AuditAgents.User,
             "device-capability.permission",
@@ -252,13 +265,33 @@ public sealed class DeviceCapabilityService(
                     Reason: "permission-not-granted");
             }
 
+            var unifiedDecision = permissions.Evaluate(
+                new EvaluateUnifiedPermissionRequest(
+                    UnifiedPermissionSubjectTypes.Device,
+                    deviceId.ToString("D"),
+                    $"capability:{normalizedCapability}",
+                    "use"));
+
+            if (unifiedDecision.MatchedRuleId is not null)
+            {
+                return new(
+                    deviceId,
+                    normalizedCapability,
+                    Registered: true,
+                    PermissionGranted: registration.PermissionGranted,
+                    Allowed: unifiedDecision.Allowed,
+                    Reason: unifiedDecision.Reason);
+            }
+
             return new(
                 deviceId,
                 normalizedCapability,
                 Registered: true,
-                PermissionGranted: true,
-                Allowed: true,
-                Reason: "allowed");
+                PermissionGranted: registration.PermissionGranted,
+                Allowed: registration.PermissionGranted,
+                Reason: registration.PermissionGranted
+                    ? "legacy-permission-metadata-fallback"
+                    : "permission-not-granted");
         }
     }
 

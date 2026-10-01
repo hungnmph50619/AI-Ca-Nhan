@@ -74,7 +74,7 @@ jobs:
           done
 
           jq -e '
-            .version=="2.7.10"
+            (.version | split(".") | map(tonumber)) >= [2,7,10]
             and .dirtyTreeDefersSync==true
             and .pullFastForwardOnly==true
             and .resetEnabled==false

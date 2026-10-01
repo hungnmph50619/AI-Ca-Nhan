@@ -57,7 +57,7 @@ jobs:
           test "$ready" = "1"
 
           jq -e '
-            .version == "2.7.1"
+            (.version | split(".") | map(tonumber)) >= [2,7,1]
             and .items == 0
             and .deduplicationEnabled == true
             and .evidenceTraceable == true

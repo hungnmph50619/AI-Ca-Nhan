@@ -23,6 +23,7 @@ public static class DevelopmentCapabilities
     public const string ImprovementBacklog = "improvement-backlog";
     public const string RootCauseDiagnosis = "root-cause-diagnosis";
     public const string SelfCodingWorktree = "self-coding-worktree";
+    public const string DevelopmentAutoTest = "development-auto-test";
     public const string DotnetRestore = "dotnet-restore";
     public const string DotnetBuild = "dotnet-build";
     public const string DotnetTest = "dotnet-test";

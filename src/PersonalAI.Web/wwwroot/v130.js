@@ -269,7 +269,7 @@
     top.className = "v130-connector-item-top";
 
     const name = document.createElement("strong");
-    name.textContent = item.name || "Connector";
+    name.textContent = item.name || "Kết nối";
 
     const state = document.createElement("span");
     state.className = "v130-connector-state";

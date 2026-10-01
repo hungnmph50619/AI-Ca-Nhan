@@ -85,6 +85,25 @@ public sealed record LeagueVisionState(
     string WorkspaceId,
     IReadOnlyList<LeagueChampionLastSeen> LastSeen);
 
+public sealed record LeagueMapSighting(
+    string Champion,
+    string Team,
+    double X,
+    double Y,
+    double Confidence,
+    double LastSeenGameTimeSeconds,
+    double LastSeenAgeSeconds,
+    int ObservationCount);
+
+public sealed record LeagueMapSituation(
+    Guid MatchSessionId,
+    string WorkspaceId,
+    double CurrentGameTimeSeconds,
+    int RecentEnemyCount,
+    IReadOnlyList<LeagueMapSighting> Sightings,
+    bool EvidenceOnly,
+    bool HiddenPositionInference);
+
 public sealed record LeagueVisionAcceptResult(
     bool Accepted,
     Guid MatchSessionId,
@@ -125,6 +144,8 @@ public interface ILeagueMatchSnapshotStore
         LeagueVisionObservationBatch batch);
 
     LeagueVisionState? GetVision(string workspaceId);
+
+    LeagueMapSituation? GetMapSituation(string workspaceId);
 }
 
 public sealed class LeagueMatchSnapshotStore : ILeagueMatchSnapshotStore
@@ -302,6 +323,45 @@ public sealed class LeagueMatchSnapshotStore : ILeagueMatchSnapshotStore
                     .OrderBy(item => item.Team)
                     .ThenBy(item => item.Champion)
                     .ToArray());
+        }
+    }
+
+    public LeagueMapSituation? GetMapSituation(string workspaceId)
+    {
+        if (!_states.TryGetValue(workspaceId, out var state))
+            return null;
+
+        lock (state.Sync)
+        {
+            if (state.SessionId == Guid.Empty || state.Snapshots.Count == 0)
+                return null;
+
+            var now = state.LastGameTimeSeconds;
+            var sightings = state.VisionLastSeen.Values
+                .Where(item =>
+                    item.Team == "enemy" &&
+                    now - item.GameTimeSeconds is >= 0 and <= 45)
+                .Select(item => new LeagueMapSighting(
+                    item.Champion,
+                    item.Team,
+                    item.X,
+                    item.Y,
+                    item.Confidence,
+                    item.GameTimeSeconds,
+                    Math.Max(0, now - item.GameTimeSeconds),
+                    item.ObservationCount))
+                .OrderBy(item => item.LastSeenAgeSeconds)
+                .ThenBy(item => item.Champion)
+                .ToArray();
+
+            return new(
+                state.SessionId,
+                workspaceId,
+                now,
+                sightings.Count(item => item.LastSeenAgeSeconds <= 15),
+                sightings,
+                EvidenceOnly: true,
+                HiddenPositionInference: false);
         }
     }
 

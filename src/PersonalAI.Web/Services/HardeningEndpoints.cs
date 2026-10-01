@@ -7,6 +7,8 @@ public static class HardeningEndpoints
     public static IServiceCollection AddHardeningFoundation(
         this IServiceCollection services)
     {
+        services.AddSingleton<IResourceGuardMetrics, ResourceGuardMetrics>();
+        services.AddScoped<ISystemResourceLimitService, SystemResourceLimitService>();
         services.AddSingleton<IHardeningRuntimeState, HardeningRuntimeState>();
         services.AddSingleton<IHardeningBackupService, HardeningBackupService>();
         services.AddSingleton<IHardeningPermissionAuditService, HardeningPermissionAuditService>();
@@ -25,6 +27,10 @@ public static class HardeningEndpoints
     public static WebApplication MapHardeningFoundation(
         this WebApplication app)
     {
+        app.MapGet("/api/system/resources/status", (
+            ISystemResourceLimitService resources) =>
+            Results.Ok(resources.GetStatus()));
+
         app.MapGet("/api/hardening/status", (
             IHardeningStatusService hardening) =>
             Results.Ok(hardening.GetStatus()));

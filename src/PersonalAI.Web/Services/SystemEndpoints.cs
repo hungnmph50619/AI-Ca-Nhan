@@ -79,6 +79,7 @@ public static class SystemEndpoints
         this IServiceCollection services)
     {
         services.AddScoped<ISystemCoreService, SystemCoreService>();
+        services.AddScoped<IUnifiedPermissionService, UnifiedPermissionService>();
         return services;
     }
 
@@ -88,6 +89,64 @@ public static class SystemEndpoints
         app.MapGet("/api/system/capabilities", (
             ISystemCoreService core) =>
             Results.Ok(core.GetCapabilities()));
+
+        app.MapGet("/api/system/permissions/status", (
+            IUnifiedPermissionService permissions) =>
+            Results.Ok(permissions.GetStatus()));
+
+        app.MapGet("/api/system/permissions", (
+            IUnifiedPermissionService permissions) =>
+            Results.Ok(permissions.GetAll()));
+
+        app.MapPost("/api/system/permissions", (
+            SetUnifiedPermissionRequest request,
+            IUnifiedPermissionService permissions) =>
+        {
+            try
+            {
+                return Results.Ok(permissions.Set(request));
+            }
+            catch (UnifiedPermissionValidationException exception)
+            {
+                return Results.BadRequest(new ApiError(exception.Message));
+            }
+        });
+
+        app.MapPost("/api/system/permissions/evaluate", (
+            EvaluateUnifiedPermissionRequest request,
+            IUnifiedPermissionService permissions) =>
+        {
+            try
+            {
+                var decision = permissions.Evaluate(request);
+                return decision.Allowed
+                    ? Results.Ok(decision)
+                    : Results.Json(
+                        decision,
+                        statusCode: StatusCodes.Status403Forbidden);
+            }
+            catch (UnifiedPermissionValidationException exception)
+            {
+                return Results.BadRequest(new ApiError(exception.Message));
+            }
+        });
+
+        app.MapDelete("/api/system/permissions/{ruleId:guid}", (
+            Guid ruleId,
+            RevokeUnifiedPermissionRequest request,
+            IUnifiedPermissionService permissions) =>
+        {
+            try
+            {
+                return permissions.Revoke(ruleId, request)
+                    ? Results.NoContent()
+                    : Results.NotFound();
+            }
+            catch (UnifiedPermissionValidationException exception)
+            {
+                return Results.BadRequest(new ApiError(exception.Message));
+            }
+        });
 
         app.MapGet("/api/system/health", async (
             ISystemCoreService core,

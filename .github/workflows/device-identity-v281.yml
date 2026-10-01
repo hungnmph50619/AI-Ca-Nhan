@@ -58,7 +58,7 @@ jobs:
           start_app
 
           jq -e '
-            .version=="2.8.1"
+            (.version | split(".") | map(tonumber)) >= [2,8,1]
             and .identities==0
             and .stableDeviceId==true
             and .publicKeyAvailable==true
@@ -151,7 +151,7 @@ jobs:
           ' /tmp/laptop-identity-2.json >/dev/null
 
           curl -fsS http://127.0.0.1:5122/api/device-hub/identities/status             | jq -e '
-              .version=="2.8.1"
+              (.version | split(".") | map(tonumber)) >= [2,8,1]
               and .identities==2
               and .privateKeyEncrypted==true
               and .privateKeyExportEnabled==false

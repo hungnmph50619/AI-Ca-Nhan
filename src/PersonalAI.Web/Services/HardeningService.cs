@@ -1430,7 +1430,7 @@ public sealed class HardeningApiGuardMiddleware(
         }
     }
 
-    private static RateDecision CheckRate(
+    private RateDecision CheckRate(
         HttpContext context)
     {
         var now = DateTimeOffset.UtcNow;

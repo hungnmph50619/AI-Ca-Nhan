@@ -14,6 +14,7 @@ public static class SystemHardeningMiddleware
         {
             var requestId = Guid.NewGuid().ToString("N");
             context.TraceIdentifier = requestId;
+            var startedAt = System.Diagnostics.Stopwatch.GetTimestamp();
 
             context.Response.OnStarting(() =>
             {
@@ -66,6 +67,49 @@ public static class SystemHardeningMiddleware
                     new ApiError(
                         "Đã xảy ra lỗi nội bộ. Hãy thử lại.",
                         requestId));
+            }
+
+            var path = context.Request.Path.Value ?? string.Empty;
+            if (path.StartsWith("/api", StringComparison.OrdinalIgnoreCase)
+                && !path.StartsWith("/api/audit", StringComparison.OrdinalIgnoreCase)
+                && !path.StartsWith("/api/system/logs", StringComparison.OrdinalIgnoreCase))
+            {
+                var elapsedMs = System.Diagnostics.Stopwatch.GetElapsedTime(
+                    startedAt).TotalMilliseconds;
+                var statusCode = context.Response.StatusCode;
+                var level = statusCode >= 500
+                    ? SystemLogLevels.Error
+                    : statusCode is 401 or 403
+                        ? SystemLogLevels.Security
+                        : statusCode >= 400
+                            ? SystemLogLevels.Warning
+                            : SystemLogLevels.Info;
+                var result = statusCode >= 500
+                    ? AuditResults.Failed
+                    : statusCode is 401 or 403
+                        ? AuditResults.Denied
+                        : statusCode >= 400
+                            ? AuditResults.Failed
+                            : AuditResults.Succeeded;
+
+                try
+                {
+                    var recorder = context.RequestServices
+                        .GetRequiredService<IAuditRecorder>();
+                    recorder.Record(
+                        AuditAgents.System,
+                        "http.request",
+                        $"{context.Request.Method} {path}",
+                        $"status:{statusCode};duration-ms:{elapsedMs:F1}",
+                        result,
+                        level: level,
+                        source: "http",
+                        correlationId: requestId);
+                }
+                catch
+                {
+                    // Request logging must never change the API response.
+                }
             }
         });
 

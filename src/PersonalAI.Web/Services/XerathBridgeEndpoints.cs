@@ -143,6 +143,33 @@ public static class XerathBridgeEndpoints
                 : Results.Ok(advice);
         });
 
+        app.MapPost("/api/integrations/league/coach/ai", async (
+            HttpContext context,
+            LeagueAiCoachRequest request,
+            IWorkspaceContextAccessor workspace,
+            ILeagueAiCoachService coach,
+            CancellationToken cancellationToken) =>
+        {
+            if (!LocalCaller(context) ||
+                context.Request.Headers["X-Xerath-Bridge"].ToString() != "2")
+                return Results.NotFound();
+
+            try
+            {
+                var advice = await coach.AnalyzeAsync(
+                    workspace.CurrentWorkspaceId,
+                    request,
+                    cancellationToken);
+                return advice is null
+                    ? Results.NoContent()
+                    : Results.Ok(advice);
+            }
+            catch (LeagueAiCoachValidationException exception)
+            {
+                return Results.BadRequest(new { error = exception.Message });
+            }
+        });
+
         app.MapPost("/api/integrations/xerath/notice", (HttpContext context, Signal signal) =>
         {
             if (!LocalCaller(context) ||

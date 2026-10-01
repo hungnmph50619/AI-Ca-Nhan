@@ -23,6 +23,84 @@ public static class XerathBridgeEndpoints
                 description = "Cầu nối cục bộ. Chưa chạy mô hình AI thị giác hoặc AI hội thoại."
             }) : Results.NotFound());
 
+        app.MapGet("/api/integrations/league/status", (
+            HttpContext context,
+            IWorkspaceContextAccessor workspace,
+            ILeagueMatchSnapshotStore snapshots) =>
+        {
+            if (!LocalCaller(context))
+                return Results.NotFound();
+
+            var timeline = snapshots.GetTimeline(workspace.CurrentWorkspaceId);
+            return Results.Ok(new
+            {
+                online = true,
+                bridgeVersion = 2,
+                mode = "riot-live-client-factual-snapshots",
+                languageModelEnabled = false,
+                automaticGameControl = false,
+                currentMatchSessionId = timeline?.MatchSessionId,
+                timelineCount = timeline?.Snapshots.Count ?? 0,
+                lastGameTimeSeconds = timeline?.LastGameTimeSeconds
+            });
+        });
+
+        app.MapPost("/api/integrations/league/snapshot", (
+            HttpContext context,
+            LeagueMatchSnapshot snapshot,
+            IWorkspaceContextAccessor workspace,
+            ILeagueMatchSnapshotStore snapshots) =>
+        {
+            if (!LocalCaller(context) ||
+                context.Request.Headers["X-Xerath-Bridge"].ToString() != "2")
+                return Results.NotFound();
+
+            var error = ValidateSnapshot(snapshot);
+            if (error is not null)
+                return Results.BadRequest(new { error });
+
+            var result = snapshots.Accept(
+                workspace.CurrentWorkspaceId,
+                snapshot);
+
+            if (!result.Accepted)
+            {
+                return Results.Json(
+                    new
+                    {
+                        accepted = false,
+                        bridgeVersion = 2,
+                        result.Reason,
+                        result.MatchSessionId,
+                        result.TimelineCount
+                    },
+                    statusCode: StatusCodes.Status409Conflict);
+            }
+
+            return Results.Ok(new
+            {
+                accepted = true,
+                bridgeVersion = 2,
+                result.NewMatchSession,
+                result.MatchSessionId,
+                result.TimelineCount
+            });
+        });
+
+        app.MapGet("/api/integrations/league/timeline", (
+            HttpContext context,
+            IWorkspaceContextAccessor workspace,
+            ILeagueMatchSnapshotStore snapshots) =>
+        {
+            if (!LocalCaller(context))
+                return Results.NotFound();
+
+            var timeline = snapshots.GetTimeline(workspace.CurrentWorkspaceId);
+            return timeline is null
+                ? Results.NotFound()
+                : Results.Ok(timeline);
+        });
+
         app.MapPost("/api/integrations/xerath/notice", (HttpContext context, Signal signal) =>
         {
             if (!LocalCaller(context) ||
@@ -53,6 +131,54 @@ public static class XerathBridgeEndpoints
 
         return app;
     }
+
+    private static string? ValidateSnapshot(
+        LeagueMatchSnapshot snapshot)
+    {
+        if (snapshot.BridgeVersion != 2)
+            return "BridgeVersion phải là 2.";
+        if (!Guid.TryParseExact(
+                snapshot.ClientInstanceId,
+                "N",
+                out _))
+            return "ClientInstanceId không hợp lệ.";
+        if (snapshot.Sequence < 1)
+            return "Sequence phải lớn hơn 0.";
+        if (snapshot.Source != "riot-live-client-data")
+            return "Source không được hỗ trợ.";
+        if (snapshot.ObservedAtUtc < DateTimeOffset.UtcNow.AddMinutes(-5) ||
+            snapshot.ObservedAtUtc > DateTimeOffset.UtcNow.AddMinutes(1))
+            return "ObservedAtUtc nằm ngoài cửa sổ cho phép.";
+        if (!double.IsFinite(snapshot.GameTimeSeconds) ||
+            snapshot.GameTimeSeconds is < 0 or > 86400)
+            return "GameTimeSeconds không hợp lệ.";
+        if (snapshot.Level is < 1 or > 30)
+            return "Level không hợp lệ.";
+        if (!FiniteRange(snapshot.MaxHealth, 1, 100000) ||
+            !FiniteRange(snapshot.Health, 0, snapshot.MaxHealth * 1.1))
+            return "Health không hợp lệ.";
+        if (!FiniteRange(snapshot.MaxResource, 0, 100000) ||
+            !FiniteRange(
+                snapshot.Resource,
+                0,
+                Math.Max(1, snapshot.MaxResource) * 1.1))
+            return "Resource không hợp lệ.";
+        if (snapshot.ResourceType.Length > 32)
+            return "ResourceType quá dài.";
+        if (!FiniteRange(snapshot.Gold, 0, 100000) ||
+            !FiniteRange(snapshot.AbilityPower, 0, 100000))
+            return "Gold hoặc AbilityPower không hợp lệ.";
+
+        return null;
+    }
+
+    private static bool FiniteRange(
+        double value,
+        double minimum,
+        double maximum) =>
+        double.IsFinite(value) &&
+        value >= minimum &&
+        value <= maximum;
 
     private static bool LocalCaller(HttpContext context)
     {

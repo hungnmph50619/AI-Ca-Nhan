@@ -1427,7 +1427,7 @@ public static class DevelopmentEndpoints
         });
 
         app.MapDelete("/api/development/worktrees", async (
-            RemoveDevelopmentWorktreeRequest request,
+            [Microsoft.AspNetCore.Mvc.FromBody] RemoveDevelopmentWorktreeRequest request,
             IDevelopmentWorktreeService worktrees,
             CancellationToken cancellationToken) =>
         {

@@ -11,7 +11,9 @@ public interface ISelfCodingService
 }
 
 public sealed class SelfCodingService(
-    IDevelopmentAgentService development,
+    IDevelopmentRunService runs,
+    IDevelopmentWorktreeService worktrees,
+    IDevelopmentLeaseService leases,
     IWorkspaceFileService workspaceFiles,
     IWorkspaceContextAccessor workspace,
     IAuditRecorder audit) : ISelfCodingService
@@ -29,28 +31,44 @@ public sealed class SelfCodingService(
 
         if (!request.ConfirmBranchCreation || !request.ConfirmFileChanges)
             throw new SelfCodingValidationException(
-                "Self Coding cần xác nhận riêng cho tạo branch và thay đổi file.");
+                "Self Coding cần xác nhận riêng cho worktree/branch và thay đổi file.");
+
+        if (request.DevelopmentRunId is null)
+            throw new SelfCodingValidationException(
+                "v2.7.3 yêu cầu DevelopmentRunId để kiểm soát coding stage.");
 
         var experiment = request.Experiment;
         if (!string.Equals(
             experiment.WorkspaceId,
             workspace.CurrentWorkspaceId,
             StringComparison.OrdinalIgnoreCase))
+        {
             throw new SelfCodingValidationException(
                 "Experiment không thuộc workspace hiện tại.");
+        }
 
         if (!string.Equals(
             experiment.ProposalId,
             request.Proposal.Id,
             StringComparison.Ordinal))
+        {
             throw new SelfCodingValidationException(
                 "Proposal không khớp experiment.");
+        }
 
         if (!experiment.ExperimentBranch.StartsWith(
-            "experiment/",
-            StringComparison.Ordinal))
+                "experiment/",
+                StringComparison.Ordinal) ||
+            experiment.ExperimentBranch.Equals(
+                "main",
+                StringComparison.OrdinalIgnoreCase) ||
+            experiment.ExperimentBranch.Equals(
+                "master",
+                StringComparison.OrdinalIgnoreCase))
+        {
             throw new SelfCodingValidationException(
                 "Self Coding chỉ được chạy trên branch experiment/*.");
+        }
 
         if (!request.Proposal.RequiresHumanApproval)
             throw new SelfCodingValidationException(
@@ -58,108 +76,184 @@ public sealed class SelfCodingService(
 
         if (request.Edits is null ||
             request.Edits.Count is < 1 or > MaximumEdits)
+        {
             throw new SelfCodingValidationException(
                 $"Mỗi Self Coding run phải có từ 1 đến {MaximumEdits} file edit.");
+        }
 
         ValidateEdits(request.Edits);
 
-        var current = await development.GetCurrentBranchAsync(
-            experiment.RepositoryPath,
-            cancellationToken);
-        if (!current.Succeeded)
-            throw new SelfCodingValidationException(
-                "Không đọc được branch hiện tại.");
+        var run = runs.Get(request.DevelopmentRunId.Value)
+            ?? throw new KeyNotFoundException("Không tìm thấy DevelopmentRun.");
 
-        var branchCreated = false;
-        if (!string.Equals(
-            current.Branch,
-            experiment.ExperimentBranch,
-            StringComparison.Ordinal))
+        if (!run.WorkspaceId.Equals(
+                workspace.CurrentWorkspaceId,
+                StringComparison.OrdinalIgnoreCase))
         {
-            if (!string.Equals(
-                current.Branch,
-                experiment.BaseBranch,
+            throw new SelfCodingValidationException(
+                "DevelopmentRun không thuộc workspace hiện tại.");
+        }
+
+        if (run.Status != "active" ||
+            run.Stage != DevelopmentRunStages.Coding)
+        {
+            throw new SelfCodingValidationException(
+                "Self Coding chỉ được phép khi DevelopmentRun đang ở stage coding.");
+        }
+
+        if (!run.Branch.Equals(
+                experiment.ExperimentBranch,
                 StringComparison.Ordinal))
+        {
+            throw new SelfCodingValidationException(
+                "DevelopmentRun branch không khớp experiment branch.");
+        }
+
+        if (!SameRepositoryPath(
+                run.RepositoryPath,
+                experiment.RepositoryPath))
+        {
+            throw new SelfCodingValidationException(
+                "DevelopmentRun repository không khớp experiment repository.");
+        }
+
+        var owner = $"self-coding:{run.Id:D}";
+        var branchLease = leases.Acquire(
+            new AcquireDevelopmentLeaseRequest(
+                owner,
+                DevelopmentLeaseResourceTypes.Branch,
+                experiment.RepositoryPath,
+                experiment.ExperimentBranch,
+                null,
+                DevelopmentLeaseService.MaximumLeaseSeconds));
+
+        try
+        {
+            var allWorktrees = await worktrees.GetAllAsync(
+                experiment.RepositoryPath,
+                cancellationToken);
+
+            var mainOnExperiment = allWorktrees.FirstOrDefault(x =>
+                x.IsMainWorktree &&
+                x.Branch.Equals(
+                    experiment.ExperimentBranch,
+                    StringComparison.Ordinal));
+
+            if (mainOnExperiment is not null)
             {
                 throw new SelfCodingValidationException(
-                    $"Repository phải đang ở base branch '{experiment.BaseBranch}' hoặc đúng experiment branch.");
+                    "Experiment branch đang được checkout ở main worktree; từ chối sửa trực tiếp working tree chính.");
             }
 
-            var created = await development.CreateExperimentBranchAsync(
-                experiment.RepositoryPath,
-                experiment.BaseBranch,
-                experiment.ExperimentBranch,
-                confirmed: true,
-                cancellationToken);
-            if (!created.Succeeded)
+            var agentWorktree = allWorktrees.FirstOrDefault(x =>
+                !x.IsMainWorktree &&
+                x.Branch.Equals(
+                    experiment.ExperimentBranch,
+                    StringComparison.Ordinal));
+
+            var worktreeCreated = false;
+            if (agentWorktree is null)
+            {
+                var created = await worktrees.CreateAsync(
+                    new CreateDevelopmentWorktreeRequest(
+                        experiment.RepositoryPath,
+                        experiment.ExperimentBranch,
+                        experiment.BaseBranch,
+                        $"selfcoding-{run.Id:N}",
+                        ConfirmCreateWorktree: true),
+                    cancellationToken);
+
+                worktreeCreated = true;
+                agentWorktree = new DevelopmentWorktreeInfo(
+                    created.RepositoryPath,
+                    created.WorktreePath,
+                    created.Branch,
+                    Head: string.Empty,
+                    IsMainWorktree: false,
+                    IsDirty: false);
+            }
+
+            if (string.IsNullOrWhiteSpace(agentWorktree.WorktreePath) ||
+                agentWorktree.IsMainWorktree)
+            {
                 throw new SelfCodingValidationException(
-                    "Không tạo được experiment branch.");
-            branchCreated = true;
-        }
+                    "Không xác minh được isolated agent worktree.");
+            }
 
-        var verifyBranch = await development.GetCurrentBranchAsync(
-            experiment.RepositoryPath,
-            cancellationToken);
-        if (!verifyBranch.Succeeded ||
-            !string.Equals(
-                verifyBranch.Branch,
-                experiment.ExperimentBranch,
-                StringComparison.Ordinal))
-        {
-            throw new SelfCodingValidationException(
-                "Không xác minh được experiment branch trước khi sửa file.");
-        }
+            var files = new List<SelfCodingFileResult>();
 
-        var files = new List<SelfCodingFileResult>();
-        foreach (var edit in request.Edits)
-        {
-            cancellationToken.ThrowIfCancellationRequested();
+            foreach (var edit in request.Edits)
+            {
+                cancellationToken.ThrowIfCancellationRequested();
 
-            var result = await workspaceFiles.WriteTextAsync(
-                edit.Path,
-                edit.Content,
-                edit.Mode,
-                edit.ExpectedSha256,
-                cancellationToken);
+                var targetPath = PrefixWorktreePath(
+                    agentWorktree.WorktreePath,
+                    edit.Path);
 
-            files.Add(new SelfCodingFileResult(
-                result.Path,
-                result.Mode,
-                result.Created,
-                result.Sha256));
+                var result = await workspaceFiles.WriteTextAsync(
+                    targetPath,
+                    edit.Content,
+                    edit.Mode,
+                    edit.ExpectedSha256,
+                    cancellationToken);
+
+                files.Add(new SelfCodingFileResult(
+                    edit.Path.Replace('\\', '/'),
+                    result.Mode,
+                    result.Created,
+                    result.Sha256));
+
+                audit.Record(
+                    AuditAgents.System,
+                    "self-improvement.self-coding.write",
+                    $"file:{edit.Path.Replace('\\', '/')}",
+                    $"development-run:{run.Id:D};branch:{run.Branch};worktree:{agentWorktree.WorktreePath};sha256:{result.Sha256}",
+                    AuditResults.Succeeded);
+            }
 
             audit.Record(
                 AuditAgents.System,
-                "self-improvement.self-coding.write",
-                $"file:{result.Path}",
-                $"experiment:{experiment.ExperimentId}",
+                "self-improvement.self-coding.complete",
+                $"development-run:{run.Id:D}",
+                $"experiment:{experiment.ExperimentId};worktree:{agentWorktree.WorktreePath};files:{files.Count};main-modified:false",
                 AuditResults.Succeeded);
+
+            return new SelfCodingResult(
+                PersonalAiRelease.Version,
+                workspace.CurrentWorkspaceId,
+                experiment.ExperimentId,
+                experiment.ExperimentBranch,
+                BranchCreated: worktreeCreated,
+                files.Count,
+                files,
+                CommitCreated: false,
+                Pushed: false,
+                Merged: false,
+                CompletedAt: DateTimeOffset.UtcNow,
+                DevelopmentRunId: run.Id,
+                WorktreePath: agentWorktree.WorktreePath,
+                MainWorktreeModified: false,
+                AuditPerEdit: true);
         }
-
-        audit.Record(
-            AuditAgents.System,
-            "self-improvement.self-coding.complete",
-            $"experiment:{experiment.ExperimentId}",
-            "confirmed-experiment-file-changes",
-            AuditResults.Succeeded);
-
-        return new SelfCodingResult(
-            PersonalAiRelease.Version,
-            workspace.CurrentWorkspaceId,
-            experiment.ExperimentId,
-            experiment.ExperimentBranch,
-            branchCreated,
-            files.Count,
-            files,
-            CommitCreated: false,
-            Pushed: false,
-            Merged: false,
-            CompletedAt: DateTimeOffset.UtcNow);
+        finally
+        {
+            try
+            {
+                leases.Release(new ReleaseDevelopmentLeaseRequest(
+                    branchLease.Id,
+                    owner));
+            }
+            catch
+            {
+                // Lease has expiry. Never alter source state because release failed.
+            }
+        }
     }
 
     private static void ValidateEdits(IReadOnlyList<SelfCodingFileEdit> edits)
     {
         var paths = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+
         foreach (var edit in edits)
         {
             if (edit is null)
@@ -169,28 +263,73 @@ public sealed class SelfCodingService(
             var path = (edit.Path ?? string.Empty).Trim().Replace('\\', '/');
             if (path.Length is < 1 or > 500 ||
                 Path.IsPathRooted(path) ||
+                path.StartsWith("../", StringComparison.Ordinal) ||
+                path.Contains("/../", StringComparison.Ordinal) ||
+                path.Equals("..", StringComparison.Ordinal) ||
                 path.Split('/', StringSplitOptions.RemoveEmptyEntries)
-                    .Any(segment => segment == "..") ||
-                path.StartsWith(".git/", StringComparison.OrdinalIgnoreCase) ||
+                    .Any(segment =>
+                        segment.Equals(".git", StringComparison.OrdinalIgnoreCase) ||
+                        segment.Equals(
+                            DevelopmentWorktreeService.AgentWorktreeDirectory,
+                            StringComparison.OrdinalIgnoreCase)) ||
                 !paths.Add(path))
             {
                 throw new SelfCodingValidationException(
-                    "File edit có path không hợp lệ, trùng hoặc chạm .git.");
+                    "File edit có path không hợp lệ, trùng hoặc chạm vùng Git/worktree nội bộ.");
             }
 
             if ((edit.Content ?? string.Empty).Length > MaximumContentCharacters)
+            {
                 throw new SelfCodingValidationException(
                     $"Nội dung mỗi edit tối đa {MaximumContentCharacters:N0} ký tự.");
+            }
 
             var mode = (edit.Mode ?? string.Empty).Trim().ToLowerInvariant();
             if (mode is not ("create" or "overwrite"))
+            {
                 throw new SelfCodingValidationException(
                     "Self Coding chỉ cho phép create hoặc overwrite; không append.");
+            }
 
             if (mode == "overwrite" &&
                 string.IsNullOrWhiteSpace(edit.ExpectedSha256))
+            {
                 throw new SelfCodingValidationException(
                     "Overwrite bắt buộc có expectedSha256 để tránh ghi đè phiên bản mới.");
+            }
         }
+    }
+
+    private static string PrefixWorktreePath(
+        string worktreePath,
+        string relativePath)
+    {
+        var prefix = worktreePath.Trim().Replace('\\', '/').Trim('/');
+        var path = relativePath.Trim().Replace('\\', '/').Trim('/');
+
+        if (prefix.Length == 0 || path.Length == 0)
+            throw new SelfCodingValidationException(
+                "Worktree/path không hợp lệ.");
+
+        return $"{prefix}/{path}";
+    }
+
+    private static bool SameRepositoryPath(string left, string right)
+    {
+        static string Normalize(string value)
+        {
+            var normalized = (value ?? string.Empty)
+                .Trim()
+                .Replace('\\', '/')
+                .Trim('/');
+
+            return normalized is "." or ""
+                ? string.Empty
+                : normalized;
+        }
+
+        return Normalize(left).Equals(
+            Normalize(right),
+            StringComparison.OrdinalIgnoreCase);
     }
 }

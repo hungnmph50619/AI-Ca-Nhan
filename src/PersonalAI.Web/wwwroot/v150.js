@@ -71,17 +71,17 @@
     const heading = document.createElement("div");
     const eyebrow = document.createElement("p");
     eyebrow.className = "eyebrow";
-    eyebrow.textContent = "ANDROID COMPANION · PAIRED DEVICE";
+    eyebrow.textContent = "ANDROID ĐỒNG HÀNH · THIẾT BỊ ĐÃ GHÉP NỐI";
 
     const title = document.createElement("h2");
     title.id = "androidCompanionTitle";
-    title.textContent = "Android Companion v1.5";
+    title.textContent = "Ứng dụng Android đồng hành";
     heading.append(eyebrow, title);
 
     const close = document.createElement("button");
     close.type = "button";
     close.className = "dialog-close";
-    close.setAttribute("aria-label", "Đóng Android Companion");
+    close.setAttribute("aria-label", "Đóng Android đồng hành");
     close.textContent = "×";
     close.addEventListener("click", () => dialog.close());
     header.append(heading, close);
@@ -90,7 +90,7 @@
     intro.className = "v150-companion-intro";
     intro.innerHTML =
       "<strong>Pair once, token stays on-device</strong>" +
-      "<p>Desktop chỉ tạo mã ghép nối tạm thời. Android nhận device token một lần; backend chỉ lưu SHA-256 hash. Chat từ Android bị khóa tool proposal/execution và task chỉ đọc.</p>";
+      "<p>Máy tính chỉ tạo mã ghép nối tạm thời. Android nhận mã thiết bị một lần; máy chủ chỉ lưu giá trị băm SHA-256. Trò chuyện từ Android không được tự đề xuất/chạy công cụ và chỉ đọc công việc.</p>";
 
     const summary = document.createElement("div");
     summary.id = "androidCompanionSummary";
@@ -138,7 +138,7 @@
     const empty = document.createElement("div");
     empty.id = "androidCompanionEmpty";
     empty.className = "v150-device-empty";
-    empty.textContent = "Chưa có thiết bị Android trong workspace hiện tại.";
+    empty.textContent = "Chưa có thiết bị Android trong không gian hiện tại.";
     empty.hidden = true;
 
     const security = document.createElement("div");
@@ -263,7 +263,7 @@
     main.className = "v150-device-main";
 
     const name = document.createElement("strong");
-    name.textContent = device.name || "Android device";
+    name.textContent = device.name || "Thiết bị Android";
 
     const meta = document.createElement("span");
     meta.textContent =

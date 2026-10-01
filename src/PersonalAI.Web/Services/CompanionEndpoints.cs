@@ -854,7 +854,8 @@ public static class CompanionEndpoints
                             CompanionCapabilities.DeviceHubStatus,
                             CompanionCapabilities.DeviceIdentity,
                             CompanionCapabilities.SecurePairing,
-                            CompanionCapabilities.DeviceCapabilities
+                            CompanionCapabilities.DeviceCapabilities,
+                            CompanionCapabilities.DistributedAgents
                         ]));
             });
 
@@ -970,6 +971,84 @@ public static class CompanionEndpoints
                                 StatusCodes.Status403Forbidden);
                 }
                 catch (DeviceCapabilityValidationException exception)
+                {
+                    return Results.BadRequest(
+                        new ApiError(exception.Message));
+                }
+                catch (KeyNotFoundException exception)
+                {
+                    return Results.NotFound(
+                        new ApiError(exception.Message));
+                }
+            });
+
+        app.MapGet(
+            "/api/companion/client/distributed/next",
+            (
+                HttpContext httpContext,
+                IDistributedAgentService distributed) =>
+            {
+                try
+                {
+                    var device =
+                        GetAuthenticatedDevice(httpContext);
+                    var envelope =
+                        distributed.ClaimNext(device);
+
+                    return envelope is null
+                        ? Results.NoContent()
+                        : Results.Ok(envelope);
+                }
+                catch (DistributedAgentValidationException exception)
+                {
+                    return Results.Json(
+                        new ApiError(exception.Message),
+                        statusCode:
+                            StatusCodes.Status403Forbidden);
+                }
+                catch (DeviceCapabilityValidationException exception)
+                {
+                    return Results.BadRequest(
+                        new ApiError(exception.Message));
+                }
+                catch (DeviceIdentityValidationException exception)
+                {
+                    return Results.BadRequest(
+                        new ApiError(exception.Message));
+                }
+            });
+
+        app.MapPost(
+            "/api/companion/client/distributed/{executionId:guid}/complete",
+            (
+                Guid executionId,
+                CompleteDistributedAgentRequest request,
+                HttpContext httpContext,
+                IDistributedAgentService distributed) =>
+            {
+                try
+                {
+                    var device =
+                        GetAuthenticatedDevice(httpContext);
+                    return Results.Ok(
+                        distributed.Complete(
+                            device,
+                            executionId,
+                            request));
+                }
+                catch (DistributedAgentValidationException exception)
+                {
+                    return Results.Json(
+                        new ApiError(exception.Message),
+                        statusCode:
+                            StatusCodes.Status403Forbidden);
+                }
+                catch (DeviceCapabilityValidationException exception)
+                {
+                    return Results.BadRequest(
+                        new ApiError(exception.Message));
+                }
+                catch (DeviceIdentityValidationException exception)
                 {
                     return Results.BadRequest(
                         new ApiError(exception.Message));

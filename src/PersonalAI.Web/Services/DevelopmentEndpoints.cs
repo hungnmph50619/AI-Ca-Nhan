@@ -12,6 +12,8 @@ public static class DevelopmentEndpoints
         services.AddSingleton<IDevelopmentWorktreeService, DevelopmentWorktreeService>();
         services.AddSingleton<IDevelopmentLeaseService, DevelopmentLeaseService>();
         services.AddSingleton<IGitCredentialService, GitCredentialService>();
+        services.AddSingleton<IDevelopmentEventBus, DevelopmentEventBus>();
+        services.AddSingleton<IGitHubWebhookService, GitHubWebhookService>();
         services.AddSingleton<IPersonalAiTool, DevelopmentWorkspaceInspectTool>();
         services.AddSingleton<IPersonalAiTool, DevelopmentTextSearchTool>();
         services.AddSingleton<IPersonalAiTool, DevelopmentGitStatusTool>();
@@ -49,6 +51,89 @@ public static class DevelopmentEndpoints
         app.MapGet("/api/development/git/capabilities", (
             ILocalGitRepositoryService git) =>
             Results.Ok(git.GetStatus()));
+
+        app.MapGet("/api/development/github-webhook/status", (
+            IGitHubWebhookService webhook) =>
+            Results.Ok(webhook.GetStatus()));
+
+        app.MapPost("/api/development/github-webhook/configure", (
+            ConfigureGitHubWebhookRequest request,
+            IGitHubWebhookService webhook) =>
+        {
+            try
+            {
+                webhook.Configure(request);
+                return Results.Ok(webhook.GetStatus());
+            }
+            catch (GitHubWebhookValidationException exception)
+            {
+                return Results.BadRequest(new ApiError(exception.Message));
+            }
+        });
+
+        app.MapGet("/api/development/events", (
+            int? maximum,
+            IDevelopmentEventBus eventBus) =>
+            Results.Ok(eventBus.GetRecent(maximum ?? 100)));
+
+        app.MapPost("/api/development/github-webhook", async (
+            HttpRequest request,
+            IGitHubWebhookService webhook,
+            CancellationToken cancellationToken) =>
+        {
+            try
+            {
+                if (request.ContentLength is > GitHubWebhookService.MaximumPayloadBytes)
+                {
+                    return Results.Json(
+                        new ApiError("GitHub webhook payload vượt giới hạn."),
+                        statusCode: StatusCodes.Status413PayloadTooLarge);
+                }
+
+                await using var memory = new MemoryStream();
+                var buffer = new byte[81920];
+                var total = 0;
+                while (true)
+                {
+                    var read = await request.Body.ReadAsync(
+                        buffer.AsMemory(0, buffer.Length),
+                        cancellationToken);
+                    if (read == 0) break;
+
+                    total += read;
+                    if (total > GitHubWebhookService.MaximumPayloadBytes)
+                    {
+                        return Results.Json(
+                            new ApiError("GitHub webhook payload vượt giới hạn."),
+                            statusCode: StatusCodes.Status413PayloadTooLarge);
+                    }
+
+                    await memory.WriteAsync(
+                        buffer.AsMemory(0, read),
+                        cancellationToken);
+                }
+
+                var eventType = request.Headers["X-GitHub-Event"].ToString();
+                var deliveryId = request.Headers["X-GitHub-Delivery"].ToString();
+                var signature = request.Headers["X-Hub-Signature-256"].ToString();
+
+                return Results.Ok(webhook.Receive(
+                    eventType,
+                    deliveryId,
+                    signature,
+                    memory.ToArray()));
+            }
+            catch (GitHubWebhookSignatureException exception)
+            {
+                return Results.Json(
+                    new ApiError(exception.Message),
+                    statusCode: StatusCodes.Status401Unauthorized);
+            }
+            catch (GitHubWebhookValidationException exception)
+            {
+                return Results.BadRequest(new ApiError(exception.Message));
+            }
+        });
 
         app.MapGet("/api/development/git-credentials/status", (
             IGitCredentialService credentials) =>

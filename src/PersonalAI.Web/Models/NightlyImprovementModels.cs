@@ -7,6 +7,7 @@ public static class NightlyImprovementStopReasons
     public const string RuntimeBudgetReached = "runtime-budget-reached";
     public const string ActiveNightlyRunExists = "active-nightly-run-exists";
     public const string Disabled = "disabled";
+    public const string RunCreationFailed = "run-creation-failed";
 }
 
 public sealed record RunNightlyImprovementRequest(

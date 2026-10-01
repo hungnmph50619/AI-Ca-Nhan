@@ -1,0 +1,203 @@
+name: Development v2.7.14
+
+on:
+  push:
+    branches:
+      - 'experiment/roadmap-v2-7-14-current'
+
+jobs:
+  validate-v2714:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: '8.0.x'
+
+      - name: Restore
+        run: dotnet restore PersonalAI.sln
+
+      - name: Build
+        run: dotnet build PersonalAI.sln -c Release --no-restore
+
+      - name: Tests
+        run: dotnet test PersonalAI.sln -c Release --no-build
+
+      - name: Budgeted nightly backlog smoke test
+        shell: bash
+        run: |
+          set -euo pipefail
+          rm -rf /tmp/personalai-v2714
+          mkdir -p             /tmp/personalai-v2714/workspace/repo             /tmp/personalai-v2714/runs             /tmp/personalai-v2714/improvement             /tmp/personalai-v2714/nightly
+
+          export Workspace__Root=/tmp/personalai-v2714/workspace
+          export Development__RunRoot=/tmp/personalai-v2714/runs
+          export Development__ImprovementRoot=/tmp/personalai-v2714/improvement
+          export Development__Nightly__ReportRoot=/tmp/personalai-v2714/nightly
+          export Development__Nightly__Enabled=false
+
+          dotnet run --project src/PersonalAI.Web/PersonalAI.Web.csproj             -c Release --no-build             --urls http://127.0.0.1:5119             >/tmp/personalai-v2714/app.log 2>&1 &
+          APP_PID=$!
+          trap 'kill "$APP_PID" 2>/dev/null || true' EXIT
+
+          for i in {1..30}; do
+            if curl -fsS http://127.0.0.1:5119/api/development/nightly/status >/tmp/nightly-status.json; then
+              break
+            fi
+            sleep 1
+          done
+
+          jq -e '
+            .version=="2.7.14"
+            and .schedulerEnabled==false
+            and .maximumItemsPerNight==1
+            and .maximumRuntimeMinutes==60
+            and .lowRiskOnly==true
+            and .oneActiveNightlyRunAtATime==true
+            and .reportsPersisted==true
+            and .downstreamPullRequestUsesPolicy==true
+            and .downstreamAutoMergeUsesMergePolicy==true
+          ' /tmp/nightly-status.json >/dev/null
+
+          create_item() {
+            local source_id="$1"
+            local title="$2"
+            local priority="$3"
+            curl -fsS -X POST http://127.0.0.1:5119/api/development/improvements               -H 'Content-Type: application/json'               -d '{
+                "sourceType":"feedback",
+                "sourceId":"'"$source_id"'",
+                "title":"'"$title"'",
+                "description":"Nightly improvement smoke item",
+                "priority":"'"$priority"'",
+                "evidenceReference":"smoke:'"$source_id"'",
+                "evidenceSummary":"evidence for nightly smoke"
+              }'
+          }
+
+          create_item low-1 "Low risk item one" low >/tmp/low1.json
+          create_item low-2 "Low risk item two" low >/tmp/low2.json
+          create_item high-1 "High priority item" high >/tmp/high.json
+
+          low1=$(jq -r '.id' /tmp/low1.json)
+          low2=$(jq -r '.id' /tmp/low2.json)
+          high=$(jq -r '.id' /tmp/high.json)
+
+          no_confirm=$(curl -sS -o /tmp/no-confirm.json -w '%{http_code}'             -X POST http://127.0.0.1:5119/api/development/nightly/run             -H 'Content-Type: application/json'             -d '{
+              "repositoryPath":"repo",
+              "baseBranch":"main",
+              "maximumItems":1,
+              "maximumRuntimeMinutes":60,
+              "branchPrefix":"experiment/nightly",
+              "confirmRun":false
+            }')
+          test "$no_confirm" = "400"
+
+          too_many=$(curl -sS -o /tmp/too-many.json -w '%{http_code}'             -X POST http://127.0.0.1:5119/api/development/nightly/run             -H 'Content-Type: application/json'             -d '{
+              "repositoryPath":"repo",
+              "baseBranch":"main",
+              "maximumItems":4,
+              "maximumRuntimeMinutes":60,
+              "branchPrefix":"experiment/nightly",
+              "confirmRun":true
+            }')
+          test "$too_many" = "400"
+
+          curl -fsS -X POST http://127.0.0.1:5119/api/development/nightly/run             -H 'Content-Type: application/json'             -d '{
+              "repositoryPath":"repo",
+              "baseBranch":"main",
+              "maximumItems":1,
+              "maximumRuntimeMinutes":60,
+              "branchPrefix":"experiment/nightly",
+              "confirmRun":true
+            }' >/tmp/night1.json
+
+          jq -e '
+            .eligibleItems==2
+            and .selectedItems==1
+            and .developmentRunsCreated==1
+            and .maximumItems==1
+            and .stopReason=="completed-budget"
+            and .items[0].priority=="low"
+            and .items[0].status=="development-run-created"
+          ' /tmp/night1.json >/dev/null
+
+          run1=$(jq -r '.items[0].developmentRunId' /tmp/night1.json)
+          selected1=$(jq -r '.items[0].backlogItemId' /tmp/night1.json)
+
+          test "$selected1" = "$low1" -o "$selected1" = "$low2"
+
+          curl -fsS http://127.0.0.1:5119/api/development/runs/$run1 >/tmp/run1.json
+          jq -e '
+            .stage=="analysis"
+            and .status=="active"
+            and .roadmapVersion=="nightly-v2.7.14"
+            and .improvementItemId!=null
+            and (.branch | startswith("experiment/nightly/"))
+          ' /tmp/run1.json >/dev/null
+
+          curl -fsS http://127.0.0.1:5119/api/development/improvements/$selected1             | jq -e '.state=="in-progress" and .priority=="low"' >/dev/null
+
+          curl -fsS http://127.0.0.1:5119/api/development/improvements/$high             | jq -e '.state=="open" and .priority=="high"' >/dev/null
+
+          curl -fsS -X POST http://127.0.0.1:5119/api/development/nightly/run             -H 'Content-Type: application/json'             -d '{
+              "repositoryPath":"repo",
+              "baseBranch":"main",
+              "maximumItems":1,
+              "maximumRuntimeMinutes":60,
+              "branchPrefix":"experiment/nightly",
+              "confirmRun":true
+            }' >/tmp/night-active-block.json
+
+          jq -e '
+            .developmentRunsCreated==0
+            and .stopReason=="active-nightly-run-exists"
+          ' /tmp/night-active-block.json >/dev/null
+
+          curl -fsS -X POST http://127.0.0.1:5119/api/development/runs/$run1/cancel             -H 'Content-Type: application/json'             -d '{"reason":"nightly smoke move to next budget item"}' >/dev/null
+
+          curl -fsS -X POST http://127.0.0.1:5119/api/development/nightly/run             -H 'Content-Type: application/json'             -d '{
+              "repositoryPath":"repo",
+              "baseBranch":"main",
+              "maximumItems":1,
+              "maximumRuntimeMinutes":60,
+              "branchPrefix":"experiment/nightly",
+              "confirmRun":true
+            }' >/tmp/night2.json
+
+          jq -e '
+            .eligibleItems==1
+            and .selectedItems==1
+            and .developmentRunsCreated==1
+            and .items[0].priority=="low"
+          ' /tmp/night2.json >/dev/null
+
+          run2=$(jq -r '.items[0].developmentRunId' /tmp/night2.json)
+          selected2=$(jq -r '.items[0].backlogItemId' /tmp/night2.json)
+          test "$selected2" != "$selected1"
+
+          curl -fsS -X POST http://127.0.0.1:5119/api/development/runs/$run2/cancel             -H 'Content-Type: application/json'             -d '{"reason":"nightly smoke finish second item"}' >/dev/null
+
+          curl -fsS -X POST http://127.0.0.1:5119/api/development/nightly/run             -H 'Content-Type: application/json'             -d '{
+              "repositoryPath":"repo",
+              "baseBranch":"main",
+              "maximumItems":1,
+              "maximumRuntimeMinutes":60,
+              "branchPrefix":"experiment/nightly",
+              "confirmRun":true
+            }' >/tmp/night3.json
+
+          jq -e '
+            .eligibleItems==0
+            and .developmentRunsCreated==0
+            and .stopReason=="no-eligible-backlog"
+          ' /tmp/night3.json >/dev/null
+
+          curl -fsS http://127.0.0.1:5119/api/development/improvements/$high             | jq -e '.state=="open" and .priority=="high"' >/dev/null
+
+          curl -fsS http://127.0.0.1:5119/api/development/nightly/reports >/tmp/reports.json
+          jq -e 'length==4' /tmp/reports.json >/dev/null
+
+          grep -Fq 'AddHostedService<NightlyImprovementBackgroundService>()'             src/PersonalAI.Web/Services/DevelopmentEndpoints.cs
+          grep -Fq 'private bool IsDue'             src/PersonalAI.Web/Services/NightlyImprovementService.cs
+
+          curl -fsS http://127.0.0.1:5119/api/development/status             | jq -e '(.availableCapabilities | index("nightly-improvement")) != null' >/dev/null

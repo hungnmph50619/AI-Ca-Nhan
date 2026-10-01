@@ -1,0 +1,167 @@
+name: Development v2.7.2
+
+on:
+  push:
+    branches:
+      - 'experiment/roadmap-v2-7-2-current'
+  pull_request:
+    paths:
+      - 'src/PersonalAI.Web/Models/RootCauseDiagnosisModels.cs'
+      - 'src/PersonalAI.Web/Services/RootCauseDiagnosisService.cs'
+      - 'src/PersonalAI.Web/Models/DevelopmentRunModels.cs'
+      - 'src/PersonalAI.Web/Services/DevelopmentRunService.cs'
+      - 'src/PersonalAI.Web/Services/DevelopmentEndpoints.cs'
+      - 'src/PersonalAI.Web/Models/DevelopmentModels.cs'
+      - 'src/PersonalAI.Web/Services/DevelopmentAgentService.cs'
+      - 'src/PersonalAI.Web/Models/SystemModels.cs'
+
+jobs:
+  validate-v272:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: '8.0.x'
+
+      - name: Restore
+        run: dotnet restore PersonalAI.sln
+
+      - name: Build
+        run: dotnet build PersonalAI.sln -c Release --no-restore
+
+      - name: Tests
+        run: dotnet test PersonalAI.sln -c Release --no-build
+
+      - name: Diagnosis-before-coding smoke test
+        shell: bash
+        run: |
+          set -euo pipefail
+          rm -rf /tmp/personalai-v272
+          mkdir -p /tmp/personalai-v272/workspace /tmp/personalai-v272/improvement /tmp/personalai-v272/diagnosis /tmp/personalai-v272/runs
+
+          export Workspace__Root=/tmp/personalai-v272/workspace
+          export Development__ImprovementRoot=/tmp/personalai-v272/improvement
+          export Development__DiagnosisRoot=/tmp/personalai-v272/diagnosis
+          export Development__RunRoot=/tmp/personalai-v272/runs
+
+          dotnet run --project src/PersonalAI.Web/PersonalAI.Web.csproj -c Release --no-build --urls http://127.0.0.1:5107 >/tmp/personalai-v272.log 2>&1 &
+          APP_PID=$!
+          trap 'kill "$APP_PID" 2>/dev/null || true' EXIT
+
+          for i in {1..30}; do
+            if curl -fsS http://127.0.0.1:5107/api/development/diagnoses/status >/tmp/status.json; then break; fi
+            sleep 1
+          done
+
+          jq -e '
+            .version == "2.7.2"
+            and .sourceEditAllowedBeforeDiagnosis == false
+            and .evidenceRequired == true
+            and .reproductionRequired == true
+            and .hypothesisVerificationRequired == true
+            and .persisted == true
+          ' /tmp/status.json >/dev/null
+
+          curl -fsS -X POST http://127.0.0.1:5107/api/development/improvements             -H 'Content-Type: application/json'             -d '{
+              "sourceType":"error",
+              "sourceId":"BUG-272",
+              "title":"Planner fails on empty evidence",
+              "description":"Planner throws when evidence collection is empty.",
+              "priority":"high",
+              "evidenceReference":"log:bug-272",
+              "evidenceSummary":"NullReferenceException at Planner.Run"
+            }' >/tmp/backlog.json
+          improvement_id=$(jq -r '.id' /tmp/backlog.json)
+
+          no_confirm=$(curl -sS -o /tmp/no-confirm.json -w '%{http_code}' -X POST http://127.0.0.1:5107/api/development/diagnoses             -H 'Content-Type: application/json'             -d '{"improvementItemId":"'"$improvement_id"'","repositoryPath":"","confirmStart":false}')
+          test "$no_confirm" = "400"
+
+          curl -fsS -X POST http://127.0.0.1:5107/api/development/diagnoses             -H 'Content-Type: application/json'             -d '{"improvementItemId":"'"$improvement_id"'","repositoryPath":"","confirmStart":true}' >/tmp/diagnosis.json
+          diagnosis_id=$(jq -r '.id' /tmp/diagnosis.json)
+
+          jq -e '
+            .stage == "evidence-collected"
+            and (.sourceEvidence | length) == 1
+            and .verifiedHypothesisId == null
+          ' /tmp/diagnosis.json >/dev/null
+
+          curl -fsS -X POST http://127.0.0.1:5107/api/development/runs             -H 'Content-Type: application/json'             -d '{
+              "goal":"fix BUG-272",
+              "repositoryPath":"",
+              "branch":"experiment/bug-272",
+              "confirmCreate":true,
+              "improvementItemId":"'"$improvement_id"'",
+              "diagnosisId":"'"$diagnosis_id"'"
+            }' >/tmp/run.json
+          run_id=$(jq -r '.id' /tmp/run.json)
+
+          blocked_before=$(curl -sS -o /tmp/blocked-before.json -w '%{http_code}' -X POST http://127.0.0.1:5107/api/development/runs/$run_id/advance             -H 'Content-Type: application/json'             -d '{"expectedCurrentStage":"analysis","result":"prepared"}')
+          test "$blocked_before" = "409"
+
+          repro_fail=$(curl -sS -o /tmp/repro-fail.json -w '%{http_code}' -X POST http://127.0.0.1:5107/api/development/diagnoses/$diagnosis_id/reproduction             -H 'Content-Type: application/json'             -d '{
+              "steps":"run planner with empty evidence",
+              "observedResult":"issue not reproduced",
+              "reproduced":false,
+              "evidenceReference":"repro:272"
+            }')
+          test "$repro_fail" = "400"
+
+          curl -fsS -X POST http://127.0.0.1:5107/api/development/diagnoses/$diagnosis_id/reproduction             -H 'Content-Type: application/json'             -d '{
+              "steps":"run planner with empty evidence",
+              "observedResult":"NullReferenceException reproduced",
+              "reproduced":true,
+              "evidenceReference":"repro:272"
+            }' >/tmp/reproduced.json
+          jq -e '.stage == "reproduced"' /tmp/reproduced.json >/dev/null
+
+          curl -fsS -X POST http://127.0.0.1:5107/api/development/diagnoses/$diagnosis_id/hypotheses             -H 'Content-Type: application/json'             -d '{
+              "hypothesis":"Cache corruption causes the null reference.",
+              "evidenceReferences":["log:bug-272","repro:272"]
+            }' >/tmp/h1.json
+          jq -e '.stage == "hypothesis-proposed" and (.hypotheses|length)==1' /tmp/h1.json >/dev/null
+
+          curl -fsS -X POST http://127.0.0.1:5107/api/development/diagnoses/$diagnosis_id/verify             -H 'Content-Type: application/json'             -d '{
+              "verified":false,
+              "verificationMethod":"clear cache and rerun",
+              "result":"failure still reproduces",
+              "evidenceReference":"verify:cache-negative"
+            }' >/tmp/h1v.json
+          jq -e '
+            .stage == "reproduced"
+            and .hypotheses[0].verified == false
+            and .hypotheses[0].verificationEvidenceReference == "verify:cache-negative"
+          ' /tmp/h1v.json >/dev/null
+
+          blocked_after_reject=$(curl -sS -o /tmp/blocked-after-reject.json -w '%{http_code}' -X POST http://127.0.0.1:5107/api/development/runs/$run_id/advance             -H 'Content-Type: application/json'             -d '{"expectedCurrentStage":"analysis","result":"prepared"}')
+          test "$blocked_after_reject" = "409"
+
+          curl -fsS -X POST http://127.0.0.1:5107/api/development/diagnoses/$diagnosis_id/hypotheses             -H 'Content-Type: application/json'             -d '{
+              "hypothesis":"Planner dereferences the first evidence item without checking for an empty collection.",
+              "evidenceReferences":["log:bug-272","repro:272"]
+            }' >/tmp/h2.json
+
+          curl -fsS -X POST http://127.0.0.1:5107/api/development/diagnoses/$diagnosis_id/verify             -H 'Content-Type: application/json'             -d '{
+              "verified":true,
+              "verificationMethod":"trace Planner.Run with empty collection and inspect dereference path",
+              "result":"the dereference is reached before an empty check",
+              "evidenceReference":"trace:planner-empty-path"
+            }' >/tmp/diagnosed.json
+
+          jq -e '
+            .stage == "diagnosed"
+            and .verifiedHypothesisId != null
+            and .diagnosedAt != null
+            and (.hypotheses|length)==2
+            and .hypotheses[1].verified == true
+          ' /tmp/diagnosed.json >/dev/null
+
+          curl -fsS -X POST http://127.0.0.1:5107/api/development/runs/$run_id/advance             -H 'Content-Type: application/json'             -d '{"expectedCurrentStage":"analysis","result":"prepared","evidence":"root cause diagnosed"}' >/tmp/coding.json
+
+          jq -e '
+            .stage == "coding"
+            and .improvementItemId == "'"$improvement_id"'"
+            and .diagnosisId == "'"$diagnosis_id"'"
+          ' /tmp/coding.json >/dev/null
+
+          curl -fsS http://127.0.0.1:5107/api/development/status             | jq -e '(.availableCapabilities | index("root-cause-diagnosis")) != null' >/dev/null

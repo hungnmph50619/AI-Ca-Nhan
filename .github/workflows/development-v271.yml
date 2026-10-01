@@ -1,0 +1,207 @@
+name: Development v2.7.1
+
+on:
+  push:
+    branches:
+      - 'experiment/roadmap-v2-7-1-current'
+  pull_request:
+    paths:
+      - 'src/PersonalAI.Web/Models/ImprovementBacklogModels.cs'
+      - 'src/PersonalAI.Web/Services/ImprovementBacklogService.cs'
+      - 'src/PersonalAI.Web/Services/DevelopmentEndpoints.cs'
+      - 'src/PersonalAI.Web/Models/DevelopmentModels.cs'
+      - 'src/PersonalAI.Web/Services/DevelopmentAgentService.cs'
+      - 'src/PersonalAI.Web/Models/SystemModels.cs'
+
+jobs:
+  validate-v271:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: '8.0.x'
+
+      - name: Restore
+        run: dotnet restore PersonalAI.sln
+
+      - name: Build
+        run: dotnet build PersonalAI.sln -c Release --no-restore
+
+      - name: Tests
+        run: dotnet test PersonalAI.sln -c Release --no-build
+
+      - name: Improvement backlog smoke test
+        shell: bash
+        run: |
+          set -euo pipefail
+          rm -rf /tmp/personalai-v271
+          mkdir -p /tmp/personalai-v271/workspace /tmp/personalai-v271/improvement /tmp/personalai-v271/ci
+
+          export Workspace__Root=/tmp/personalai-v271/workspace
+          export Development__ImprovementRoot=/tmp/personalai-v271/improvement
+          export Development__CiRoot=/tmp/personalai-v271/ci
+
+          dotnet run --project src/PersonalAI.Web/PersonalAI.Web.csproj             -c Release --no-build             --urls http://127.0.0.1:5106             >/tmp/personalai-v271.log 2>&1 &
+          APP_PID=$!
+          trap 'kill "$APP_PID" 2>/dev/null || true' EXIT
+
+          ready=0
+          for i in {1..30}; do
+            if curl -fsS http://127.0.0.1:5106/api/development/improvements/status >/tmp/status.json; then
+              ready=1
+              break
+            fi
+            sleep 1
+          done
+          test "$ready" = "1"
+
+          jq -e '
+            .version == "2.7.1"
+            and .items == 0
+            and .deduplicationEnabled == true
+            and .evidenceTraceable == true
+            and .ciImportEnabled == true
+            and (.supportedSources | sort) ==
+              (["benchmark","ci","dependency","error","feedback","security"] | sort)
+          ' /tmp/status.json >/dev/null
+
+          curl -fsS -X POST http://127.0.0.1:5106/api/development/improvements             -H 'Content-Type: application/json'             -d '{
+              "sourceType":"error",
+              "sourceId":"ERR-42",
+              "title":"Null reference in planner",
+              "description":"Planner crashes when evidence is missing.",
+              "priority":"medium",
+              "evidenceReference":"log:planner-42",
+              "evidenceSummary":"NullReferenceException at Planner.Run"
+            }' >/tmp/error-1.json
+
+          error_id=$(jq -r '.id' /tmp/error-1.json)
+          jq -e '
+            .occurrences == 1
+            and (.evidence | length) == 1
+            and .priority == "medium"
+            and .state == "open"
+          ' /tmp/error-1.json >/dev/null
+
+          curl -fsS -X POST http://127.0.0.1:5106/api/development/improvements             -H 'Content-Type: application/json'             -d '{
+              "sourceType":"error",
+              "sourceId":"ERR-42",
+              "title":"Null reference in planner",
+              "description":"Planner crashes when evidence is missing.",
+              "priority":"critical",
+              "evidenceReference":"log:planner-42",
+              "evidenceSummary":"NullReferenceException at Planner.Run"
+            }' >/tmp/error-duplicate.json
+
+          jq -e '
+            .id == "'"$error_id"'"
+            and .occurrences == 1
+            and (.evidence | length) == 1
+          ' /tmp/error-duplicate.json >/dev/null
+
+          curl -fsS -X POST http://127.0.0.1:5106/api/development/improvements             -H 'Content-Type: application/json'             -d '{
+              "sourceType":"error",
+              "sourceId":"ERR-42",
+              "title":"Null reference in planner",
+              "description":"Planner crashes when evidence is missing in another execution.",
+              "priority":"critical",
+              "evidenceReference":"log:planner-42",
+              "evidenceSummary":"Second independent occurrence in run 99"
+            }' >/tmp/error-second-evidence.json
+
+          jq -e '
+            .id == "'"$error_id"'"
+            and .occurrences == 2
+            and (.evidence | length) == 2
+            and .priority == "critical"
+          ' /tmp/error-second-evidence.json >/dev/null
+
+          for source in feedback benchmark security dependency; do
+            curl -fsS -X POST http://127.0.0.1:5106/api/development/improvements               -H 'Content-Type: application/json'               -d '{
+                "sourceType":"'"$source"'",
+                "sourceId":"'"$source"'-001",
+                "title":"'"$source"' improvement",
+                "description":"Traceable improvement candidate from '"$source"'.",
+                "priority":"low",
+                "evidenceReference":"'"$source"':001",
+                "evidenceSummary":"Evidence for '"$source"' source"
+              }' >/tmp/source.json
+          done
+
+          workspace_id=$(curl -fsS http://127.0.0.1:5106/api/development/ci/status | jq -r '.workspaceId')
+          safe_workspace=$(printf '%s' "$workspace_id" | sed 's/[^A-Za-z0-9_-]/_/g')
+
+          cat > /tmp/personalai-v271/ci/ci-runs-$safe_workspace.json <<JSON
+          [
+            {
+              "id":"11111111-1111-1111-1111-111111111111",
+              "workspaceId":"$workspace_id",
+              "repository":"owner/repo",
+              "sourceEventType":"workflow_run",
+              "deliveryId":"delivery-ci-271",
+              "externalId":"271001",
+              "ref":"experiment/roadmap-v2-7-1-current",
+              "sha":"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+              "state":"completed",
+              "conclusion":"failure",
+              "repairAttempts":0,
+              "maximumRepairAttempts":3,
+              "failureLogExcerpt":"error CS1002: ; expected",
+              "failureLogTruncated":false,
+              "firstSeenAt":"2026-10-01T00:00:00+00:00",
+              "updatedAt":"2026-10-01T00:01:00+00:00",
+              "completedAt":"2026-10-01T00:01:00+00:00"
+            }
+          ]
+          JSON
+
+          curl -fsS -X POST http://127.0.0.1:5106/api/development/improvements/import-ci >/tmp/import-ci-1.json
+          jq -e '
+            .failedCiRuns == 1
+            and .created == 1
+            and .deduplicated == 0
+            and (.backlogItemIds | length) == 1
+          ' /tmp/import-ci-1.json >/dev/null
+
+          ci_item_id=$(jq -r '.backlogItemIds[0]' /tmp/import-ci-1.json)
+
+          curl -fsS -X POST http://127.0.0.1:5106/api/development/improvements/import-ci >/tmp/import-ci-2.json
+          jq -e '
+            .failedCiRuns == 1
+            and .created == 0
+            and .deduplicated == 1
+            and (.backlogItemIds | length) == 1
+          ' /tmp/import-ci-2.json >/dev/null
+
+          curl -fsS http://127.0.0.1:5106/api/development/improvements/$ci_item_id >/tmp/ci-item.json
+          jq -e '
+            .sourceType == "ci"
+            and .occurrences == 1
+            and (.evidence | length) == 1
+            and .evidence[0].reference == "ci-run:11111111-1111-1111-1111-111111111111"
+          ' /tmp/ci-item.json >/dev/null
+
+          curl -fsS -X POST http://127.0.0.1:5106/api/development/improvements/$error_id/state             -H 'Content-Type: application/json'             -d '{"state":"planned","reason":"schedule for next development run"}' >/tmp/planned.json
+
+          jq -e '.state == "planned"' /tmp/planned.json >/dev/null
+
+          curl -fsS http://127.0.0.1:5106/api/development/improvements/status >/tmp/status-final.json
+          jq -e '
+            .items == 6
+            and .criticalItems == 1
+            and .evidenceRecords == 7
+          ' /tmp/status-final.json >/dev/null
+
+          curl -fsS http://127.0.0.1:5106/api/development/improvements >/tmp/items.json
+          jq -e '
+            length == 6
+            and .[0].priority == "critical"
+            and all(.[];
+              (.fingerprint | length) == 64
+              and (.evidence | length) >= 1)
+          ' /tmp/items.json >/dev/null
+
+          curl -fsS http://127.0.0.1:5106/api/development/status             | jq -e '
+              (.availableCapabilities | index("improvement-backlog")) != null
+            ' >/dev/null

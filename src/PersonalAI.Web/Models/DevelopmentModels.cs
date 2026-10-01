@@ -30,6 +30,7 @@ public static class DevelopmentCapabilities
     public const string GitHubPullRequestCi = "github-pull-request-ci";
     public const string MergePolicy = "merge-policy";
     public const string SafeLocalSync = "safe-local-sync";
+    public const string PerRunWorktreeLifecycle = "per-run-worktree-lifecycle";
     public const string DotnetRestore = "dotnet-restore";
     public const string DotnetBuild = "dotnet-build";
     public const string DotnetTest = "dotnet-test";

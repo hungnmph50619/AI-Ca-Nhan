@@ -7,6 +7,7 @@ public static class CompanionCapabilities
     public const string TasksRead = "tasks-read";
     public const string CoreStatus = "core-status";
     public const string DeviceHubStatus = "device-hub-status";
+    public const string DeviceIdentity = "device-identity";
 }
 
 public sealed record CompanionStatusResponse(

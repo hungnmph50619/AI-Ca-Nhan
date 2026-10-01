@@ -34,6 +34,7 @@ public static class DevelopmentCapabilities
     public const string RestartSafeRecovery = "restart-safe-recovery";
     public const string ControlledDependencyMaintenance = "controlled-dependency-maintenance";
     public const string NightlyImprovement = "nightly-improvement";
+    public const string FullAutonomousDevelopment = "full-autonomous-development";
     public const string DotnetRestore = "dotnet-restore";
     public const string DotnetBuild = "dotnet-build";
     public const string DotnetTest = "dotnet-test";

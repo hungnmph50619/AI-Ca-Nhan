@@ -21,6 +21,7 @@ builder.Services.AddHardeningFoundation();
 builder.Services.AddPersonalAiOs();
 builder.Services.AddSingleton<ILeagueMatchSnapshotStore, LeagueMatchSnapshotStore>();
 builder.Services.AddSingleton<ILeagueCoachService, LeagueCoachService>();
+builder.Services.AddScoped<ILeagueAiCoachService, LeagueAiCoachService>();
 builder.Services.AddSingleton<IAiSettingsStore, AiSettingsStore>();
 builder.Services.AddSingleton<KnowledgeDocumentExtractor>();
 builder.Services.AddSingleton<IKnowledgeDocumentStore, SqliteKnowledgeDocumentStore>();

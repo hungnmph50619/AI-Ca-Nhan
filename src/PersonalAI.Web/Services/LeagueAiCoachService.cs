@@ -154,6 +154,32 @@ public sealed class LeagueAiCoachService(
         if (parsed is null || !parsed.Keep)
             return null;
 
+        // Revalidate against fresh local state after the external model returns.
+        // A tactically stale answer must never reach the HUD.
+        var latestSession = snapshots.GetSession(workspaceId);
+        var latestBaseAdvice = deterministicCoach.GetCurrent(workspaceId);
+        if (latestSession is null ||
+            latestSession.MatchSessionId != session.MatchSessionId ||
+            latestBaseAdvice is null ||
+            !string.Equals(
+                latestBaseAdvice.Id,
+                baseAdvice.Id,
+                StringComparison.Ordinal) ||
+            Math.Abs(
+                latestBaseAdvice.GameTimeSeconds -
+                baseAdvice.GameTimeSeconds) > 0.001 ||
+            latestSession.LastGameTimeSeconds >
+                baseAdvice.ValidUntilGameTimeSeconds)
+        {
+            audit.Record(
+                AuditAgents.System,
+                "league.coach.ai.discarded",
+                $"match:{session.MatchSessionId:D}",
+                $"advice:{baseAdvice.Id};reason:stale-after-model",
+                AuditResults.Denied);
+            return null;
+        }
+
         var confidence = Math.Min(
             baseAdvice.Confidence,
             parsed.Confidence);

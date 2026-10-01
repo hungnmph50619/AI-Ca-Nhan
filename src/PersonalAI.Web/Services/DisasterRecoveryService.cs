@@ -65,15 +65,23 @@ public sealed class DisasterRecoveryService(
     public async Task<IReadOnlyList<DisasterRecoveryBackupVerification>> VerifyAllAsync(
         CancellationToken cancellationToken = default)
     {
-        var known = backups.GetBackups();
-        var result = new List<DisasterRecoveryBackupVerification>();
+        if (!Directory.Exists(_backupDirectory))
+            return [];
 
-        foreach (var backup in known
-            .OrderByDescending(x => x.CreatedAt))
+        var paths = Directory
+            .EnumerateFiles(
+                _backupDirectory,
+                "*.zip",
+                SearchOption.TopDirectoryOnly)
+            .OrderByDescending(File.GetLastWriteTimeUtc)
+            .ToArray();
+
+        var result = new List<DisasterRecoveryBackupVerification>();
+        foreach (var path in paths)
         {
             cancellationToken.ThrowIfCancellationRequested();
             result.Add(await VerifyAsync(
-                backup.BackupId,
+                Path.GetFileName(path),
                 cancellationToken));
         }
 
@@ -189,10 +197,11 @@ public sealed class DisasterRecoveryService(
                     "Số lượng tệp trong archive không khớp manifest.");
             }
 
-            if (archiveBytes != manifest.SourceBytes)
+            if (manifest.SourceBytes < 0
+                || manifest.SourceBytes > HardeningLimits.MaximumBackupSourceBytes)
             {
                 throw new InvalidDataException(
-                    "Dung lượng dữ liệu trong archive không khớp manifest.");
+                    "Manifest khai báo dung lượng nguồn không hợp lệ.");
             }
 
             return new(

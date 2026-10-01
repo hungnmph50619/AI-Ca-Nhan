@@ -48,7 +48,8 @@ public sealed record AdvanceDevelopmentRunRequest(
     Guid? CiRunId = null,
     Guid? SecurityReportId = null,
     Guid? BenchmarkReportId = null,
-    Guid? GitHubReportId = null);
+    Guid? GitHubReportId = null,
+    Guid? MergePolicyReportId = null);
 
 public sealed record FailDevelopmentRunRequest(
     string Reason,
@@ -80,6 +81,7 @@ public sealed record DevelopmentRun(
     Guid? SecurityReportId = null,
     Guid? BenchmarkReportId = null,
     Guid? GitHubReportId = null,
+    Guid? MergePolicyReportId = null,
     DateTimeOffset CreatedAt = default,
     DateTimeOffset UpdatedAt = default,
     DateTimeOffset? CompletedAt = null);

@@ -26,6 +26,7 @@ public static class DevelopmentCapabilities
     public const string DevelopmentAutoTest = "development-auto-test";
     public const string IndependentCodeReview = "independent-code-review";
     public const string DevelopmentSecurityGate = "development-security-gate";
+    public const string AutomaticBenchmarkGate = "automatic-benchmark-gate";
     public const string DotnetRestore = "dotnet-restore";
     public const string DotnetBuild = "dotnet-build";
     public const string DotnetTest = "dotnet-test";

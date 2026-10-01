@@ -15,6 +15,7 @@ public static class DevelopmentEndpoints
         services.AddSingleton<IDevelopmentEventBus, DevelopmentEventBus>();
         services.AddSingleton<IGitHubWebhookService, GitHubWebhookService>();
         services.AddSingleton<ICiMonitorService, CiMonitorService>();
+        services.AddSingleton<IDevelopmentRunService, DevelopmentRunService>();
         services.AddSingleton<IPersonalAiTool, DevelopmentWorkspaceInspectTool>();
         services.AddSingleton<IPersonalAiTool, DevelopmentTextSearchTool>();
         services.AddSingleton<IPersonalAiTool, DevelopmentGitStatusTool>();
@@ -52,6 +53,123 @@ public static class DevelopmentEndpoints
         app.MapGet("/api/development/git/capabilities", (
             ILocalGitRepositoryService git) =>
             Results.Ok(git.GetStatus()));
+
+        app.MapGet("/api/development/runs/status", (
+            IDevelopmentRunService runs) =>
+            Results.Ok(runs.GetStatus()));
+
+        app.MapGet("/api/development/runs", (
+            IDevelopmentRunService runs) =>
+            Results.Ok(runs.GetAll()));
+
+        app.MapGet("/api/development/runs/{runId:guid}", (
+            Guid runId,
+            IDevelopmentRunService runs) =>
+        {
+            var run = runs.Get(runId);
+            return run is null ? Results.NotFound() : Results.Ok(run);
+        });
+
+        app.MapPost("/api/development/runs", (
+            CreateDevelopmentRunRequest request,
+            IDevelopmentRunService runs) =>
+        {
+            try
+            {
+                return Results.Ok(runs.Create(request));
+            }
+            catch (DevelopmentRunConflictException exception)
+            {
+                return Results.Json(
+                    new ApiError(exception.Message),
+                    statusCode: StatusCodes.Status409Conflict);
+            }
+            catch (DevelopmentRunValidationException exception)
+            {
+                return Results.BadRequest(new ApiError(exception.Message));
+            }
+        });
+
+        app.MapPost("/api/development/runs/{runId:guid}/advance", (
+            Guid runId,
+            AdvanceDevelopmentRunRequest request,
+            IDevelopmentRunService runs) =>
+        {
+            try
+            {
+                return Results.Ok(runs.Advance(runId, request));
+            }
+            catch (DevelopmentRunConflictException exception)
+            {
+                return Results.Json(
+                    new ApiError(exception.Message),
+                    statusCode: StatusCodes.Status409Conflict);
+            }
+            catch (DevelopmentRunValidationException exception)
+            {
+                return Results.BadRequest(new ApiError(exception.Message));
+            }
+            catch (KeyNotFoundException exception)
+            {
+                return Results.NotFound(new ApiError(exception.Message));
+            }
+        });
+
+        app.MapPost("/api/development/runs/{runId:guid}/fail", (
+            Guid runId,
+            FailDevelopmentRunRequest request,
+            IDevelopmentRunService runs) =>
+        {
+            try
+            {
+                return Results.Ok(runs.Fail(runId, request));
+            }
+            catch (DevelopmentRunValidationException exception)
+            {
+                return Results.BadRequest(new ApiError(exception.Message));
+            }
+            catch (KeyNotFoundException exception)
+            {
+                return Results.NotFound(new ApiError(exception.Message));
+            }
+        });
+
+        app.MapPost("/api/development/runs/{runId:guid}/cancel", (
+            Guid runId,
+            CancelDevelopmentRunRequest request,
+            IDevelopmentRunService runs) =>
+        {
+            try
+            {
+                return Results.Ok(runs.Cancel(runId, request));
+            }
+            catch (DevelopmentRunValidationException exception)
+            {
+                return Results.BadRequest(new ApiError(exception.Message));
+            }
+            catch (KeyNotFoundException exception)
+            {
+                return Results.NotFound(new ApiError(exception.Message));
+            }
+        });
+
+        app.MapPost("/api/development/runs/{runId:guid}/resume", (
+            Guid runId,
+            IDevelopmentRunService runs) =>
+        {
+            try
+            {
+                return Results.Ok(runs.Resume(runId));
+            }
+            catch (DevelopmentRunValidationException exception)
+            {
+                return Results.BadRequest(new ApiError(exception.Message));
+            }
+            catch (KeyNotFoundException exception)
+            {
+                return Results.NotFound(new ApiError(exception.Message));
+            }
+        });
 
         app.MapGet("/api/development/ci/status", (
             ICiMonitorService ci) =>

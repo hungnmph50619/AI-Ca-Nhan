@@ -75,7 +75,7 @@
     const heading = document.createElement("div");
     const eyebrow = document.createElement("p");
     eyebrow.className = "eyebrow";
-    eyebrow.textContent = "STABLE CORE · API CONTRACT 1";
+    eyebrow.textContent = "LÕI ỔN ĐỊNH · HỢP ĐỒNG API 1";
 
     const title = document.createElement("h2");
     title.id = "coreHealthTitle";
@@ -154,7 +154,7 @@
     setFeedback("");
 
     const summary = document.querySelector("#coreHealthSummary");
-    if (summary) summary.textContent = "Đang kiểm tra readiness…";
+    if (summary) summary.textContent = "Đang kiểm tra mức sẵn sàng…";
 
     try {
       const [healthResponse, capabilitiesResponse] = await Promise.all([

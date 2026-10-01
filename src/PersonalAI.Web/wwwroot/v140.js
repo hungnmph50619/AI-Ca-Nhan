@@ -95,7 +95,7 @@
     intro.className = "v140-development-intro";
     intro.innerHTML =
       "<strong>Source-aware, process-limited</strong>" +
-      "<p>v1.4.0 có thể inspect/search source, đọc Git status/diff và chạy dotnet restore/build/test đã đóng khung. Không có shell tùy ý, arbitrary args hay Git write actions.</p>";
+      "<p>v1.4.0 có thể kiểm tra/tìm kiếm mã nguồn, đọc trạng thái/thay đổi Git và chạy dotnet restore/build/test trong phạm vi kiểm soát. Không có lệnh shell tùy ý, đối số tùy ý hay thao tác ghi Git.</p>";
 
     const summary = document.createElement("div");
     summary.id = "developmentAgentSummary";
@@ -215,7 +215,7 @@
     runtime.replaceChildren(
       runtimeBadge("Git", status.gitAvailable === true),
       runtimeBadge(".NET", status.dotnetAvailable === true),
-      runtimeBadge("Shell tùy ý", status.arbitraryShellEnabled === true),
+      runtimeBadge("Lệnh shell tùy ý", status.arbitraryShellEnabled === true),
       runtimeBadge("Git write", status.gitWriteActionsEnabled === true));
 
     capabilities.replaceChildren();
@@ -273,6 +273,6 @@
       "dotnet-restore": "dotnet restore",
       "dotnet-build": "dotnet build",
       "dotnet-test": "dotnet test"
-    }[value] || value || "Capability";
+    }[value] || value || "Khả năng";
   }
 })();

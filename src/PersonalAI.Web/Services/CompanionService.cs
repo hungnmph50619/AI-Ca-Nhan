@@ -129,7 +129,8 @@ public sealed class CompanionService : ICompanionService
                 CompanionCapabilities.DeviceHubStatus,
                 CompanionCapabilities.DeviceIdentity,
                 CompanionCapabilities.SecurePairing,
-                CompanionCapabilities.DeviceCapabilities
+                CompanionCapabilities.DeviceCapabilities,
+                CompanionCapabilities.DistributedAgents
             ],
             [
                 "Pairing code chỉ tồn tại tạm thời và chỉ được tạo từ admin request cục bộ.",
@@ -140,7 +141,8 @@ public sealed class CompanionService : ICompanionService
                 "Device Hub theo dõi presence/status; không tự cấp permission hoặc remote execution.",
                 "Device Identity dùng stable device ID + ECDSA public key; private key được mã hóa và capabilities chưa tự cấp.",
                 "Secure Pairing yêu cầu one-time code + ECDSA challenge proof; chỉ secure pairing mới nâng trust lên trusted, legacy pairing vẫn untrusted.",
-                "Device Capability v2.8.3 tách đăng ký khỏi permission; capability chưa đăng ký hoặc chưa được cấp quyền luôn bị từ chối, Android cần trusted trước khi được grant.",
+                "Device Capability tách đăng ký khỏi permission; capability chưa đăng ký hoặc chưa được cấp quyền luôn bị từ chối, Android cần trusted trước khi được grant.",
+                "Distributed Agent v2.8.5 giữ correlation ID xuyên dispatch/claim/complete và re-check capability permission ở mỗi node boundary.",
                 AllowInsecureHttp
                     ? "HTTP không mã hóa đang được cho phép bằng cấu hình explicit; chỉ dùng trên mạng tin cậy."
                     : "Client pairing và client API yêu cầu HTTPS."

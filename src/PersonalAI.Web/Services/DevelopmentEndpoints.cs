@@ -14,6 +14,8 @@ public static class DevelopmentEndpoints
         services.AddSingleton<IDevelopmentRunWorktreeService, DevelopmentRunWorktreeService>();
         services.AddScoped<IDevelopmentRecoveryService, DevelopmentRecoveryService>();
         services.AddScoped<IDependencyMaintenanceService, DependencyMaintenanceService>();
+        services.AddScoped<INightlyImprovementService, NightlyImprovementService>();
+        services.AddHostedService<NightlyImprovementBackgroundService>();
         services.AddSingleton<IDevelopmentLeaseService, DevelopmentLeaseService>();
         services.AddSingleton<IGitCredentialService, GitCredentialService>();
         services.AddSingleton<IDevelopmentEventBus, DevelopmentEventBus>();
@@ -72,6 +74,49 @@ public static class DevelopmentEndpoints
         app.MapGet("/api/development/git/capabilities", (
             ILocalGitRepositoryService git) =>
             Results.Ok(git.GetStatus()));
+
+        app.MapGet("/api/development/nightly/status", (
+            INightlyImprovementService nightly) =>
+            Results.Ok(nightly.GetStatus()));
+
+        app.MapGet("/api/development/nightly/reports", (
+            INightlyImprovementService nightly) =>
+            Results.Ok(nightly.GetReports()));
+
+        app.MapPost("/api/development/nightly/run", async (
+            RunNightlyImprovementRequest request,
+            INightlyImprovementService nightly,
+            CancellationToken cancellationToken) =>
+        {
+            try
+            {
+                return Results.Ok(await nightly.RunAsync(
+                    request,
+                    cancellationToken));
+            }
+            catch (NightlyImprovementValidationException exception)
+            {
+                return Results.BadRequest(new ApiError(exception.Message));
+            }
+            catch (DevelopmentRunConflictException exception)
+            {
+                return Results.Json(
+                    new ApiError(exception.Message),
+                    statusCode: StatusCodes.Status409Conflict);
+            }
+            catch (DevelopmentRunValidationException exception)
+            {
+                return Results.BadRequest(new ApiError(exception.Message));
+            }
+            catch (ImprovementBacklogValidationException exception)
+            {
+                return Results.BadRequest(new ApiError(exception.Message));
+            }
+            catch (KeyNotFoundException exception)
+            {
+                return Results.NotFound(new ApiError(exception.Message));
+            }
+        });
 
         app.MapGet("/api/development/dependencies/status", (
             IDependencyMaintenanceService dependencies) =>

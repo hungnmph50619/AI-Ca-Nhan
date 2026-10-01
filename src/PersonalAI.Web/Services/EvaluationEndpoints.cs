@@ -271,6 +271,24 @@ public static class EvaluationEndpoints
             {
                 return Results.BadRequest(new ApiError(exception.Message));
             }
+            catch (DevelopmentWorktreeValidationException exception)
+            {
+                return Results.BadRequest(new ApiError(exception.Message));
+            }
+            catch (DevelopmentLeaseValidationException exception)
+            {
+                return Results.BadRequest(new ApiError(exception.Message));
+            }
+            catch (DevelopmentLeaseConflictException exception)
+            {
+                return Results.Json(
+                    new ApiError(exception.Message),
+                    statusCode: StatusCodes.Status409Conflict);
+            }
+            catch (KeyNotFoundException exception)
+            {
+                return Results.NotFound(new ApiError(exception.Message));
+            }
         });
 
         endpoints.MapPost("/api/self-improvement/automated-review/run", async (

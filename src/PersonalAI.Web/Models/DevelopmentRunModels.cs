@@ -37,7 +37,9 @@ public sealed record CreateDevelopmentRunRequest(
     string RepositoryPath,
     string Branch,
     string? RoadmapVersion = null,
-    bool ConfirmCreate = false);
+    bool ConfirmCreate = false,
+    Guid? ImprovementItemId = null,
+    Guid? DiagnosisId = null);
 
 public sealed record AdvanceDevelopmentRunRequest(
     string ExpectedCurrentStage,
@@ -70,9 +72,11 @@ public sealed record DevelopmentRun(
     string Status,
     Guid? CiRunId,
     IReadOnlyList<DevelopmentRunTransition> History,
-    DateTimeOffset CreatedAt,
-    DateTimeOffset UpdatedAt,
-    DateTimeOffset? CompletedAt);
+    Guid? ImprovementItemId = null,
+    Guid? DiagnosisId = null,
+    DateTimeOffset CreatedAt = default,
+    DateTimeOffset UpdatedAt = default,
+    DateTimeOffset? CompletedAt = null);
 
 public sealed record DevelopmentRunStatus(
     string Version,

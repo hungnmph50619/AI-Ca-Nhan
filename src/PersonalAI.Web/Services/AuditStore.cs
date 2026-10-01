@@ -7,6 +7,10 @@ public interface IAuditStore
 {
     void Record(AuditEvent auditEvent);
 
+    AuditItem? GetById(
+        string workspaceId,
+        Guid auditId);
+
     AuditResponse GetRecent(
         string workspaceId,
         int limit = 50,
@@ -210,6 +214,53 @@ public sealed class SqliteAuditStore : IAuditStore
         }
     }
 
+    public AuditItem? GetById(
+        string workspaceId,
+        Guid auditId)
+    {
+        var safeWorkspace = NormalizeRequired(
+            workspaceId, 80, "workspace");
+
+        lock (_gate)
+        {
+            EnsureInitialized();
+            using var connection = OpenConnection();
+            Cleanup(connection);
+
+            using var command = connection.CreateCommand();
+            command.CommandText =
+                """
+                SELECT
+                    audit_id,
+                    occurred_at,
+                    workspace_id,
+                    agent,
+                    action,
+                    tool,
+                    target,
+                    reason,
+                    result,
+                    level,
+                    source,
+                    correlation_id
+                FROM audit_events
+                WHERE workspace_id = $workspaceId
+                  AND audit_id = $auditId
+                LIMIT 1;
+                """;
+            command.Parameters.AddWithValue(
+                "$workspaceId", safeWorkspace);
+            command.Parameters.AddWithValue(
+                "$auditId", auditId.ToString("D"));
+
+            using var reader = command.ExecuteReader();
+            if (!reader.Read())
+                return null;
+
+            return ReadItem(reader);
+        }
+    }
+
     public AuditResponse GetRecent(
         string workspaceId,
         int limit = 50,
@@ -287,21 +338,7 @@ public sealed class SqliteAuditStore : IAuditStore
             var items = new List<AuditItem>();
 
             while (reader.Read())
-            {
-                items.Add(new AuditItem(
-                    Guid.Parse(reader.GetString(0)),
-                    DateTimeOffset.Parse(reader.GetString(1)),
-                    reader.GetString(2),
-                    reader.GetString(3),
-                    reader.GetString(4),
-                    reader.IsDBNull(5) ? null : reader.GetString(5),
-                    reader.GetString(6),
-                    reader.GetString(7),
-                    reader.GetString(8),
-                    reader.IsDBNull(9) ? null : reader.GetString(9),
-                    reader.IsDBNull(10) ? null : reader.GetString(10),
-                    reader.IsDBNull(11) ? null : reader.GetString(11)));
-            }
+                items.Add(ReadItem(reader));
 
             return new AuditResponse(
                 "local-sqlite",
@@ -540,6 +577,21 @@ public sealed class SqliteAuditStore : IAuditStore
 
         return result;
     }
+
+    private static AuditItem ReadItem(SqliteDataReader reader) =>
+        new(
+            Guid.Parse(reader.GetString(0)),
+            DateTimeOffset.Parse(reader.GetString(1)),
+            reader.GetString(2),
+            reader.GetString(3),
+            reader.GetString(4),
+            reader.IsDBNull(5) ? null : reader.GetString(5),
+            reader.GetString(6),
+            reader.GetString(7),
+            reader.GetString(8),
+            reader.IsDBNull(9) ? null : reader.GetString(9),
+            reader.IsDBNull(10) ? null : reader.GetString(10),
+            reader.IsDBNull(11) ? null : reader.GetString(11));
 
     private static string NormalizeLevel(
         string? value,

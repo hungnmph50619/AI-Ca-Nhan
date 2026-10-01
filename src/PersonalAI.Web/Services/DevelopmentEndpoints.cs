@@ -11,6 +11,7 @@ public static class DevelopmentEndpoints
         services.AddSingleton<IDevelopmentAgentService, DevelopmentAgentService>();
         services.AddSingleton<ILocalGitRepositoryService, LocalGitRepositoryService>();
         services.AddSingleton<IDevelopmentWorktreeService, DevelopmentWorktreeService>();
+        services.AddSingleton<IDevelopmentRunWorktreeService, DevelopmentRunWorktreeService>();
         services.AddSingleton<IDevelopmentLeaseService, DevelopmentLeaseService>();
         services.AddSingleton<IGitCredentialService, GitCredentialService>();
         services.AddSingleton<IDevelopmentEventBus, DevelopmentEventBus>();
@@ -69,6 +70,72 @@ public static class DevelopmentEndpoints
         app.MapGet("/api/development/git/capabilities", (
             ILocalGitRepositoryService git) =>
             Results.Ok(git.GetStatus()));
+
+        app.MapGet("/api/development/run-worktrees/status", (
+            IDevelopmentRunWorktreeService runWorktrees) =>
+            Results.Ok(runWorktrees.GetStatus()));
+
+        app.MapGet("/api/development/run-worktrees", (
+            IDevelopmentRunWorktreeService runWorktrees) =>
+            Results.Ok(runWorktrees.GetAll()));
+
+        app.MapGet("/api/development/run-worktrees/{runId:guid}", (
+            Guid runId,
+            IDevelopmentRunWorktreeService runWorktrees) =>
+        {
+            var binding = runWorktrees.GetByRun(runId);
+            return binding is null ? Results.NotFound() : Results.Ok(binding);
+        });
+
+        app.MapPost("/api/development/run-worktrees/ensure", async (
+            EnsureDevelopmentRunWorktreeRequest request,
+            IDevelopmentRunWorktreeService runWorktrees,
+            CancellationToken cancellationToken) =>
+        {
+            try
+            {
+                return Results.Ok(await runWorktrees.EnsureAsync(
+                    request,
+                    cancellationToken));
+            }
+            catch (DevelopmentRunWorktreeValidationException exception)
+            {
+                return Results.BadRequest(new ApiError(exception.Message));
+            }
+            catch (DevelopmentWorktreeValidationException exception)
+            {
+                return Results.BadRequest(new ApiError(exception.Message));
+            }
+            catch (KeyNotFoundException exception)
+            {
+                return Results.NotFound(new ApiError(exception.Message));
+            }
+        });
+
+        app.MapPost("/api/development/run-worktrees/cleanup", async (
+            CleanupDevelopmentRunWorktreeRequest request,
+            IDevelopmentRunWorktreeService runWorktrees,
+            CancellationToken cancellationToken) =>
+        {
+            try
+            {
+                return Results.Ok(await runWorktrees.CleanupAsync(
+                    request,
+                    cancellationToken));
+            }
+            catch (DevelopmentRunWorktreeValidationException exception)
+            {
+                return Results.BadRequest(new ApiError(exception.Message));
+            }
+            catch (DevelopmentWorktreeValidationException exception)
+            {
+                return Results.BadRequest(new ApiError(exception.Message));
+            }
+            catch (KeyNotFoundException exception)
+            {
+                return Results.NotFound(new ApiError(exception.Message));
+            }
+        });
 
         app.MapGet("/api/development/local-sync/status", (
             IDevelopmentLocalSyncService sync) =>

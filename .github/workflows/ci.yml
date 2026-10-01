@@ -1785,7 +1785,7 @@ jobs:
           ! echo "$connector_audit" | grep -Fq 'ci-connector-secret-130'
 
           development_status=$(curl -fsS http://127.0.0.1:5077/api/development/status)
-          echo "$development_status" | jq -e '(.version | test("^[0-9]+\\.[0-9]+\\.[0-9]+$")) and .workspaceId == "personal" and .gitAvailable == true and .dotnetAvailable == true and .arbitraryShellEnabled == false and .arbitraryProcessEnabled == false and .gitWriteActionsEnabled == false and .maximumScannedFiles == 2000 and .maximumSearchHits == 100 and .maximumProcessOutputCharacters == 48000' >/dev/null
+          echo "$development_status" | jq -e '(.version | test("^[0-9]+\\.[0-9]+\\.[0-9]+$")) and .workspaceId == "personal" and .gitAvailable == true and .dotnetAvailable == true and .arbitraryShellEnabled == false and .arbitraryProcessEnabled == false and .gitWriteActionsEnabled == true and .maximumScannedFiles == 2000 and .maximumSearchHits == 100 and .maximumProcessOutputCharacters == 48000' >/dev/null
 
           mkdir -p /tmp/personalai-workspace/dev-ci
           printf '%s\n' '<Project Sdk="Microsoft.NET.Sdk">' '  <PropertyGroup>' '    <OutputType>Exe</OutputType>' '    <TargetFramework>net8.0</TargetFramework>' '    <ImplicitUsings>enable</ImplicitUsings>' '    <Nullable>enable</Nullable>' '  </PropertyGroup>' '  <Target Name="RejectInheritedPersonalAiSecret" BeforeTargets="Build">' '    <Error Condition="&apos;$(PERSONALAI_DEV_SECRET)&apos; != &apos;&apos;" Text="PersonalAI parent secret leaked into development process." />' '  </Target>' '</Project>' > /tmp/personalai-workspace/dev-ci/DevCi.csproj

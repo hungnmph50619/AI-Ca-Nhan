@@ -128,10 +128,10 @@ public sealed class DeviceIdentityService(
                     PairedDevicePublicKey: null,
                     PairedDeviceFingerprintSha256: null,
                     Capabilities: [],
-                    DeviceTrustLevels.Untrusted,
+                    TrustLevel: DeviceTrustLevels.Untrusted,
                     TrustedAt: null,
-                    now,
-                    now);
+                    CreatedAt: now,
+                    UpdatedAt: now);
 
                 all.Add(stored);
                 Save(workspaceId, all);

@@ -536,9 +536,9 @@ public sealed class LocalGitRepositoryService(
         {
             return credentials.Resolve(credentialRef);
         }
-        catch (GitCredentialValidationException)
+        catch (GitCredentialValidationException exception)
         {
-            throw;
+            throw new LocalGitRepositoryValidationException(exception.Message);
         }
         catch (KeyNotFoundException exception)
         {

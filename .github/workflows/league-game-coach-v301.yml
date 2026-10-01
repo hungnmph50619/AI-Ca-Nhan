@@ -125,6 +125,15 @@ jobs:
             and .snapshots[1].sequence == 2
           ' /tmp/personalai-league-v301/timeline.json >/dev/null
 
+          curl -fsS http://127.0.0.1:5145/api/integrations/league/session             >/tmp/personalai-league-v301/session.json
+          jq -e '
+            .state == "active"
+            and .timelineCount == 2
+            and .lastGameTimeSeconds == 121
+            and .latestSnapshot.sequence == 2
+            and .latestSnapshot.isDead == false
+          ' /tmp/personalai-league-v301/session.json >/dev/null
+
           # A clear game-clock reset starts a new match session.
           jq '.sequence=3 | .gameTimeSeconds=5 | .health=700'             /tmp/personalai-league-v301/s1.json             >/tmp/personalai-league-v301/s3.json
 

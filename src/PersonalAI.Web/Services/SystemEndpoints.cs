@@ -125,6 +125,7 @@ public static class SystemEndpoints
         services.AddScoped<ISystemCoreService, SystemCoreService>();
         services.AddScoped<IUnifiedPermissionService, UnifiedPermissionService>();
         services.AddScoped<IActionExplanationService, ActionExplanationService>();
+        services.AddSingleton<ILoopGuardService, LoopGuardService>();
         return services;
     }
 
@@ -190,6 +191,74 @@ public static class SystemEndpoints
             catch (UnifiedPermissionValidationException exception)
             {
                 return Results.BadRequest(new ApiError(exception.Message));
+            }
+        });
+
+        app.MapGet("/api/system/loop-guard/status", (
+            ILoopGuardService loopGuard,
+            IWorkspaceContextAccessor workspace) =>
+            Results.Ok(loopGuard.GetStatus(
+                workspace.CurrentWorkspaceId)));
+
+        app.MapPost("/api/system/loop-guard/check", (
+            LoopGuardCheckRequest request,
+            bool? confirmed,
+            ILoopGuardService loopGuard,
+            IWorkspaceContextAccessor workspace) =>
+        {
+            if (confirmed != true)
+            {
+                return Results.Json(
+                    new ApiError(
+                        "Cần confirmed=true để chạy loop-guard diagnostic check."),
+                    statusCode: StatusCodes.Status403Forbidden);
+            }
+
+            try
+            {
+                var decision = loopGuard.Check(
+                    workspace.CurrentWorkspaceId,
+                    request);
+                return decision.Allowed
+                    ? Results.Ok(decision)
+                    : Results.Json(
+                        decision,
+                        statusCode: StatusCodes.Status409Conflict);
+            }
+            catch (LoopGuardValidationException exception)
+            {
+                return Results.BadRequest(
+                    new ApiError(exception.Message));
+            }
+        });
+
+        app.MapDelete("/api/system/loop-guard/{scope}/{runId}", (
+            string scope,
+            string runId,
+            bool? confirmed,
+            ILoopGuardService loopGuard,
+            IWorkspaceContextAccessor workspace) =>
+        {
+            if (confirmed != true)
+            {
+                return Results.Json(
+                    new ApiError(
+                        "Cần confirmed=true để reset loop-guard state."),
+                    statusCode: StatusCodes.Status403Forbidden);
+            }
+
+            try
+            {
+                loopGuard.Reset(
+                    workspace.CurrentWorkspaceId,
+                    scope,
+                    runId);
+                return Results.NoContent();
+            }
+            catch (LoopGuardValidationException exception)
+            {
+                return Results.BadRequest(
+                    new ApiError(exception.Message));
             }
         });
 

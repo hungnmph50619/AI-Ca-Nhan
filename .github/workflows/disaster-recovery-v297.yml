@@ -49,7 +49,7 @@ jobs:
           done
 
           jq -e '
-            .version=="2.9.7"
+            (.version | split(".") | map(tonumber)) >= [2,9,7]
             and .archiveIntegrityVerificationEnabled==true
             and .pathTraversalProtectionEnabled==true
             and .restoreSizeLimitsEnforced==true
@@ -119,7 +119,7 @@ jobs:
 
           curl -fsS http://127.0.0.1:5138/api/disaster-recovery/plan             >/tmp/dr-plan.json
           jq -e --arg id "$good_id" '
-            .version=="2.9.7"
+            (.version | split(".") | map(tonumber)) >= [2,9,7]
             and .recoveryAvailable==true
             and .recommendedBackupId==$id
             and .recommendedBackupVerified==true

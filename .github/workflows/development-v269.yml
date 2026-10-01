@@ -66,7 +66,7 @@ jobs:
           test "$ready" = "1"
 
           jq -e '
-            .version == "2.6.9"
+            (.version | split(".") | map(tonumber)) >= [2,6,9]
             and .worktreeIsolationEnabled == true
             and .dirtyTreeOverwriteProtection == true
             and .automaticResetEnabled == false

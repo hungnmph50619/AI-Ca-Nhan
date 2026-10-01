@@ -1,5 +1,5 @@
 (() => {
-  const VERSION = "2.2.6";
+  const VERSION = "3.0.0";
   let dialog;
   let content;
   let statusText;
@@ -34,7 +34,7 @@
     const badge = document.createElement("span");
     badge.className = "tool-count";
     badge.id = "osSidebarBadge";
-    badge.textContent = "v2.0";
+    badge.textContent = "v3.0";
 
     button.append(icon, label, badge);
     tools.prepend(button);
@@ -53,7 +53,7 @@
     const heading = document.createElement("div");
     const eyebrow = document.createElement("p");
     eyebrow.className = "eyebrow";
-    eyebrow.textContent = "PERSONAL AI OS · v2.0";
+    eyebrow.textContent = "PERSONAL AI OS · v3.0";
 
     const title = document.createElement("h2");
     title.id = "osTitle";
@@ -198,7 +198,7 @@
     const boundaries = document.createElement("section");
     boundaries.className = "os-boundaries";
     const boundariesTitle = document.createElement("h3");
-    boundariesTitle.textContent = "Ranh giới v2.0";
+    boundariesTitle.textContent = "Ranh giới v3.0";
     const ul = document.createElement("ul");
     (manifest.boundaries || []).forEach(value => {
       const li = document.createElement("li");

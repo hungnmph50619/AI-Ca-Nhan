@@ -22,7 +22,7 @@ public sealed class GitHubWebhookService : IGitHubWebhookService
     public const int MaximumPayloadBytes = 2 * 1024 * 1024;
 
     private readonly object _gate = new();
-    private readonly string _settingsPath;
+    private readonly string _settingsRoot;
     private readonly IDataProtector _protector;
     private readonly IWorkspaceContextAccessor _workspace;
     private readonly IDevelopmentEventBus _eventBus;
@@ -59,7 +59,7 @@ public sealed class GitHubWebhookService : IGitHubWebhookService
 
         root = Path.GetFullPath(Environment.ExpandEnvironmentVariables(root));
         Directory.CreateDirectory(root);
-        _settingsPath = Path.Combine(root, "github-webhook.json");
+        _settingsRoot = root;
     }
 
     public GitHubWebhookStatus GetStatus()
@@ -104,9 +104,10 @@ public sealed class GitHubWebhookService : IGitHubWebhookService
 
         lock (_gate)
         {
-            var temp = _settingsPath + ".tmp";
+            var path = SettingsPath();
+            var temp = path + ".tmp";
             File.WriteAllText(temp, JsonSerializer.Serialize(stored, Options));
-            File.Move(temp, _settingsPath, true);
+            File.Move(temp, path, true);
         }
 
         _audit.Record(
@@ -130,6 +131,9 @@ public sealed class GitHubWebhookService : IGitHubWebhookService
             throw new GitHubWebhookValidationException(
                 $"Webhook payload phải từ 2 bytes đến {MaximumPayloadBytes} bytes.");
 
+        var secret = ResolveSecret();
+        VerifySignature(secret, signature256, body.Span);
+
         if (_eventBus.HasDelivery(normalizedDelivery))
         {
             return new(
@@ -143,9 +147,6 @@ public sealed class GitHubWebhookService : IGitHubWebhookService
                         StringComparison.OrdinalIgnoreCase))?.Id,
                 DateTimeOffset.UtcNow);
         }
-
-        var secret = ResolveSecret();
-        VerifySignature(secret, signature256, body.Span);
 
         DevelopmentEventEnvelope envelope;
         try
@@ -290,12 +291,13 @@ public sealed class GitHubWebhookService : IGitHubWebhookService
     {
         lock (_gate)
         {
-            if (!File.Exists(_settingsPath)) return null;
+            var path = SettingsPath();
+            if (!File.Exists(path)) return null;
 
             try
             {
                 return JsonSerializer.Deserialize<StoredWebhookSettings>(
-                    File.ReadAllText(_settingsPath),
+                    File.ReadAllText(path),
                     Options);
             }
             catch (Exception exception) when (
@@ -309,6 +311,13 @@ public sealed class GitHubWebhookService : IGitHubWebhookService
                 return null;
             }
         }
+    }
+
+    private string SettingsPath()
+    {
+        var safe = string.Concat(_workspace.CurrentWorkspaceId.Select(c =>
+            char.IsLetterOrDigit(c) || c is '-' or '_' ? c : '_'));
+        return Path.Combine(_settingsRoot, $"github-webhook-{safe}.json");
     }
 
     private static void VerifySignature(

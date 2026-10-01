@@ -1,0 +1,429 @@
+name: Development v2.7.15
+
+on:
+  push:
+    branches:
+      - 'experiment/roadmap-v2-7-15-current'
+
+jobs:
+  validate-v2715:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: '8.0.x'
+
+      - name: Restore
+        run: dotnet restore PersonalAI.sln
+
+      - name: Build
+        run: dotnet build PersonalAI.sln -c Release --no-restore
+
+      - name: Tests
+        run: dotnet test PersonalAI.sln -c Release --no-build
+
+      - name: Full autonomous controller and emergency stop smoke test
+        shell: bash
+        run: |
+          set -euo pipefail
+          rm -rf /tmp/personalai-v2715
+          mkdir -p             /tmp/personalai-v2715/workspace/repo             /tmp/personalai-v2715/runs             /tmp/personalai-v2715/improvement             /tmp/personalai-v2715/diagnosis             /tmp/personalai-v2715/run-worktrees             /tmp/personalai-v2715/coding             /tmp/personalai-v2715/tests             /tmp/personalai-v2715/reviews             /tmp/personalai-v2715/security             /tmp/personalai-v2715/benchmarks             /tmp/personalai-v2715/github             /tmp/personalai-v2715/events             /tmp/personalai-v2715/ci             /tmp/personalai-v2715/policy             /tmp/personalai-v2715/sync             /tmp/personalai-v2715/autonomous
+
+          cd /tmp/personalai-v2715/workspace/repo
+          git init -b main
+          git config user.name "PersonalAI CI"
+          git config user.email "ci@example.invalid"
+          printf 'base\n' > README.md
+          git add README.md
+          git commit -m "initial"
+
+          cd "$GITHUB_WORKSPACE"
+          export Workspace__Root=/tmp/personalai-v2715/workspace
+          export Development__RunRoot=/tmp/personalai-v2715/runs
+          export Development__ImprovementRoot=/tmp/personalai-v2715/improvement
+          export Development__DiagnosisRoot=/tmp/personalai-v2715/diagnosis
+          export Development__RunWorktreeRoot=/tmp/personalai-v2715/run-worktrees
+          export Development__Autonomous__CodingRoot=/tmp/personalai-v2715/coding
+          export Development__Autonomous__StateRoot=/tmp/personalai-v2715/autonomous
+          export Development__TestReportRoot=/tmp/personalai-v2715/tests
+          export Development__ReviewRoot=/tmp/personalai-v2715/reviews
+          export Development__SecurityReportRoot=/tmp/personalai-v2715/security
+          export Development__BenchmarkRoot=/tmp/personalai-v2715/benchmarks
+          export Development__GitHubReportRoot=/tmp/personalai-v2715/github
+          export Development__EventRoot=/tmp/personalai-v2715/events
+          export Development__CiRoot=/tmp/personalai-v2715/ci
+          export Development__MergePolicyRoot=/tmp/personalai-v2715/policy
+          export Development__LocalSyncRoot=/tmp/personalai-v2715/sync
+
+          dotnet run --project src/PersonalAI.Web/PersonalAI.Web.csproj             -c Release --no-build             --urls http://127.0.0.1:5120             >/tmp/personalai-v2715/app.log 2>&1 &
+          APP_PID=$!
+          trap 'kill "$APP_PID" 2>/dev/null || true' EXIT
+
+          for i in {1..30}; do
+            if curl -fsS http://127.0.0.1:5120/api/development/autonomous/status >/tmp/autonomous-status.json; then
+              break
+            fi
+            sleep 1
+          done
+
+          jq -e '
+            .version=="2.7.15"
+            and .fullPipelineControllerEnabled==true
+            and .emergencyStopActive==false
+            and .policyBypassAllowed==false
+            and .maximumTransitionsPerInvocation==20
+            and .maximumCodingEdits==4
+            and .maximumCiRepairAttempts==3
+            and .directMainPushAllowed==false
+            and .highRiskAutoMergeAllowed==false
+            and (.pipeline | join(","))=="detect,analysis,coding,testing,review,security,benchmark,push,ci,merge-policy,local-sync"
+          ' /tmp/autonomous-status.json >/dev/null
+
+          curl -fsS -X POST http://127.0.0.1:5120/api/development/improvements             -H 'Content-Type: application/json'             -d '{
+              "sourceType":"feedback",
+              "sourceId":"v2715-smoke",
+              "title":"Autonomous full pipeline smoke",
+              "description":"Verified low-risk benchmark fixture",
+              "priority":"low",
+              "evidenceReference":"smoke:v2715",
+              "evidenceSummary":"reproducible benchmark evidence"
+            }' >/tmp/item.json
+          item_id=$(jq -r '.id' /tmp/item.json)
+
+          curl -fsS -X POST http://127.0.0.1:5120/api/development/diagnoses             -H 'Content-Type: application/json'             -d '{
+              "improvementItemId":"'"$item_id"'",
+              "repositoryPath":"repo",
+              "confirmStart":true
+            }' >/tmp/diagnosis.json
+          diagnosis_id=$(jq -r '.id' /tmp/diagnosis.json)
+
+          curl -fsS -X POST             http://127.0.0.1:5120/api/development/diagnoses/$diagnosis_id/reproduction             -H 'Content-Type: application/json'             -d '{
+              "steps":"Run deterministic autonomous benchmark fixture",
+              "observedResult":"Fixture reproduces the expected low-risk issue",
+              "reproduced":true,
+              "evidenceReference":"smoke:reproduction"
+            }' >/dev/null
+
+          curl -fsS -X POST             http://127.0.0.1:5120/api/development/diagnoses/$diagnosis_id/hypotheses             -H 'Content-Type: application/json'             -d '{
+              "hypothesis":"The benchmark fixture requires the bounded autonomous pipeline",
+              "evidenceReferences":["smoke:v2715"]
+            }' >/dev/null
+
+          curl -fsS -X POST             http://127.0.0.1:5120/api/development/diagnoses/$diagnosis_id/verify             -H 'Content-Type: application/json'             -d '{
+              "verified":true,
+              "verificationMethod":"deterministic CI fixture",
+              "result":"hypothesis verified for smoke benchmark",
+              "evidenceReference":"smoke:verified"
+            }' >/tmp/diagnosed.json
+          jq -e '.stage=="diagnosed" and .verifiedHypothesisId!=null' /tmp/diagnosed.json >/dev/null
+
+          curl -fsS -X POST http://127.0.0.1:5120/api/development/runs             -H 'Content-Type: application/json'             -d '{
+              "goal":"Autonomous full pipeline smoke",
+              "repositoryPath":"repo",
+              "branch":"experiment/v2715-smoke",
+              "roadmapVersion":"autonomous-v2.7.15",
+              "confirmCreate":true,
+              "improvementItemId":"'"$item_id"'",
+              "diagnosisId":"'"$diagnosis_id"'"
+            }' >/tmp/run.json
+
+          run_id=$(jq -r '.id' /tmp/run.json)
+          workspace_id=$(jq -r '.workspaceId' /tmp/run.json)
+          safe_workspace=$(printf '%s' "$workspace_id" | sed 's/[^A-Za-z0-9_-]/_/g')
+          run_n=$(printf '%s' "$run_id" | tr -d '-')
+          worktree_path=".personalai-worktrees/run-$run_n"
+
+          coding_id='15151515-1515-1515-1515-151515151501'
+          test_id='15151515-1515-1515-1515-151515151502'
+          review_id='15151515-1515-1515-1515-151515151503'
+          security_id='15151515-1515-1515-1515-151515151504'
+          benchmark_id='15151515-1515-1515-1515-151515151505'
+          github_id='15151515-1515-1515-1515-151515151506'
+          merge_id='15151515-1515-1515-1515-151515151507'
+          sync_id='15151515-1515-1515-1515-151515151508'
+          event_id='15151515-1515-1515-1515-151515151509'
+
+          cat > /tmp/personalai-v2715/coding/autonomous-coding-$safe_workspace.json <<JSON
+          [{
+            "id":"$coding_id",
+            "workspaceId":"$workspace_id",
+            "developmentRunId":"$run_id",
+            "worktreePath":"$worktree_path",
+            "filesChanged":1,
+            "paths":["README.md"],
+            "summary":"persisted coding evidence for no-replay autonomous benchmark",
+            "completedAt":"2026-10-01T00:00:01+00:00"
+          }]
+          JSON
+
+          cat > /tmp/personalai-v2715/tests/development-test-reports-$safe_workspace.json <<JSON
+          [{
+            "id":"$test_id",
+            "workspaceId":"$workspace_id",
+            "developmentRunId":"$run_id",
+            "repositoryPath":"repo",
+            "branch":"experiment/v2715-smoke",
+            "worktreePath":"$worktree_path",
+            "dotnetTargetPath":"PersonalAI.sln",
+            "phases":[
+              {"phase":"restore","status":"passed","exitCode":0,"timedOut":false,"durationMs":1,"failureLog":null,"failureLogTruncated":false},
+              {"phase":"build","status":"passed","exitCode":0,"timedOut":false,"durationMs":1,"failureLog":null,"failureLogTruncated":false},
+              {"phase":"unit","status":"passed","exitCode":0,"timedOut":false,"durationMs":1,"failureLog":null,"failureLogTruncated":false},
+              {"phase":"integration","status":"skipped","exitCode":null,"timedOut":false,"durationMs":0,"failureLog":null,"failureLogTruncated":false},
+              {"phase":"regression","status":"passed","exitCode":null,"timedOut":false,"durationMs":1,"failureLog":null,"failureLogTruncated":false}
+            ],
+            "succeeded":true,
+            "startedAt":"2026-10-01T00:00:02+00:00",
+            "completedAt":"2026-10-01T00:00:03+00:00"
+          }]
+          JSON
+
+          cat > /tmp/personalai-v2715/reviews/development-review-reports-$safe_workspace.json <<JSON
+          [{
+            "id":"$review_id",
+            "workspaceId":"$workspace_id",
+            "developmentRunId":"$run_id",
+            "testReportId":"$test_id",
+            "repositoryPath":"repo",
+            "branch":"experiment/v2715-smoke",
+            "worktreePath":"$worktree_path",
+            "codingAgentId":"autonomous.coder",
+            "reviewerId":"quality.reviewer",
+            "checks":[
+              {"category":"correctness","status":"passed","detail":"seeded benchmark evidence"},
+              {"category":"architecture","status":"passed","detail":"seeded benchmark evidence"},
+              {"category":"regression","status":"passed","detail":"seeded benchmark evidence"}
+            ],
+            "status":"approved",
+            "approved":true,
+            "independentReviewer":true,
+            "createdAt":"2026-10-01T00:00:04+00:00"
+          }]
+          JSON
+
+          cat > /tmp/personalai-v2715/security/development-security-reports-$safe_workspace.json <<JSON
+          [{
+            "id":"$security_id",
+            "workspaceId":"$workspace_id",
+            "developmentRunId":"$run_id",
+            "reviewReportId":"$review_id",
+            "repositoryPath":"repo",
+            "branch":"experiment/v2715-smoke",
+            "worktreePath":"$worktree_path",
+            "findings":[],
+            "checkedCategories":["secret-leakage","permission-bypass","injection","path-traversal","dangerous-execution"],
+            "highRiskFound":false,
+            "promotionAllowed":true,
+            "createdAt":"2026-10-01T00:00:05+00:00"
+          }]
+          JSON
+
+          cat > /tmp/personalai-v2715/benchmarks/development-benchmark-reports-$safe_workspace.json <<JSON
+          [{
+            "id":"$benchmark_id",
+            "workspaceId":"$workspace_id",
+            "developmentRunId":"$run_id",
+            "gates":[
+              {"gate":"rag","passed":true,"observed":1,"threshold":0.8,"detail":"seed"},
+              {"gate":"tool","passed":true,"observed":1,"threshold":0.8,"detail":"seed"},
+              {"gate":"task","passed":true,"observed":1,"threshold":0.8,"detail":"seed"},
+              {"gate":"agent","passed":true,"observed":1,"threshold":0.8,"detail":"seed"},
+              {"gate":"performance","passed":true,"observed":10,"threshold":30000,"detail":"seed"},
+              {"gate":"resource","passed":true,"observed":1000000,"threshold":2147483648,"detail":"seed"}
+            ],
+            "evaluatedCases":6,
+            "failedCases":0,
+            "passed":true,
+            "durationMs":10,
+            "workingSetBytes":1000000,
+            "startedAt":"2026-10-01T00:00:06+00:00",
+            "completedAt":"2026-10-01T00:00:07+00:00"
+          }]
+          JSON
+
+          cat > /tmp/personalai-v2715/github/development-github-reports-$safe_workspace.json <<JSON
+          [{
+            "id":"$github_id",
+            "workspaceId":"$workspace_id",
+            "developmentRunId":"$run_id",
+            "repository":"owner/repo",
+            "branch":"experiment/v2715-smoke",
+            "baseBranch":"main",
+            "worktreePath":"$worktree_path",
+            "remote":"origin",
+            "pushed":true,
+            "pullRequestCreated":true,
+            "pullRequestNumber":715,
+            "pullRequestUrl":"https://example.invalid/owner/repo/pull/715",
+            "ciRunId":null,
+            "ciState":null,
+            "ciConclusion":null,
+            "ciRepairAttempts":0,
+            "maximumCiRepairAttempts":3,
+            "createdAt":"2026-10-01T00:00:08+00:00",
+            "updatedAt":"2026-10-01T00:00:08+00:00"
+          }]
+          JSON
+
+          cat > /tmp/personalai-v2715/events/development-events-$safe_workspace.json <<JSON
+          [{
+            "id":"$event_id",
+            "workspaceId":"$workspace_id",
+            "source":"github",
+            "eventType":"workflow_run",
+            "deliveryId":"delivery-v2715",
+            "repository":"owner/repo",
+            "action":"completed",
+            "ref":"experiment/v2715-smoke",
+            "sha":"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+            "number":null,
+            "status":"completed",
+            "conclusion":"success",
+            "tag":null,
+            "receivedAt":"2026-10-01T00:00:09+00:00",
+            "externalId":"2715001"
+          }]
+          JSON
+
+          cat > /tmp/personalai-v2715/policy/development-merge-policy-$safe_workspace.json <<JSON
+          [{
+            "id":"$merge_id",
+            "workspaceId":"$workspace_id",
+            "developmentRunId":"$run_id",
+            "gitHubReportId":"$github_id",
+            "riskLevel":"low",
+            "riskEvidence":"seeded full autonomous benchmark evidence",
+            "checks":[
+              {"check":"review","passed":true,"detail":"seed"},
+              {"check":"security","passed":true,"detail":"seed"},
+              {"check":"benchmark","passed":true,"detail":"seed"},
+              {"check":"ci","passed":true,"detail":"seed"},
+              {"check":"pull-request","passed":true,"detail":"seed"}
+            ],
+            "allRequiredChecksPassed":true,
+            "automaticMergeEligible":true,
+            "requiresUserConfirmation":false,
+            "mergeAttempted":true,
+            "merged":true,
+            "decision":"merged",
+            "mergeCommitSha":"bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+            "createdAt":"2026-10-01T00:00:10+00:00"
+          }]
+          JSON
+
+          cat > /tmp/personalai-v2715/sync/development-local-sync-$safe_workspace.json <<JSON
+          [{
+            "id":"$sync_id",
+            "workspaceId":"$workspace_id",
+            "developmentRunId":"$run_id",
+            "repositoryPath":"repo",
+            "remote":"origin",
+            "baseBranch":"main",
+            "branchBefore":"experiment/v2715-smoke",
+            "branchAfter":"main",
+            "state":"synced",
+            "fetchSucceeded":true,
+            "dirtyTreeDetected":false,
+            "checkoutPerformed":true,
+            "pullFastForwardOnly":true,
+            "synced":true,
+            "deferredReason":null,
+            "createdAt":"2026-10-01T00:00:11+00:00"
+          }]
+          JSON
+
+          curl -fsS -X POST http://127.0.0.1:5120/api/development/autonomous/emergency-stop             -H 'Content-Type: application/json'             -d '{
+              "stop":true,
+              "reason":"v2.7.15 emergency stop smoke",
+              "confirm":true
+            }' >/tmp/stopped.json
+          jq -e '.stopped==true' /tmp/stopped.json >/dev/null
+
+          curl -fsS -X POST http://127.0.0.1:5120/api/development/autonomous/run             -H 'Content-Type: application/json'             -d '{
+              "developmentRunId":"'"$run_id"'",
+              "repositoryPath":"repo",
+              "baseBranch":"main",
+              "gitHubRepository":"owner/repo",
+              "credentialRef":"gitcred_unused",
+              "maximumTransitions":12,
+              "confirmAutonomousRun":true,
+              "confirmExternalAi":false,
+              "confirmGitHubSideEffects":true,
+              "allowLowRiskAutomaticMerge":true
+            }' >/tmp/stopped-run.json
+
+          jq -e '
+            .emergencyStopped==true
+            and .transitions==0
+            and .completed==false
+            and .policyBypassed==false
+            and .stopReason=="emergency-stop"
+          ' /tmp/stopped-run.json >/dev/null
+
+          curl -fsS -X POST http://127.0.0.1:5120/api/development/autonomous/emergency-stop             -H 'Content-Type: application/json'             -d '{
+              "stop":false,
+              "reason":"resume v2.7.15 smoke",
+              "confirm":true
+            }' >/tmp/resumed.json
+          jq -e '.stopped==false' /tmp/resumed.json >/dev/null
+
+          curl -fsS -X POST http://127.0.0.1:5120/api/development/autonomous/run             -H 'Content-Type: application/json'             -d '{
+              "developmentRunId":"'"$run_id"'",
+              "repositoryPath":"repo",
+              "baseBranch":"main",
+              "gitHubRepository":"owner/repo",
+              "credentialRef":"gitcred_unused",
+              "dotnetTargetPath":"PersonalAI.sln",
+              "maximumTransitions":12,
+              "maximumRegressionCases":50,
+              "maximumBenchmarkCases":50,
+              "confirmAutonomousRun":true,
+              "confirmExternalAi":false,
+              "confirmGitHubSideEffects":true,
+              "allowLowRiskAutomaticMerge":true
+            }' >/tmp/full-run.json
+
+          jq -e '
+            .developmentRunId=="'"$run_id"'"
+            and .completed==true
+            and .status=="completed"
+            and .stage=="completed"
+            and .transitions==10
+            and .emergencyStopped==false
+            and .policyBypassed==false
+            and .stopReason=="completed"
+            and (.steps | length)==10
+          ' /tmp/full-run.json >/dev/null
+
+          jq -e '
+            ([.steps[].action] | index("verified-diagnosis")) != null
+            and ([.steps[].action] | index("ai-code")) != null
+            and ([.steps[].action] | index("test")) != null
+            and ([.steps[].action] | index("independent-review")) != null
+            and ([.steps[].action] | index("security")) != null
+            and ([.steps[].action] | index("benchmark")) != null
+            and ([.steps[].action] | index("push-pr")) != null
+            and ([.steps[].action] | index("ci")) != null
+            and ([.steps[].action] | index("merge-policy")) != null
+            and ([.steps[].action] | index("local-sync")) != null
+          ' /tmp/full-run.json >/dev/null
+
+          curl -fsS http://127.0.0.1:5120/api/development/runs/$run_id             | jq -e '
+              .status=="completed"
+              and .stage=="completed"
+              and .securityReportId=="'"$security_id"'"
+              and .benchmarkReportId=="'"$benchmark_id"'"
+              and .gitHubReportId=="'"$github_id"'"
+              and .mergePolicyReportId=="'"$merge_id"'"
+              and .localSyncReportId=="'"$sync_id"'"
+              and .ciRunId!=null
+            ' >/dev/null
+
+          curl -fsS http://127.0.0.1:5120/api/development/improvements/$item_id             | jq -e '.state=="resolved"' >/dev/null
+
+          grep -Fq 'case DevelopmentRunStages.Coding'             src/PersonalAI.Web/Services/AutonomousDevelopmentService.cs
+          grep -Fq 'case DevelopmentRunStages.Ci'             src/PersonalAI.Web/Services/AutonomousDevelopmentService.cs
+          grep -Fq 'PolicyBypassed: false'             src/PersonalAI.Web/Services/AutonomousDevelopmentService.cs
+
+          curl -fsS http://127.0.0.1:5120/api/development/status             | jq -e '(.availableCapabilities | index("full-autonomous-development")) != null' >/dev/null

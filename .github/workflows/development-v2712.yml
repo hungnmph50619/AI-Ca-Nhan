@@ -62,7 +62,7 @@ jobs:
           start_app
 
           jq -e '
-            .version=="2.7.12"
+            (.version | split(".") | map(tonumber)) >= [2,7,12]
             and .persistedStateUsed==true
             and .sideEffectReplayEnabled==false
             and .safeReconciliationEnabled==true

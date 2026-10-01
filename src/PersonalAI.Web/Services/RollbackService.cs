@@ -94,6 +94,7 @@ public sealed class RollbackService(
             rollout.Id,
             rollout.CandidateModelVersionId,
             rollout.ProductionModelVersionId,
+            request,
             triggers,
             required,
             required,

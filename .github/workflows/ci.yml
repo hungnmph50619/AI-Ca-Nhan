@@ -3128,7 +3128,7 @@ jobs:
           grep -Fq -- '--ignore-submodules=all' src/PersonalAI.Web/Services/DevelopmentAgentService.cs
           grep -Fq 'v140.css' src/PersonalAI.Web/wwwroot/index.html
           grep -Fq 'v140.js' src/PersonalAI.Web/wwwroot/index.html
-          grep -Fq 'KHẢ NĂNG ĐƯỢC KIỂM SOÁT · KHÔNG CHẠY SHELL TÙY Ý' src/PersonalAI.Web/wwwroot/v140.js
+          grep -Fq 'KHẢ NĂNG CÓ KIỂM SOÁT · KHÔNG CHẠY LỆNH TÙY Ý' src/PersonalAI.Web/wwwroot/v140.js
           grep -Fq 'DEVELOPMENT: "PHÁT TRIỂN PHẦN MỀM"' src/PersonalAI.Web/wwwroot/v080.js
           grep -Fq 'DEVELOPMENT: "PHÁT TRIỂN PHẦN MỀM"' src/PersonalAI.Web/wwwroot/v090.js
           ! grep -Fq 'UseShellExecute = true' src/PersonalAI.Web/Services/DevelopmentAgentService.cs

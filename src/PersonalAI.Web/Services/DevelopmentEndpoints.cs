@@ -12,6 +12,7 @@ public static class DevelopmentEndpoints
         services.AddSingleton<ILocalGitRepositoryService, LocalGitRepositoryService>();
         services.AddSingleton<IDevelopmentWorktreeService, DevelopmentWorktreeService>();
         services.AddSingleton<IDevelopmentRunWorktreeService, DevelopmentRunWorktreeService>();
+        services.AddScoped<IDevelopmentRecoveryService, DevelopmentRecoveryService>();
         services.AddSingleton<IDevelopmentLeaseService, DevelopmentLeaseService>();
         services.AddSingleton<IGitCredentialService, GitCredentialService>();
         services.AddSingleton<IDevelopmentEventBus, DevelopmentEventBus>();
@@ -70,6 +71,38 @@ public static class DevelopmentEndpoints
         app.MapGet("/api/development/git/capabilities", (
             ILocalGitRepositoryService git) =>
             Results.Ok(git.GetStatus()));
+
+        app.MapGet("/api/development/recovery/status", (
+            IDevelopmentRecoveryService recovery) =>
+            Results.Ok(recovery.GetStatus()));
+
+        app.MapPost("/api/development/recovery/run", (
+            RecoverDevelopmentRunRequest request,
+            IDevelopmentRecoveryService recovery) =>
+        {
+            try
+            {
+                return Results.Ok(recovery.Recover(request));
+            }
+            catch (DevelopmentRecoveryValidationException exception)
+            {
+                return Results.BadRequest(new ApiError(exception.Message));
+            }
+            catch (DevelopmentRunConflictException exception)
+            {
+                return Results.Json(
+                    new ApiError(exception.Message),
+                    statusCode: StatusCodes.Status409Conflict);
+            }
+            catch (DevelopmentRunValidationException exception)
+            {
+                return Results.BadRequest(new ApiError(exception.Message));
+            }
+            catch (KeyNotFoundException exception)
+            {
+                return Results.NotFound(new ApiError(exception.Message));
+            }
+        });
 
         app.MapGet("/api/development/run-worktrees/status", (
             IDevelopmentRunWorktreeService runWorktrees) =>

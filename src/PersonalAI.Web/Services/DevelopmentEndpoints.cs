@@ -11,6 +11,7 @@ public static class DevelopmentEndpoints
         services.AddSingleton<ILocalGitRepositoryService, LocalGitRepositoryService>();
         services.AddSingleton<IDevelopmentWorktreeService, DevelopmentWorktreeService>();
         services.AddSingleton<IDevelopmentLeaseService, DevelopmentLeaseService>();
+        services.AddSingleton<IGitCredentialService, GitCredentialService>();
         services.AddSingleton<IPersonalAiTool, DevelopmentWorkspaceInspectTool>();
         services.AddSingleton<IPersonalAiTool, DevelopmentTextSearchTool>();
         services.AddSingleton<IPersonalAiTool, DevelopmentGitStatusTool>();
@@ -48,6 +49,47 @@ public static class DevelopmentEndpoints
         app.MapGet("/api/development/git/capabilities", (
             ILocalGitRepositoryService git) =>
             Results.Ok(git.GetStatus()));
+
+        app.MapGet("/api/development/git-credentials/status", (
+            IGitCredentialService credentials) =>
+            Results.Ok(credentials.GetStatus()));
+
+        app.MapGet("/api/development/git-credentials", (
+            IGitCredentialService credentials) =>
+            Results.Ok(credentials.GetAll()));
+
+        app.MapPost("/api/development/git-credentials", (
+            CreateGitCredentialRequest request,
+            IGitCredentialService credentials) =>
+        {
+            try
+            {
+                return Results.Ok(credentials.Create(request));
+            }
+            catch (GitCredentialValidationException exception)
+            {
+                return Results.BadRequest(new ApiError(exception.Message));
+            }
+        });
+
+        app.MapDelete("/api/development/git-credentials", (
+            DeleteGitCredentialRequest request,
+            IGitCredentialService credentials) =>
+        {
+            try
+            {
+                credentials.Delete(request);
+                return Results.NoContent();
+            }
+            catch (GitCredentialValidationException exception)
+            {
+                return Results.BadRequest(new ApiError(exception.Message));
+            }
+            catch (KeyNotFoundException exception)
+            {
+                return Results.NotFound(new ApiError(exception.Message));
+            }
+        });
 
         app.MapGet("/api/development/leases/status", (
             IDevelopmentLeaseService leases) =>

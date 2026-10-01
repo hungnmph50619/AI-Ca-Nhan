@@ -487,6 +487,22 @@ public sealed class HardeningBackupService : IHardeningBackupService
             ?? throw new HardeningValidationException(
                 "Backup không có manifest hợp lệ.");
 
+        var verificationStaging = Path.Combine(
+            Path.GetTempPath(),
+            "personalai-restore-verify-" + Guid.NewGuid().ToString("N"));
+        Directory.CreateDirectory(verificationStaging);
+        try
+        {
+            await ExtractBackupAsync(
+                source,
+                verificationStaging,
+                cancellationToken);
+        }
+        finally
+        {
+            TryDeleteDirectory(verificationStaging);
+        }
+
         await using var maintenance = AcquireMaintenanceLease();
 
         await CopyFileAsync(

@@ -26,36 +26,6 @@ public sealed class LeaguePracticeAutomationService(
         "RiotClientUxRender"
     ];
 
-    private static readonly LeagueUiStep[] Steps =
-    [
-        new(
-            "play",
-            "nút vàng lớn có biểu tượng tam giác và chữ Chơi (Play) ở góc dưới bên trái của League client; chọn chính thân nút Chơi, không chọn nút mũi tên thả xuống bên phải",
-            1800,
-            0.72,
-            new NormalizedRegion(0.03, 0.34, 0.68, 0.99)),
-        new(
-            "training",
-            "mục Luyện tập hoặc Training trong màn hình chọn chế độ chơi của League of Legends",
-            1400,
-            0.82),
-        new(
-            "practice-tool",
-            "mục Công cụ luyện tập hoặc Practice Tool trong nhóm Luyện tập/Training",
-            1200,
-            0.82),
-        new(
-            "confirm",
-            "nút Xác nhận hoặc Confirm để tạo phòng Practice Tool",
-            2200,
-            0.84),
-        new(
-            "start-game",
-            "nút Bắt đầu hoặc Start Game trong phòng Practice Tool",
-            2500,
-            0.84)
-    ];
-
     public async Task<LeaguePracticeAutomationResult> OpenPracticeToolAsync(
         CancellationToken cancellationToken = default)
     {
@@ -73,7 +43,7 @@ public sealed class LeaguePracticeAutomationService(
                 "blocked",
                 "vision",
                 0,
-                "Cần cấu hình Gemini để Desktop Vision xác minh từng bước UI.",
+                "Cần cấu hình Gemini để Desktop Vision xác minh từng trạng thái UI.",
                 startedAt);
 
         try
@@ -97,93 +67,171 @@ public sealed class LeaguePracticeAutomationService(
             maximumActions: 14,
             maximumSeconds: 170);
 
-        var completed = 0;
+        var clicks = 0;
+        var consecutiveWaits = 0;
+        var repeatedDecisionCount = 0;
+        string? lastDecisionFingerprint = null;
+        string? lastAction = null;
+
         try
         {
-            while (completed < Steps.Length)
+            for (var observation = 0; observation < 16; observation++)
             {
                 cancellationToken.ThrowIfCancellationRequested();
 
                 var window = await WaitForClientWindowAsync(
-                    TimeSpan.FromSeconds(20),
+                    TimeSpan.FromSeconds(12),
                     cancellationToken);
+
                 if (window is null)
                 {
+                    if (string.Equals(
+                        lastAction,
+                        "start-game",
+                        StringComparison.OrdinalIgnoreCase))
+                    {
+                        return Result(
+                            "completed",
+                            "start-game",
+                            clicks,
+                            "Đã nhấn Bắt đầu và League client đã chuyển khỏi trạng thái menu hiển thị.",
+                            startedAt);
+                    }
+
                     return Result(
                         "blocked",
-                        Steps[completed].Phase,
-                        completed,
-                        "Riot/League đang chạy nhưng chưa có cửa sổ client hiển thị để xác minh.",
+                        lastAction ?? "observe",
+                        clicks,
+                        "Không còn thấy cửa sổ Riot/League để tiếp tục quan sát.",
                         startedAt);
                 }
 
                 if (!window.IsForeground)
                 {
                     computer.FocusWindow(window.WindowId);
-                    await Task.Delay(700, cancellationToken);
-                    window = await WaitForClientWindowAsync(
-                        TimeSpan.FromSeconds(5),
-                        cancellationToken);
+                    await Task.Delay(650, cancellationToken);
+                    window = FindClientWindow();
                     if (window is null || !window.IsForeground)
                     {
                         return Result(
                             "blocked",
                             "focus",
-                            completed,
+                            clicks,
                             "Không giữ được Riot/League client ở foreground.",
                             startedAt);
                     }
                 }
 
-                var step = Steps[completed];
                 using var frame = CaptureDisposable(window);
-                var target = await LocateStepTargetAsync(
+                var decision = await vision.DecideLeaguePracticeActionAsync(
                     frame.Value,
-                    step,
                     cancellationToken);
 
-                if (!target.Found ||
-                    target.Confidence < step.MinimumConfidence ||
-                    !IsInsideExpectedRegion(
-                        frame.Value,
-                        target,
-                        step.ExpectedRegion))
+                if (decision.Action == "complete")
                 {
-                    var regionDetail =
-                        target.Found &&
-                        !IsInsideExpectedRegion(
-                            frame.Value,
-                            target,
-                            step.ExpectedRegion)
-                            ? " Vision tìm thấy phần tử nhưng tọa độ nằm ngoài vùng UI dự kiến nên không click."
-                            : string.Empty;
-
                     return Result(
-                        "blocked",
-                        step.Phase,
-                        completed,
-                        target.Found
-                            ? $"Vision chưa đủ chắc chắn ({target.Confidence:0.00}, yêu cầu {step.MinimumConfidence:0.00}): {target.Reason}{regionDetail}"
-                            : $"Không tìm thấy phần tử cần thiết: {target.Reason}",
+                        "completed",
+                        "practice-tool",
+                        clicks,
+                        $"Visual Agent xác nhận mục tiêu đã hoàn tất: {decision.Reason}",
                         startedAt);
                 }
 
-                var screenX = checked(frame.Value.Left + target.ImageX);
-                var screenY = checked(frame.Value.Top + target.ImageY);
+                if (decision.Action == "blocked")
+                {
+                    return Result(
+                        "blocked",
+                        "vision",
+                        clicks,
+                        $"Visual Agent dừng an toàn: {decision.Reason}",
+                        startedAt);
+                }
+
+                if (decision.Action == "wait")
+                {
+                    consecutiveWaits++;
+                    lastAction = "wait";
+                    if (consecutiveWaits >= 5)
+                    {
+                        return Result(
+                            "blocked",
+                            "wait",
+                            clicks,
+                            $"Visual Agent chờ quá lâu mà trạng thái không tiến triển: {decision.Reason}",
+                            startedAt);
+                    }
+
+                    await Task.Delay(1200, cancellationToken);
+                    continue;
+                }
+
+                consecutiveWaits = 0;
+                var minimumConfidence =
+                    decision.Action == "play" ? 0.72 : 0.80;
+                if (decision.Confidence < minimumConfidence)
+                {
+                    return Result(
+                        "blocked",
+                        decision.Action,
+                        clicks,
+                        $"Vision chưa đủ chắc chắn ({decision.Confidence:0.00}, yêu cầu {minimumConfidence:0.00}): {decision.Reason}",
+                        startedAt);
+                }
+
+                if (!IsSafeClick(frame.Value, decision))
+                {
+                    return Result(
+                        "blocked",
+                        decision.Action,
+                        clicks,
+                        "Visual Agent trả tọa độ click không an toàn hoặc nằm sát mép cửa sổ.",
+                        startedAt);
+                }
+
+                var fingerprint = BuildDecisionFingerprint(decision);
+                if (string.Equals(
+                    fingerprint,
+                    lastDecisionFingerprint,
+                    StringComparison.Ordinal))
+                {
+                    repeatedDecisionCount++;
+                }
+                else
+                {
+                    repeatedDecisionCount = 0;
+                    lastDecisionFingerprint = fingerprint;
+                }
+
+                if (repeatedDecisionCount >= 2)
+                {
+                    return Result(
+                        "blocked",
+                        decision.Action,
+                        clicks,
+                        "Visual Agent lặp lại cùng một thao tác mà giao diện không thay đổi; đã dừng để tránh click vòng lặp.",
+                        startedAt);
+                }
+
+                var screenX = checked(frame.Value.Left + decision.ImageX);
+                var screenY = checked(frame.Value.Top + decision.ImageY);
                 computer.ClickLeft(
                     window.WindowId,
                     screenX,
                     screenY);
-                completed++;
 
-                await Task.Delay(step.DelayMs, cancellationToken);
+                clicks++;
+                lastAction = decision.Action;
+
+                await Task.Delay(
+                    GetPostActionDelay(decision.Action),
+                    cancellationToken);
             }
 
             return Result(
-                "completed",
-                "practice-tool",
-                completed,
-                "Đã hoàn tất chuỗi thao tác mở Practice Tool.",
+                "blocked",
+                lastAction ?? "observe",
+                clicks,
+                "Visual Agent đã chạm giới hạn 16 lần quan sát trước khi hoàn tất.",
                 startedAt);
         }
         catch (OperationCanceledException)
@@ -197,13 +245,10 @@ public sealed class LeaguePracticeAutomationService(
             HttpRequestException or
             TaskCanceledException)
         {
-            control.Stop();
             return Result(
                 "blocked",
-                completed < Steps.Length
-                    ? Steps[completed].Phase
-                    : "verify",
-                completed,
+                lastAction ?? "observe",
+                clicks,
                 ex.Message,
                 startedAt);
         }
@@ -359,61 +404,38 @@ public sealed class LeaguePracticeAutomationService(
             .FirstOrDefault();
     }
 
-    private async Task<DesktopVisionTarget> LocateStepTargetAsync(
+    private static bool IsSafeClick(
         DesktopScreenshotFrame frame,
-        LeagueUiStep step,
-        CancellationToken cancellationToken)
+        LeagueVisualDecision decision)
     {
-        DesktopVisionTarget? last = null;
-        for (var attempt = 0; attempt < 3; attempt++)
-        {
-            cancellationToken.ThrowIfCancellationRequested();
-            last = await vision.LocateAsync(
-                frame,
-                step.Target,
-                cancellationToken);
-
-            if (last.Found &&
-                last.Confidence >= step.MinimumConfidence &&
-                IsInsideExpectedRegion(
-                    frame,
-                    last,
-                    step.ExpectedRegion))
-            {
-                return last;
-            }
-
-            if (attempt < 2)
-                await Task.Delay(650, cancellationToken);
-        }
-
-        return last ?? new DesktopVisionTarget(
-            false,
-            step.Phase,
-            0,
-            0,
-            0,
-            "Desktop Vision không trả về mục tiêu.");
-    }
-
-    private static bool IsInsideExpectedRegion(
-        DesktopScreenshotFrame frame,
-        DesktopVisionTarget target,
-        NormalizedRegion? region)
-    {
-        if (region is null)
-            return true;
-
         if (frame.Width <= 0 || frame.Height <= 0)
             return false;
 
-        var normalizedX = target.ImageX / (double)frame.Width;
-        var normalizedY = target.ImageY / (double)frame.Height;
-        return normalizedX >= region.MinimumX &&
-            normalizedX <= region.MaximumX &&
-            normalizedY >= region.MinimumY &&
-            normalizedY <= region.MaximumY;
+        const int edgeMargin = 6;
+        return decision.ImageX >= edgeMargin &&
+            decision.ImageX < frame.Width - edgeMargin &&
+            decision.ImageY >= edgeMargin &&
+            decision.ImageY < frame.Height - edgeMargin;
     }
+
+    private static string BuildDecisionFingerprint(
+        LeagueVisualDecision decision)
+    {
+        var bucketX = decision.ImageX / 24;
+        var bucketY = decision.ImageY / 24;
+        return $"{decision.Action}:{bucketX}:{bucketY}";
+    }
+
+    private static int GetPostActionDelay(string action) =>
+        action switch
+        {
+            "play" => 1800,
+            "training" => 1400,
+            "practice-tool" => 1300,
+            "confirm" => 2200,
+            "start-game" => 3000,
+            _ => 1200
+        };
 
     private FrameLease CaptureDisposable(
         ComputerWindowInfo window)
@@ -443,19 +465,6 @@ public sealed class LeaguePracticeAutomationService(
             detail,
             startedAt,
             DateTimeOffset.UtcNow);
-
-    private sealed record LeagueUiStep(
-        string Phase,
-        string Target,
-        int DelayMs,
-        double MinimumConfidence,
-        NormalizedRegion? ExpectedRegion = null);
-
-    private sealed record NormalizedRegion(
-        double MinimumX,
-        double MaximumX,
-        double MinimumY,
-        double MaximumY);
 
     private sealed class FrameLease(
         DesktopScreenshotFrame value) : IDisposable

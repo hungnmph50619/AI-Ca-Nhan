@@ -1586,7 +1586,7 @@ jobs:
 
           tools=$(curl -fsS http://127.0.0.1:5077/api/tools)
           echo "$tools" | jq -e '(.frameworkVersion | test("^[0-9]+\\.[0-9]+\\.[0-9]+$")) and (.permissionTypes | sort) == (["BROWSER","COMPUTER","CONNECTOR","DELETE","DEVELOPMENT","EXTERNAL","READ","SENSITIVE","WRITE"] | sort)' >/dev/null
-          echo "$tools" | jq -e '(.tools | length) == 33
+          echo "$tools" | jq -e '(.tools | length) == 35
             and any(.tools[]; .name == "local.clock" and .localOnly == true and .requiredPermissions == ["READ"])
             and any(.tools[]; .name == "local.text_stats" and .timeoutMs == 2000)
             and any(.tools[]; .name == "memory.search")
@@ -1607,6 +1607,8 @@ jobs:
             and any(.tools[]; .name == "computer.window.focus" and .requiredPermissions == ["WRITE","COMPUTER","SENSITIVE"] and .requiresConfirmation == true)
             and any(.tools[]; .name == "computer.cursor.move" and .requiredPermissions == ["WRITE","COMPUTER"] and .requiresConfirmation == true)
             and any(.tools[]; .name == "computer.mouse.click-left" and .requiredPermissions == ["WRITE","COMPUTER","SENSITIVE"] and .requiresConfirmation == true)
+          and any(.tools[]; .name == "computer.browser.open-default" and .requiredPermissions == ["WRITE","EXTERNAL","COMPUTER"] and .requiresConfirmation == true)
+          and any(.tools[]; .name == "league.practice.open" and .requiredPermissions == ["WRITE","EXTERNAL","COMPUTER"] and .requiresConfirmation == true and .timeoutMs == 180000)
             and any(.tools[]; .name == "browser.session.info" and .requiredPermissions == ["READ","BROWSER"] and .requiresConfirmation == true)
             and any(.tools[]; .name == "browser.navigate" and .requiredPermissions == ["READ","EXTERNAL","BROWSER"] and .requiresConfirmation == true)
             and any(.tools[]; .name == "browser.page.observe" and .requiredPermissions == ["READ","BROWSER"] and .requiresConfirmation == true)

@@ -28,6 +28,7 @@ public sealed class ComputerOperatorTaskService(
     IDesktopScreenshotService screenshots,
     DesktopVisionService vision,
     ComputerOperatorProgressStore progress,
+    ComputerOperatorExecutionControl execution,
     ILogger<ComputerOperatorTaskService> logger)
     : IComputerOperatorTaskService
 {
@@ -65,6 +66,11 @@ public sealed class ComputerOperatorTaskService(
             maximumActions: 12,
             maximumSeconds: 90);
 
+        var operatorToken = execution.Begin(normalizedGoal);
+        using var linked = CancellationTokenSource.CreateLinkedTokenSource(
+            cancellationToken,
+            operatorToken);
+
         progress.Start(
             $"Bắt đầu tác vụ: {normalizedGoal}");
 
@@ -75,12 +81,14 @@ public sealed class ComputerOperatorTaskService(
         {
             for (var index = 1; index <= MaximumSteps; index++)
             {
-                cancellationToken.ThrowIfCancellationRequested();
+                linked.Token.ThrowIfCancellationRequested();
 
                 if (control.GetStatus().Paused)
                     return Finish(
                         false,
                         "Computer Operator đã dừng vì phiên điều khiển hết hạn, hết ngân sách hoặc bị dừng khẩn cấp.");
+
+                await execution.WaitIfPausedAsync(linked.Token);
 
                 var windowsContext = BuildObservation();
                 var active = computer.GetActiveWindow();
@@ -96,7 +104,7 @@ public sealed class ComputerOperatorTaskService(
                 {
                     frame = await screenshots.CaptureStableVirtualScreenAsync(
                         maximumWaitMs: 5000,
-                        cancellationToken);
+                        linked.Token);
 
                     progress.Add(
                         "observe",
@@ -123,7 +131,7 @@ public sealed class ComputerOperatorTaskService(
                         frame,
                         normalizedGoal,
                         windowsContext,
-                        cancellationToken);
+                        linked.Token);
                 }
                 finally
                 {
@@ -163,7 +171,7 @@ public sealed class ComputerOperatorTaskService(
                         $"Vision yêu cầu chờ rồi quan sát lại: {decision.Reason}",
                         "wait",
                         decision.Confidence);
-                    await Task.Delay(900, cancellationToken);
+                    await Task.Delay(900, linked.Token);
                     continue;
                 }
 
@@ -185,7 +193,7 @@ public sealed class ComputerOperatorTaskService(
                             "Vision không đủ chắc chắn sau 3 lần quan sát.");
                     }
 
-                    await Task.Delay(700, cancellationToken);
+                    await Task.Delay(700, linked.Token);
                     continue;
                 }
 
@@ -231,7 +239,7 @@ public sealed class ComputerOperatorTaskService(
                     "verify",
                     "Đang chờ giao diện phản hồi; vòng tiếp theo sẽ chụp màn hình mới để xác minh kết quả.");
 
-                await Task.Delay(700, cancellationToken);
+                await Task.Delay(700, linked.Token);
             }
 
             progress.Block(
@@ -239,6 +247,12 @@ public sealed class ComputerOperatorTaskService(
             return Finish(
                 false,
                 $"Đã đạt giới hạn {MaximumSteps} bước nên dừng để tránh vòng lặp.");
+        }
+        catch (OperationCanceledException) when (operatorToken.IsCancellationRequested)
+        {
+            progress.StopByUser();
+            throw new ToolExecutionStoppedByUserException(
+                "Người dùng đã dừng Computer Operator từ AI Operator Console.");
         }
         catch (OperationCanceledException)
         {
@@ -250,6 +264,10 @@ public sealed class ComputerOperatorTaskService(
             progress.Block(
                 $"Computer Operator gặp lỗi: {exception.Message}");
             throw;
+        }
+        finally
+        {
+            execution.Complete();
         }
 
         ComputerOperatorTaskResult Finish(

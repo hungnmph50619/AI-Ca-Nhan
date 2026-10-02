@@ -66,6 +66,11 @@ builder.Services.AddHttpClient<MinimapVisionService>(client =>
     client.BaseAddress = new Uri("https://generativelanguage.googleapis.com/v1beta/");
     client.Timeout = TimeSpan.FromSeconds(45);
 });
+builder.Services.AddHttpClient<DesktopVisionService>(client =>
+{
+    client.BaseAddress = new Uri("https://generativelanguage.googleapis.com/v1beta/");
+    client.Timeout = TimeSpan.FromSeconds(45);
+});
 builder.Services.AddHttpClient<MinimapBoxVisionService>(client =>
 {
     client.BaseAddress = new Uri("https://generativelanguage.googleapis.com/v1beta/");

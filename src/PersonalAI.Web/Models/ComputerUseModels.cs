@@ -35,7 +35,9 @@ public sealed record ComputerUseStatusResponse(
     DateTimeOffset? DesktopSessionExpiresAt = null,
     int DesktopRemainingActions = 0,
     bool StopHotkeyAvailable = false,
-    string StopHotkey = "Ctrl + Shift + F12");
+    string StopHotkey = "Ctrl + Shift + F12",
+    bool DelegatedOperator = false,
+    bool AllowExternalAiContext = false);
 
 public sealed record ComputerScreenInfo(
     int PrimaryWidth,

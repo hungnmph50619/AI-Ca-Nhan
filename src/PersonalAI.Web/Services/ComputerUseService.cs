@@ -31,6 +31,20 @@ public interface IComputerUseService
 
     ComputerActionResponse ClickLeft(string windowId, int x, int y);
 
+    ComputerActionResponse ClickRight(string windowId, int x, int y);
+
+    ComputerActionResponse DoubleClickLeft(string windowId, int x, int y);
+
+    ComputerActionResponse Scroll(string windowId, int x, int y, int delta);
+
+    ComputerActionResponse DragLeft(
+        string windowId,
+        int startX,
+        int startY,
+        int endX,
+        int endY,
+        int durationMs = 500);
+
     ComputerActionResponse TypeNotepadText(string windowId, string text);
 
     ComputerActionResponse OpenDefaultBrowser(string? url = null);
@@ -55,6 +69,9 @@ public sealed class WindowsComputerUseService(
     public const int MaximumNotepadTextLength = 32;
     private const uint MouseLeftDown = 0x0002;
     private const uint MouseLeftUp = 0x0004;
+    private const uint MouseRightDown = 0x0008;
+    private const uint MouseRightUp = 0x0010;
+    private const uint MouseWheel = 0x0800;
 
     public ComputerUseStatusResponse GetStatus()
     {
@@ -73,6 +90,10 @@ public sealed class WindowsComputerUseService(
                 ComputerUseCapabilities.MoveCursor,
                 ComputerUseCapabilities.SmoothMoveCursor,
                 ComputerUseCapabilities.ClickLeft,
+                ComputerUseCapabilities.ClickRight,
+                ComputerUseCapabilities.DoubleClickLeft,
+                ComputerUseCapabilities.Scroll,
+                ComputerUseCapabilities.DragLeft,
                 ComputerUseCapabilities.TypeNotepadText,
                 ComputerUseCapabilities.OpenDefaultBrowser
             }
@@ -445,6 +466,257 @@ public sealed class WindowsComputerUseService(
             ComputerUseCapabilities.ClickLeft,
             true,
             "Đã gửi một lần nhấp chuột trái tại tọa độ đã xác nhận.");
+    }
+
+    public ComputerActionResponse ClickRight(
+        string windowId,
+        int x,
+        int y) =>
+        control.RunAllowed(() =>
+            ClickButtonCore(
+                windowId,
+                x,
+                y,
+                MouseRightDown,
+                MouseRightUp,
+                ComputerUseCapabilities.ClickRight,
+                "nhấp chuột phải"));
+
+    public ComputerActionResponse DoubleClickLeft(
+        string windowId,
+        int x,
+        int y) =>
+        control.RunAllowed(() =>
+        {
+            ValidatePointerTarget(windowId, x, y, out var target);
+            if (!SetCursorPos(x, y) || GetForegroundWindow() != target)
+                throw new ToolExecutionInputException(
+                    "Không thể xác nhận vị trí con trỏ và cửa sổ đích trước khi nhấp đúp.");
+
+            for (var click = 0; click < 2; click++)
+            {
+                SendMouseButton(MouseLeftDown, MouseLeftUp);
+                if (click == 0)
+                    Thread.Sleep(90);
+            }
+
+            return new ComputerActionResponse(
+                ComputerUseCapabilities.DoubleClickLeft,
+                true,
+                "Đã gửi hai lần nhấp chuột trái liên tiếp tại tọa độ đã xác nhận.");
+        });
+
+    public ComputerActionResponse Scroll(
+        string windowId,
+        int x,
+        int y,
+        int delta) =>
+        control.RunAllowed(() =>
+        {
+            ValidatePointerTarget(windowId, x, y, out var target);
+            if (delta is < -2400 or > 2400 || delta == 0)
+                throw new ToolExecutionInputException(
+                    "Độ cuộn phải nằm trong khoảng -2400..2400 và khác 0.");
+
+            if (!SetCursorPos(x, y) || GetForegroundWindow() != target)
+                throw new ToolExecutionInputException(
+                    "Không thể xác nhận con trỏ/cửa sổ trước khi cuộn.");
+
+            var input = new[]
+            {
+                new NativeInputEvent
+                {
+                    Type = InputMouse,
+                    Data = new NativeInputUnion
+                    {
+                        Mouse = new MouseInputData
+                        {
+                            MouseData = unchecked((uint)delta),
+                            Flags = MouseWheel
+                        }
+                    }
+                }
+            };
+
+            var sent = SendInput(
+                1,
+                input,
+                Marshal.SizeOf<NativeInputEvent>());
+            if (sent != 1)
+                throw new ToolExecutionInputException(
+                    "Windows không xác nhận sự kiện cuộn.");
+
+            return new ComputerActionResponse(
+                ComputerUseCapabilities.Scroll,
+                true,
+                $"Đã cuộn tại ({x}, {y}) với delta {delta}.");
+        });
+
+    public ComputerActionResponse DragLeft(
+        string windowId,
+        int startX,
+        int startY,
+        int endX,
+        int endY,
+        int durationMs = 500) =>
+        control.RunAllowed(() =>
+        {
+            ValidatePointerTarget(
+                windowId,
+                startX,
+                startY,
+                out var target);
+            ValidatePointerTarget(
+                windowId,
+                endX,
+                endY,
+                out var endTarget);
+            if (target != endTarget)
+                throw new ToolExecutionInputException(
+                    "Điểm đầu và cuối kéo-thả phải nằm trong cùng cửa sổ foreground.");
+
+            var safeDuration = Math.Clamp(durationMs, 180, 1800);
+            var steps = Math.Clamp(safeDuration / 24, 8, 60);
+            var sleep = Math.Max(8, safeDuration / steps);
+
+            if (!SetCursorPos(startX, startY) ||
+                GetForegroundWindow() != target)
+                throw new ToolExecutionInputException(
+                    "Không thể đặt con trỏ tại điểm bắt đầu kéo.");
+
+            SendMouseDown(MouseLeftDown);
+            try
+            {
+                for (var index = 1; index <= steps; index++)
+                {
+                    if (GetForegroundWindow() != target)
+                        throw new ToolExecutionInputException(
+                            "Cửa sổ foreground đã thay đổi trong lúc kéo-thả.");
+
+                    var p = index / (double)steps;
+                    var eased = p * p * (3d - 2d * p);
+                    var nextX = (int)Math.Round(
+                        startX + ((endX - startX) * eased));
+                    var nextY = (int)Math.Round(
+                        startY + ((endY - startY) * eased));
+
+                    if (!SetCursorPos(nextX, nextY))
+                        throw new ToolExecutionInputException(
+                            "Windows từ chối di chuyển chuột trong lúc kéo-thả.");
+
+                    Thread.Sleep(sleep);
+                }
+            }
+            finally
+            {
+                SendMouseUp(MouseLeftUp);
+            }
+
+            return new ComputerActionResponse(
+                ComputerUseCapabilities.DragLeft,
+                true,
+                $"Đã kéo-thả từ ({startX}, {startY}) tới ({endX}, {endY}).");
+        });
+
+    private ComputerActionResponse ClickButtonCore(
+        string windowId,
+        int x,
+        int y,
+        uint downFlag,
+        uint upFlag,
+        string capability,
+        string label)
+    {
+        ValidatePointerTarget(windowId, x, y, out var target);
+
+        if (!SetCursorPos(x, y) || GetForegroundWindow() != target)
+            throw new ToolExecutionInputException(
+                $"Không thể xác nhận vị trí con trỏ và cửa sổ trước khi {label}.");
+
+        SendMouseButton(downFlag, upFlag);
+
+        return new ComputerActionResponse(
+            capability,
+            true,
+            $"Đã gửi một lần {label} tại tọa độ đã xác nhận.");
+    }
+
+    private void ValidatePointerTarget(
+        string windowId,
+        int x,
+        int y,
+        out IntPtr target)
+    {
+        EnsureAvailable();
+        var screen = GetScreenInfo();
+        var right = checked(screen.VirtualLeft + screen.VirtualWidth);
+        var bottom = checked(screen.VirtualTop + screen.VirtualHeight);
+        if (x < screen.VirtualLeft || x >= right ||
+            y < screen.VirtualTop || y >= bottom)
+            throw new ToolExecutionInputException(
+                "Tọa độ thao tác nằm ngoài desktop ảo.");
+
+        target = ParseWindowId(windowId);
+        if (!IsWindow(target) ||
+            !IsWindowVisible(target) ||
+            target != GetForegroundWindow() ||
+            !GetWindowRect(target, out var rect) ||
+            x < rect.Left || x >= rect.Right ||
+            y < rect.Top || y >= rect.Bottom)
+            throw new ToolExecutionInputException(
+                "Cửa sổ đích không còn ở phía trước hoặc tọa độ nằm ngoài cửa sổ.");
+    }
+
+    private static void SendMouseButton(
+        uint downFlag,
+        uint upFlag)
+    {
+        SendMouseDown(downFlag);
+        SendMouseUp(upFlag);
+    }
+
+    private static void SendMouseDown(uint flag)
+    {
+        var input = new[]
+        {
+            new NativeInputEvent
+            {
+                Type = InputMouse,
+                Data = new NativeInputUnion
+                {
+                    Mouse = new MouseInputData { Flags = flag }
+                }
+            }
+        };
+
+        if (SendInput(
+                1,
+                input,
+                Marshal.SizeOf<NativeInputEvent>()) != 1)
+            throw new ToolExecutionInputException(
+                "Windows không xác nhận sự kiện nhấn chuột.");
+    }
+
+    private static void SendMouseUp(uint flag)
+    {
+        var input = new[]
+        {
+            new NativeInputEvent
+            {
+                Type = InputMouse,
+                Data = new NativeInputUnion
+                {
+                    Mouse = new MouseInputData { Flags = flag }
+                }
+            }
+        };
+
+        if (SendInput(
+                1,
+                input,
+                Marshal.SizeOf<NativeInputEvent>()) != 1)
+            throw new ToolExecutionInputException(
+                "Windows không xác nhận sự kiện nhả chuột.");
     }
 
     public ComputerActionResponse OpenDefaultBrowser(string? url = null) =>

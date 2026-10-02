@@ -37,6 +37,7 @@ public static class ComputerUseEndpoints
         services.AddSingleton<IPersonalAiTool, ComputerPressHotkeyTool>();
         services.AddSingleton<IPersonalAiTool, ComputerOpenDefaultBrowserTool>();
         services.AddSingleton<IPersonalAiTool, ComputerOperatorTaskTool>();
+        services.AddSingleton<IPersonalAiTool, ComputerVisionLocateTool>();
         services.AddSingleton<IPersonalAiTool, LeaguePracticeOpenTool>();
         return services;
     }

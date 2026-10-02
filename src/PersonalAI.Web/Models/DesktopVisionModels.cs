@@ -51,3 +51,9 @@ public sealed record DesktopOperatorDecision(
     string Url,
     double Confidence,
     string Reason);
+
+
+public sealed record DesktopVisionVerification(
+    bool Satisfied,
+    double Confidence,
+    string Reason);

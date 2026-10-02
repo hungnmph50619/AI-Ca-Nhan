@@ -18,6 +18,8 @@ public interface IComputerUseService
 
     ComputerWindowInfo? GetActiveWindow();
 
+    ComputerWindowInfo? GetWindowAtPoint(int x, int y);
+
     ComputerActionResponse FocusWindow(string windowId);
 
     ComputerActionResponse FocusWindowByQuery(string query);
@@ -252,6 +254,20 @@ public sealed class WindowsComputerUseService(
             handle,
             title,
             true);
+    }
+
+    public ComputerWindowInfo? GetWindowAtPoint(
+        int x,
+        int y)
+    {
+        EnsureAvailable();
+
+        var windows = GetWindows(MaximumWindows).Windows;
+        return windows.FirstOrDefault(window =>
+            x >= window.Left &&
+            y >= window.Top &&
+            x < window.Left + window.Width &&
+            y < window.Top + window.Height);
     }
 
     public ComputerActionResponse FocusWindow(

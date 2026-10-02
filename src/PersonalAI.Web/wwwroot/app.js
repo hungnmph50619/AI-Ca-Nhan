@@ -858,6 +858,12 @@ async function refreshStatus() {
     state.configured = status.configured;
     state.provider = status.provider;
     state.model = status.model;
+
+    const brandVersion = document.querySelector(".brand > div:last-child > span");
+    if (brandVersion && status.version) {
+      brandVersion.textContent = `Phiên bản ${status.version}`;
+    }
+
     elements.statusDot.className = `status-dot ${status.configured ? "online" : "offline"}`;
     elements.statusText.textContent = status.configured
       ? `Sẵn sàng · Nhà cung cấp: ${status.provider} · Mô hình: ${status.model}`

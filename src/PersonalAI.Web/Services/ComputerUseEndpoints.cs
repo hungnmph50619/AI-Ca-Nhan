@@ -10,6 +10,7 @@ public static class ComputerUseEndpoints
     {
         services.AddSingleton<ComputerControlGate>();
         services.AddSingleton<LeagueVisualProgressStore>();
+        services.AddSingleton<ComputerOperatorProgressStore>();
         services.AddHostedService<WindowsLeagueVisualOverlayService>();
         services.AddHostedService<WindowsStopHotkeyService>();
         services.AddSingleton<IComputerUseService, WindowsComputerUseService>();
@@ -49,6 +50,10 @@ public static class ComputerUseEndpoints
 
         app.MapGet("/api/computer/league-progress", (
             LeagueVisualProgressStore progress) =>
+            Results.Ok(progress.Get()));
+
+        app.MapGet("/api/computer/operator-progress", (
+            ComputerOperatorProgressStore progress) =>
             Results.Ok(progress.Get()));
 
         // Chỉ nhận thao tác bật/tắt từ máy đang chạy chương trình.

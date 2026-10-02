@@ -7,7 +7,9 @@ public static class ComputerUseCapabilities
     public const string WindowList = "window-list";
     public const string ActiveWindow = "active-window";
     public const string FocusWindow = "focus-window";
+    public const string MinimizeWindow = "minimize-window";
     public const string MoveCursor = "move-cursor";
+    public const string SmoothMoveCursor = "smooth-move-cursor";
     public const string ClickLeft = "click-left";
     public const string TypeNotepadText = "type-notepad-text";
     public const string OpenDefaultBrowser = "open-default-browser";

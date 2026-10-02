@@ -61,22 +61,41 @@ public sealed class WindowsAiOperatorConsoleService
     private volatile bool _windowCreated;
     private volatile bool _visible;
     private string? _lastError;
-    private DateTimeOffset _forceVisibleUntilUtc;
+    private long _forceVisibleUntilUtcTicks;
+    private long _lastLoopUtcTicks;
 
-    public object GetDiagnosticStatus() => new
+    public object GetDiagnosticStatus()
     {
-        started = _started,
-        windowCreated = _windowCreated,
-        visible = _visible,
-        lastError = _lastError,
-        environmentUserInteractive = Environment.UserInteractive,
-        operatingSystem = Environment.OSVersion.ToString()
-    };
+        var loopTicks = Interlocked.Read(ref _lastLoopUtcTicks);
+        var forceTicks = Interlocked.Read(ref _forceVisibleUntilUtcTicks);
+        var nowTicks = DateTimeOffset.UtcNow.UtcTicks;
+
+        return new
+        {
+            started = _started,
+            windowCreated = _windowCreated,
+            visible = _visible,
+            nativeVisible = _window != IntPtr.Zero && IsWindowVisible(_window),
+            lastError = _lastError,
+            environmentUserInteractive = Environment.UserInteractive,
+            operatingSystem = Environment.OSVersion.ToString(),
+            loopAlive = loopTicks > 0 && nowTicks - loopTicks < TimeSpan.FromSeconds(2).Ticks,
+            lastLoopAtUtc = loopTicks > 0
+                ? new DateTimeOffset(loopTicks, TimeSpan.Zero)
+                : (DateTimeOffset?)null,
+            forceVisibleUntilUtc = forceTicks > 0
+                ? new DateTimeOffset(forceTicks, TimeSpan.Zero)
+                : (DateTimeOffset?)null
+        };
+    }
 
     public void ShowTestConsole(TimeSpan duration)
     {
-        _forceVisibleUntilUtc = DateTimeOffset.UtcNow.Add(
+        var until = DateTimeOffset.UtcNow.Add(
             duration <= TimeSpan.Zero ? TimeSpan.FromSeconds(15) : duration);
+        Interlocked.Exchange(
+            ref _forceVisibleUntilUtcTicks,
+            until.UtcTicks);
     }
 
     public WindowsAiOperatorConsoleService(
@@ -241,6 +260,10 @@ public sealed class WindowsAiOperatorConsoleService
 
             while (!cancellationToken.IsCancellationRequested)
             {
+                Interlocked.Exchange(
+                    ref _lastLoopUtcTicks,
+                    DateTimeOffset.UtcNow.UtcTicks);
+
                 PumpMessages();
 
                 var operatorSnapshot = operatorProgress.Get();
@@ -260,7 +283,11 @@ public sealed class WindowsAiOperatorConsoleService
                     ? operatorSnapshot.UpdatedAtUtc
                     : leagueSnapshot.UpdatedAtUtc;
 
-                var testVisible = DateTimeOffset.UtcNow <= _forceVisibleUntilUtc;
+                var forceVisibleTicks = Interlocked.Read(
+                    ref _forceVisibleUntilUtcTicks);
+                var testVisible =
+                    forceVisibleTicks > 0 &&
+                    DateTimeOffset.UtcNow.UtcTicks <= forceVisibleTicks;
                 var shouldShow = selectedActive || testVisible;
                 if (selectedActive)
                 {
@@ -676,6 +703,10 @@ Bảng này bị loại khỏi ảnh Desktop Vision.
     private static extern bool EnableWindow(
         IntPtr handle,
         bool enable);
+
+    [DllImport("user32.dll")]
+    private static extern bool IsWindowVisible(
+        IntPtr handle);
 
     [DllImport("user32.dll")]
     private static extern int GetSystemMetrics(

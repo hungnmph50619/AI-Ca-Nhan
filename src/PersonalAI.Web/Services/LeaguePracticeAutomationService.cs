@@ -56,9 +56,22 @@ public sealed class LeaguePracticeAutomationService(
 
         try
         {
+            await MinimizeForegroundBrowserIfNeededAsync(
+                cancellationToken);
+
             progress.Add("launch", "Đang kiểm tra và mở Riot/League client.");
             await EnsureLeagueClientAsync(cancellationToken);
-            progress.Add("launch", "Đã thấy cửa sổ Riot/League hiển thị.");
+
+            var stableClient = await WaitForStableClientWindowAsync(
+                TimeSpan.FromSeconds(20),
+                cancellationToken);
+            if (stableClient is null)
+                throw new ToolExecutionInputException(
+                    "League đã mở nhưng giao diện chưa ổn định để quan sát.");
+
+            progress.Add(
+                "stabilize",
+                $"Đã thấy giao diện League ổn định tại {stableClient.Width}x{stableClient.Height}.");
         }
         catch (Exception ex) when (
             ex is ToolExecutionInputException or
@@ -75,7 +88,7 @@ public sealed class LeaguePracticeAutomationService(
         }
 
         control.EnableScopedAutomation(
-            maximumActions: 14,
+            maximumActions: 16,
             maximumSeconds: 170);
 
         var clicks = 0;
@@ -151,6 +164,27 @@ public sealed class LeaguePracticeAutomationService(
                 }
 
                 window = activeClient;
+
+                progress.Add(
+                    "stabilize",
+                    "Đang chờ cửa sổ League ổn định trước khi chụp.");
+
+                var stableWindow = await WaitForStableClientWindowAsync(
+                    TimeSpan.FromSeconds(8),
+                    cancellationToken);
+                if (stableWindow is null)
+                {
+                    progress.Block(
+                        "Giao diện League tiếp tục thay đổi nên chưa chụp an toàn được.");
+                    return Result(
+                        "blocked",
+                        "stabilize",
+                        clicks,
+                        "Cửa sổ League chưa ổn định trước khi chụp.",
+                        startedAt);
+                }
+
+                window = stableWindow;
 
                 var verifiedBeforeCapture = GetActiveClientWindow();
                 if (verifiedBeforeCapture is null ||
@@ -329,7 +363,10 @@ public sealed class LeaguePracticeAutomationService(
                     screenX,
                     screenY);
 
-                computer.MoveCursor(screenX, screenY);
+                computer.SmoothMoveCursor(
+                    screenX,
+                    screenY,
+                    durationMs: 420);
 
                 progress.Add(
                     "click",
@@ -384,6 +421,82 @@ public sealed class LeaguePracticeAutomationService(
         {
             control.Stop();
         }
+    }
+
+    private async Task MinimizeForegroundBrowserIfNeededAsync(
+        CancellationToken cancellationToken)
+    {
+        cancellationToken.ThrowIfCancellationRequested();
+
+        var active = computer.GetActiveWindow();
+        if (active is null || IsLeagueClientWindow(active))
+            return;
+
+        var processName = active.ProcessName ?? string.Empty;
+        var isBrowser =
+            processName.Equals("msedge", StringComparison.OrdinalIgnoreCase) ||
+            processName.Equals("chrome", StringComparison.OrdinalIgnoreCase) ||
+            processName.Equals("firefox", StringComparison.OrdinalIgnoreCase) ||
+            processName.Equals("brave", StringComparison.OrdinalIgnoreCase) ||
+            processName.Equals("opera", StringComparison.OrdinalIgnoreCase);
+
+        if (!isBrowser)
+            return;
+
+        progress.Add(
+            "window",
+            $"Đang thu nhỏ trình duyệt {active.Title} để chuyển sang League.");
+
+        computer.MinimizeWindow(active.WindowId);
+        await Task.Delay(500, cancellationToken);
+    }
+
+    private async Task<ComputerWindowInfo?> WaitForStableClientWindowAsync(
+        TimeSpan timeout,
+        CancellationToken cancellationToken)
+    {
+        var deadline = DateTimeOffset.UtcNow + timeout;
+        ComputerWindowInfo? previous = null;
+        var stableSamples = 0;
+
+        while (DateTimeOffset.UtcNow < deadline)
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+
+            var current = GetActiveClientWindow() ?? FindClientWindow();
+            if (current is null)
+            {
+                stableSamples = 0;
+                previous = null;
+                await Task.Delay(500, cancellationToken);
+                continue;
+            }
+
+            if (previous is not null &&
+                string.Equals(
+                    current.WindowId,
+                    previous.WindowId,
+                    StringComparison.OrdinalIgnoreCase) &&
+                Math.Abs(current.Left - previous.Left) <= 2 &&
+                Math.Abs(current.Top - previous.Top) <= 2 &&
+                Math.Abs(current.Width - previous.Width) <= 2 &&
+                Math.Abs(current.Height - previous.Height) <= 2)
+            {
+                stableSamples++;
+            }
+            else
+            {
+                stableSamples = 0;
+            }
+
+            if (stableSamples >= 2)
+                return current;
+
+            previous = current;
+            await Task.Delay(500, cancellationToken);
+        }
+
+        return null;
     }
 
     private async Task EnsureLeagueClientAsync(

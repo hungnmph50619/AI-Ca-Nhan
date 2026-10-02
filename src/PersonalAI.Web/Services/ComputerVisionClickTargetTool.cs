@@ -149,7 +149,8 @@ public sealed class ComputerVisionClickTargetTool(
                 "act",
                 $"Focus cửa sổ chứa target: {targetWindow.Title}",
                 "focus-window",
-                located.Confidence);
+                located.Confidence,
+                actionTaken: true);
             await execution.WaitIfPausedAsync(linked.Token);
             computer.FocusWindow(targetWindow.WindowId);
             await Task.Delay(250, linked.Token);
@@ -159,7 +160,8 @@ public sealed class ComputerVisionClickTargetTool(
             "act",
             $"Di chuột tới ({desktopX}, {desktopY}).",
             "move",
-            located.Confidence);
+            located.Confidence,
+            actionTaken: true);
         await execution.WaitIfPausedAsync(linked.Token);
         computer.SmoothMoveCursor(
             desktopX,
@@ -170,7 +172,8 @@ public sealed class ComputerVisionClickTargetTool(
             "act",
             $"Click target {located.Label}.",
             "click-left",
-            located.Confidence);
+            located.Confidence,
+            actionTaken: true);
         await execution.WaitIfPausedAsync(linked.Token);
         computer.ClickLeft(
             targetWindow.WindowId,

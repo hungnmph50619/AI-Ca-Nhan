@@ -20,7 +20,8 @@ public sealed record LeagueVisualProgressSnapshot(
     int ClickCount,
     IReadOnlyList<LeagueVisualProgressEntry> Entries);
 
-public sealed class LeagueVisualProgressStore
+public sealed class LeagueVisualProgressStore(
+    ILogger<LeagueVisualProgressStore> logger)
 {
     private const int MaximumEntries = 20;
     private readonly object _sync = new();
@@ -44,6 +45,7 @@ public sealed class LeagueVisualProgressStore
             _observationCount = 0;
             _clickCount = 0;
             AddCore("start", message);
+            LogCore("start", message);
         }
     }
 
@@ -64,6 +66,7 @@ public sealed class LeagueVisualProgressStore
             if (click)
                 _clickCount++;
             AddCore(stage, message, action, confidence, x, y);
+            LogCore(stage, message, action, confidence, x, y);
         }
     }
 
@@ -74,6 +77,7 @@ public sealed class LeagueVisualProgressStore
             _active = false;
             _status = "completed";
             AddCore("complete", message);
+            LogCore("complete", message);
         }
     }
 
@@ -84,6 +88,7 @@ public sealed class LeagueVisualProgressStore
             _active = false;
             _status = "blocked";
             AddCore("blocked", message);
+            LogCore("blocked", message);
         }
     }
 
@@ -100,6 +105,24 @@ public sealed class LeagueVisualProgressStore
                 _clickCount,
                 _entries.ToArray());
         }
+    }
+
+    private void LogCore(
+        string stage,
+        string message,
+        string? action = null,
+        double? confidence = null,
+        int? x = null,
+        int? y = null)
+    {
+        logger.LogInformation(
+            "[LeagueAgent] {Stage} | action={Action} | confidence={Confidence} | x={X} y={Y} | {Message}",
+            stage.ToUpperInvariant(),
+            action ?? "-",
+            confidence is double value ? value.ToString("0.00") : "-",
+            x?.ToString() ?? "-",
+            y?.ToString() ?? "-",
+            message);
     }
 
     private void AddCore(

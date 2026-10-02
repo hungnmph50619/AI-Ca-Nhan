@@ -13,7 +13,6 @@ public static class ComputerUseEndpoints
         services.AddHostedService<WindowsLeagueVisualOverlayService>();
         services.AddHostedService<WindowsStopHotkeyService>();
         services.AddSingleton<IComputerUseService, WindowsComputerUseService>();
-        services.AddScoped<IComputerOperatorAgentService, ComputerOperatorAgentService>();
         services.AddSingleton<IDesktopScreenshotService, WindowsDesktopScreenshotService>();
         services.AddSingleton<ILeaguePracticeAutomationService, LeaguePracticeAutomationService>();
         services.AddSingleton<IPersonalAiTool, ComputerScreenInfoTool>();
@@ -68,47 +67,6 @@ public static class ComputerUseEndpoints
                 paused = gate.Paused,
                 message = "Đã tạm dừng thao tác điều khiển máy tính. Lệnh đang thực hiện có thể đã hoàn thành trước khi dừng."
             });
-        });
-
-        app.MapPost("/api/computer/control/delegate", (
-            HttpContext context,
-            ComputerControlGate gate,
-            IComputerUseService computer,
-            IAuditRecorder audit) =>
-        {
-            if (!IsLocalRequest(context)
-                || context.Request.Headers["X-PersonalAI-Manual-Approval"] != "delegate")
-                return Results.StatusCode(StatusCodes.Status403Forbidden);
-
-            var status = computer.GetStatus();
-            if (!status.Supported || !status.InteractiveSession)
-                return Results.BadRequest(new ApiError(
-                    "Computer Operator chỉ khả dụng trong phiên Windows đang tương tác."));
-
-            try
-            {
-                var session = gate.EnableDelegatedOperator(true);
-                audit.Record(
-                    AuditAgents.User,
-                    "computer.control.delegate",
-                    "computer:desktop",
-                    "manual-bounded-delegation",
-                    AuditResults.Succeeded);
-
-                return Results.Ok(new
-                {
-                    paused = session.Paused,
-                    delegatedOperator = session.DelegatedOperator,
-                    allowExternalAiContext = session.AllowExternalAiContext,
-                    expiresAt = session.ExpiresAt,
-                    remainingActions = session.RemainingActions,
-                    message = "Đã bật phiên Computer Operator ủy quyền có thời hạn. Ctrl + Shift + F12 để dừng."
-                });
-            }
-            catch (ToolExecutionInputException exception)
-            {
-                return Results.BadRequest(new ApiError(exception.Message));
-            }
         });
 
         app.MapPost("/api/computer/control/enable", (

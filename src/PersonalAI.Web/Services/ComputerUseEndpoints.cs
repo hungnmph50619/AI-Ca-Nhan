@@ -21,6 +21,7 @@ public static class ComputerUseEndpoints
         services.AddSingleton<IPersonalAiTool, ComputerWindowsListTool>();
         services.AddSingleton<IPersonalAiTool, ComputerActiveWindowTool>();
         services.AddSingleton<IPersonalAiTool, ComputerFocusWindowTool>();
+        services.AddSingleton<IPersonalAiTool, ComputerFocusWindowByQueryTool>();
         services.AddSingleton<IPersonalAiTool, ComputerMinimizeWindowTool>();
         services.AddSingleton<IPersonalAiTool, ComputerMaximizeWindowTool>();
         services.AddSingleton<IPersonalAiTool, ComputerRestoreWindowTool>();

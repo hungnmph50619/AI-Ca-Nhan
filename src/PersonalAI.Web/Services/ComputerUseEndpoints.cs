@@ -13,6 +13,7 @@ public static class ComputerUseEndpoints
         services.AddHostedService<WindowsLeagueVisualOverlayService>();
         services.AddHostedService<WindowsStopHotkeyService>();
         services.AddSingleton<IComputerUseService, WindowsComputerUseService>();
+        services.AddSingleton<IComputerOperatorTaskService, ComputerOperatorTaskService>();
         services.AddSingleton<IDesktopScreenshotService, WindowsDesktopScreenshotService>();
         services.AddSingleton<ILeaguePracticeAutomationService, LeaguePracticeAutomationService>();
         services.AddSingleton<IPersonalAiTool, ComputerScreenInfoTool>();
@@ -34,6 +35,7 @@ public static class ComputerUseEndpoints
         services.AddSingleton<IPersonalAiTool, ComputerPressKeyTool>();
         services.AddSingleton<IPersonalAiTool, ComputerPressHotkeyTool>();
         services.AddSingleton<IPersonalAiTool, ComputerOpenDefaultBrowserTool>();
+        services.AddSingleton<IPersonalAiTool, ComputerOperatorTaskTool>();
         services.AddSingleton<IPersonalAiTool, LeaguePracticeOpenTool>();
         return services;
     }

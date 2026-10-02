@@ -86,16 +86,22 @@ public sealed class ComputerOperatorTaskService(
                 var active = computer.GetActiveWindow();
 
                 progress.Add(
-                    "observe",
+                    "stabilize",
                     active is null
-                        ? "Đang chụp desktop để quan sát. Foreground chưa xác định."
-                        : $"Đang chụp desktop để quan sát. Foreground: {active.Title}.",
-                    observation: true);
+                        ? "Đang chờ desktop ổn định trước khi quan sát. Foreground chưa xác định."
+                        : $"Đang chờ desktop ổn định trước khi quan sát. Foreground: {active.Title}.");
 
                 DesktopScreenshotFrame frame;
                 try
                 {
-                    frame = screenshots.CaptureVirtualScreen();
+                    frame = await screenshots.CaptureStableVirtualScreenAsync(
+                        maximumWaitMs: 5000,
+                        cancellationToken);
+
+                    progress.Add(
+                        "observe",
+                        $"Đã chụp frame ổn định {frame.Width}x{frame.Height} lúc {frame.CapturedAtUtc:O}.",
+                        observation: true);
                 }
                 catch (Exception exception)
                 {

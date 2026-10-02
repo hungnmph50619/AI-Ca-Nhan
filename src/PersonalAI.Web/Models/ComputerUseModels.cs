@@ -8,6 +8,8 @@ public static class ComputerUseCapabilities
     public const string ActiveWindow = "active-window";
     public const string FocusWindow = "focus-window";
     public const string MinimizeWindow = "minimize-window";
+    public const string MaximizeWindow = "maximize-window";
+    public const string RestoreWindow = "restore-window";
     public const string MoveCursor = "move-cursor";
     public const string SmoothMoveCursor = "smooth-move-cursor";
     public const string ClickLeft = "click-left";
@@ -16,6 +18,9 @@ public static class ComputerUseCapabilities
     public const string Scroll = "scroll";
     public const string DragLeft = "drag-left";
     public const string TypeNotepadText = "type-notepad-text";
+    public const string TypeText = "type-text";
+    public const string PressKey = "press-key";
+    public const string PressHotkey = "press-hotkey";
     public const string OpenDefaultBrowser = "open-default-browser";
 }
 

@@ -11,7 +11,7 @@ public sealed class ComputerClickRightTool(
         {
           "type":"object",
           "properties":{
-            "windowId":{"type":"string","minLength":3,"maxLength":32},
+            "windowId":{"type":"string","pattern":"^0x[0-9A-Fa-f]+$","minLength":3,"maxLength":32},
             "x":{"type":"integer","minimum":-100000,"maximum":100000},
             "y":{"type":"integer","minimum":-100000,"maximum":100000}
           },
@@ -57,7 +57,7 @@ public sealed class ComputerDoubleClickLeftTool(
         {
           "type":"object",
           "properties":{
-            "windowId":{"type":"string","minLength":3,"maxLength":32},
+            "windowId":{"type":"string","pattern":"^0x[0-9A-Fa-f]+$","minLength":3,"maxLength":32},
             "x":{"type":"integer","minimum":-100000,"maximum":100000},
             "y":{"type":"integer","minimum":-100000,"maximum":100000}
           },
@@ -103,7 +103,7 @@ public sealed class ComputerScrollTool(
         {
           "type":"object",
           "properties":{
-            "windowId":{"type":"string","minLength":3,"maxLength":32},
+            "windowId":{"type":"string","pattern":"^0x[0-9A-Fa-f]+$","minLength":3,"maxLength":32},
             "x":{"type":"integer","minimum":-100000,"maximum":100000},
             "y":{"type":"integer","minimum":-100000,"maximum":100000},
             "delta":{"type":"integer","minimum":-2400,"maximum":2400}
@@ -151,7 +151,7 @@ public sealed class ComputerDragLeftTool(
         {
           "type":"object",
           "properties":{
-            "windowId":{"type":"string","minLength":3,"maxLength":32},
+            "windowId":{"type":"string","pattern":"^0x[0-9A-Fa-f]+$","minLength":3,"maxLength":32},
             "startX":{"type":"integer","minimum":-100000,"maximum":100000},
             "startY":{"type":"integer","minimum":-100000,"maximum":100000},
             "endX":{"type":"integer","minimum":-100000,"maximum":100000},

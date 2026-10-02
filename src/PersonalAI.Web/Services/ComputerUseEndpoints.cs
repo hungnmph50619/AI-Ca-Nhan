@@ -10,6 +10,7 @@ public static class ComputerUseEndpoints
     {
         services.AddSingleton<ComputerControlGate>();
         services.AddSingleton<LeagueVisualProgressStore>();
+        services.AddHostedService<WindowsLeagueVisualOverlayService>();
         services.AddHostedService<WindowsStopHotkeyService>();
         services.AddSingleton<IComputerUseService, WindowsComputerUseService>();
         services.AddSingleton<IDesktopScreenshotService, WindowsDesktopScreenshotService>();

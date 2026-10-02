@@ -24,8 +24,8 @@ public sealed class ComputerOperatorTaskTool(
 
     public ToolDefinition Definition { get; } = new(
         "computer.operator.run-task",
-        "Thực hiện một tác vụ Windows nhiều bước với vòng lặp OBSERVE → ANALYZE → DECIDE → ACT → VERIFY và một lần xác nhận ở cấp tác vụ. Mỗi vòng chụp desktop hiện tại và gửi ảnh tới Gemini Desktop Vision để quyết định bước kế tiếp; overlay/terminal hiển thị tiến trình. Có thể tìm/chuyển/thu nhỏ/phóng to/khôi phục cửa sổ, nhập văn bản không nhạy cảm, nhấn phím/hotkey và mở trình duyệt HTTP/HTTPS. Tối đa 8 bước, 90 giây, Ctrl+Shift+F12 để dừng. Không shell, không xóa dữ liệu, không connector, không mật khẩu/OTP/token/bí mật, chưa tự click tọa độ.",
-        "3.2.0",
+        "Thực hiện tác vụ Windows theo mục tiêu bằng vòng lặp tự suy luận STATE → PLAN → DECIDE → ACT → VERIFY → REPLAN. Mỗi vòng quan sát desktop thật, đọc lịch sử các bước đã thử và tự chọn chiến lược tiếp theo; hành động thất bại được ghi vào memory để tránh lặp dập khuôn. Có thể focus/minimize/maximize/restore cửa sổ, nhập văn bản không nhạy cảm, nhấn phím/hotkey và mở trình duyệt HTTP/HTTPS. Tối đa 12 bước, 90 giây, có loop guard và Ctrl+Shift+F12 để dừng. Không shell, không xóa dữ liệu, không connector, không mật khẩu/OTP/token/bí mật.",
+        "3.4.0",
         [
             ToolPermissions.Write,
             ToolPermissions.External,

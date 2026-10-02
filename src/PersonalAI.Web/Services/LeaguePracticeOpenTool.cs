@@ -25,7 +25,7 @@ public sealed class LeaguePracticeOpenTool(
             ToolPermissions.External,
             ToolPermissions.Computer
         ],
-        240_000,
+        180_000,
         Schema,
         LocalOnly: true,
         RequiresConfirmation: true);

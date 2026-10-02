@@ -47,6 +47,7 @@ public sealed class ToolOrchestrationService : IToolOrchestrationService
     private readonly IAiProviderResolver _providerResolver;
     private readonly IToolResultSynthesisService _synthesizer;
     private readonly IToolActivityStore _activityStore;
+    private readonly ComputerControlGate _computerControl;
     private readonly ILogger<ToolOrchestrationService> _logger;
     private static readonly ConcurrentDictionary<Guid, ToolCallProposal> Proposals = new();
     private static readonly ConcurrentDictionary<Guid, ProviderFunctionCallContext> NativeProposalContexts = new();
@@ -61,6 +62,7 @@ public sealed class ToolOrchestrationService : IToolOrchestrationService
         IAiProviderResolver providerResolver,
         IToolResultSynthesisService synthesizer,
         IToolActivityStore activityStore,
+        ComputerControlGate computerControl,
         ILogger<ToolOrchestrationService> logger)
     {
         _registry = registry;
@@ -69,6 +71,7 @@ public sealed class ToolOrchestrationService : IToolOrchestrationService
         _providerResolver = providerResolver;
         _synthesizer = synthesizer;
         _activityStore = activityStore;
+        _computerControl = computerControl;
         _logger = logger;
     }
 
@@ -286,6 +289,58 @@ public sealed class ToolOrchestrationService : IToolOrchestrationService
                 denied,
                 _synthesizer.CreateLocalSummary(proposal, denied),
                 false);
+        }
+
+        if (confirmed
+            && proposal.ToolName.StartsWith(
+                "computer.",
+                StringComparison.OrdinalIgnoreCase)
+            && tool.Definition.RequiredPermissions.Any(permission =>
+                permission.Equals(
+                    ToolPermissions.Computer,
+                    StringComparison.OrdinalIgnoreCase))
+            && _computerControl.Paused)
+        {
+            try
+            {
+                _computerControl.EnableScopedAutomation(
+                    maximumActions: 12,
+                    maximumSeconds: 90);
+            }
+            catch (ToolExecutionInputException)
+            {
+                // Giữ proposal còn hiệu lực để người dùng có thể thử lại sau khi
+                // khắc phục điều kiện local như phím dừng chưa sẵn sàng.
+                var denied = await _executor.ExecuteAsync(
+                    new ToolExecutionRequest(
+                        proposal.ToolName,
+                        proposal.Arguments,
+                        tool.Definition.RequiredPermissions,
+                        Confirmed: true),
+                    cancellationToken);
+
+                TryRecordActivity(new ToolActivityEvent(
+                    ToolActivityEventTypes.ExecutionDenied,
+                    proposal.ToolName,
+                    proposal.ProposalId,
+                    denied.InvocationId,
+                    proposal.PlanningMode,
+                    proposal.PlanningProvider,
+                    proposal.PlanningModel,
+                    proposal.RequiredPermissions,
+                    true,
+                    null,
+                    denied.Status,
+                    proposal.Arguments,
+                    denied.Output,
+                    denied.DurationMs));
+
+                return new ToolProposalExecutionResponse(
+                    proposal,
+                    denied,
+                    _synthesizer.CreateLocalSummary(proposal, denied),
+                    false);
+            }
         }
 
         if (!Proposals.TryRemove(proposalId, out proposal))

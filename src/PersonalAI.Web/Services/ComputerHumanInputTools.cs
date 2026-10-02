@@ -35,7 +35,7 @@ public sealed class ComputerMinimizeWindowTool(
             {
               "type":"object",
               "properties":{
-                "windowId":{"type":"string","minLength":3,"maxLength":32}
+                "windowId":{"type":"string","pattern":"^0x[0-9A-Fa-f]+$","minLength":3,"maxLength":32}
               },
               "required":["windowId"],
               "additionalProperties":false
@@ -77,7 +77,7 @@ public sealed class ComputerMaximizeWindowTool(
             {
               "type":"object",
               "properties":{
-                "windowId":{"type":"string","minLength":3,"maxLength":32}
+                "windowId":{"type":"string","pattern":"^0x[0-9A-Fa-f]+$","minLength":3,"maxLength":32}
               },
               "required":["windowId"],
               "additionalProperties":false
@@ -119,7 +119,7 @@ public sealed class ComputerRestoreWindowTool(
             {
               "type":"object",
               "properties":{
-                "windowId":{"type":"string","minLength":3,"maxLength":32}
+                "windowId":{"type":"string","pattern":"^0x[0-9A-Fa-f]+$","minLength":3,"maxLength":32}
               },
               "required":["windowId"],
               "additionalProperties":false
@@ -137,7 +137,7 @@ public sealed class ComputerTypeTextTool(
         {
           "type":"object",
           "properties":{
-            "windowId":{"type":"string","minLength":3,"maxLength":32},
+            "windowId":{"type":"string","pattern":"^0x[0-9A-Fa-f]+$","minLength":3,"maxLength":32},
             "text":{"type":"string","minLength":1,"maxLength":1000}
           },
           "required":["windowId","text"],
@@ -181,7 +181,7 @@ public sealed class ComputerPressKeyTool(
         {
           "type":"object",
           "properties":{
-            "windowId":{"type":"string","minLength":3,"maxLength":32},
+            "windowId":{"type":"string","pattern":"^0x[0-9A-Fa-f]+$","minLength":3,"maxLength":32},
             "key":{"type":"string","minLength":1,"maxLength":20}
           },
           "required":["windowId","key"],
@@ -225,7 +225,7 @@ public sealed class ComputerPressHotkeyTool(
         {
           "type":"object",
           "properties":{
-            "windowId":{"type":"string","minLength":3,"maxLength":32},
+            "windowId":{"type":"string","pattern":"^0x[0-9A-Fa-f]+$","minLength":3,"maxLength":32},
             "keys":{
               "type":"array",
               "minItems":2,

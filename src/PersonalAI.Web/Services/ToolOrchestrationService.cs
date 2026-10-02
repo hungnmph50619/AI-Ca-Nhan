@@ -88,6 +88,22 @@ public sealed class ToolOrchestrationService : IToolOrchestrationService
         var provider = _providerResolver.GetActive();
         var definitions = _registry.GetAll();
 
+        if (TryGetVisualLocateTarget(messages, out var visualTarget))
+        {
+            using var document = JsonDocument.Parse(
+                JsonSerializer.Serialize(new { target = visualTarget }));
+
+            return PrepareCore(
+                new ToolProposalDraft(
+                    "computer.vision.locate",
+                    document.RootElement.Clone(),
+                    Reason: "Yêu cầu này cần quan sát màn hình thật. Ứng dụng sẽ chụp frame desktop ổn định và dùng Desktop Vision để tìm phần tử; chưa click.",
+                    AssistantMessage: "Tôi cần dùng Desktop Vision để nhìn màn hình thật và xác định vị trí phần tử. Tool này chỉ quan sát, chưa di chuột hay click."),
+                planningMode: "server-visual-route",
+                planningProvider: null,
+                planningModel: null);
+        }
+
         if (ShouldUseComputerOperatorTask(messages))
         {
             definitions = definitions
@@ -694,6 +710,59 @@ public sealed class ToolOrchestrationService : IToolOrchestrationService
             .ToLowerInvariant()[..10];
 
         return $"pai_{readable}_{hash}";
+    }
+
+    private static bool TryGetVisualLocateTarget(
+        IReadOnlyList<ChatMessage> messages,
+        out string target)
+    {
+        target = string.Empty;
+
+        var latestUser = messages
+            .LastOrDefault(message =>
+                message.Role.Equals(
+                    "user",
+                    StringComparison.OrdinalIgnoreCase))
+            ?.Content
+            ?.Trim();
+
+        if (string.IsNullOrWhiteSpace(latestUser))
+            return false;
+
+        var text = latestUser;
+
+        var hasVisualIntent =
+            text.Contains("trên màn hình", StringComparison.OrdinalIgnoreCase)
+            || text.Contains("trên screen", StringComparison.OrdinalIgnoreCase)
+            || text.Contains("on screen", StringComparison.OrdinalIgnoreCase)
+            || text.Contains("nhìn", StringComparison.OrdinalIgnoreCase)
+            || text.Contains("vision", StringComparison.OrdinalIgnoreCase);
+
+        var hasLocateIntent =
+            text.Contains("tìm", StringComparison.OrdinalIgnoreCase)
+            || text.Contains("xác định", StringComparison.OrdinalIgnoreCase)
+            || text.Contains("ở đâu", StringComparison.OrdinalIgnoreCase)
+            || text.Contains("locate", StringComparison.OrdinalIgnoreCase)
+            || text.Contains("find", StringComparison.OrdinalIgnoreCase);
+
+        var explicitlyNoAction =
+            text.Contains("chưa click", StringComparison.OrdinalIgnoreCase)
+            || text.Contains("không click", StringComparison.OrdinalIgnoreCase)
+            || text.Contains("đừng click", StringComparison.OrdinalIgnoreCase)
+            || text.Contains("không bấm", StringComparison.OrdinalIgnoreCase)
+            || text.Contains("chỉ tìm", StringComparison.OrdinalIgnoreCase)
+            || text.Contains("only locate", StringComparison.OrdinalIgnoreCase)
+            || text.Contains("don't click", StringComparison.OrdinalIgnoreCase)
+            || text.Contains("do not click", StringComparison.OrdinalIgnoreCase);
+
+        if (!(hasVisualIntent && hasLocateIntent && explicitlyNoAction))
+            return false;
+
+        target = text.Length <= 500
+            ? text
+            : text[..500];
+
+        return true;
     }
 
     private static bool ShouldUseComputerOperatorTask(

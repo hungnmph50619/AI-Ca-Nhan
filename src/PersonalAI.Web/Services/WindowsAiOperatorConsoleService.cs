@@ -3,14 +3,14 @@ using System.Text;
 
 namespace PersonalAI.Web.Services;
 
-public sealed class WindowsAiOperatorConsoleService(
-    LeagueVisualProgressStore leagueProgress,
-    ComputerOperatorProgressStore operatorProgress,
-    ComputerOperatorExecutionControl execution,
-    ComputerControlGate control,
-    ILogger<WindowsAiOperatorConsoleService> logger)
+public sealed class WindowsAiOperatorConsoleService
     : IHostedService, IDisposable
 {
+    private readonly LeagueVisualProgressStore leagueProgress;
+    private readonly ComputerOperatorProgressStore operatorProgress;
+    private readonly ComputerOperatorExecutionControl execution;
+    private readonly ComputerControlGate control;
+    private readonly ILogger<WindowsAiOperatorConsoleService> logger;
     private const int ConsoleWidth = 620;
     private const int ConsoleHeight = 470;
     private const int Margin = 18;
@@ -63,24 +63,14 @@ public sealed class WindowsAiOperatorConsoleService(
         ComputerOperatorProgressStore operatorProgress,
         ComputerOperatorExecutionControl execution,
         ComputerControlGate control,
-        ILogger<WindowsAiOperatorConsoleService> logger,
-        bool _ = false)
-        : this(leagueProgress, operatorProgress, execution, control, logger)
+        ILogger<WindowsAiOperatorConsoleService> logger)
     {
-    }
-
-    // Primary-constructor fields are referenced through generated captures.
-    // This explicit ctor overload is never selected by DI; it keeps the
-    // delegate initialization straightforward across runtime versions.
-    private WindowsAiOperatorConsoleService(
-        LeagueVisualProgressStore leagueProgress,
-        ComputerOperatorProgressStore operatorProgress,
-        ComputerOperatorExecutionControl execution,
-        ComputerControlGate control,
-        ILogger<WindowsAiOperatorConsoleService> logger,
-        int _unused)
-        : this(leagueProgress, operatorProgress, execution, control, logger)
-    {
+        this.leagueProgress = leagueProgress;
+        this.operatorProgress = operatorProgress;
+        this.execution = execution;
+        this.control = control;
+        this.logger = logger;
+        _windowProcedure = WindowProc;
     }
 
     public Task StartAsync(CancellationToken cancellationToken)
@@ -126,8 +116,6 @@ public sealed class WindowsAiOperatorConsoleService(
         try
         {
             _registeredClass = "PersonalAI.OperatorConsole." + Environment.ProcessId;
-            _windowProcedure = WindowProc;
-
             var instance = GetModuleHandle(null);
             _blackBrush = GetStockObject(BlackBrush);
 

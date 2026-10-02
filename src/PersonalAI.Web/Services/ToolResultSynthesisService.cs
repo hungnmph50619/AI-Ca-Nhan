@@ -59,7 +59,27 @@ public sealed class ToolResultSynthesisService(
             "workspace.create_directory" => SummarizeCreateDirectory(value),
             "workspace.move" => SummarizeMove(value),
             "workspace.delete" => SummarizeDelete(value),
-            _ => $"Công cụ {GetToolDisplayName(proposal.ToolName)} đã chạy thành công."
+            "computer.windows.list" => SummarizeComputerWindows(value),
+            "computer.window.active" => SummarizeComputerActiveWindow(value),
+            "computer.window.focus" or
+            "computer.window.focus-by-query" or
+            "computer.window.minimize" or
+            "computer.window.maximize" or
+            "computer.window.restore" or
+            "computer.cursor.move" or
+            "computer.mouse.click-left" or
+            "computer.mouse.click-right" or
+            "computer.mouse.double-click-left" or
+            "computer.mouse.scroll" or
+            "computer.mouse.drag-left" or
+            "computer.keyboard.type-text" or
+            "computer.keyboard.press-key" or
+            "computer.keyboard.hotkey" or
+            "computer.browser.open-default" => SummarizeComputerAction(
+                execution.ToolName,
+                value),
+            "computer.operator.run-task" => SummarizeComputerOperatorTask(value),
+            _ => $"Công cụ {GetToolDisplayName(execution.ToolName)} đã chạy thành công."
         };
     }
 
@@ -286,6 +306,61 @@ UNTRUSTED_TOOL_RESULT:
         return $"Đã xóa {type} {path}.";
     }
 
+    private static string SummarizeComputerWindows(JsonElement output)
+    {
+        var count = GetInt64(output, "count")
+            ?? GetArrayLength(output, "windows");
+
+        return count is null
+            ? "Đã đọc danh sách cửa sổ đang hiển thị trên Windows."
+            : $"Đã tìm thấy {FormatNumber(count)} cửa sổ đang hiển thị trên Windows.";
+    }
+
+    private static string SummarizeComputerActiveWindow(JsonElement output)
+    {
+        if (!output.TryGetProperty("window", out var window) ||
+            window.ValueKind is JsonValueKind.Null or JsonValueKind.Undefined)
+            return "Hiện không xác định được cửa sổ foreground.";
+
+        if (window.ValueKind != JsonValueKind.Object)
+            return "Đã đọc cửa sổ foreground hiện tại.";
+
+        var title = GetString(window, "title");
+        return string.IsNullOrWhiteSpace(title)
+            ? "Đã đọc cửa sổ foreground hiện tại."
+            : $"Cửa sổ foreground hiện tại là “{title}”.";
+    }
+
+    private static string SummarizeComputerOperatorTask(JsonElement output)
+    {
+        var completed = output.TryGetProperty("completed", out var completedValue)
+            && completedValue.ValueKind == JsonValueKind.True;
+        var summary = GetString(output, "summary");
+        var steps = GetArrayLength(output, "steps");
+
+        var prefix = completed
+            ? "Computer Operator đã hoàn thành tác vụ"
+            : "Computer Operator đã dừng tác vụ";
+
+        if (steps is long count)
+            prefix += $" sau {FormatNumber(count)} bước";
+
+        return string.IsNullOrWhiteSpace(summary)
+            ? prefix + "."
+            : prefix + $": {summary}";
+    }
+
+    private static string SummarizeComputerAction(
+        string toolName,
+        JsonElement output)
+    {
+        var detail = GetString(output, "detail");
+        if (!string.IsNullOrWhiteSpace(detail))
+            return detail;
+
+        return $"{GetToolDisplayName(toolName)} đã hoàn tất.";
+    }
+
     private static string GetToolDisplayName(string toolName) =>
         toolName switch
         {
@@ -302,7 +377,30 @@ UNTRUSTED_TOOL_RESULT:
             "workspace.move" => "Di chuyển hoặc đổi tên",
             "workspace.read_text" => "Đọc tệp văn bản",
             "workspace.write_text" => "Ghi tệp văn bản",
-            _ => "không xác định"
+            "computer.screen.info" => "Đọc thông tin màn hình",
+            "computer.cursor.position" => "Đọc vị trí con trỏ",
+            "computer.windows.list" => "Liệt kê cửa sổ Windows",
+            "computer.window.active" => "Đọc cửa sổ foreground",
+            "computer.window.focus" => "Chuyển cửa sổ foreground",
+            "computer.window.focus-by-query" => "Chuyển tới cửa sổ theo tên",
+            "computer.window.minimize" => "Thu nhỏ cửa sổ",
+            "computer.window.maximize" => "Phóng to cửa sổ",
+            "computer.window.restore" => "Khôi phục cửa sổ",
+            "computer.cursor.move" => "Di chuyển con trỏ",
+            "computer.mouse.click-left" => "Nhấp chuột trái",
+            "computer.mouse.click-right" => "Nhấp chuột phải",
+            "computer.mouse.double-click-left" => "Nhấp đúp chuột trái",
+            "computer.mouse.scroll" => "Cuộn chuột",
+            "computer.mouse.drag-left" => "Kéo-thả chuột trái",
+            "computer.keyboard.type-text" => "Nhập văn bản",
+            "computer.keyboard.press-key" => "Nhấn phím",
+            "computer.keyboard.hotkey" => "Nhấn tổ hợp phím",
+            "computer.browser.open-default" => "Mở trình duyệt mặc định",
+            "computer.operator.run-task" => "Computer Operator · tác vụ nhiều bước",
+            "league.practice.open" => "Mở League Practice Tool",
+            _ => string.IsNullOrWhiteSpace(toolName)
+                ? "không xác định"
+                : toolName
         };
 
     private static string LocalizeWriteMode(string? mode) =>

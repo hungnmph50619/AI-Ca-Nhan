@@ -5,6 +5,7 @@ namespace PersonalAI.Web.Services;
 
 public sealed class WindowsLeagueVisualOverlayService(
     LeagueVisualProgressStore progress,
+    ComputerOperatorProgressStore computerProgress,
     ILogger<WindowsLeagueVisualOverlayService> logger)
     : IHostedService, IDisposable
 {
@@ -93,22 +94,43 @@ public sealed class WindowsLeagueVisualOverlayService(
             {
                 PumpMessages();
 
-                var snapshot = progress.Get();
-                var shouldShow = snapshot.Active;
-                if (snapshot.Active)
+                var leagueSnapshot = progress.Get();
+                var operatorSnapshot = computerProgress.Get();
+
+                var useOperator =
+                    operatorSnapshot.Active ||
+                    (!leagueSnapshot.Active &&
+                     operatorSnapshot.Status is "completed" or "blocked" &&
+                     operatorSnapshot.UpdatedAtUtc >= leagueSnapshot.UpdatedAtUtc);
+
+                var shouldShow = useOperator
+                    ? operatorSnapshot.Active
+                    : leagueSnapshot.Active;
+
+                var selectedUpdatedAt = useOperator
+                    ? operatorSnapshot.UpdatedAtUtc
+                    : leagueSnapshot.UpdatedAtUtc;
+
+                var selectedStatus = useOperator
+                    ? operatorSnapshot.Status
+                    : leagueSnapshot.Status;
+
+                if (shouldShow)
                 {
                     _keepVisibleUntilUtc = DateTimeOffset.UtcNow.AddSeconds(3);
                 }
-                else if (snapshot.Status is "completed" or "blocked")
+                else if (selectedStatus is "completed" or "blocked")
                 {
-                    if (_keepVisibleUntilUtc < snapshot.UpdatedAtUtc.AddSeconds(10))
-                        _keepVisibleUntilUtc = snapshot.UpdatedAtUtc.AddSeconds(10);
+                    if (_keepVisibleUntilUtc < selectedUpdatedAt.AddSeconds(10))
+                        _keepVisibleUntilUtc = selectedUpdatedAt.AddSeconds(10);
                     shouldShow = DateTimeOffset.UtcNow <= _keepVisibleUntilUtc;
                 }
 
                 if (shouldShow)
                 {
-                    var text = BuildText(snapshot);
+                    var text = useOperator
+                        ? BuildText(operatorSnapshot)
+                        : BuildText(leagueSnapshot);
                     if (!string.Equals(text, _lastText, StringComparison.Ordinal))
                     {
                         SetWindowText(_window, text);
@@ -202,6 +224,37 @@ public sealed class WindowsLeagueVisualOverlayService(
             OverlayWidth,
             OverlayHeight,
             0x0010);
+    }
+
+    private static string BuildText(
+        ComputerOperatorProgressSnapshot snapshot)
+    {
+        var builder = new StringBuilder();
+        var heading = snapshot.Active
+            ? "● COMPUTER OPERATOR ĐANG LÀM"
+            : snapshot.Status == "completed"
+                ? "✓ COMPUTER OPERATOR HOÀN TẤT"
+                : "⚠ COMPUTER OPERATOR ĐÃ DỪNG";
+
+        builder.AppendLine(heading);
+        builder.AppendLine(
+            $"Quan sát: {snapshot.ObservationCount}   Hành động: {snapshot.ActionCount}");
+        builder.AppendLine("Ctrl + Shift + F12: dừng khẩn cấp");
+        builder.AppendLine(new string('─', 46));
+
+        foreach (var entry in snapshot.Entries.TakeLast(8))
+        {
+            var time = entry.AtUtc.ToLocalTime().ToString("HH:mm:ss");
+            var confidence = entry.Confidence is double value
+                ? $" [{value * 100:0}%]"
+                : string.Empty;
+
+            builder.AppendLine(
+                $"{time}  {entry.Stage.ToUpperInvariant()}{confidence}");
+            builder.AppendLine($"  {Limit(entry.Message, 92)}");
+        }
+
+        return builder.ToString();
     }
 
     private static string BuildText(LeagueVisualProgressSnapshot snapshot)

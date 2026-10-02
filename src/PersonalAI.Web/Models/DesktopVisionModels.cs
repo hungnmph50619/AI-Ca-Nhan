@@ -39,3 +39,15 @@ public sealed record LeaguePracticeAutomationResult(
     string Detail,
     DateTimeOffset StartedAtUtc,
     DateTimeOffset CompletedAtUtc);
+
+
+public sealed record DesktopOperatorDecision(
+    string State,
+    string Action,
+    string Query,
+    string Text,
+    string Key,
+    IReadOnlyList<string> Keys,
+    string Url,
+    double Confidence,
+    string Reason);

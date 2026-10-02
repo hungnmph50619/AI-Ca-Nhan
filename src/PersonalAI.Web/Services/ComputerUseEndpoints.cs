@@ -10,9 +10,11 @@ public static class ComputerUseEndpoints
     {
         services.AddSingleton<ComputerControlGate>();
         services.AddSingleton<LeagueVisualProgressStore>();
+        services.AddSingleton<ComputerOperatorProgressStore>();
         services.AddHostedService<WindowsLeagueVisualOverlayService>();
         services.AddHostedService<WindowsStopHotkeyService>();
         services.AddSingleton<IComputerUseService, WindowsComputerUseService>();
+        services.AddSingleton<IComputerOperatorTaskService, ComputerOperatorTaskService>();
         services.AddSingleton<IDesktopScreenshotService, WindowsDesktopScreenshotService>();
         services.AddSingleton<ILeaguePracticeAutomationService, LeaguePracticeAutomationService>();
         services.AddSingleton<IPersonalAiTool, ComputerScreenInfoTool>();
@@ -20,13 +22,21 @@ public static class ComputerUseEndpoints
         services.AddSingleton<IPersonalAiTool, ComputerWindowsListTool>();
         services.AddSingleton<IPersonalAiTool, ComputerActiveWindowTool>();
         services.AddSingleton<IPersonalAiTool, ComputerFocusWindowTool>();
+        services.AddSingleton<IPersonalAiTool, ComputerFocusWindowByQueryTool>();
+        services.AddSingleton<IPersonalAiTool, ComputerMinimizeWindowTool>();
+        services.AddSingleton<IPersonalAiTool, ComputerMaximizeWindowTool>();
+        services.AddSingleton<IPersonalAiTool, ComputerRestoreWindowTool>();
         services.AddSingleton<IPersonalAiTool, ComputerMoveCursorTool>();
         services.AddSingleton<IPersonalAiTool, ComputerClickLeftTool>();
         services.AddSingleton<IPersonalAiTool, ComputerClickRightTool>();
         services.AddSingleton<IPersonalAiTool, ComputerDoubleClickLeftTool>();
         services.AddSingleton<IPersonalAiTool, ComputerScrollTool>();
         services.AddSingleton<IPersonalAiTool, ComputerDragLeftTool>();
+        services.AddSingleton<IPersonalAiTool, ComputerTypeTextTool>();
+        services.AddSingleton<IPersonalAiTool, ComputerPressKeyTool>();
+        services.AddSingleton<IPersonalAiTool, ComputerPressHotkeyTool>();
         services.AddSingleton<IPersonalAiTool, ComputerOpenDefaultBrowserTool>();
+        services.AddSingleton<IPersonalAiTool, ComputerOperatorTaskTool>();
         services.AddSingleton<IPersonalAiTool, LeaguePracticeOpenTool>();
         return services;
     }
@@ -40,6 +50,10 @@ public static class ComputerUseEndpoints
 
         app.MapGet("/api/computer/league-progress", (
             LeagueVisualProgressStore progress) =>
+            Results.Ok(progress.Get()));
+
+        app.MapGet("/api/computer/operator-progress", (
+            ComputerOperatorProgressStore progress) =>
             Results.Ok(progress.Get()));
 
         // Chỉ nhận thao tác bật/tắt từ máy đang chạy chương trình.

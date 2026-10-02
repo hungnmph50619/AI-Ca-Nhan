@@ -1,5 +1,5 @@
 (() => {
-  const VERSION = "1.1.0";
+  const VERSION = "3.1.0";
   let loading = false;
   let pendingKeyboardTimer = null;
 
@@ -91,11 +91,11 @@
     const heading = document.createElement("div");
     const eyebrow = document.createElement("p");
     eyebrow.className = "eyebrow";
-    eyebrow.textContent = "KHẢ NĂNG ĐIỀU KHIỂN CÓ XÁC NHẬN · WINDOWS";
+    eyebrow.textContent = "COMPUTER OPERATOR · WINDOWS";
 
     const title = document.createElement("h2");
     title.id = "computerUseTitle";
-    title.textContent = "Điều khiển máy tính · Bản thử nghiệm";
+    title.textContent = "Computer Operator · v3.1";
     heading.style.minWidth = "0";
     heading.append(eyebrow, title);
 
@@ -110,10 +110,10 @@
     const intro = document.createElement("div");
     intro.className = "v110-computer-intro";
     const introTitle = document.createElement("strong");
-    introTitle.textContent = "Quan sát trước, hành động có xác nhận";
+    introTitle.textContent = "Thao tác như người dùng thật";
     const introCopy = document.createElement("p");
     introCopy.textContent =
-      "Bản thử nghiệm hỗ trợ di chuyển chuột, nhấp trái và nhập một dòng tối đa 32 ký tự vào Notepad. Mỗi lần bật có tối đa 60 giây và 5 thao tác. Chưa hỗ trợ tổ hợp phím, chụp màn hình hay AI tự thao tác liên tục. Chỉ dùng trên dữ liệu thử nghiệm.";
+      "v3.1 hỗ trợ chuyển/thu nhỏ/phóng to/khôi phục cửa sổ, di chuột nhìn thấy được, click trái/phải/đúp, cuộn, kéo-thả, nhập văn bản, phím đơn và hotkey. Mục tiêu là xác nhận một lần cho mỗi tác vụ cấp cao thay vì hỏi lại từng thao tác con.";
     intro.append(introTitle, introCopy);
 
     const summary = document.createElement("div");
@@ -140,7 +140,7 @@
     const safety = document.createElement("div");
     safety.className = "v110-computer-safety";
     safety.textContent =
-      "Nhấn Ctrl + Shift + F12 để dừng điều khiển từ bất kỳ cửa sổ thông thường nào của Windows khi phím tắt đã sẵn sàng. Mỗi thao tác vẫn cần quyền và xác nhận riêng. Phím dừng không hoàn tác thao tác đã thực hiện và không hoạt động trên màn hình bảo mật Windows.";
+      "Nhấn Ctrl + Shift + F12 để dừng ngay. Mỗi tác vụ Computer Operator vẫn có chốt xác nhận ở cấp tác vụ; các thao tác con trong tác vụ không nên yêu cầu xác nhận lặp lại. Không dùng bàn phím tổng quát cho mật khẩu, OTP hoặc bí mật.";
 
     const feedback = document.createElement("div");
     feedback.id = "computerUseFeedback";
@@ -458,8 +458,20 @@
       "window-list": "Danh sách cửa sổ",
       "active-window": "Cửa sổ đang sử dụng",
       "focus-window": "Chuyển cửa sổ",
+      "focus-window-by-query": "Chuyển cửa sổ theo tên",
+      "minimize-window": "Thu nhỏ cửa sổ",
+      "maximize-window": "Phóng to cửa sổ",
+      "restore-window": "Khôi phục cửa sổ",
       "move-cursor": "Di chuyển con trỏ",
-      "click-left": "Nhấp chuột trái một lần",
+      "smooth-move-cursor": "Di chuột nhìn thấy được",
+      "click-left": "Nhấp chuột trái",
+      "click-right": "Nhấp chuột phải",
+      "double-click-left": "Nhấp đúp chuột trái",
+      "scroll": "Cuộn chuột",
+      "drag-left": "Kéo-thả chuột trái",
+      "type-text": "Nhập văn bản",
+      "press-key": "Nhấn phím",
+      "press-hotkey": "Nhấn tổ hợp phím",
       "type-notepad-text": "Nhập một dòng thử nghiệm vào Notepad"
     }[value] || value || "Chức năng";
   }

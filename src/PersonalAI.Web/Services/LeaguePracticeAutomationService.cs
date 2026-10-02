@@ -124,7 +124,7 @@ public sealed class LeaguePracticeAutomationService(
                 }
 
                 var step = Steps[completed];
-                using var frame = CaptureDisposable();
+                using var frame = CaptureDisposable(window);
                 var target = await vision.LocateAsync(
                     frame.Value,
                     step.Target,
@@ -306,8 +306,20 @@ public sealed class LeaguePracticeAutomationService(
             .FirstOrDefault();
     }
 
-    private FrameLease CaptureDisposable() =>
-        new(screenshots.CaptureVirtualScreen());
+    private FrameLease CaptureDisposable(
+        ComputerWindowInfo window)
+    {
+        if (window.Width < 200 || window.Height < 150)
+            throw new ToolExecutionInputException(
+                "Cửa sổ Riot/League quá nhỏ để Desktop Vision phân tích.");
+
+        return new FrameLease(
+            screenshots.CaptureRegion(
+                window.Left,
+                window.Top,
+                window.Width,
+                window.Height));
+    }
 
     private static LeaguePracticeAutomationResult Result(
         string status,

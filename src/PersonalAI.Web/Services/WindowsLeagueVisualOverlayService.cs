@@ -177,6 +177,7 @@ public sealed class WindowsLeagueVisualOverlayService(
             return IntPtr.Zero;
 
         _ = SetLayeredWindowAttributes(handle, 0, 238, LwaAlpha);
+        _ = SetWindowDisplayAffinity(handle, 0x00000011); // WDA_EXCLUDEFROMCAPTURE
         var font = GetStockObject(DefaultGuiFont);
         if (font != IntPtr.Zero)
             _ = SendMessage(handle, WmSetFont, font, new IntPtr(1));
@@ -317,6 +318,11 @@ public sealed class WindowsLeagueVisualOverlayService(
         uint colorKey,
         byte alpha,
         uint flags);
+
+    [DllImport("user32.dll", SetLastError = true)]
+    private static extern bool SetWindowDisplayAffinity(
+        IntPtr handle,
+        uint affinity);
 
     [DllImport("user32.dll")]
     private static extern int GetSystemMetrics(int index);

@@ -20,12 +20,18 @@ public static class ComputerUseEndpoints
         services.AddSingleton<IPersonalAiTool, ComputerWindowsListTool>();
         services.AddSingleton<IPersonalAiTool, ComputerActiveWindowTool>();
         services.AddSingleton<IPersonalAiTool, ComputerFocusWindowTool>();
+        services.AddSingleton<IPersonalAiTool, ComputerMinimizeWindowTool>();
+        services.AddSingleton<IPersonalAiTool, ComputerMaximizeWindowTool>();
+        services.AddSingleton<IPersonalAiTool, ComputerRestoreWindowTool>();
         services.AddSingleton<IPersonalAiTool, ComputerMoveCursorTool>();
         services.AddSingleton<IPersonalAiTool, ComputerClickLeftTool>();
         services.AddSingleton<IPersonalAiTool, ComputerClickRightTool>();
         services.AddSingleton<IPersonalAiTool, ComputerDoubleClickLeftTool>();
         services.AddSingleton<IPersonalAiTool, ComputerScrollTool>();
         services.AddSingleton<IPersonalAiTool, ComputerDragLeftTool>();
+        services.AddSingleton<IPersonalAiTool, ComputerTypeTextTool>();
+        services.AddSingleton<IPersonalAiTool, ComputerPressKeyTool>();
+        services.AddSingleton<IPersonalAiTool, ComputerPressHotkeyTool>();
         services.AddSingleton<IPersonalAiTool, ComputerOpenDefaultBrowserTool>();
         services.AddSingleton<IPersonalAiTool, LeaguePracticeOpenTool>();
         return services;

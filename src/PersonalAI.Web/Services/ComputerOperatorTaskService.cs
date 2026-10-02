@@ -32,7 +32,7 @@ public sealed class ComputerOperatorTaskService(
     ILogger<ComputerOperatorTaskService> logger)
     : IComputerOperatorTaskService
 {
-    private const int MaximumSteps = 8;
+    private const int MaximumSteps = 12;
     private const double MinimumConfidence = 0.72;
 
     private static readonly string[] SecretTerms =
@@ -75,6 +75,9 @@ public sealed class ComputerOperatorTaskService(
             $"Bắt đầu tác vụ: {normalizedGoal}");
 
         var steps = new List<ComputerOperatorTaskStep>();
+        var taskHistory = new List<string>();
+        var failedActionCounts = new Dictionary<string, int>(
+            StringComparer.OrdinalIgnoreCase);
         var lowConfidenceCount = 0;
 
         try
@@ -135,6 +138,7 @@ public sealed class ComputerOperatorTaskService(
                         frame,
                         normalizedGoal,
                         windowsContext,
+                        BuildHistoryContext(taskHistory),
                         linked.Token);
                 }
                 finally
@@ -143,13 +147,29 @@ public sealed class ComputerOperatorTaskService(
                 }
 
                 progress.Add(
+                    "state",
+                    string.IsNullOrWhiteSpace(decision.State)
+                        ? "AI đã cập nhật trạng thái desktop."
+                        : $"STATE: {decision.State}");
+
+                progress.Add(
+                    "plan",
+                    string.IsNullOrWhiteSpace(decision.Plan)
+                        ? "AI đang chọn bước tiếp theo từ trạng thái hiện tại."
+                        : $"PLAN: {decision.Plan}",
+                    decision.Action,
+                    decision.Confidence);
+
+                progress.Add(
                     "decide",
-                    $"Vision: {decision.Reason}",
+                    $"DECIDE: {decision.Reason}",
                     decision.Action,
                     decision.Confidence);
 
                 if (decision.Action == "complete")
                 {
+                    taskHistory.Add(
+                        $"STEP {index}: COMPLETE — {decision.Reason}");
                     progress.Complete(
                         $"Vision xác nhận mục tiêu đã đạt: {decision.Reason}");
                     return Finish(
@@ -161,8 +181,10 @@ public sealed class ComputerOperatorTaskService(
 
                 if (decision.Action == "blocked")
                 {
+                    taskHistory.Add(
+                        $"STEP {index}: BLOCKED — {decision.Reason}");
                     progress.Block(
-                        $"Vision dừng an toàn: {decision.Reason}");
+                        $"Vision dừng an toàn sau khi xem trạng thái và lịch sử: {decision.Reason}");
                     return Finish(
                         false,
                         $"Vision dừng an toàn: {decision.Reason}");
@@ -170,6 +192,8 @@ public sealed class ComputerOperatorTaskService(
 
                 if (decision.Action == "wait")
                 {
+                    taskHistory.Add(
+                        $"STEP {index}: WAIT — {decision.Reason}");
                     progress.Add(
                         "wait",
                         $"Vision yêu cầu chờ rồi quan sát lại: {decision.Reason}",
@@ -188,6 +212,9 @@ public sealed class ComputerOperatorTaskService(
                         decision.Action,
                         decision.Confidence);
 
+                    taskHistory.Add(
+                        $"STEP {index}: LOW-CONFIDENCE {decision.Action} ({decision.Confidence:0.00}) — {decision.Reason}");
+
                     if (lowConfidenceCount >= 3)
                     {
                         progress.Block(
@@ -202,6 +229,8 @@ public sealed class ComputerOperatorTaskService(
                 }
 
                 lowConfidenceCount = 0;
+
+                var actionSignature = BuildActionSignature(decision);
 
                 progress.Add(
                     "act",
@@ -221,17 +250,70 @@ public sealed class ComputerOperatorTaskService(
                         "Computer Operator step {Step} rejected: {Reason}",
                         index,
                         exception.Message);
-                    progress.Block(
-                        $"Bước {index} bị từ chối: {exception.Message}");
-                    return Finish(
-                        false,
-                        $"Dừng ở bước {index}: {exception.Message}");
+
+                    var failures = IncrementFailure(
+                        failedActionCounts,
+                        actionSignature);
+
+                    taskHistory.Add(
+                        $"STEP {index}: FAILED {actionSignature} — {exception.Message}");
+
+                    progress.Add(
+                        "recovery",
+                        $"Hành động thất bại ({failures} lần): {exception.Message}. AI sẽ quan sát lại và tự lập kế hoạch khác.",
+                        decision.Action,
+                        decision.Confidence);
+
+                    if (failures >= 3)
+                    {
+                        progress.Block(
+                            $"Loop guard: cùng một hành động thất bại {failures} lần.");
+                        return Finish(
+                            false,
+                            $"Dừng để tránh lặp vô hạn sau {failures} lần thất bại cùng hành động.");
+                    }
+
+                    await Task.Delay(500, linked.Token);
+                    continue;
                 }
 
                 steps.Add(new ComputerOperatorTaskStep(
                     index,
                     decision.Action,
                     action.Detail));
+
+                if (!action.Applied)
+                {
+                    var failures = IncrementFailure(
+                        failedActionCounts,
+                        actionSignature);
+
+                    taskHistory.Add(
+                        $"STEP {index}: NOT-APPLIED {actionSignature} — {action.Detail}");
+
+                    progress.Add(
+                        "recovery",
+                        $"Hành động chưa tạo thay đổi ({failures} lần): {action.Detail}. Sẽ quan sát lại và REPLAN.",
+                        decision.Action,
+                        decision.Confidence);
+
+                    if (failures >= 3)
+                    {
+                        progress.Block(
+                            $"Loop guard: hành động {decision.Action} không hiệu lực {failures} lần.");
+                        return Finish(
+                            false,
+                            "Dừng để tránh vòng lặp hành động không hiệu lực.");
+                    }
+
+                    await Task.Delay(500, linked.Token);
+                    continue;
+                }
+
+                failedActionCounts.Remove(actionSignature);
+
+                taskHistory.Add(
+                    $"STEP {index}: APPLIED {actionSignature} — {action.Detail}; EXPECTED: {decision.ExpectedEffect}");
 
                 progress.Add(
                     "acted",
@@ -242,7 +324,9 @@ public sealed class ComputerOperatorTaskService(
 
                 progress.Add(
                     "verify",
-                    "Đang chờ giao diện phản hồi; vòng tiếp theo sẽ chụp màn hình mới để xác minh kết quả.");
+                    string.IsNullOrWhiteSpace(decision.ExpectedEffect)
+                        ? "Đang chờ giao diện phản hồi; vòng tiếp theo sẽ quan sát trạng thái mới."
+                        : $"VERIFY NEXT: {decision.ExpectedEffect}");
 
                 await Task.Delay(700, linked.Token);
             }
@@ -321,6 +405,48 @@ public sealed class ComputerOperatorTaskService(
             _ => throw new ToolExecutionInputException(
                 $"Computer Operator trả hành động không được hỗ trợ: {decision.Action}.")
         };
+    }
+
+    private static string BuildHistoryContext(
+        IReadOnlyList<string> history)
+    {
+        if (history.Count == 0)
+            return string.Empty;
+
+        return string.Join(
+            "\n",
+            history.TakeLast(16));
+    }
+
+    private static string BuildActionSignature(
+        DesktopOperatorDecision decision)
+    {
+        static string Clip(string value, int length) =>
+            string.IsNullOrWhiteSpace(value)
+                ? string.Empty
+                : value.Trim().Length <= length
+                    ? value.Trim()
+                    : value.Trim()[..length];
+
+        return decision.Action switch
+        {
+            "focus-window" => $"focus-window:{Clip(decision.Query, 80)}",
+            "type-text" => $"type-text:{Clip(decision.Text, 80)}",
+            "press-key" => $"press-key:{Clip(decision.Key, 20)}",
+            "press-hotkey" => $"press-hotkey:{string.Join("+", decision.Keys)}",
+            "open-browser" => $"open-browser:{Clip(decision.Url, 120)}",
+            _ => decision.Action
+        };
+    }
+
+    private static int IncrementFailure(
+        IDictionary<string, int> failures,
+        string signature)
+    {
+        failures.TryGetValue(signature, out var count);
+        count++;
+        failures[signature] = count;
+        return count;
     }
 
     private string BuildObservation()

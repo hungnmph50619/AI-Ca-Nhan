@@ -1,4 +1,3 @@
-using System.Text.Json;
 using PersonalAI.Web.Models;
 
 namespace PersonalAI.Web.Services;
@@ -24,114 +23,23 @@ public sealed record ComputerOperatorTaskResult(
     string Model);
 
 public sealed class ComputerOperatorTaskService(
-    IAiProviderResolver providerResolver,
     IComputerUseService computer,
     ComputerControlGate control,
+    IDesktopScreenshotService screenshots,
+    DesktopVisionService vision,
+    ComputerOperatorProgressStore progress,
     ILogger<ComputerOperatorTaskService> logger)
     : IComputerOperatorTaskService
 {
     private const int MaximumSteps = 8;
+    private const double MinimumConfidence = 0.72;
+
     private static readonly string[] SecretTerms =
     [
         "password", "mật khẩu", "otp", "2fa", "mã xác thực",
         "verification code", "api key", "secret", "access token",
         "refresh token", "private key"
     ];
-
-    private static readonly IReadOnlyList<ProviderFunctionDefinition> Functions =
-    [
-        Function(
-            "focus_window",
-            "Tìm cửa sổ đang hiển thị theo tiêu đề hoặc tên tiến trình và chuyển foreground tới cửa sổ phù hợp nhất.",
-            """
-            {
-              "type":"object",
-              "properties":{"query":{"type":"string","minLength":2,"maxLength":120}},
-              "required":["query"],
-              "additionalProperties":false
-            }
-            """),
-        Function(
-            "minimize_window",
-            "Thu nhỏ đúng cửa sổ theo windowId từ quan sát Windows hiện tại.",
-            WindowSchema),
-        Function(
-            "maximize_window",
-            "Phóng to đúng cửa sổ theo windowId từ quan sát Windows hiện tại.",
-            WindowSchema),
-        Function(
-            "restore_window",
-            "Khôi phục đúng cửa sổ theo windowId từ quan sát Windows hiện tại.",
-            WindowSchema),
-        Function(
-            "type_text",
-            "Nhập văn bản hiển thị vào cửa sổ foreground hiện tại. Không dùng cho mật khẩu, OTP, khóa, token hoặc bí mật.",
-            """
-            {
-              "type":"object",
-              "properties":{
-                "windowId":{"type":"string","minLength":3,"maxLength":32},
-                "text":{"type":"string","minLength":1,"maxLength":1000}
-              },
-              "required":["windowId","text"],
-              "additionalProperties":false
-            }
-            """),
-        Function(
-            "press_key",
-            "Nhấn một phím hỗ trợ vào cửa sổ foreground hiện tại.",
-            """
-            {
-              "type":"object",
-              "properties":{
-                "windowId":{"type":"string","minLength":3,"maxLength":32},
-                "key":{"type":"string","minLength":1,"maxLength":20}
-              },
-              "required":["windowId","key"],
-              "additionalProperties":false
-            }
-            """),
-        Function(
-            "press_hotkey",
-            "Nhấn tổ hợp 2-4 phím hỗ trợ vào cửa sổ foreground hiện tại.",
-            """
-            {
-              "type":"object",
-              "properties":{
-                "windowId":{"type":"string","minLength":3,"maxLength":32},
-                "keys":{
-                  "type":"array",
-                  "minItems":2,
-                  "maxItems":4,
-                  "uniqueItems":true,
-                  "items":{"type":"string","minLength":1,"maxLength":20}
-                }
-              },
-              "required":["windowId","keys"],
-              "additionalProperties":false
-            }
-            """),
-        Function(
-            "open_browser",
-            "Mở trình duyệt mặc định. URL nếu có chỉ được là HTTP/HTTPS và sẽ được backend kiểm tra.",
-            """
-            {
-              "type":"object",
-              "properties":{"url":{"type":"string","minLength":8,"maxLength":2048}},
-              "additionalProperties":false
-            }
-            """)
-    ];
-
-    private const string WindowSchema =
-        """
-        {
-          "type":"object",
-          "properties":{"windowId":{"type":"string","minLength":3,"maxLength":32}},
-          "required":["windowId"],
-          "additionalProperties":false
-        }
-        """;
 
     public async Task<ComputerOperatorTaskResult> RunAsync(
         string goal,
@@ -147,98 +55,198 @@ public sealed class ComputerOperatorTaskService(
                     term,
                     StringComparison.OrdinalIgnoreCase)))
             throw new ToolExecutionInputException(
-                "Computer Operator v3.1.1 không tự nhập mật khẩu, OTP, token, khóa hoặc bí mật.");
+                "Computer Operator không tự nhập mật khẩu, OTP, token, khóa hoặc bí mật.");
+
+        if (!vision.Ready)
+            throw new ToolExecutionInputException(
+                "Computer Operator cần Desktop Vision/Gemini đã sẵn sàng.");
 
         control.EnableScopedAutomation(
             maximumActions: 12,
             maximumSeconds: 90);
 
-        var provider = providerResolver.GetActive();
-        if (!provider.IsConfigured)
-            throw new ToolExecutionInputException(
-                "Nhà cung cấp AI chưa được cấu hình cho Computer Operator.");
+        progress.Start(
+            $"Bắt đầu tác vụ: {normalizedGoal}");
 
         var steps = new List<ComputerOperatorTaskStep>();
-        var messages = new List<ChatMessage>
+        var lowConfidenceCount = 0;
+
+        try
         {
-            new(
-                "user",
-                "Bạn đang điều khiển Computer Operator v3.1.1 sau khi người dùng đã xác nhận MỘT tác vụ cấp cao. " +
-                "Chỉ chọn một hàm mỗi lượt. Không được tự mở shell, xóa dữ liệu, dùng connector, nhập mật khẩu/OTP/bí mật hoặc thao tác ngoài mục tiêu. " +
-                "Không đoán tọa độ chuột. Sau mỗi bước sẽ có quan sát Windows mới. " +
-                $"Mục tiêu: {normalizedGoal}")
-        };
-
-        for (var index = 1; index <= MaximumSteps; index++)
-        {
-            cancellationToken.ThrowIfCancellationRequested();
-
-            var session = control.GetStatus();
-            if (session.Paused)
+            for (var index = 1; index <= MaximumSteps; index++)
             {
-                return Result(
-                    false,
-                    "Computer Operator đã dừng vì phiên điều khiển hết hạn, hết ngân sách hoặc bị dừng khẩn cấp.");
-            }
+                cancellationToken.ThrowIfCancellationRequested();
 
-            var observation = BuildObservation();
-            messages.Add(new ChatMessage(
-                "user",
-                "Quan sát Windows hiện tại:\n" + observation +
-                "\nNếu mục tiêu đã đạt, hãy trả lời bình thường và KHÔNG gọi hàm. " +
-                "Nếu chưa đạt, chọn đúng MỘT hàm phù hợp cho bước nhỏ tiếp theo."));
+                if (control.GetStatus().Paused)
+                    return Finish(
+                        false,
+                        "Computer Operator đã dừng vì phiên điều khiển hết hạn, hết ngân sách hoặc bị dừng khẩn cấp.");
 
-            var decision = await provider.ProposeFunctionCallAsync(
-                messages.TakeLast(14).ToArray(),
-                Functions,
-                cancellationToken);
+                var windowsContext = BuildObservation();
+                var active = computer.GetActiveWindow();
 
-            if (decision is null)
-            {
-                return Result(
-                    true,
-                    steps.Count == 0
-                        ? "Không cần thêm thao tác máy tính để hoàn thành yêu cầu."
-                        : $"Đã hoàn thành tác vụ sau {steps.Count} bước.");
-            }
+                progress.Add(
+                    "observe",
+                    active is null
+                        ? "Đang chụp desktop để quan sát. Foreground chưa xác định."
+                        : $"Đang chụp desktop để quan sát. Foreground: {active.Title}.",
+                    observation: true);
 
-            ComputerActionResponse action;
-            try
-            {
-                action = ExecuteDecision(
-                    decision.Name,
-                    decision.Arguments);
-            }
-            catch (ToolExecutionInputException exception)
-            {
-                logger.LogWarning(
-                    "Computer Operator step {Step} rejected: {Reason}",
+                DesktopScreenshotFrame frame;
+                try
+                {
+                    frame = screenshots.CaptureVirtualScreen();
+                }
+                catch (Exception exception)
+                {
+                    progress.Block(
+                        $"Không chụp được desktop: {exception.Message}");
+                    return Finish(
+                        false,
+                        $"Không chụp được desktop: {exception.Message}");
+                }
+
+                DesktopOperatorDecision decision;
+                try
+                {
+                    progress.Add(
+                        "analyze",
+                        $"Đang gửi ảnh desktop {frame.Width}x{frame.Height} cho Vision để phân tích.");
+
+                    decision = await vision.DecideComputerOperatorActionAsync(
+                        frame,
+                        normalizedGoal,
+                        windowsContext,
+                        cancellationToken);
+                }
+                finally
+                {
+                    frame.Clear();
+                }
+
+                progress.Add(
+                    "decide",
+                    $"Vision: {decision.Reason}",
+                    decision.Action,
+                    decision.Confidence);
+
+                if (decision.Action == "complete")
+                {
+                    progress.Complete(
+                        $"Vision xác nhận mục tiêu đã đạt: {decision.Reason}");
+                    return Finish(
+                        true,
+                        steps.Count == 0
+                            ? "Vision xác nhận mục tiêu đã ở trạng thái hoàn thành."
+                            : $"Vision xác nhận tác vụ hoàn thành sau {steps.Count} bước.");
+                }
+
+                if (decision.Action == "blocked")
+                {
+                    progress.Block(
+                        $"Vision dừng an toàn: {decision.Reason}");
+                    return Finish(
+                        false,
+                        $"Vision dừng an toàn: {decision.Reason}");
+                }
+
+                if (decision.Action == "wait")
+                {
+                    progress.Add(
+                        "wait",
+                        $"Vision yêu cầu chờ rồi quan sát lại: {decision.Reason}",
+                        "wait",
+                        decision.Confidence);
+                    await Task.Delay(900, cancellationToken);
+                    continue;
+                }
+
+                if (decision.Confidence < MinimumConfidence)
+                {
+                    lowConfidenceCount++;
+                    progress.Add(
+                        "analyze-retry",
+                        $"Độ tin cậy {decision.Confidence:0.00} thấp hơn {MinimumConfidence:0.00}; sẽ quan sát lại ({lowConfidenceCount}/3).",
+                        decision.Action,
+                        decision.Confidence);
+
+                    if (lowConfidenceCount >= 3)
+                    {
+                        progress.Block(
+                            "Vision không đủ chắc chắn sau 3 lần quan sát.");
+                        return Finish(
+                            false,
+                            "Vision không đủ chắc chắn sau 3 lần quan sát.");
+                    }
+
+                    await Task.Delay(700, cancellationToken);
+                    continue;
+                }
+
+                lowConfidenceCount = 0;
+
+                progress.Add(
+                    "act",
+                    $"Chuẩn bị thực hiện: {decision.Action}. {decision.Reason}",
+                    decision.Action,
+                    decision.Confidence);
+
+                ComputerActionResponse action;
+                try
+                {
+                    action = ExecuteDecision(decision);
+                }
+                catch (ToolExecutionInputException exception)
+                {
+                    logger.LogWarning(
+                        "Computer Operator step {Step} rejected: {Reason}",
+                        index,
+                        exception.Message);
+                    progress.Block(
+                        $"Bước {index} bị từ chối: {exception.Message}");
+                    return Finish(
+                        false,
+                        $"Dừng ở bước {index}: {exception.Message}");
+                }
+
+                steps.Add(new ComputerOperatorTaskStep(
                     index,
-                    exception.Message);
+                    decision.Action,
+                    action.Detail));
 
-                return Result(
-                    false,
-                    $"Dừng ở bước {index}: {exception.Message}");
+                progress.Add(
+                    "acted",
+                    action.Detail,
+                    decision.Action,
+                    decision.Confidence,
+                    actionTaken: true);
+
+                progress.Add(
+                    "verify",
+                    "Đang chờ giao diện phản hồi; vòng tiếp theo sẽ chụp màn hình mới để xác minh kết quả.");
+
+                await Task.Delay(700, cancellationToken);
             }
 
-            var step = new ComputerOperatorTaskStep(
-                index,
-                decision.Name,
-                action.Detail);
-            steps.Add(step);
-
-            messages.Add(new ChatMessage(
-                "assistant",
-                $"Đã thực hiện bước {index}: {decision.Name}. {action.Detail}"));
-
-            await Task.Delay(350, cancellationToken);
+            progress.Block(
+                $"Đạt giới hạn {MaximumSteps} bước để tránh vòng lặp.");
+            return Finish(
+                false,
+                $"Đã đạt giới hạn {MaximumSteps} bước nên dừng để tránh vòng lặp.");
+        }
+        catch (OperationCanceledException)
+        {
+            progress.Block("Computer Operator đã bị hủy.");
+            throw;
+        }
+        catch (Exception exception)
+        {
+            progress.Block(
+                $"Computer Operator gặp lỗi: {exception.Message}");
+            throw;
         }
 
-        return Result(
-            false,
-            $"Đã đạt giới hạn {MaximumSteps} bước nên dừng để tránh vòng lặp.");
-
-        ComputerOperatorTaskResult Result(
+        ComputerOperatorTaskResult Finish(
             bool completed,
             string summary) =>
             new(
@@ -246,37 +254,43 @@ public sealed class ComputerOperatorTaskService(
                 completed,
                 summary,
                 steps.ToArray(),
-                provider.Name,
-                provider.Model);
+                "Gemini",
+                vision.Model);
     }
 
     private ComputerActionResponse ExecuteDecision(
-        string name,
-        JsonElement arguments)
+        DesktopOperatorDecision decision)
     {
-        return name switch
+        var active = computer.GetActiveWindow();
+
+        return decision.Action switch
         {
-            "focus_window" => computer.FocusWindowByQuery(
-                RequiredString(arguments, "query")),
-            "minimize_window" => computer.MinimizeWindow(
-                RequiredString(arguments, "windowId")),
-            "maximize_window" => computer.MaximizeWindow(
-                RequiredString(arguments, "windowId")),
-            "restore_window" => computer.RestoreWindow(
-                RequiredString(arguments, "windowId")),
-            "type_text" => computer.TypeText(
-                RequiredString(arguments, "windowId"),
-                RequiredString(arguments, "text")),
-            "press_key" => computer.PressKey(
-                RequiredString(arguments, "windowId"),
-                RequiredString(arguments, "key")),
-            "press_hotkey" => computer.PressHotkey(
-                RequiredString(arguments, "windowId"),
-                RequiredStrings(arguments, "keys")),
-            "open_browser" => computer.OpenDefaultBrowser(
-                OptionalString(arguments, "url")),
+            "focus-window" => computer.FocusWindowByQuery(
+                RequireValue(decision.Query, "query")),
+            "minimize" => computer.MinimizeWindow(
+                RequireActive(active)),
+            "maximize" => computer.MaximizeWindow(
+                RequireActive(active)),
+            "restore" => computer.RestoreWindow(
+                RequireActive(active)),
+            "type-text" => computer.TypeText(
+                RequireActive(active),
+                RequireValue(decision.Text, "text")),
+            "press-key" => computer.PressKey(
+                RequireActive(active),
+                RequireValue(decision.Key, "key")),
+            "press-hotkey" => computer.PressHotkey(
+                RequireActive(active),
+                decision.Keys.Count > 0
+                    ? decision.Keys
+                    : throw new ToolExecutionInputException(
+                        "Vision không trả danh sách hotkey.")),
+            "open-browser" => computer.OpenDefaultBrowser(
+                string.IsNullOrWhiteSpace(decision.Url)
+                    ? null
+                    : decision.Url),
             _ => throw new ToolExecutionInputException(
-                $"Computer Operator trả hành động không được hỗ trợ: {name}.")
+                $"Computer Operator trả hành động không được hỗ trợ: {decision.Action}.")
         };
     }
 
@@ -302,62 +316,21 @@ public sealed class ComputerOperatorTaskService(
         return string.Join("\n", lines);
     }
 
-    private static ProviderFunctionDefinition Function(
-        string name,
-        string description,
-        string schema)
+    private static string RequireActive(
+        ComputerWindowInfo? active)
     {
-        using var document = JsonDocument.Parse(schema);
-        return new ProviderFunctionDefinition(
-            name,
-            description,
-            document.RootElement.Clone());
+        return active?.WindowId
+            ?? throw new ToolExecutionInputException(
+                "Không xác định được cửa sổ foreground cho thao tác này.");
     }
 
-    private static string RequiredString(
-        JsonElement arguments,
-        string property)
+    private static string RequireValue(
+        string value,
+        string name)
     {
-        if (!arguments.TryGetProperty(property, out var value)
-            || value.ValueKind != JsonValueKind.String
-            || string.IsNullOrWhiteSpace(value.GetString()))
-            throw new ToolExecutionInputException(
-                $"Thiếu tham số {property} cho Computer Operator.");
-
-        return value.GetString()!.Trim();
-    }
-
-    private static string? OptionalString(
-        JsonElement arguments,
-        string property)
-    {
-        return arguments.TryGetProperty(property, out var value)
-            && value.ValueKind == JsonValueKind.String
-            && !string.IsNullOrWhiteSpace(value.GetString())
-                ? value.GetString()!.Trim()
-                : null;
-    }
-
-    private static string[] RequiredStrings(
-        JsonElement arguments,
-        string property)
-    {
-        if (!arguments.TryGetProperty(property, out var value)
-            || value.ValueKind != JsonValueKind.Array)
-            throw new ToolExecutionInputException(
-                $"Thiếu danh sách {property} cho Computer Operator.");
-
-        var result = value
-            .EnumerateArray()
-            .Where(item => item.ValueKind == JsonValueKind.String)
-            .Select(item => item.GetString()?.Trim() ?? string.Empty)
-            .Where(item => item.Length > 0)
-            .ToArray();
-
-        if (result.Length == 0)
-            throw new ToolExecutionInputException(
-                $"Danh sách {property} đang trống.");
-
-        return result;
+        return !string.IsNullOrWhiteSpace(value)
+            ? value.Trim()
+            : throw new ToolExecutionInputException(
+                $"Vision không trả tham số {name} cần thiết.");
     }
 }

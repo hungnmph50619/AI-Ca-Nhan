@@ -96,6 +96,8 @@ public sealed class ToolExecutionService(
     IToolPolicy policy,
     IUndoService undo,
     IEmergencyStopService emergencyStop,
+    ComputerOperatorExecutionControl operatorExecution,
+    ComputerOperatorProgressStore operatorProgress,
     ILogger<ToolExecutionService> logger) : IToolExecutionService
 {
     public async Task<ToolExecutionResponse> ExecuteAsync(
@@ -173,10 +175,29 @@ public sealed class ToolExecutionService(
                 policyDecision.ApprovedPermissions);
         }
 
+        var trackInConsole = ShouldTrackInOperatorConsole(definition.Name);
+        CancellationToken operatorToken = default;
+        if (trackInConsole)
+        {
+            operatorToken = operatorExecution.Begin(
+                $"Tool: {definition.Name}",
+                pausable: false);
+            operatorProgress.Start(
+                $"Tool đang chạy: {definition.Name}");
+            operatorProgress.Add(
+                "running",
+                $"Đang thực thi tool {definition.Name}. Timeout: {definition.TimeoutMs} ms.");
+        }
+
         var emergencyToken = emergencyStop.CurrentToken;
-        using var timeoutCts = CancellationTokenSource.CreateLinkedTokenSource(
-            cancellationToken,
-            emergencyToken);
+        using var timeoutCts = trackInConsole
+            ? CancellationTokenSource.CreateLinkedTokenSource(
+                cancellationToken,
+                emergencyToken,
+                operatorToken)
+            : CancellationTokenSource.CreateLinkedTokenSource(
+                cancellationToken,
+                emergencyToken);
         timeoutCts.CancelAfter(definition.TimeoutMs);
         UndoPreparation? undoPreparation = null;
 
@@ -203,11 +224,18 @@ public sealed class ToolExecutionService(
             var undoId = undo.Complete(
                 undoPreparation,
                 response);
+            if (trackInConsole)
+            {
+                operatorProgress.Complete(
+                    $"Tool {definition.Name} hoàn tất sau {response.DurationMs} ms.");
+            }
             return response with { UndoId = undoId };
         }
         catch (ToolExecutionInputException exception)
         {
             undo.Abandon(undoPreparation);
+            if (trackInConsole)
+                operatorProgress.Block($"Tool bị từ chối: {exception.Message}");
             return Complete(
                 invocationId,
                 definition.Name,
@@ -223,6 +251,8 @@ public sealed class ToolExecutionService(
         catch (ToolExecutionStoppedByUserException exception)
         {
             undo.Abandon(undoPreparation);
+            if (trackInConsole)
+                operatorProgress.StopByUser(exception.Message);
             return Complete(
                 invocationId,
                 definition.Name,
@@ -238,6 +268,8 @@ public sealed class ToolExecutionService(
         catch (ToolExecutionFailedException exception)
         {
             undo.Abandon(undoPreparation);
+            if (trackInConsole)
+                operatorProgress.Block($"Tool thất bại: {exception.Message}");
             return Complete(
                 invocationId,
                 definition.Name,
@@ -247,6 +279,24 @@ public sealed class ToolExecutionService(
                     ? NormalizeOutput(output)
                     : null,
                 exception.Message,
+                stopwatch,
+                startedAt,
+                definition.RequiredPermissions,
+                policyDecision.ApprovedPermissions);
+        }
+        catch (OperationCanceledException) when (
+            trackInConsole && operatorToken.IsCancellationRequested)
+        {
+            undo.Abandon(undoPreparation);
+            operatorProgress.StopByUser(
+                $"Người dùng đã dừng tool {definition.Name} từ AI Operator Console.");
+            return Complete(
+                invocationId,
+                definition.Name,
+                ToolExecutionStatuses.Denied,
+                false,
+                null,
+                "Người dùng đã dừng tool đang chạy.",
                 stopwatch,
                 startedAt,
                 definition.RequiredPermissions,
@@ -273,6 +323,9 @@ public sealed class ToolExecutionService(
             && !cancellationToken.IsCancellationRequested)
         {
             undo.Abandon(undoPreparation);
+            if (trackInConsole)
+                operatorProgress.Block(
+                    $"Tool {definition.Name} bị timeout sau {definition.TimeoutMs} ms.");
             logger.LogWarning(
                 "Tool {ToolName} timed out after {TimeoutMs} ms. Invocation {InvocationId}.",
                 definition.Name,
@@ -298,6 +351,9 @@ public sealed class ToolExecutionService(
         catch (Exception exception)
         {
             undo.Abandon(undoPreparation);
+            if (trackInConsole)
+                operatorProgress.Block(
+                    $"Tool {definition.Name} gặp lỗi. Xem log máy chủ để biết chi tiết.");
             logger.LogError(
                 exception,
                 "Tool {ToolName} failed. Invocation {InvocationId}.",
@@ -315,7 +371,26 @@ public sealed class ToolExecutionService(
                 definition.RequiredPermissions,
                 policyDecision.ApprovedPermissions);
         }
+        finally
+        {
+            if (trackInConsole)
+                operatorExecution.Complete();
+        }
     }
+
+    private static bool ShouldTrackInOperatorConsole(string toolName) =>
+        !toolName.Equals(
+            "computer.operator.run-task",
+            StringComparison.OrdinalIgnoreCase)
+        && !toolName.Equals(
+            "computer.vision.locate",
+            StringComparison.OrdinalIgnoreCase)
+        && !toolName.Equals(
+            "computer.vision.click-target",
+            StringComparison.OrdinalIgnoreCase)
+        && !toolName.Equals(
+            "league.practice.open",
+            StringComparison.OrdinalIgnoreCase);
 
     private static ToolExecutionResponse Complete(
         Guid invocationId,

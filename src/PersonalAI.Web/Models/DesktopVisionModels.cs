@@ -23,6 +23,15 @@ public sealed record DesktopVisionTarget(
     double Confidence,
     string Reason);
 
+public sealed record LeagueVisualDecision(
+    string State,
+    string Action,
+    string Label,
+    int ImageX,
+    int ImageY,
+    double Confidence,
+    string Reason);
+
 public sealed record LeaguePracticeAutomationResult(
     string Status,
     string Phase,

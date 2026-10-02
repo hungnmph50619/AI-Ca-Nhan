@@ -98,6 +98,36 @@ public sealed class WindowsAiOperatorConsoleService
             until.UtcTicks);
     }
 
+    public bool TryGetVisibleBounds(
+        out int left,
+        out int top,
+        out int width,
+        out int height)
+    {
+        left = 0;
+        top = 0;
+        width = 0;
+        height = 0;
+
+        var handle = _window;
+        if (handle == IntPtr.Zero || !IsWindowVisible(handle))
+            return false;
+
+        if (!GetWindowRect(handle, out var rect))
+            return false;
+
+        var rectWidth = rect.Right - rect.Left;
+        var rectHeight = rect.Bottom - rect.Top;
+        if (rectWidth <= 0 || rectHeight <= 0)
+            return false;
+
+        left = rect.Left;
+        top = rect.Top;
+        width = rectWidth;
+        height = rectHeight;
+        return true;
+    }
+
     public WindowsAiOperatorConsoleService(
         LeagueVisualProgressStore leagueProgress,
         ComputerOperatorProgressStore operatorProgress,
@@ -214,7 +244,10 @@ public sealed class WindowsAiOperatorConsoleService
                 _window.ToInt64().ToString("X"));
 
             _ = SetLayeredWindowAttributes(_window, 0, 244, LwaAlpha);
-            _ = SetWindowDisplayAffinity(_window, 0x00000011); // WDA_EXCLUDEFROMCAPTURE
+            // Console phải xuất hiện trong screenshot người dùng chụp để có thể
+            // gửi log chẩn đoán. Ảnh nội bộ gửi Desktop Vision sẽ che riêng
+            // vùng console trong WindowsDesktopScreenshotService.
+            _ = SetWindowDisplayAffinity(_window, 0x00000000); // WDA_NONE
 
             var font = GetStockObject(DefaultGuiFont);
             _text = CreateWindowEx(
@@ -628,6 +661,15 @@ Bảng này bị loại khỏi ảnh Desktop Vision.
     }
 
     [StructLayout(LayoutKind.Sequential)]
+    private struct Rect
+    {
+        public int Left;
+        public int Top;
+        public int Right;
+        public int Bottom;
+    }
+
+    [StructLayout(LayoutKind.Sequential)]
     private struct Message
     {
         public IntPtr HWnd;
@@ -707,6 +749,11 @@ Bảng này bị loại khỏi ảnh Desktop Vision.
     [DllImport("user32.dll")]
     private static extern bool IsWindowVisible(
         IntPtr handle);
+
+    [DllImport("user32.dll")]
+    private static extern bool GetWindowRect(
+        IntPtr handle,
+        out Rect rect);
 
     [DllImport("user32.dll")]
     private static extern int GetSystemMetrics(

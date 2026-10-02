@@ -81,6 +81,8 @@ public sealed class LeaguePracticeAutomationService(
         var clicks = 0;
         var consecutiveWaits = 0;
         var repeatedDecisionCount = 0;
+        var consecutiveVisionBlocks = 0;
+        var consecutiveLowConfidence = 0;
         string? lastDecisionFingerprint = null;
         string? lastAction = null;
 
@@ -198,14 +200,30 @@ public sealed class LeaguePracticeAutomationService(
 
                 if (decision.Action == "blocked")
                 {
-                    progress.Block($"Visual Agent dừng an toàn: {decision.Reason}");
-                    return Result(
+                    consecutiveVisionBlocks++;
+                    progress.Add(
+                        "vision-retry",
+                        $"Vision chưa xác định được giao diện ({consecutiveVisionBlocks}/3): {decision.Reason}",
                         "blocked",
-                        "vision",
-                        clicks,
-                        $"Visual Agent dừng an toàn: {decision.Reason}",
-                        startedAt);
+                        decision.Confidence);
+
+                    if (consecutiveVisionBlocks >= 3)
+                    {
+                        progress.Block(
+                            $"Vision không xác định được giao diện sau 3 lần: {decision.Reason}");
+                        return Result(
+                            "blocked",
+                            "vision",
+                            clicks,
+                            $"Visual Agent dừng sau 3 lần không xác định được giao diện: {decision.Reason}",
+                            startedAt);
+                    }
+
+                    await Task.Delay(900, cancellationToken);
+                    continue;
                 }
+
+                consecutiveVisionBlocks = 0;
 
                 if (decision.Action == "wait")
                 {
@@ -237,15 +255,32 @@ public sealed class LeaguePracticeAutomationService(
                     decision.Action == "play" ? 0.72 : 0.80;
                 if (decision.Confidence < minimumConfidence)
                 {
-                    progress.Block(
-                        $"Dừng vì độ tin cậy thấp: {decision.Action} {decision.Confidence:0.00} < {minimumConfidence:0.00}.");
-                    return Result(
-                        "blocked",
+                    consecutiveLowConfidence++;
+                    progress.Add(
+                        "vision-retry",
+                        $"Độ tin cậy thấp ({consecutiveLowConfidence}/3): {decision.Action} {decision.Confidence:0.00} < {minimumConfidence:0.00}. {decision.Reason}",
                         decision.Action,
-                        clicks,
-                        $"Vision chưa đủ chắc chắn ({decision.Confidence:0.00}, yêu cầu {minimumConfidence:0.00}): {decision.Reason}",
-                        startedAt);
+                        decision.Confidence,
+                        decision.ImageX,
+                        decision.ImageY);
+
+                    if (consecutiveLowConfidence >= 3)
+                    {
+                        progress.Block(
+                            $"Dừng sau 3 lần Vision chưa đủ chắc chắn: {decision.Action} {decision.Confidence:0.00}.");
+                        return Result(
+                            "blocked",
+                            decision.Action,
+                            clicks,
+                            $"Vision chưa đủ chắc chắn sau 3 lần ({decision.Confidence:0.00}, yêu cầu {minimumConfidence:0.00}): {decision.Reason}",
+                            startedAt);
+                    }
+
+                    await Task.Delay(900, cancellationToken);
+                    continue;
                 }
+
+                consecutiveLowConfidence = 0;
 
                 if (!IsSafeClick(frame.Value, decision))
                 {

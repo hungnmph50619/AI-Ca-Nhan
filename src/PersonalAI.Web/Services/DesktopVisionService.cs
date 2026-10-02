@@ -115,24 +115,21 @@ confidence phải từ 0 đến 1.
                 "Desktop Vision không trả kết quả.");
 
         var json = ExtractJsonObject(text);
-        DesktopVisionTarget? result;
+        DesktopVisionTarget result;
         try
         {
-            result = JsonSerializer.Deserialize<DesktopVisionTarget>(
-                json,
-                new JsonSerializerOptions(JsonSerializerDefaults.Web)
-                {
-                    PropertyNameCaseInsensitive = true
-                });
+            result = ParseDesktopVisionTarget(json);
         }
-        catch (JsonException)
+        catch (Exception exception) when (
+            exception is JsonException or
+            InvalidOperationException or
+            FormatException)
         {
             throw new InvalidOperationException(
-                "Desktop Vision trả JSON không hợp lệ.");
+                "Desktop Vision trả JSON định vị không hợp lệ.");
         }
 
-        if (result is null ||
-            !double.IsFinite(result.Confidence) ||
+        if (!double.IsFinite(result.Confidence) ||
             result.Confidence is < 0 or > 1 ||
             result.Label.Length > 120 ||
             result.Reason.Length > 500)
@@ -620,6 +617,227 @@ Các field không dùng phải để chuỗi rỗng hoặc [].
         {
             Action = decision.Action.Trim().ToLowerInvariant()
         };
+    }
+
+    private static DesktopVisionTarget ParseDesktopVisionTarget(
+        string json)
+    {
+        using var document = JsonDocument.Parse(json);
+        var root = document.RootElement;
+        if (root.ValueKind != JsonValueKind.Object)
+            throw new InvalidOperationException(
+                "Kết quả định vị Vision không phải JSON object.");
+
+        var found =
+            root.TryGetProperty("found", out var foundElement)
+            && foundElement.ValueKind == JsonValueKind.True;
+
+        var label = ReadString(root, "label");
+        var reason = ReadString(root, "reason");
+        var confidence = ReadDouble(root, "confidence");
+
+        var hasX = TryReadCoordinate(
+            root,
+            out var imageX,
+            "x",
+            "imageX",
+            "centerX");
+        var hasY = TryReadCoordinate(
+            root,
+            out var imageY,
+            "y",
+            "imageY",
+            "centerY");
+
+        if ((!hasX || !hasY) &&
+            TryReadPointObject(
+                root,
+                out var pointX,
+                out var pointY))
+        {
+            imageX = pointX;
+            imageY = pointY;
+            hasX = true;
+            hasY = true;
+        }
+
+        if ((!hasX || !hasY) &&
+            TryReadBoundingBoxCenter(
+                root,
+                out var boxX,
+                out var boxY))
+        {
+            imageX = boxX;
+            imageY = boxY;
+            hasX = true;
+            hasY = true;
+        }
+
+        if (found && (!hasX || !hasY))
+            throw new InvalidOperationException(
+                "Desktop Vision báo đã tìm thấy phần tử nhưng không trả tọa độ.");
+
+        return new DesktopVisionTarget(
+            found,
+            label,
+            hasX ? imageX : 0,
+            hasY ? imageY : 0,
+            confidence,
+            reason);
+    }
+
+    private static bool TryReadCoordinate(
+        JsonElement root,
+        out int value,
+        params string[] names)
+    {
+        foreach (var name in names)
+        {
+            if (!root.TryGetProperty(name, out var element))
+                continue;
+
+            if (TryReadIntValue(element, out value))
+                return true;
+        }
+
+        value = 0;
+        return false;
+    }
+
+    private static bool TryReadPointObject(
+        JsonElement root,
+        out int x,
+        out int y)
+    {
+        foreach (var name in new[] { "point", "center", "position", "coordinates" })
+        {
+            if (!root.TryGetProperty(name, out var point) ||
+                point.ValueKind != JsonValueKind.Object)
+                continue;
+
+            var hasX = TryReadCoordinate(
+                point,
+                out x,
+                "x",
+                "imageX",
+                "centerX");
+            var hasY = TryReadCoordinate(
+                point,
+                out y,
+                "y",
+                "imageY",
+                "centerY");
+
+            if (hasX && hasY)
+                return true;
+        }
+
+        x = 0;
+        y = 0;
+        return false;
+    }
+
+    private static bool TryReadBoundingBoxCenter(
+        JsonElement root,
+        out int x,
+        out int y)
+    {
+        foreach (var name in new[] { "boundingBox", "bbox", "box", "bounds" })
+        {
+            if (!root.TryGetProperty(name, out var box) ||
+                box.ValueKind != JsonValueKind.Object)
+                continue;
+
+            var hasLeft = TryReadCoordinate(
+                box,
+                out var left,
+                "left",
+                "x",
+                "x1");
+            var hasTop = TryReadCoordinate(
+                box,
+                out var top,
+                "top",
+                "y",
+                "y1");
+
+            var hasWidth = TryReadCoordinate(
+                box,
+                out var width,
+                "width",
+                "w");
+            var hasHeight = TryReadCoordinate(
+                box,
+                out var height,
+                "height",
+                "h");
+
+            if (hasLeft && hasTop && hasWidth && hasHeight)
+            {
+                x = left + width / 2;
+                y = top + height / 2;
+                return true;
+            }
+
+            var hasRight = TryReadCoordinate(
+                box,
+                out var right,
+                "right",
+                "x2");
+            var hasBottom = TryReadCoordinate(
+                box,
+                out var bottom,
+                "bottom",
+                "y2");
+
+            if (hasLeft && hasTop && hasRight && hasBottom)
+            {
+                x = left + (right - left) / 2;
+                y = top + (bottom - top) / 2;
+                return true;
+            }
+        }
+
+        x = 0;
+        y = 0;
+        return false;
+    }
+
+    private static bool TryReadIntValue(
+        JsonElement value,
+        out int number)
+    {
+        if (value.ValueKind == JsonValueKind.Number)
+        {
+            if (value.TryGetInt32(out number))
+                return true;
+
+            if (value.TryGetDouble(out var floating) &&
+                double.IsFinite(floating) &&
+                floating >= int.MinValue &&
+                floating <= int.MaxValue)
+            {
+                number = (int)Math.Round(floating);
+                return true;
+            }
+        }
+
+        if (value.ValueKind == JsonValueKind.String &&
+            double.TryParse(
+                value.GetString(),
+                System.Globalization.NumberStyles.Float,
+                System.Globalization.CultureInfo.InvariantCulture,
+                out var parsed) &&
+            double.IsFinite(parsed) &&
+            parsed >= int.MinValue &&
+            parsed <= int.MaxValue)
+        {
+            number = (int)Math.Round(parsed);
+            return true;
+        }
+
+        number = 0;
+        return false;
     }
 
     private static DesktopOperatorDecision ParseDesktopOperatorDecision(

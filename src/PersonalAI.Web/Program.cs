@@ -7,6 +7,8 @@ using PersonalAI.Web.Options;
 using PersonalAI.Web.Services;
 using PersonalAI.Web.Teams;
 
+WindowsDpiAwareness.EnsurePerMonitorAware();
+
 var builder = WebApplication.CreateBuilder(args);
 
 builder.Services.Configure<AiOptions>(builder.Configuration.GetSection(AiOptions.SectionName));

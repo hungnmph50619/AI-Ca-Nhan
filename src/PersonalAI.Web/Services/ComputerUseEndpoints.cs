@@ -9,6 +9,7 @@ public static class ComputerUseEndpoints
         this IServiceCollection services)
     {
         services.AddSingleton<ComputerControlGate>();
+        services.AddSingleton<LeagueVisualProgressStore>();
         services.AddHostedService<WindowsStopHotkeyService>();
         services.AddSingleton<IComputerUseService, WindowsComputerUseService>();
         services.AddSingleton<IDesktopScreenshotService, WindowsDesktopScreenshotService>();
@@ -31,6 +32,10 @@ public static class ComputerUseEndpoints
         app.MapGet("/api/computer/status", (
             IComputerUseService computer) =>
             Results.Ok(computer.GetStatus()));
+
+        app.MapGet("/api/computer/league-progress", (
+            LeagueVisualProgressStore progress) =>
+            Results.Ok(progress.Get()));
 
         // Chỉ nhận thao tác bật/tắt từ máy đang chạy chương trình.
         // Không xem header này là xác thực: người dùng không nên mở máy chủ trên mạng công cộng.

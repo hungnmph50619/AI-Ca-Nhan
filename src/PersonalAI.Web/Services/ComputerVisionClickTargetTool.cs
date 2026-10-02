@@ -184,53 +184,82 @@ public sealed class ComputerVisionClickTargetTool(
             "verify",
             "Đang chờ giao diện phản hồi rồi chụp lại để xác minh.");
 
-        await Task.Delay(650, linked.Token);
-        await execution.WaitIfPausedAsync(linked.Token);
+        DesktopVisionVerification verification = new(
+            false,
+            0,
+            "Chưa xác minh.");
+        var verified = false;
 
-        progress.Add(
-            "stabilize",
-            "Đang chờ giao diện ổn định để chụp ảnh hậu hành động.");
-
-        var after = await screenshots.CaptureStableVirtualScreenAsync(
-            5000,
-            linked.Token);
-
-        DesktopVisionVerification verification;
-        try
+        for (var verifyAttempt = 1; verifyAttempt <= 3; verifyAttempt++)
         {
-            progress.Add(
-                "observe",
-                $"Đã chụp frame hậu hành động {after.Width}x{after.Height}.",
-                observation: true);
-            progress.Add(
-                "analyze",
-                $"Vision đang xác minh: {expectedAfter}");
+            var delayMs = verifyAttempt switch
+            {
+                1 => 700,
+                2 => 900,
+                _ => 1200
+            };
 
+            await Task.Delay(delayMs, linked.Token);
             await execution.WaitIfPausedAsync(linked.Token);
-            verification = await vision.VerifyAsync(
-                after,
-                expectedAfter,
+
+            progress.Add(
+                "stabilize",
+                verifyAttempt == 1
+                    ? "Đang chờ giao diện ổn định để chụp ảnh hậu hành động."
+                    : $"VERIFY-RETRY {verifyAttempt}/3: chờ giao diện ổn định rồi quan sát lại.");
+
+            var after = await screenshots.CaptureStableVirtualScreenAsync(
+                5000,
                 linked.Token);
-        }
-        finally
-        {
-            after.Clear();
-        }
 
-        progress.Add(
-            "verify-result",
-            verification.Reason,
-            verification.Satisfied ? "verified" : "not-verified",
-            verification.Confidence);
+            try
+            {
+                progress.Add(
+                    "observe",
+                    $"Đã chụp frame hậu hành động {after.Width}x{after.Height} (lần {verifyAttempt}/3).",
+                    observation: true);
+                progress.Add(
+                    "analyze",
+                    $"Vision đang xác minh lần {verifyAttempt}/3: {expectedAfter}");
 
-        var verified =
-            verification.Satisfied &&
-            verification.Confidence >= MinimumVerifyConfidence;
+                await execution.WaitIfPausedAsync(linked.Token);
+                verification = await vision.VerifyAsync(
+                    after,
+                    expectedAfter,
+                    linked.Token);
+            }
+            finally
+            {
+                after.Clear();
+            }
+
+            progress.Add(
+                "verify-result",
+                $"Lần {verifyAttempt}/3: {verification.Reason}",
+                verification.Satisfied ? "verified" : "not-verified",
+                verification.Confidence);
+
+            verified =
+                verification.Satisfied &&
+                verification.Confidence >= MinimumVerifyConfidence;
+
+            if (verified)
+                break;
+
+            if (verifyAttempt < 3)
+            {
+                progress.Add(
+                    "verify-retry",
+                    $"Chưa xác minh được sau lần {verifyAttempt}; sẽ quan sát lại trước khi kết luận.",
+                    "retry-verify",
+                    verification.Confidence);
+            }
+        }
 
         if (verified)
-            progress.Complete("Visual click đã được xác minh bằng frame mới.");
+            progress.Complete("Visual click đã được xác minh bằng frame hậu hành động.");
         else
-            progress.Block("Click đã thực hiện nhưng trạng thái hậu hành động chưa được Vision xác minh.");
+            progress.Block("Click đã thực hiện nhưng sau 3 lần quan sát lại, trạng thái hậu hành động vẫn chưa được Vision xác minh.");
 
         return JsonSerializer.SerializeToElement(new
         {

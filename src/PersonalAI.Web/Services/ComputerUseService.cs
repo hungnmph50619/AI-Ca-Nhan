@@ -22,6 +22,10 @@ public interface IComputerUseService
 
     ComputerActionResponse MinimizeWindow(string windowId);
 
+    ComputerActionResponse MaximizeWindow(string windowId);
+
+    ComputerActionResponse RestoreWindow(string windowId);
+
     ComputerActionResponse MoveCursor(int x, int y);
 
     ComputerActionResponse SmoothMoveCursor(
@@ -47,6 +51,14 @@ public interface IComputerUseService
 
     ComputerActionResponse TypeNotepadText(string windowId, string text);
 
+    ComputerActionResponse TypeText(string windowId, string text);
+
+    ComputerActionResponse PressKey(string windowId, string key);
+
+    ComputerActionResponse PressHotkey(
+        string windowId,
+        IReadOnlyList<string> keys);
+
     ComputerActionResponse OpenDefaultBrowser(string? url = null);
 }
 
@@ -67,6 +79,7 @@ public sealed class WindowsComputerUseService(
     private const uint KeyboardUnicode = 0x0004;
     private const uint KeyboardKeyUp = 0x0002;
     public const int MaximumNotepadTextLength = 32;
+    public const int MaximumGenericTextLength = 1000;
     private const uint MouseLeftDown = 0x0002;
     private const uint MouseLeftUp = 0x0004;
     private const uint MouseRightDown = 0x0008;
@@ -87,6 +100,8 @@ public sealed class WindowsComputerUseService(
                 ComputerUseCapabilities.ActiveWindow,
                 ComputerUseCapabilities.FocusWindow,
                 ComputerUseCapabilities.MinimizeWindow,
+                ComputerUseCapabilities.MaximizeWindow,
+                ComputerUseCapabilities.RestoreWindow,
                 ComputerUseCapabilities.MoveCursor,
                 ComputerUseCapabilities.SmoothMoveCursor,
                 ComputerUseCapabilities.ClickLeft,
@@ -95,6 +110,9 @@ public sealed class WindowsComputerUseService(
                 ComputerUseCapabilities.Scroll,
                 ComputerUseCapabilities.DragLeft,
                 ComputerUseCapabilities.TypeNotepadText,
+                ComputerUseCapabilities.TypeText,
+                ComputerUseCapabilities.PressKey,
+                ComputerUseCapabilities.PressHotkey,
                 ComputerUseCapabilities.OpenDefaultBrowser
             }
             : Array.Empty<string>();
@@ -102,12 +120,12 @@ public sealed class WindowsComputerUseService(
         var limitations = new List<string>
         {
             "Không chụp ảnh màn hình trong v1.1.0.",
-            "Chỉ hỗ trợ nhấp trái từng lần và nhập một dòng tối đa 32 ký tự vào Notepad có xác nhận; chưa có nhấp phải, nhấp đúp, kéo thả, cuộn hoặc phím tắt.",
+            "Human Input Foundation hỗ trợ focus/minimize/maximize/restore, di chuột nhìn thấy được, click trái/phải/đúp, cuộn, kéo-thả, gõ văn bản và phím/hotkey có xác nhận.",
             "Không chạy shell hoặc thực thi lệnh hệ thống tùy ý. Chỉ cho phép mở trình duyệt mặc định của Windows tới URL HTTP/HTTPS đã kiểm tra.",
             "Các hành động thay đổi focus/cursor phải đi qua Tool Framework và xác nhận.",
             "Điều khiển được khóa lúc khởi động; phải cho phép thủ công. Nút dừng chỉ chặn các lệnh mới qua dịch vụ, không phải phím dừng toàn hệ thống.",
             "Nhấp chuột có thể kích hoạt hành động trong ứng dụng khác; chỉ thử trên cửa sổ thử nghiệm không chứa dữ liệu quan trọng.",
-            "Nhập bàn phím chỉ dành cho cửa sổ Notepad đang hoạt động; không nhập mật khẩu, mã xác thực hoặc dữ liệu nhạy cảm. Nội dung có thể bị ứng dụng đích lưu lại.",
+            "Nhập bàn phím tổng quát luôn cần xác nhận và quyền nhạy cảm; không dùng để nhập mật khẩu, mã xác thực hoặc bí mật. Nội dung có thể bị ứng dụng đích lưu lại.",
             "Mỗi lần bật chỉ có tối đa 60 giây và 5 thao tác, tính cả thao tác bị Windows từ chối.",
             "Nhấn Ctrl + Shift + F12 để khóa lại các thao tác máy tính khi phím dừng đã đăng ký; nếu phím bị ứng dụng khác sử dụng, ứng dụng không cho phép bật điều khiển."
         };
@@ -303,6 +321,51 @@ public sealed class WindowsComputerUseService(
             ComputerUseCapabilities.MinimizeWindow,
             true,
             $"Đã thu nhỏ cửa sổ: {LimitInline(title, 160)}");
+    }
+
+    public ComputerActionResponse MaximizeWindow(
+        string windowId) =>
+        control.RunAllowed(() =>
+            SetWindowShowState(
+                windowId,
+                3,
+                ComputerUseCapabilities.MaximizeWindow,
+                "phóng to"));
+
+    public ComputerActionResponse RestoreWindow(
+        string windowId) =>
+        control.RunAllowed(() =>
+            SetWindowShowState(
+                windowId,
+                9,
+                ComputerUseCapabilities.RestoreWindow,
+                "khôi phục"));
+
+    private ComputerActionResponse SetWindowShowState(
+        string windowId,
+        int showCommand,
+        string capability,
+        string actionLabel)
+    {
+        EnsureAvailable();
+
+        var handle = ParseWindowId(windowId);
+        if (!IsWindow(handle) || !IsWindowVisible(handle))
+            throw new ToolExecutionInputException(
+                "Cửa sổ không còn tồn tại hoặc không hiển thị.");
+
+        var title = GetWindowTitle(handle);
+        if (string.IsNullOrWhiteSpace(title))
+            throw new ToolExecutionInputException(
+                "Không thể thay đổi trạng thái cửa sổ không có tiêu đề.");
+
+        _ = ShowWindow(handle, showCommand);
+        Thread.Sleep(180);
+
+        return new ComputerActionResponse(
+            capability,
+            true,
+            $"Đã {actionLabel} cửa sổ: {LimitInline(title, 160)}");
     }
 
     public ComputerActionResponse MoveCursor(
@@ -717,6 +780,274 @@ public sealed class WindowsComputerUseService(
                 Marshal.SizeOf<NativeInputEvent>()) != 1)
             throw new ToolExecutionInputException(
                 "Windows không xác nhận sự kiện nhả chuột.");
+    }
+
+    public ComputerActionResponse TypeText(
+        string windowId,
+        string text) =>
+        control.RunAllowed(() =>
+            TypeTextCore(
+                windowId,
+                text,
+                MaximumGenericTextLength,
+                ComputerUseCapabilities.TypeText));
+
+    public ComputerActionResponse PressKey(
+        string windowId,
+        string key) =>
+        control.RunAllowed(() =>
+        {
+            var target = ValidateKeyboardTarget(windowId);
+            var virtualKey = ResolveVirtualKey(key);
+            if (GetForegroundWindow() != target)
+                throw new ToolExecutionInputException(
+                    "Cửa sổ foreground đã thay đổi trước khi gửi phím.");
+
+            SendVirtualKey(virtualKey, keyUp: false);
+            SendVirtualKey(virtualKey, keyUp: true);
+
+            return new ComputerActionResponse(
+                ComputerUseCapabilities.PressKey,
+                true,
+                $"Đã nhấn phím {NormalizeKeyName(key)}.");
+        });
+
+    public ComputerActionResponse PressHotkey(
+        string windowId,
+        IReadOnlyList<string> keys) =>
+        control.RunAllowed(() =>
+        {
+            if (keys is null || keys.Count is < 2 or > 4)
+                throw new ToolExecutionInputException(
+                    "Hotkey phải gồm từ 2 đến 4 phím.");
+
+            var normalized = keys
+                .Select(NormalizeKeyName)
+                .ToArray();
+
+            if (normalized.Distinct(
+                    StringComparer.OrdinalIgnoreCase).Count() != normalized.Length)
+                throw new ToolExecutionInputException(
+                    "Hotkey không được chứa phím trùng.");
+
+            var target = ValidateKeyboardTarget(windowId);
+            var virtualKeys = normalized
+                .Select(ResolveVirtualKey)
+                .ToArray();
+
+            if (GetForegroundWindow() != target)
+                throw new ToolExecutionInputException(
+                    "Cửa sổ foreground đã thay đổi trước khi gửi hotkey.");
+
+            var pressed = new List<ushort>();
+            try
+            {
+                foreach (var virtualKey in virtualKeys)
+                {
+                    SendVirtualKey(virtualKey, keyUp: false);
+                    pressed.Add(virtualKey);
+                    Thread.Sleep(18);
+                }
+            }
+            finally
+            {
+                for (var index = pressed.Count - 1; index >= 0; index--)
+                {
+                    try
+                    {
+                        SendVirtualKey(
+                            pressed[index],
+                            keyUp: true);
+                    }
+                    catch
+                    {
+                        // Best effort release; the emergency stop remains authoritative.
+                    }
+                }
+            }
+
+            return new ComputerActionResponse(
+                ComputerUseCapabilities.PressHotkey,
+                true,
+                $"Đã gửi hotkey {string.Join("+", normalized)}.");
+        });
+
+    private ComputerActionResponse TypeTextCore(
+        string windowId,
+        string text,
+        int maximumLength,
+        string capability)
+    {
+        EnsureAvailable();
+
+        if (string.IsNullOrEmpty(text) ||
+            text.Length > maximumLength ||
+            text.Any(character =>
+                char.IsControl(character) ||
+                char.IsSurrogate(character) ||
+                char.GetUnicodeCategory(character) is
+                    UnicodeCategory.LineSeparator or
+                    UnicodeCategory.ParagraphSeparator or
+                    UnicodeCategory.Format))
+            throw new ToolExecutionInputException(
+                $"Chỉ cho phép văn bản hiển thị từ 1 đến {maximumLength} ký tự; Enter/Tab và phím điều khiển phải dùng công cụ phím riêng.");
+
+        var target = ValidateKeyboardTarget(windowId);
+        if (GetForegroundWindow() != target)
+            throw new ToolExecutionInputException(
+                "Cửa sổ foreground đã thay đổi trước khi nhập văn bản.");
+
+        var inputs = new NativeInputEvent[text.Length * 2];
+        for (var index = 0; index < text.Length; index++)
+        {
+            var key = (ushort)text[index];
+            inputs[index * 2] = new NativeInputEvent
+            {
+                Type = InputKeyboard,
+                Data = new NativeInputUnion
+                {
+                    Keyboard = new KeyboardInputData
+                    {
+                        Scan = key,
+                        Flags = KeyboardUnicode
+                    }
+                }
+            };
+            inputs[index * 2 + 1] = new NativeInputEvent
+            {
+                Type = InputKeyboard,
+                Data = new NativeInputUnion
+                {
+                    Keyboard = new KeyboardInputData
+                    {
+                        Scan = key,
+                        Flags = KeyboardUnicode | KeyboardKeyUp
+                    }
+                }
+            };
+        }
+
+        var sent = SendInput(
+            (uint)inputs.Length,
+            inputs,
+            Marshal.SizeOf<NativeInputEvent>());
+        if (sent != (uint)inputs.Length)
+            throw new ToolExecutionInputException(
+                "Windows chỉ tiếp nhận một phần lệnh nhập; không tự gửi lại để tránh nhập trùng.");
+
+        return new ComputerActionResponse(
+            capability,
+            true,
+            $"Đã nhập {text.Length} ký tự vào cửa sổ foreground đã xác nhận.");
+    }
+
+    private IntPtr ValidateKeyboardTarget(string windowId)
+    {
+        EnsureAvailable();
+
+        var target = ParseWindowId(windowId);
+        if (!IsWindow(target) ||
+            !IsWindowVisible(target) ||
+            GetForegroundWindow() != target)
+            throw new ToolExecutionInputException(
+                "Cửa sổ bàn phím đích không còn ở foreground.");
+
+        return target;
+    }
+
+    private static string NormalizeKeyName(string key)
+    {
+        var normalized = (key ?? string.Empty)
+            .Trim()
+            .ToUpperInvariant()
+            .Replace(" ", string.Empty);
+
+        return normalized switch
+        {
+            "CONTROL" => "CTRL",
+            "ESCAPE" => "ESC",
+            "RETURN" => "ENTER",
+            "WINDOWS" or "WINKEY" => "WIN",
+            "PAGEUP" => "PGUP",
+            "PAGEDOWN" => "PGDN",
+            _ => normalized
+        };
+    }
+
+    private static ushort ResolveVirtualKey(string key)
+    {
+        var normalized = NormalizeKeyName(key);
+        if (normalized.Length == 1)
+        {
+            var character = normalized[0];
+            if (character is >= 'A' and <= 'Z' ||
+                character is >= '0' and <= '9')
+                return character;
+        }
+
+        if (normalized.StartsWith('F') &&
+            int.TryParse(
+                normalized[1..],
+                out var functionNumber) &&
+            functionNumber is >= 1 and <= 12)
+            return (ushort)(0x70 + functionNumber - 1);
+
+        return normalized switch
+        {
+            "BACKSPACE" => 0x08,
+            "TAB" => 0x09,
+            "ENTER" => 0x0D,
+            "SHIFT" => 0x10,
+            "CTRL" => 0x11,
+            "ALT" => 0x12,
+            "PAUSE" => 0x13,
+            "CAPSLOCK" => 0x14,
+            "ESC" => 0x1B,
+            "SPACE" => 0x20,
+            "PGUP" => 0x21,
+            "PGDN" => 0x22,
+            "END" => 0x23,
+            "HOME" => 0x24,
+            "LEFT" => 0x25,
+            "UP" => 0x26,
+            "RIGHT" => 0x27,
+            "DOWN" => 0x28,
+            "INSERT" => 0x2D,
+            "DELETE" => 0x2E,
+            "WIN" => 0x5B,
+            _ => throw new ToolExecutionInputException(
+                $"Phím không được hỗ trợ: {normalized}.")
+        };
+    }
+
+    private static void SendVirtualKey(
+        ushort virtualKey,
+        bool keyUp)
+    {
+        var input = new[]
+        {
+            new NativeInputEvent
+            {
+                Type = InputKeyboard,
+                Data = new NativeInputUnion
+                {
+                    Keyboard = new KeyboardInputData
+                    {
+                        VirtualKey = virtualKey,
+                        Flags = keyUp
+                            ? KeyboardKeyUp
+                            : 0
+                    }
+                }
+            }
+        };
+
+        if (SendInput(
+                1,
+                input,
+                Marshal.SizeOf<NativeInputEvent>()) != 1)
+            throw new ToolExecutionInputException(
+                "Windows không xác nhận sự kiện bàn phím.");
     }
 
     public ComputerActionResponse OpenDefaultBrowser(string? url = null) =>

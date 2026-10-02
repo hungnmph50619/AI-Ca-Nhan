@@ -71,14 +71,17 @@ public static class ComputerUseEndpoints
             return Results.Ok(console.GetDiagnosticStatus());
         });
 
-        app.MapPost("/api/computer/operator-console/test", (
+        app.MapPost("/api/computer/operator-console/test", async (
             HttpContext context,
-            WindowsAiOperatorConsoleService console) =>
+            WindowsAiOperatorConsoleService console,
+            CancellationToken cancellationToken) =>
         {
             if (!IsLocalRequest(context))
                 return Results.StatusCode(StatusCodes.Status403Forbidden);
 
             console.ShowTestConsole(TimeSpan.FromSeconds(15));
+            await Task.Delay(350, cancellationToken);
+
             return Results.Ok(new
             {
                 message = "Đã yêu cầu hiển thị AI Operator Console trong 15 giây.",

@@ -62,6 +62,7 @@ public sealed class ToolResultSynthesisService(
             "computer.windows.list" => SummarizeComputerWindows(value),
             "computer.window.active" => SummarizeComputerActiveWindow(value),
             "computer.window.focus" or
+            "computer.window.focus-by-query" or
             "computer.window.minimize" or
             "computer.window.maximize" or
             "computer.window.restore" or
@@ -361,6 +362,7 @@ UNTRUSTED_TOOL_RESULT:
             "computer.windows.list" => "Liệt kê cửa sổ Windows",
             "computer.window.active" => "Đọc cửa sổ foreground",
             "computer.window.focus" => "Chuyển cửa sổ foreground",
+            "computer.window.focus-by-query" => "Chuyển tới cửa sổ theo tên",
             "computer.window.minimize" => "Thu nhỏ cửa sổ",
             "computer.window.maximize" => "Phóng to cửa sổ",
             "computer.window.restore" => "Khôi phục cửa sổ",

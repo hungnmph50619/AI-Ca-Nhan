@@ -111,6 +111,10 @@ public sealed class ComputerOperatorTaskService(
                         $"Đã chụp frame ổn định {frame.Width}x{frame.Height} lúc {frame.CapturedAtUtc:O}.",
                         observation: true);
                 }
+                catch (OperationCanceledException)
+                {
+                    throw;
+                }
                 catch (Exception exception)
                 {
                     progress.Block(
@@ -208,6 +212,7 @@ public sealed class ComputerOperatorTaskService(
                 ComputerActionResponse action;
                 try
                 {
+                    await execution.WaitIfPausedAsync(linked.Token);
                     action = ExecuteDecision(decision);
                 }
                 catch (ToolExecutionInputException exception)

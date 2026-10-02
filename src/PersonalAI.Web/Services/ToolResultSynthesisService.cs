@@ -78,6 +78,7 @@ public sealed class ToolResultSynthesisService(
             "computer.browser.open-default" => SummarizeComputerAction(
                 execution.ToolName,
                 value),
+            "computer.operator.run-task" => SummarizeComputerOperatorTask(value),
             _ => $"Công cụ {GetToolDisplayName(execution.ToolName)} đã chạy thành công."
         };
     }
@@ -330,6 +331,25 @@ UNTRUSTED_TOOL_RESULT:
             : $"Cửa sổ foreground hiện tại là “{title}”.";
     }
 
+    private static string SummarizeComputerOperatorTask(JsonElement output)
+    {
+        var completed = output.TryGetProperty("completed", out var completedValue)
+            && completedValue.ValueKind == JsonValueKind.True;
+        var summary = GetString(output, "summary");
+        var steps = GetArrayLength(output, "steps");
+
+        var prefix = completed
+            ? "Computer Operator đã hoàn thành tác vụ"
+            : "Computer Operator đã dừng tác vụ";
+
+        if (steps is long count)
+            prefix += $" sau {FormatNumber(count)} bước";
+
+        return string.IsNullOrWhiteSpace(summary)
+            ? prefix + "."
+            : prefix + $": {summary}";
+    }
+
     private static string SummarizeComputerAction(
         string toolName,
         JsonElement output)
@@ -376,6 +396,7 @@ UNTRUSTED_TOOL_RESULT:
             "computer.keyboard.press-key" => "Nhấn phím",
             "computer.keyboard.hotkey" => "Nhấn tổ hợp phím",
             "computer.browser.open-default" => "Mở trình duyệt mặc định",
+            "computer.operator.run-task" => "Computer Operator · tác vụ nhiều bước",
             "league.practice.open" => "Mở League Practice Tool",
             _ => string.IsNullOrWhiteSpace(toolName)
                 ? "không xác định"

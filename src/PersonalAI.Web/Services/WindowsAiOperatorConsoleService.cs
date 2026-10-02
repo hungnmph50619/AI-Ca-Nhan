@@ -543,9 +543,14 @@ Console chỉ ẩn khi bạn bấm ĐÓNG; task mới sẽ tự hiện lại.
 
         if (snapshot.StartedAtUtc is DateTimeOffset started)
         {
-            var elapsed = DateTimeOffset.UtcNow - started;
+            var end = snapshot.Active
+                ? DateTimeOffset.UtcNow
+                : snapshot.UpdatedAtUtc;
+            var elapsed = end - started;
+            var lastUpdateAgo = DateTimeOffset.UtcNow - snapshot.UpdatedAtUtc;
+
             builder.AppendLine(
-                $"Thời gian task: {elapsed.TotalSeconds:0.0}s   Cập nhật cuối: {(DateTimeOffset.UtcNow - snapshot.UpdatedAtUtc).TotalSeconds:0.0}s trước");
+                $"Thời gian task: {Math.Max(0, elapsed.TotalSeconds):0.0}s   Cập nhật cuối: {Math.Max(0, lastUpdateAgo.TotalSeconds):0.0}s trước");
         }
 
         if (snapshot.Stale)

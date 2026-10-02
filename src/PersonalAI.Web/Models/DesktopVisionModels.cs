@@ -43,12 +43,14 @@ public sealed record LeaguePracticeAutomationResult(
 
 public sealed record DesktopOperatorDecision(
     string State,
+    string Plan,
     string Action,
     string Query,
     string Text,
     string Key,
     IReadOnlyList<string> Keys,
     string Url,
+    string ExpectedEffect,
     double Confidence,
     string Reason);
 

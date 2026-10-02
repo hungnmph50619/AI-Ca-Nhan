@@ -12,6 +12,12 @@ on:
     paths:
       - 'src/PersonalAI.Web/Services/ComputerUse*'
       - 'src/PersonalAI.Web/Services/ComputerClickLeftTool.cs'
+      - 'src/PersonalAI.Web/Services/ComputerOpenDefaultBrowserTool.cs'
+      - 'src/PersonalAI.Web/Services/DesktopScreenshotService.cs'
+      - 'src/PersonalAI.Web/Services/DesktopVisionService.cs'
+      - 'src/PersonalAI.Web/Services/LeaguePracticeAutomationService.cs'
+      - 'src/PersonalAI.Web/Services/LeaguePracticeOpenTool.cs'
+      - 'src/PersonalAI.Web/Models/DesktopVisionModels.cs'
       - 'src/PersonalAI.Web/Services/ComputerControlGate.cs'
       - 'src/PersonalAI.Web/Services/WindowsStopHotkeyService.cs'
       - 'src/PersonalAI.Web/Models/ComputerUseModels.cs'

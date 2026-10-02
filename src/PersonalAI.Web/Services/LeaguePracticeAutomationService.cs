@@ -26,23 +26,34 @@ public sealed class LeaguePracticeAutomationService(
         "RiotClientUxRender"
     ];
 
-    private static readonly (string Phase, string Target, int DelayMs)[] Steps =
+    private static readonly LeagueUiStep[] Steps =
     [
-        ("play",
-            "nút Chơi hoặc Play dùng để bắt đầu chọn chế độ chơi trong Riot/League client",
-            1800),
-        ("training",
-            "mục Luyện tập hoặc Training trong màn hình chọn chế độ",
-            1400),
-        ("practice-tool",
-            "mục Công cụ luyện tập hoặc Practice Tool",
-            1200),
-        ("confirm",
+        new(
+            "play",
+            "nút vàng lớn có biểu tượng tam giác và chữ Chơi (Play) ở góc dưới bên trái của League client; chọn chính thân nút Chơi, không chọn nút mũi tên thả xuống bên phải",
+            1800,
+            0.72,
+            new NormalizedRegion(0.03, 0.34, 0.68, 0.99)),
+        new(
+            "training",
+            "mục Luyện tập hoặc Training trong màn hình chọn chế độ chơi của League of Legends",
+            1400,
+            0.82),
+        new(
+            "practice-tool",
+            "mục Công cụ luyện tập hoặc Practice Tool trong nhóm Luyện tập/Training",
+            1200,
+            0.82),
+        new(
+            "confirm",
             "nút Xác nhận hoặc Confirm để tạo phòng Practice Tool",
-            2200),
-        ("start-game",
+            2200,
+            0.84),
+        new(
+            "start-game",
             "nút Bắt đầu hoặc Start Game trong phòng Practice Tool",
-            2500)
+            2500,
+            0.84)
     ];
 
     public async Task<LeaguePracticeAutomationResult> OpenPracticeToolAsync(
@@ -126,19 +137,33 @@ public sealed class LeaguePracticeAutomationService(
 
                 var step = Steps[completed];
                 using var frame = CaptureDisposable(window);
-                var target = await vision.LocateAsync(
+                var target = await LocateStepTargetAsync(
                     frame.Value,
-                    step.Target,
+                    step,
                     cancellationToken);
 
-                if (!target.Found || target.Confidence < 0.86)
+                if (!target.Found ||
+                    target.Confidence < step.MinimumConfidence ||
+                    !IsInsideExpectedRegion(
+                        frame.Value,
+                        target,
+                        step.ExpectedRegion))
                 {
+                    var regionDetail =
+                        target.Found &&
+                        !IsInsideExpectedRegion(
+                            frame.Value,
+                            target,
+                            step.ExpectedRegion)
+                            ? " Vision tìm thấy phần tử nhưng tọa độ nằm ngoài vùng UI dự kiến nên không click."
+                            : string.Empty;
+
                     return Result(
                         "blocked",
                         step.Phase,
                         completed,
                         target.Found
-                            ? $"Vision chưa đủ chắc chắn ({target.Confidence:0.00}): {target.Reason}"
+                            ? $"Vision chưa đủ chắc chắn ({target.Confidence:0.00}, yêu cầu {step.MinimumConfidence:0.00}): {target.Reason}{regionDetail}"
                             : $"Không tìm thấy phần tử cần thiết: {target.Reason}",
                         startedAt);
                 }
@@ -334,6 +359,62 @@ public sealed class LeaguePracticeAutomationService(
             .FirstOrDefault();
     }
 
+    private async Task<DesktopVisionTarget> LocateStepTargetAsync(
+        DesktopScreenshotFrame frame,
+        LeagueUiStep step,
+        CancellationToken cancellationToken)
+    {
+        DesktopVisionTarget? last = null;
+        for (var attempt = 0; attempt < 3; attempt++)
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            last = await vision.LocateAsync(
+                frame,
+                step.Target,
+                cancellationToken);
+
+            if (last.Found &&
+                last.Confidence >= step.MinimumConfidence &&
+                IsInsideExpectedRegion(
+                    frame,
+                    last,
+                    step.ExpectedRegion))
+            {
+                return last;
+            }
+
+            if (attempt < 2)
+                await Task.Delay(650, cancellationToken);
+        }
+
+        return last ?? new DesktopVisionTarget(
+            false,
+            step.Phase,
+            0,
+            0,
+            0,
+            "Desktop Vision không trả về mục tiêu.");
+    }
+
+    private static bool IsInsideExpectedRegion(
+        DesktopScreenshotFrame frame,
+        DesktopVisionTarget target,
+        NormalizedRegion? region)
+    {
+        if (region is null)
+            return true;
+
+        if (frame.Width <= 0 || frame.Height <= 0)
+            return false;
+
+        var normalizedX = target.ImageX / (double)frame.Width;
+        var normalizedY = target.ImageY / (double)frame.Height;
+        return normalizedX >= region.MinimumX &&
+            normalizedX <= region.MaximumX &&
+            normalizedY >= region.MinimumY &&
+            normalizedY <= region.MaximumY;
+    }
+
     private FrameLease CaptureDisposable(
         ComputerWindowInfo window)
     {
@@ -362,6 +443,19 @@ public sealed class LeaguePracticeAutomationService(
             detail,
             startedAt,
             DateTimeOffset.UtcNow);
+
+    private sealed record LeagueUiStep(
+        string Phase,
+        string Target,
+        int DelayMs,
+        double MinimumConfidence,
+        NormalizedRegion? ExpectedRegion = null);
+
+    private sealed record NormalizedRegion(
+        double MinimumX,
+        double MaximumX,
+        double MinimumY,
+        double MaximumY);
 
     private sealed class FrameLease(
         DesktopScreenshotFrame value) : IDisposable

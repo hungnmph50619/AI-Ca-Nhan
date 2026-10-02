@@ -20,6 +20,8 @@ public interface IComputerUseService
 
     ComputerActionResponse FocusWindow(string windowId);
 
+    ComputerActionResponse FocusWindowByQuery(string query);
+
     ComputerActionResponse MinimizeWindow(string windowId);
 
     ComputerActionResponse MaximizeWindow(string windowId);
@@ -99,6 +101,7 @@ public sealed class WindowsComputerUseService(
                 ComputerUseCapabilities.WindowList,
                 ComputerUseCapabilities.ActiveWindow,
                 ComputerUseCapabilities.FocusWindow,
+                ComputerUseCapabilities.FocusWindowByQuery,
                 ComputerUseCapabilities.MinimizeWindow,
                 ComputerUseCapabilities.MaximizeWindow,
                 ComputerUseCapabilities.RestoreWindow,
@@ -295,6 +298,75 @@ public sealed class WindowsComputerUseService(
             ComputerUseCapabilities.FocusWindow,
             true,
             $"Đã yêu cầu Windows chuyển focus tới: {LimitInline(title, 160)}");
+    }
+
+    public ComputerActionResponse FocusWindowByQuery(
+        string query) =>
+        control.RunAllowed(() =>
+        {
+            EnsureAvailable();
+
+            var normalized = (query ?? string.Empty).Trim();
+            if (normalized.Length is < 2 or > 120)
+                throw new ToolExecutionInputException(
+                    "Tên cửa sổ cần tìm phải từ 2 đến 120 ký tự.");
+
+            var candidates = GetWindows(MaximumWindows).Windows
+                .Where(window =>
+                    !string.IsNullOrWhiteSpace(window.Title))
+                .Select(window => new
+                {
+                    Window = window,
+                    Score = ScoreWindowMatch(window, normalized)
+                })
+                .Where(item => item.Score > 0)
+                .OrderByDescending(item => item.Score)
+                .ThenByDescending(item => item.Window.IsForeground)
+                .ToArray();
+
+            if (candidates.Length == 0)
+                throw new ToolExecutionInputException(
+                    $"Không tìm thấy cửa sổ phù hợp với “{normalized}”.");
+
+            var selected = candidates[0].Window;
+            var result = FocusWindowCore(selected.WindowId);
+            return result with
+            {
+                Action = ComputerUseCapabilities.FocusWindowByQuery,
+                Detail = $"Đã chuyển sang cửa sổ “{selected.Title}” ({selected.ProcessName ?? "không rõ tiến trình"})."
+            };
+        });
+
+    private static int ScoreWindowMatch(
+        ComputerWindowInfo window,
+        string query)
+    {
+        var title = window.Title ?? string.Empty;
+        var process = window.ProcessName ?? string.Empty;
+
+        if (title.Equals(query, StringComparison.OrdinalIgnoreCase))
+            return 100;
+        if (process.Equals(query, StringComparison.OrdinalIgnoreCase))
+            return 95;
+        if (title.StartsWith(query, StringComparison.OrdinalIgnoreCase))
+            return 90;
+        if (process.StartsWith(query, StringComparison.OrdinalIgnoreCase))
+            return 85;
+        if (title.Contains(query, StringComparison.OrdinalIgnoreCase))
+            return 80;
+        if (process.Contains(query, StringComparison.OrdinalIgnoreCase))
+            return 75;
+
+        var compact = string.Join(
+            " ",
+            query.Split(
+                [' ', '\t', '\r', '\n'],
+                StringSplitOptions.RemoveEmptyEntries));
+
+        return compact.Length > 1 &&
+               title.Contains(compact, StringComparison.OrdinalIgnoreCase)
+            ? 70
+            : 0;
     }
 
     public ComputerActionResponse MinimizeWindow(

@@ -1,0 +1,243 @@
+name: Model Lab v2.6.3
+
+on:
+  push:
+    branches:
+      - 'experiment/roadmap-v2-6-3-current'
+  pull_request:
+    paths:
+      - 'src/PersonalAI.Web/ModelLab/CandidateTrainingModels.cs'
+      - 'src/PersonalAI.Web/Services/CandidateTrainingPlanStore.cs'
+      - 'src/PersonalAI.Web/Services/CandidateTrainingService.cs'
+      - 'src/PersonalAI.Web/Services/TrainingExecutor.cs'
+      - 'src/PersonalAI.Web/Services/ModelLabEndpoints.cs'
+      - 'src/PersonalAI.Web/Models/SystemModels.cs'
+
+jobs:
+  validate-v263:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: '8.0.x'
+
+      - name: Restore
+        run: dotnet restore PersonalAI.sln
+
+      - name: Build
+        run: dotnet build PersonalAI.sln -c Release --no-restore
+
+      - name: Tests
+        run: dotnet test PersonalAI.sln -c Release --no-build
+
+      - name: Candidate training smoke test
+        shell: bash
+        run: |
+          set -euo pipefail
+          rm -rf /tmp/personalai-v263
+          mkdir -p /tmp/personalai-v263/workspace /tmp/personalai-v263/model-lab
+
+          Workspace__Root=/tmp/personalai-v263/workspace           ModelLab__Root=/tmp/personalai-v263/model-lab           dotnet run --project src/PersonalAI.Web/PersonalAI.Web.csproj             -c Release --no-build             --urls http://127.0.0.1:5094             >/tmp/personalai-v263.log 2>&1 &
+          APP_PID=$!
+          trap 'kill "$APP_PID" 2>/dev/null || true' EXIT
+
+          ready=0
+          for i in {1..30}; do
+            if curl -fsS http://127.0.0.1:5094/api/model-lab/candidate-training/status >/tmp/candidate-status.json; then
+              ready=1
+              break
+            fi
+            sleep 1
+          done
+          test "$ready" = "1"
+
+          jq -e '
+            (.version | split(".") | map(tonumber)) >= [2,6,3]
+            and .verifiedDataRequired == true
+            and .productionMutationEnabled == false
+            and .explicitConfirmationRequired == true
+          ' /tmp/candidate-status.json >/dev/null
+
+          curl -fsS -X POST http://127.0.0.1:5094/api/model-lab/datasets             -H 'Content-Type: application/json'             -d '{
+              "id":"candidate-demo",
+              "name":"Candidate demo",
+              "description":"CI",
+              "items":[
+                {"input":"open calendar","expected":"calendar"},
+                {"input":"calendar events","expected":"calendar"},
+                {"input":"read email","expected":"email"},
+                {"input":"show inbox","expected":"email"}
+              ]
+            }' >/tmp/dataset.json
+
+          source_sha=$(curl -fsS             http://127.0.0.1:5094/api/model-lab/datasets/candidate-demo/versions/1             | jq -r '.contentSha256')
+
+          workspace_id=$(curl -fsS             http://127.0.0.1:5094/api/model-lab/synthetic/status             | jq -r '.workspaceId')
+          safe_workspace=$(printf '%s' "$workspace_id" | sed 's/[^A-Za-z0-9_-]/_/g')
+
+          draft_id="44444444-4444-4444-4444-444444444444"
+          critic_id="55555555-5555-5555-5555-555555555555"
+          verification_id="66666666-6666-6666-6666-666666666666"
+
+          mkdir -p /tmp/personalai-v263/model-lab/Synthetic/Critic
+          mkdir -p /tmp/personalai-v263/model-lab/Synthetic/Verification
+
+          cat > /tmp/personalai-v263/model-lab/Synthetic/synthetic-drafts-$safe_workspace.json <<JSON
+          [
+            {
+              "id":"$draft_id",
+              "workspaceId":"$workspace_id",
+              "datasetId":"candidate-demo",
+              "sourceVersion":1,
+              "sourceSha256":"$source_sha",
+              "provider":"OpenAI",
+              "model":"generator-model",
+              "promptSha256":"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+              "instruction":"Classify inputs into tool intents.",
+              "requestedCount":2,
+              "items":[
+                {"input":"show tomorrow meetings","expected":"calendar","synthetic":true},
+                {"input":"check new messages","expected":"email","synthetic":true}
+              ],
+              "acceptedCount":2,
+              "rejectedCount":0,
+              "issues":[],
+              "readyToCommit":true,
+              "createdAt":"2026-10-01T00:00:00+00:00"
+            }
+          ]
+          JSON
+
+          cat > /tmp/personalai-v263/model-lab/Synthetic/Critic/critic-reports-$safe_workspace.json <<JSON
+          [
+            {
+              "id":"$critic_id",
+              "draftId":"$draft_id",
+              "workspaceId":"$workspace_id",
+              "provider":"Gemini",
+              "model":"critic-model",
+              "semanticReviewed":true,
+              "minimumScore":0.75,
+              "items":2,
+              "acceptedItems":2,
+              "rejectedItems":0,
+              "passed":true,
+              "reviews":[
+                {"index":0,"correctness":0.95,"relevance":0.96,"consistency":0.95,"safety":0.99,"overall":0.95,"accepted":true,"reason":"Good."},
+                {"index":1,"correctness":0.95,"relevance":0.96,"consistency":0.95,"safety":0.99,"overall":0.95,"accepted":true,"reason":"Good."}
+              ],
+              "createdAt":"2026-10-01T00:01:00+00:00"
+            }
+          ]
+          JSON
+
+          cat > /tmp/personalai-v263/model-lab/Synthetic/Verification/verification-reports-$safe_workspace.json <<JSON
+          [
+            {
+              "id":"$verification_id",
+              "draftId":"$draft_id",
+              "workspaceId":"$workspace_id",
+              "datasetId":"candidate-demo",
+              "sourceVersion":1,
+              "sourceSha256":"$source_sha",
+              "criticReportId":"$critic_id",
+              "layers":[
+                {"layer":"source-integrity","passed":true,"detail":"ok"},
+                {"layer":"critic","passed":true,"detail":"ok"},
+                {"layer":"dataset-validation","passed":true,"detail":"ok","score":1.0},
+                {"layer":"reference-verification","passed":true,"detail":"ok","score":1.0},
+                {"layer":"human-review","passed":true,"detail":"not required"},
+                {"layer":"evaluation-gate","passed":true,"detail":"ok","score":0.95}
+              ],
+              "criticAverage":0.95,
+              "safetyAverage":0.99,
+              "syntheticRatio":0.3333333333333333,
+              "datasetValid":true,
+              "referenceVerified":true,
+              "evaluationGatePassed":true,
+              "humanReviewApplied":false,
+              "status":"verified",
+              "eligibleForTraining":true,
+              "createdAt":"2026-10-01T00:02:00+00:00"
+            }
+          ]
+          JSON
+
+          curl -fsS -X POST             http://127.0.0.1:5094/api/model-lab/synthetic/commit             -H 'Content-Type: application/json'             -d '{
+              "draftId":"'"$draft_id"'",
+              "confirmCreateDatasetVersion":true,
+              "expectedLatestVersion":1
+            }' >/tmp/commit.json
+
+          jq -e '.createdVersion == 2 and .totalItems == 6' /tmp/commit.json >/dev/null
+
+          no_confirm_code=$(curl -sS -o /tmp/no-confirm.json -w '%{http_code}'             -X POST http://127.0.0.1:5094/api/model-lab/candidate-training/start             -H 'Content-Type: application/json'             -d '{
+              "draftId":"'"$draft_id"'",
+              "datasetVersion":2,
+              "family":"intent-router",
+              "version":"2.0.0",
+              "baseModel":"local-text-classifier",
+              "trainingMethod":"naive-bayes",
+              "hyperparameters":{},
+              "compatibleTasks":["intent-classification"],
+              "runtime":"local",
+              "confirmStartTraining":false
+            }')
+          test "$no_confirm_code" = "400"
+
+          curl -fsS -X POST             http://127.0.0.1:5094/api/model-lab/candidate-training/start             -H 'Content-Type: application/json'             -d '{
+              "draftId":"'"$draft_id"'",
+              "datasetVersion":2,
+              "family":"intent-router",
+              "version":"2.0.0",
+              "baseModel":"local-text-classifier",
+              "trainingMethod":"naive-bayes",
+              "hyperparameters":{},
+              "compatibleTasks":["intent-classification","tool-routing"],
+              "runtime":"local",
+              "confirmStartTraining":true
+            }' >/tmp/plan.json
+
+          plan_id=$(jq -r '.id' /tmp/plan.json)
+          jq -e '
+            .status == "queued"
+            and .verificationReportId == "'"$verification_id"'"
+            and .datasetVersion == 2
+          ' /tmp/plan.json >/dev/null
+
+          registered=0
+          for i in {1..30}; do
+            curl -fsS               http://127.0.0.1:5094/api/model-lab/candidate-training/plans/$plan_id               >/tmp/plan-final.json
+
+            if jq -e '
+              .status == "candidate-registered"
+              and .artifactId != null
+              and .modelVersionId != null
+            ' /tmp/plan-final.json >/dev/null; then
+              registered=1
+              break
+            fi
+            sleep 1
+          done
+
+          if [ "$registered" -ne 1 ]; then
+            cat /tmp/personalai-v263.log
+            cat /tmp/plan-final.json
+            exit 1
+          fi
+
+          model_id=$(jq -r '.modelVersionId' /tmp/plan-final.json)
+
+          curl -fsS http://127.0.0.1:5094/api/model-lab/models/$model_id             | jq -e '
+              .family == "intent-router"
+              and .version == "2.0.0"
+              and .stage == "candidate"
+              and .datasetVersion == 2
+              and .trainingMethod == "naive-bayes"
+            ' >/dev/null
+
+          curl -fsS http://127.0.0.1:5094/api/model-lab/models/status             | jq -e '
+              .candidates >= 1
+              and .production == 0
+            ' >/dev/null

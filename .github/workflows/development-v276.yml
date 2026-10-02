@@ -1,0 +1,197 @@
+name: Development v2.7.6
+
+on:
+  push:
+    branches:
+      - 'experiment/roadmap-v2-7-6-current'
+
+jobs:
+  validate-v276:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: '8.0.x'
+
+      - name: Restore
+        run: dotnet restore PersonalAI.sln
+
+      - name: Build
+        run: dotnet build PersonalAI.sln -c Release --no-restore
+
+      - name: Tests
+        run: dotnet test PersonalAI.sln -c Release --no-build
+
+      - name: High-risk security promotion gate smoke test
+        shell: bash
+        run: |
+          set -euo pipefail
+          rm -rf /tmp/personalai-v276
+          mkdir -p /tmp/personalai-v276/workspace/repo
+          mkdir -p /tmp/personalai-v276/runs
+          mkdir -p /tmp/personalai-v276/reviews
+          mkdir -p /tmp/personalai-v276/security
+
+          cd /tmp/personalai-v276/workspace/repo
+          git init -b main
+          git config user.name "PersonalAI CI"
+          git config user.email "ci@example.invalid"
+          printf 'base\n' > README.md
+          git add README.md
+          git commit -m "initial"
+
+          cd "$GITHUB_WORKSPACE"
+          export Workspace__Root=/tmp/personalai-v276/workspace
+          export Development__RunRoot=/tmp/personalai-v276/runs
+          export Development__ReviewRoot=/tmp/personalai-v276/reviews
+          export Development__SecurityReportRoot=/tmp/personalai-v276/security
+
+          dotnet run --project src/PersonalAI.Web/PersonalAI.Web.csproj             -c Release --no-build             --urls http://127.0.0.1:5111             >/tmp/personalai-v276.log 2>&1 &
+          APP_PID=$!
+          trap 'kill "$APP_PID" 2>/dev/null || true' EXIT
+
+          for i in {1..30}; do
+            if curl -fsS http://127.0.0.1:5111/api/development/security/status >/tmp/security-status.json; then
+              break
+            fi
+            sleep 1
+          done
+
+          jq -e '
+            (.version | split(".") | map(tonumber)) >= [2,7,6]
+            and .reportsPersisted==true
+            and .highRiskBlocksPromotion==true
+            and .worktreeOnly==true
+            and (.requiredCategories | sort)==(
+              ["dangerous-execution","injection","path-traversal","permission-bypass","secret-leakage"] | sort)
+          ' /tmp/security-status.json >/dev/null
+
+          curl -fsS -X POST http://127.0.0.1:5111/api/development/runs             -H 'Content-Type: application/json'             -d '{
+              "goal":"v2.7.6 security smoke",
+              "repositoryPath":"repo",
+              "branch":"experiment/v276-smoke",
+              "confirmCreate":true
+            }' >/tmp/run.json
+          run_id=$(jq -r '.id' /tmp/run.json)
+          workspace_id=$(jq -r '.workspaceId' /tmp/run.json)
+
+          for transition in             'analysis prepared'             'coding succeeded'             'testing passed'             'review approved'; do
+            set -- $transition
+            curl -fsS -X POST               http://127.0.0.1:5111/api/development/runs/$run_id/advance               -H 'Content-Type: application/json'               -d '{
+                "expectedCurrentStage":"'"$1"'",
+                "result":"'"$2"'"
+              }' >/tmp/advance.json
+          done
+
+          jq -e '.stage=="security"' /tmp/advance.json >/dev/null
+
+          curl -fsS -X POST http://127.0.0.1:5111/api/development/worktrees             -H 'Content-Type: application/json'             -d '{
+              "repositoryPath":"repo",
+              "branch":"experiment/v276-smoke",
+              "startPoint":"main",
+              "worktreeId":"v276-smoke",
+              "confirmCreateWorktree":true
+            }' >/tmp/worktree.json
+
+          worktree_path=$(jq -r '.worktreePath' /tmp/worktree.json)
+
+          review_id='22222222-2222-2222-2222-222222222222'
+          safe_workspace=$(printf '%s' "$workspace_id" | sed 's/[^A-Za-z0-9_-]/_/g')
+
+          cat > /tmp/personalai-v276/reviews/development-review-reports-$safe_workspace.json <<JSON
+          [
+            {
+              "id":"$review_id",
+              "workspaceId":"$workspace_id",
+              "developmentRunId":"$run_id",
+              "testReportId":"11111111-1111-1111-1111-111111111111",
+              "repositoryPath":"repo",
+              "branch":"experiment/v276-smoke",
+              "worktreePath":"$worktree_path",
+              "codingAgentId":"coding.agent",
+              "reviewerId":"quality.reviewer",
+              "checks":[
+                {"category":"correctness","status":"passed","detail":"seeded CI review"},
+                {"category":"architecture","status":"passed","detail":"seeded CI review"},
+                {"category":"regression","status":"passed","detail":"seeded CI review"}
+              ],
+              "status":"approved",
+              "approved":true,
+              "independentReviewer":true,
+              "createdAt":"2026-10-01T00:00:00+00:00"
+            }
+          ]
+          JSON
+
+          cat > "/tmp/personalai-v276/workspace/$worktree_path/Dangerous.cs" <<'CS'
+          using System.Diagnostics;
+          public static class Dangerous {
+              public static void Run(string input) {
+                  var p = new ProcessStartInfo { UseShellExecute = true };
+                  var api_key = "ghp_V276SECRET012345678901234567890";
+              }
+          }
+          CS
+
+          curl -fsS -X POST http://127.0.0.1:5111/api/development/security/run             -H 'Content-Type: application/json'             -d '{
+              "developmentRunId":"'"$run_id"'",
+              "reviewReportId":"'"$review_id"'",
+              "confirmSecurityReview":true
+            }' >/tmp/high-risk.json
+
+          jq -e '
+            .highRiskFound==true
+            and .promotionAllowed==false
+            and any(.findings[]; .severity=="high")
+            and any(.findings[]; .category=="secret-leakage")
+            and any(.findings[]; .category=="injection")
+          ' /tmp/high-risk.json >/dev/null
+
+          high_report_id=$(jq -r '.id' /tmp/high-risk.json)
+
+          blocked=$(curl -sS -o /tmp/promotion-blocked.json -w '%{http_code}'             -X POST http://127.0.0.1:5111/api/development/runs/$run_id/advance             -H 'Content-Type: application/json'             -d '{
+              "expectedCurrentStage":"security",
+              "result":"passed",
+              "securityReportId":"'"$high_report_id"'"
+            }')
+          test "$blocked" = "409"
+          grep -qi 'high-risk' /tmp/promotion-blocked.json
+
+          cat > "/tmp/personalai-v276/workspace/$worktree_path/Dangerous.cs" <<'CS'
+          public static class SafeCode {
+              public static int Add(int a, int b) => a + b;
+          }
+          CS
+
+          curl -fsS -X POST http://127.0.0.1:5111/api/development/security/run             -H 'Content-Type: application/json'             -d '{
+              "developmentRunId":"'"$run_id"'",
+              "reviewReportId":"'"$review_id"'",
+              "confirmSecurityReview":true
+            }' >/tmp/safe-report.json
+
+          jq -e '
+            .highRiskFound==false
+            and .promotionAllowed==true
+          ' /tmp/safe-report.json >/dev/null
+
+          safe_report_id=$(jq -r '.id' /tmp/safe-report.json)
+
+          curl -fsS -X POST             http://127.0.0.1:5111/api/development/runs/$run_id/advance             -H 'Content-Type: application/json'             -d '{
+              "expectedCurrentStage":"security",
+              "result":"passed",
+              "securityReportId":"'"$safe_report_id"'"
+            }' >/tmp/promoted.json
+
+          jq -e '
+            .stage=="benchmark"
+            and .securityReportId=="'"$safe_report_id"'"
+          ' /tmp/promoted.json >/dev/null
+
+          security_file=$(find /tmp/personalai-v276/security -type f -name 'development-security-reports-*.json' | head -n1)
+          test -n "$security_file"
+          grep -Fq "$high_report_id" "$security_file"
+          grep -Fq "$safe_report_id" "$security_file"
+          ! grep -Fq 'ghp_V276SECRET012345678901234567890' "$security_file"
+
+          curl -fsS http://127.0.0.1:5111/api/development/status             | jq -e '(.availableCapabilities | index("development-security-gate")) != null' >/dev/null

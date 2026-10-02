@@ -1,0 +1,160 @@
+name: Device Identity v2.8.1
+
+on:
+  push:
+    branches:
+      - 'experiment/roadmap-v2-8-1-current'
+
+jobs:
+  validate-v281:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: '8.0.x'
+
+      - name: Restore
+        run: dotnet restore PersonalAI.sln
+
+      - name: Build
+        run: dotnet build PersonalAI.sln -c Release --no-restore
+
+      - name: Tests
+        run: dotnet test PersonalAI.sln -c Release --no-build
+
+      - name: Stable encrypted device identity smoke test
+        shell: bash
+        run: |
+          set -euo pipefail
+          rm -rf /tmp/personalai-v281
+          mkdir -p             /tmp/personalai-v281/workspace             /tmp/personalai-v281/companion             /tmp/personalai-v281/hub             /tmp/personalai-v281/identity
+
+          export Workspace__Root=/tmp/personalai-v281/workspace
+          export Companion__Root=/tmp/personalai-v281/companion
+          export Companion__Enabled=true
+          export Companion__AllowInsecureHttp=true
+          export DeviceHub__Root=/tmp/personalai-v281/hub
+          export DeviceIdentity__Root=/tmp/personalai-v281/identity
+
+          start_app() {
+            dotnet run --project src/PersonalAI.Web/PersonalAI.Web.csproj               -c Release --no-build               --urls http://127.0.0.1:5122               >/tmp/personalai-v281/app.log 2>&1 &
+            APP_PID=$!
+            for i in {1..30}; do
+              if curl -fsS http://127.0.0.1:5122/api/device-hub/identities/status >/tmp/identity-status.json; then
+                return 0
+              fi
+              sleep 1
+            done
+            return 1
+          }
+
+          stop_app() {
+            kill "$APP_PID" 2>/dev/null || true
+            wait "$APP_PID" 2>/dev/null || true
+          }
+
+          trap 'stop_app || true' EXIT
+          start_app
+
+          jq -e '
+            (.version | split(".") | map(tonumber)) >= [2,8,1]
+            and .identities==0
+            and .stableDeviceId==true
+            and .publicKeyAvailable==true
+            and .privateKeyEncrypted==true
+            and .privateKeyExportEnabled==false
+            and .automaticTrustElevationEnabled==false
+            and .automaticCapabilityGrantEnabled==false
+            and .defaultTrustLevel=="untrusted"
+            and .keyAlgorithm=="ECDSA-P256"
+          ' /tmp/identity-status.json >/dev/null
+
+          curl -fsS -X POST http://127.0.0.1:5122/api/device-hub/admin/devices             -H 'Content-Type: application/json'             -d '{
+              "name":"Identity Laptop",
+              "deviceType":"laptop",
+              "confirmRegister":true
+            }' >/tmp/laptop-device.json
+
+          laptop_id=$(jq -r '.id' /tmp/laptop-device.json)
+
+          curl -fsS http://127.0.0.1:5122/api/device-hub/identities/$laptop_id             >/tmp/laptop-identity-1.json
+
+          jq -e '
+            .deviceId=="'"$laptop_id"'"
+            and .deviceType=="laptop"
+            and .publicKeyAlgorithm=="ECDSA-P256"
+            and (.publicKey | length)>40
+            and (.publicKeyFingerprintSha256 | length)==64
+            and .capabilities==[]
+            and .trustLevel=="untrusted"
+            and .permissionsGranted==false
+            and .remoteExecutionEnabled==false
+            and (has("privateKey") | not)
+            and (has("encryptedPrivateKey") | not)
+          ' /tmp/laptop-identity-1.json >/dev/null
+
+          laptop_public=$(jq -r '.publicKey' /tmp/laptop-identity-1.json)
+          laptop_fp=$(jq -r '.publicKeyFingerprintSha256' /tmp/laptop-identity-1.json)
+
+          curl -fsS -X POST http://127.0.0.1:5122/api/companion/admin/pairing/start             -H 'Content-Type: application/json'             -d '{"confirmed":true}' >/tmp/pairing.json
+          code=$(jq -r '.code' /tmp/pairing.json)
+
+          curl -fsS -X POST http://127.0.0.1:5122/api/companion/pairing/claim             -H 'Content-Type: application/json'             -d '{
+              "code":"'"$code"'",
+              "deviceName":"Identity Android"
+            }' >/tmp/claimed.json
+
+          token=$(jq -r '.token' /tmp/claimed.json)
+
+          curl -fsS             -H "Authorization: Bearer $token"             http://127.0.0.1:5122/api/companion/client/hub/identity             >/tmp/android-identity.json
+
+          jq -e '
+            .deviceType=="android"
+            and .publicKeyAlgorithm=="ECDSA-P256"
+            and (.publicKeyFingerprintSha256 | length)==64
+            and .capabilities==[]
+            and .trustLevel=="untrusted"
+            and .permissionsGranted==false
+            and .remoteExecutionEnabled==false
+            and (has("privateKey") | not)
+            and (has("encryptedPrivateKey") | not)
+          ' /tmp/android-identity.json >/dev/null
+
+          curl -fsS             -H "Authorization: Bearer $token"             http://127.0.0.1:5122/api/companion/client/me             | jq -e '(.capabilities | index("device-identity")) != null' >/dev/null
+
+          identity_file=/tmp/personalai-v281/identity/device-identities-personal.json
+          test -f "$identity_file"
+          jq -e '
+            length==2
+            and ([.[].trustLevel] | all(.=="untrusted"))
+            and ([.[].capabilities] | all(length==0))
+            and ([.[].encryptedPrivateKey] | all(length>20))
+          ' "$identity_file" >/dev/null
+          ! grep -Fq -- '-----BEGIN PRIVATE KEY-----' "$identity_file"
+          ! grep -Fq '"privateKey":' "$identity_file"
+
+          stop_app
+          start_app
+
+          curl -fsS http://127.0.0.1:5122/api/device-hub/identities/$laptop_id             >/tmp/laptop-identity-2.json
+
+          test "$(jq -r '.deviceId' /tmp/laptop-identity-2.json)" = "$laptop_id"
+          test "$(jq -r '.publicKey' /tmp/laptop-identity-2.json)" = "$laptop_public"
+          test "$(jq -r '.publicKeyFingerprintSha256' /tmp/laptop-identity-2.json)" = "$laptop_fp"
+
+          jq -e '
+            .trustLevel=="untrusted"
+            and .capabilities==[]
+            and .permissionsGranted==false
+            and .remoteExecutionEnabled==false
+          ' /tmp/laptop-identity-2.json >/dev/null
+
+          curl -fsS http://127.0.0.1:5122/api/device-hub/identities/status             | jq -e '
+              (.version | split(".") | map(tonumber)) >= [2,8,1]
+              and .identities==2
+              and .privateKeyEncrypted==true
+              and .privateKeyExportEnabled==false
+              and .automaticTrustElevationEnabled==false
+              and .automaticCapabilityGrantEnabled==false
+            ' >/dev/null

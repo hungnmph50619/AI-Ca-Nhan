@@ -75,7 +75,7 @@
     const heading = document.createElement("div");
     const eyebrow = document.createElement("p");
     eyebrow.className = "eyebrow";
-    eyebrow.textContent = "STABLE CORE · API CONTRACT 1";
+    eyebrow.textContent = "LÕI ỔN ĐỊNH · HỢP ĐỒNG API 1";
 
     const title = document.createElement("h2");
     title.id = "coreHealthTitle";
@@ -94,7 +94,7 @@
     intro.className = "v100-core-intro";
     intro.innerHTML =
       "<strong>Stable Personal AI Core v1.0.0</strong>" +
-      "<p>Kiểm tra readiness của dữ liệu và các nền tảng cục bộ. Kiểm tra này không gửi prompt hay gọi nhà cung cấp AI bên ngoài.</p>";
+      "<p>Kiểm tra mức sẵn sàng của dữ liệu và các nền tảng cục bộ. Kiểm tra này không gửi prompt hay gọi nhà cung cấp AI bên ngoài.</p>";
 
     const summary = document.createElement("div");
     summary.id = "coreHealthSummary";
@@ -154,7 +154,7 @@
     setFeedback("");
 
     const summary = document.querySelector("#coreHealthSummary");
-    if (summary) summary.textContent = "Đang kiểm tra readiness…";
+    if (summary) summary.textContent = "Đang kiểm tra mức sẵn sàng…";
 
     try {
       const [healthResponse, capabilitiesResponse] = await Promise.all([
@@ -242,15 +242,15 @@
     node.replaceChildren();
 
     const title = document.createElement("strong");
-    title.textContent = "Guardrails v1.0";
+    title.textContent = "Hàng rào an toàn";
 
     const copy = document.createElement("p");
     copy.textContent =
-      `Workspace isolation: ${yesNo(safety.workspaceIsolation)} · WRITE confirm: ${yesNo(safety.writeRequiresConfirmation)} · DELETE confirm: ${yesNo(safety.deleteRequiresConfirmation)} · Undo confirm: ${yesNo(safety.undoRequiresConfirmation)} · Computer confirm: ${yesNo(safety.computerControlRequiresConfirmation)} · Browser confirm: ${yesNo(safety.browserUseRequiresConfirmation)} · Connector confirm: ${yesNo(safety.connectorUseRequiresConfirmation)} · Development confirm: ${yesNo(safety.developmentUseRequiresConfirmation)} · Android pairing: ${yesNo(safety.companionPairingRequired)} · Device token hashed: ${yesNo(safety.companionDeviceTokensHashed)} · Remote tool exec: ${yesNo(safety.companionRemoteToolExecutionEnabled)} · Life Context consent: ${yesNo(safety.lifeContextExplicitConsentRequired)} · Life auto collect: ${yesNo(safety.lifeContextAutomaticCollectionEnabled)} · Life encrypted: ${yesNo(safety.lifeContextContentEncrypted)} · Decision user decides: ${yesNo(safety.decisionEngineRequiresUserDecision)} · Decision auto-action: ${yesNo(safety.decisionEngineAutoActionEnabled)} · Decision tool exec: ${yesNo(safety.decisionEngineToolExecutionEnabled)} · Automation explicit create: ${yesNo(safety.automationRequiresExplicitCreation)} · Automation auto-confirm: ${yesNo(safety.automationAutoConfirmationEnabled)} · Decision→automation auto-run: ${yesNo(safety.automationDecisionRecommendationAutoExecutionEnabled)} · Một step/tick: ${yesNo(safety.automationRunsAtMostOneTaskStepPerTick)} · Agent loop tự trị: ${yesNo(safety.autonomousAgentLoop)} · Scheduler nền: ${yesNo(safety.backgroundScheduler)}`;
+      `Tách dữ liệu theo không gian: ${yesNo(safety.workspaceIsolation)} · Ghi cần xác nhận: ${yesNo(safety.writeRequiresConfirmation)} · Xóa cần xác nhận: ${yesNo(safety.deleteRequiresConfirmation)} · Hoàn tác cần xác nhận: ${yesNo(safety.undoRequiresConfirmation)} · Điều khiển máy cần xác nhận: ${yesNo(safety.computerControlRequiresConfirmation)} · Trình duyệt cần xác nhận: ${yesNo(safety.browserUseRequiresConfirmation)} · Kết nối tài khoản cần xác nhận: ${yesNo(safety.connectorUseRequiresConfirmation)} · Phát triển cần xác nhận: ${yesNo(safety.developmentUseRequiresConfirmation)} · Ghép nối Android bắt buộc: ${yesNo(safety.companionPairingRequired)} · Mã thiết bị đã băm: ${yesNo(safety.companionDeviceTokensHashed)} · Chạy công cụ từ xa: ${yesNo(safety.companionRemoteToolExecutionEnabled)} · Ngữ cảnh đời sống cần đồng ý: ${yesNo(safety.lifeContextExplicitConsentRequired)} · Tự thu thập đời sống: ${yesNo(safety.lifeContextAutomaticCollectionEnabled)} · Dữ liệu đời sống được mã hóa: ${yesNo(safety.lifeContextContentEncrypted)} · Người dùng quyết định cuối cùng: ${yesNo(safety.decisionEngineRequiresUserDecision)} · Bộ quyết định tự hành động: ${yesNo(safety.decisionEngineAutoActionEnabled)} · Bộ quyết định chạy công cụ: ${yesNo(safety.decisionEngineToolExecutionEnabled)} · Tạo lịch tự động phải chủ động: ${yesNo(safety.automationRequiresExplicitCreation)} · Lịch tự động tự xác nhận: ${yesNo(safety.automationAutoConfirmationEnabled)} · Tự chạy lịch từ đề xuất quyết định: ${yesNo(safety.automationDecisionRecommendationAutoExecutionEnabled)} · Mỗi lượt chỉ một bước: ${yesNo(safety.automationRunsAtMostOneTaskStepPerTick)} · Vòng lặp tác nhân tự trị: ${yesNo(safety.autonomousAgentLoop)} · Bộ lập lịch nền: ${yesNo(safety.backgroundScheduler)}`;
 
     const limitsCopy = document.createElement("p");
     limitsCopy.textContent =
-      `Giới hạn lõi: ${Number(limits.maximumWorkspaces) || 0} workspace · ${Number(limits.maximumTasksPerWorkspace) || 0} task/workspace · context ${Number(limits.maximumContextCharacters) || 0} ký tự · undo ${Number(limits.undoAvailabilityDays) || 0} ngày.`;
+      `Giới hạn lõi: ${Number(limits.maximumWorkspaces) || 0} không gian · ${Number(limits.maximumTasksPerWorkspace) || 0} công việc mỗi không gian · ngữ cảnh ${Number(limits.maximumContextCharacters) || 0} ký tự · hoàn tác ${Number(limits.undoAvailabilityDays) || 0} ngày.`;
 
     node.append(title, copy, limitsCopy);
   }
@@ -284,9 +284,9 @@
       tools: "Tool Registry",
       audit: "Audit",
       undo: "Undo",
-      "computer-use": "Computer Use",
-      "browser-agent": "Browser Agent",
-      connectors: "Connectors",
+      "computer-use": "Điều khiển máy tính",
+      "browser-agent": "Tác nhân trình duyệt",
+      connectors: "Kết nối tài khoản",
       "software-development": "Software Development",
       "android-companion": "Android Companion",
       "life-context": "Life Context",

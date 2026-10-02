@@ -9,15 +9,28 @@ public interface IPersonalAiOsService
 
     Task<PersonalAiOsManifestResponse> GetManifestAsync(
         CancellationToken cancellationToken = default);
+
+    Task<PersonalAiOsProductionReadiness> GetProductionReadinessAsync(
+        CancellationToken cancellationToken = default);
 }
 
 public sealed class PersonalAiOsService(
     ISystemCoreService core,
-    IWorkspaceContextAccessor workspaceContext) : IPersonalAiOsService
+    IWorkspaceContextAccessor workspaceContext,
+    IAutonomousDevelopmentService autonomousDevelopment,
+    INightlyImprovementService nightlyImprovement,
+    IUnifiedPermissionService permissions,
+    IAuditStore auditStore,
+    IUndoService undo,
+    ISystemResourceLimitService resourceLimits,
+    ILoopGuardService loopGuard,
+    IEmergencyStopService emergencyStop,
+    IDisasterRecoveryService disasterRecovery,
+    IDatabaseUpgradeService databaseUpgrades) : IPersonalAiOsService
 {
     public const string Edition = "Personal AI OS";
-    public const string Stage = "v2.2.6";
-    public const string NextStage = "v2.2.7-workflow-usability";
+    public const string Stage = "v3.0";
+    public const string NextStage = "continuous-stable";
 
     private static readonly PersonalAiOsLayer[] Layers =
     [
@@ -50,28 +63,37 @@ public sealed class PersonalAiOsService(
             "governance",
             "Governance & Recovery",
             "Audit, undo, hardening, backup và recovery bảo vệ toàn bộ hệ thống.",
-            ["audit", "undo", "hardening"])
+            ["audit", "undo", "hardening", "continuous-improvement"])
     ];
 
     private static readonly string[] Boundaries =
     [
-        "v2.2.2 yêu cầu người dùng duyệt chính xác nội dung handoff qua checkpoint một lần, có thời hạn và giới hạn số checkpoint đang chờ; danh sách agent vẫn do người dùng xác nhận trước.",
-        "Planner chỉ lập kế hoạch; Research đọc tài liệu nội bộ; Developer đề xuất thay đổi; Office soạn nháp; Operator chuẩn bị thao tác; Reviewer không phê duyệt; Security không thay permission gate hay chứng nhận an toàn.",
-        "v2.2.2 chỉ chuyển đầu ra sau khi người dùng xem và duyệt từng checkpoint; workflow dừng khi từ chối/hết hạn, không bật automatic delegation, shared task queue, autonomous loop hay parallel calls.",
-        "WRITE/DELETE/EXTERNAL/SENSITIVE/COMPUTER/BROWSER/CONNECTOR/DEVELOPMENT vẫn yêu cầu policy và confirmation tương ứng.",
-        "Email vẫn là connector-backed foundation, chưa có Gmail/Outlook provider-specific OAuth.",
-        "Calendar vẫn dùng Life Context snapshot + connector foundation, chưa có provider-specific auto-sync/write.",
-        "Decision Engine chỉ phân tích và recommendation; người dùng vẫn là người ra quyết định cuối cùng.",
-        "Automation không tự xác nhận side effect và chỉ tiến tối đa một task step mỗi scheduler tick."
+        "v3.0 không bật continuous self-improvement vô điều kiện; nightly scheduler vẫn cấu hình explicit và mặc định tắt.",
+        "Autonomous development chỉ khép eligible low-risk path và không được bypass permission, review, security, benchmark, CI, merge-policy hoặc local-sync gates.",
+        "External AI và GitHub side effects vẫn dùng confirmation/credential/policy gates tương ứng; v3.0 không tự cấp quyền mới.",
+        "Emergency stop có ưu tiên chặn execution mới; audit/system log vẫn được giữ để review trước explicit release.",
+        "Loop guard, resource limits, database migration fail-closed, disaster recovery và undo/revalidation vẫn là ranh giới bắt buộc.",
+        "Decision Engine chỉ phân tích và recommendation; người dùng vẫn là người ra quyết định cuối cùng cho các lựa chọn không thuộc low-risk automatic policy.",
+        "Email/Calendar provider-specific write capability không được suy diễn chỉ vì connector/life-context foundation tồn tại.",
+        "Parallel tool calls và general autonomous agent loop không tự động được mở bởi continuous development controller."
     ];
 
     public async Task<PersonalAiOsStatusResponse> GetStatusAsync(
         CancellationToken cancellationToken = default)
     {
         var health = await core.GetHealthAsync(cancellationToken);
-        var capabilities = BuildCapabilities(health.Modules);
-        var readiness = BuildReadiness(health, capabilities);
+        var baseCapabilities = BuildCapabilities(health.Modules);
         var workspace = workspaceContext.CurrentWorkspace;
+        var continuous = await BuildContinuousImprovementAsync(
+            health,
+            cancellationToken);
+        var capabilities = AppendContinuousImprovementCapability(
+            baseCapabilities,
+            continuous);
+        var readiness = BuildReadiness(
+            health,
+            capabilities,
+            continuous);
 
         return new PersonalAiOsStatusResponse(
             PersonalAiRelease.Version,
@@ -85,28 +107,278 @@ public sealed class PersonalAiOsService(
             BuildGovernance(),
             Layers,
             capabilities,
-            NextStage);
+            NextStage,
+            continuous);
     }
 
     public async Task<PersonalAiOsManifestResponse> GetManifestAsync(
         CancellationToken cancellationToken = default)
     {
         var health = await core.GetHealthAsync(cancellationToken);
+        var capabilities = BuildCapabilities(health.Modules);
+        var continuous = await BuildContinuousImprovementAsync(
+            health,
+            cancellationToken);
+
         return new PersonalAiOsManifestResponse(
             PersonalAiRelease.Version,
             Edition,
             Stage,
             Layers,
-            BuildCapabilities(health.Modules),
+            AppendContinuousImprovementCapability(
+                capabilities,
+                continuous),
             BuildGovernance(),
-            Boundaries);
+            Boundaries,
+            continuous);
+    }
+
+    public async Task<PersonalAiOsProductionReadiness>
+        GetProductionReadinessAsync(
+            CancellationToken cancellationToken = default)
+    {
+        var status = await GetStatusAsync(cancellationToken);
+        var required = new[]
+        {
+            "email",
+            "calendar",
+            "browser",
+            "android",
+            "agent-framework",
+            "continuous-improvement"
+        };
+
+        var completeCount = required.Count(id =>
+            status.Capabilities.Any(capability =>
+                string.Equals(
+                    capability.Id,
+                    id,
+                    StringComparison.OrdinalIgnoreCase)
+                && capability.State is PersonalAiOsCapabilityStates.Ready
+                    or PersonalAiOsCapabilityStates.Controlled));
+
+        var blockers = new List<string>();
+
+        AddBlocker(
+            status.Capabilities.Any(capability =>
+                capability.Id == "email"
+                && capability.State == PersonalAiOsCapabilityStates.Foundation),
+            "Email mới ở mức nền tảng; chưa có Gmail/Outlook OAuth, mailbox model và send/reply action chuyên dụng.",
+            blockers);
+        AddBlocker(
+            status.Capabilities.Any(capability =>
+                capability.Id == "calendar"
+                && capability.State == PersonalAiOsCapabilityStates.Foundation),
+            "Calendar mới ở mức nền tảng; chưa có provider-specific sync và create/update/delete event.",
+            blockers);
+
+        // These contracts are intentionally explicit until the corresponding
+        // bounded execution surfaces are implemented and acceptance-tested.
+        blockers.Add(
+            "Browser Agent chưa có interactive login/form-submit/browser side effects có confirmation.");
+        blockers.Add(
+            "Android Companion chưa cho remote tool execution/task mutation qua unified permission gate.");
+        blockers.Add(
+            "Agent Framework chưa có automatic delegation/tool execution qua bounded permission gate.");
+        blockers.Add(
+            "GitHub production E2E chưa được chứng minh bằng sandbox repository thật; acceptance hiện dùng fake GitHub API cho side-effect tests.");
+
+        return new PersonalAiOsProductionReadiness(
+            Complete: blockers.Count == 0,
+            RequiredCapabilityCount: required.Length,
+            CompleteCapabilityCount: completeCount,
+            RequiredCapabilities: required,
+            Blockers: blockers);
+    }
+
+    private async Task<PersonalAiOsContinuousImprovement>
+        BuildContinuousImprovementAsync(
+            SystemHealthResponse health,
+            CancellationToken cancellationToken)
+    {
+        var workspaceId = workspaceContext.CurrentWorkspaceId;
+        var autonomous = autonomousDevelopment.GetStatus();
+        var nightly = nightlyImprovement.GetStatus();
+        var permissionStatus = permissions.GetStatus();
+        var undoStatus = undo.GetStatus();
+        var resourceStatus = resourceLimits.GetStatus();
+        var loopStatus = loopGuard.GetStatus(workspaceId);
+        var stopStatus = emergencyStop.GetStatus();
+        var recoveryStatus = await disasterRecovery.GetStatusAsync(
+            cancellationToken);
+        var databaseStatus = databaseUpgrades.GetStatus();
+
+        _ = auditStore.GetSummary(workspaceId);
+
+        var auditHealth = health.Modules.FirstOrDefault(x =>
+            x.Module.Equals("audit", StringComparison.OrdinalIgnoreCase));
+        var systemLogReady = auditHealth is not null
+            && auditHealth.Status != CoreHealthStatuses.Unavailable;
+
+        var autonomousReady =
+            autonomous.FullPipelineControllerEnabled
+            && !autonomous.PolicyBypassAllowed
+            && !autonomous.DirectMainPushAllowed
+            && !autonomous.HighRiskAutoMergeAllowed;
+
+        var permissionReady =
+            permissionStatus.DefaultDeny
+            && permissionStatus.DenyOverridesAllow
+            && permissionStatus.WorkspaceScoped
+            && permissionStatus.ExplicitChangeConfirmationRequired;
+
+        var undoReady =
+            undoStatus.ExplicitConfirmationRequired
+            && undoStatus.PreconditionRevalidationRequired
+            && undoStatus.WorkspaceScoped
+            && undoStatus.AuditTrailEnabled;
+
+        var resourceReady =
+            resourceStatus.RequestRateLimitEnforced
+            && resourceStatus.ConcurrentRequestLimitEnforced
+            && resourceStatus.RequestBodyLimitEnforced
+            && resourceStatus.RateWindowMemoryLimitEnforced
+            && resourceStatus.FailClosed;
+
+        var loopReady =
+            loopStatus.DuplicateFingerprintDetectionEnabled
+            && loopStatus.RunawayCostDetectionEnabled
+            && loopStatus.BranchExplosionGuardEnabled
+            && loopStatus.DuplicateTaskGuardEnabled
+            && loopStatus.StopReasonAudited
+            && loopStatus.FailClosed;
+
+        var stopReady =
+            stopStatus.AuditPreserved
+            && stopStatus.ExplicitReleaseRequired;
+
+        var recoveryReady =
+            recoveryStatus.ArchiveIntegrityVerificationEnabled
+            && recoveryStatus.PathTraversalProtectionEnabled
+            && recoveryStatus.RestoreSizeLimitsEnforced
+            && recoveryStatus.PreRestoreBackupEnabled
+            && recoveryStatus.RollbackOnRestoreFailureEnabled
+            && recoveryStatus.ExplicitConfirmationRequired;
+
+        var databaseReady =
+            databaseStatus.UpToDate
+            && databaseStatus.StartupMigrationEnabled
+            && databaseStatus.ChecksumValidationEnabled
+            && databaseStatus.AtomicMigrationEnabled
+            && databaseStatus.FailClosed;
+
+        var blockers = new List<string>();
+        AddBlocker(!autonomousReady,
+            "Autonomous development controller chưa đạt safety contract.",
+            blockers);
+        AddBlocker(!permissionReady,
+            "Unified permission system chưa đạt default-deny contract.",
+            blockers);
+        AddBlocker(!systemLogReady,
+            "System log/audit chưa sẵn sàng.",
+            blockers);
+        AddBlocker(!undoReady,
+            "Undo/revalidation chưa sẵn sàng.",
+            blockers);
+        AddBlocker(!resourceReady,
+            "Resource limits chưa fail-closed.",
+            blockers);
+        AddBlocker(!loopReady,
+            "Loop guard chưa sẵn sàng.",
+            blockers);
+        AddBlocker(!stopReady,
+            "Emergency stop contract chưa sẵn sàng.",
+            blockers);
+        AddBlocker(stopStatus.Engaged,
+            "Emergency stop đang engaged.",
+            blockers);
+        AddBlocker(!recoveryReady,
+            "Disaster recovery contract chưa sẵn sàng.",
+            blockers);
+        AddBlocker(!databaseReady,
+            "Database migrations chưa up-to-date.",
+            blockers);
+        AddBlocker(!nightly.LowRiskOnly
+            || !nightly.DownstreamPullRequestUsesPolicy
+            || !nightly.DownstreamAutoMergeUsesMergePolicy,
+            "Nightly improvement policy boundary chưa sẵn sàng.",
+            blockers);
+
+        return new(
+            Available: blockers.Count == 0,
+            EnabledByDefault: false,
+            AutonomousDevelopmentControllerReady: autonomousReady,
+            NightlySchedulerAvailable: true,
+            NightlySchedulerEnabled: nightly.SchedulerEnabled,
+            LowRiskOnly: nightly.LowRiskOnly,
+            PolicyBypassAllowed: autonomous.PolicyBypassAllowed,
+            DirectMainPushAllowed: autonomous.DirectMainPushAllowed,
+            HighRiskAutoMergeAllowed: autonomous.HighRiskAutoMergeAllowed,
+            UnifiedPermissionsReady: permissionReady,
+            SystemLogReady: systemLogReady,
+            UndoReady: undoReady,
+            ResourceLimitsReady: resourceReady,
+            LoopGuardReady: loopReady,
+            EmergencyStopReady: stopReady,
+            DisasterRecoveryReady: recoveryReady,
+            DatabaseUpgradesReady: databaseReady,
+            AcceptanceBaseline:
+                "v2.9.9/full-autonomous-development-test-v299.yml",
+            Blockers: blockers);
+    }
+
+    private static IReadOnlyList<PersonalAiOsCapability>
+        AppendContinuousImprovementCapability(
+            IReadOnlyList<PersonalAiOsCapability> capabilities,
+            PersonalAiOsContinuousImprovement continuous)
+    {
+        return
+        [
+            .. capabilities,
+            new(
+                "continuous-improvement",
+                "Continuous Self-Improvement",
+                "governance",
+                continuous.Available
+                    ? PersonalAiOsCapabilityStates.Controlled
+                    : PersonalAiOsCapabilityStates.Unavailable,
+                continuous.Available
+                    ? "Low-risk autonomous development controller sẵn sàng dưới permission, audit, policy, rollback, resource/loop guards, disaster recovery và emergency stop."
+                    : $"Continuous improvement chưa sẵn sàng: {string.Join("; ", continuous.Blockers)}",
+                [
+                    "/api/development/autonomous/status",
+                    "/api/development/nightly/status",
+                    "/api/system/permissions/status",
+                    "/api/system/logs/status",
+                    "/api/system/emergency-stop/status"
+                ],
+                true,
+                true,
+                true)
+        ];
+    }
+
+    private static void AddBlocker(
+        bool condition,
+        string message,
+        ICollection<string> blockers)
+    {
+        if (condition)
+            blockers.Add(message);
     }
 
     private static PersonalAiOsReadiness BuildReadiness(
         SystemHealthResponse health,
-        IReadOnlyList<PersonalAiOsCapability> capabilities)
+        IReadOnlyList<PersonalAiOsCapability> capabilities,
+        PersonalAiOsContinuousImprovement? continuous = null)
     {
         var blockers = new List<string>();
+
+        if (continuous is not null && !continuous.Available)
+        {
+            blockers.Add(
+                "Continuous self-improvement safety plane chưa sẵn sàng.");
+        }
 
         RequireAvailable(
             health.Modules,

@@ -1,0 +1,179 @@
+name: Development v2.7.11
+
+on:
+  push:
+    branches:
+      - 'experiment/roadmap-v2-7-11-current'
+
+jobs:
+  validate-v2711:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: '8.0.x'
+
+      - name: Restore
+        run: dotnet restore PersonalAI.sln
+
+      - name: Build
+        run: dotnet build PersonalAI.sln -c Release --no-restore
+
+      - name: Tests
+        run: dotnet test PersonalAI.sln -c Release --no-build
+
+      - name: Per-run worktree lifecycle smoke test
+        shell: bash
+        run: |
+          set -euo pipefail
+          rm -rf /tmp/personalai-v2711
+          mkdir -p             /tmp/personalai-v2711/workspace/repo             /tmp/personalai-v2711/runs             /tmp/personalai-v2711/run-worktrees
+
+          cd /tmp/personalai-v2711/workspace/repo
+          git init -b main
+          git config user.name "PersonalAI CI"
+          git config user.email "ci@example.invalid"
+          printf 'base\n' > README.md
+          git add README.md
+          git commit -m "initial"
+
+          cd "$GITHUB_WORKSPACE"
+          export Workspace__Root=/tmp/personalai-v2711/workspace
+          export Development__RunRoot=/tmp/personalai-v2711/runs
+          export Development__RunWorktreeRoot=/tmp/personalai-v2711/run-worktrees
+
+          dotnet run --project src/PersonalAI.Web/PersonalAI.Web.csproj             -c Release --no-build             --urls http://127.0.0.1:5116             >/tmp/personalai-v2711/app.log 2>&1 &
+          APP_PID=$!
+          trap 'kill "$APP_PID" 2>/dev/null || true' EXIT
+
+          for i in {1..30}; do
+            if curl -fsS http://127.0.0.1:5116/api/development/run-worktrees/status >/tmp/status.json; then
+              break
+            fi
+            sleep 1
+          done
+
+          jq -e '
+            (.version | split(".") | map(tonumber)) >= [2,7,11]
+            and .oneWorktreePerRun==true
+            and .cleanupRequiresTerminalRun==true
+            and .dirtyCleanupBlocked==true
+            and .forceRemoveEnabled==false
+          ' /tmp/status.json >/dev/null
+
+          create_run() {
+            local branch_name="$1"
+            curl -fsS -X POST http://127.0.0.1:5116/api/development/runs               -H 'Content-Type: application/json'               -d '{
+                "goal":"v2.7.11 worktree smoke",
+                "repositoryPath":"repo",
+                "branch":"'"$branch_name"'",
+                "confirmCreate":true
+              }'
+          }
+
+          create_run experiment/v2711-run1 >/tmp/run1.json
+          create_run experiment/v2711-run2 >/tmp/run2.json
+          run1=$(jq -r '.id' /tmp/run1.json)
+          run2=$(jq -r '.id' /tmp/run2.json)
+
+          ensure_run() {
+            local run_id="$1"
+            curl -fsS -X POST http://127.0.0.1:5116/api/development/run-worktrees/ensure               -H 'Content-Type: application/json'               -d '{
+                "developmentRunId":"'"$run_id"'",
+                "startPoint":"main",
+                "confirmCreateWorktree":true
+              }'
+          }
+
+          ensure_run "$run1" >/tmp/w1.json
+          ensure_run "$run2" >/tmp/w2.json
+
+          w1_id=$(jq -r '.id' /tmp/w1.json)
+          w1_path=$(jq -r '.worktreePath' /tmp/w1.json)
+          w2_id=$(jq -r '.id' /tmp/w2.json)
+          w2_path=$(jq -r '.worktreePath' /tmp/w2.json)
+
+          test "$w1_id" != "$w2_id"
+          test "$w1_path" != "$w2_path"
+          test -d "/tmp/personalai-v2711/workspace/$w1_path"
+          test -d "/tmp/personalai-v2711/workspace/$w2_path"
+
+          jq -e '
+            .state=="active"
+            and .dirty==false
+            and (.worktreePath | startswith(".personalai-worktrees/run-"))
+          ' /tmp/w1.json >/dev/null
+
+          ensure_run "$run1" >/tmp/w1-again.json
+          test "$(jq -r '.id' /tmp/w1-again.json)" = "$w1_id"
+          test "$(jq -r '.worktreePath' /tmp/w1-again.json)" = "$w1_path"
+
+          bindings=$(curl -fsS http://127.0.0.1:5116/api/development/run-worktrees)
+          test "$(printf '%s' "$bindings" | jq 'length')" = "2"
+
+          active_cleanup=$(curl -sS -o /tmp/active-cleanup.json -w '%{http_code}'             -X POST http://127.0.0.1:5116/api/development/run-worktrees/cleanup             -H 'Content-Type: application/json'             -d '{
+              "developmentRunId":"'"$run1"'",
+              "confirmCleanup":true
+            }')
+          test "$active_cleanup" = "400"
+
+          printf 'user work must survive\n' > "/tmp/personalai-v2711/workspace/$w1_path/user-work.txt"
+          user_hash_before=$(sha256sum "/tmp/personalai-v2711/workspace/$w1_path/user-work.txt" | awk '{print $1}')
+
+          curl -fsS -X POST http://127.0.0.1:5116/api/development/runs/$run1/cancel             -H 'Content-Type: application/json'             -d '{"reason":"terminalize run1 for cleanup smoke"}' >/tmp/cancel1.json
+
+          curl -fsS -X POST http://127.0.0.1:5116/api/development/run-worktrees/cleanup             -H 'Content-Type: application/json'             -d '{
+              "developmentRunId":"'"$run1"'",
+              "confirmCleanup":true
+            }' >/tmp/deferred.json
+
+          jq -e '
+            .state=="cleanup-deferred-dirty"
+            and .dirty==true
+            and .removedAt==null
+          ' /tmp/deferred.json >/dev/null
+
+          test -d "/tmp/personalai-v2711/workspace/$w1_path"
+          test -f "/tmp/personalai-v2711/workspace/$w1_path/user-work.txt"
+          user_hash_after=$(sha256sum "/tmp/personalai-v2711/workspace/$w1_path/user-work.txt" | awk '{print $1}')
+          test "$user_hash_before" = "$user_hash_after"
+
+          rm "/tmp/personalai-v2711/workspace/$w1_path/user-work.txt"
+
+          curl -fsS -X POST http://127.0.0.1:5116/api/development/run-worktrees/cleanup             -H 'Content-Type: application/json'             -d '{
+              "developmentRunId":"'"$run1"'",
+              "confirmCleanup":true
+            }' >/tmp/removed1.json
+
+          jq -e '
+            .state=="removed"
+            and .dirty==false
+            and .removedAt!=null
+          ' /tmp/removed1.json >/dev/null
+          test ! -d "/tmp/personalai-v2711/workspace/$w1_path"
+
+          curl -fsS -X POST http://127.0.0.1:5116/api/development/runs/$run2/cancel             -H 'Content-Type: application/json'             -d '{"reason":"terminalize run2 for clean cleanup"}' >/dev/null
+
+          curl -fsS -X POST http://127.0.0.1:5116/api/development/run-worktrees/cleanup             -H 'Content-Type: application/json'             -d '{
+              "developmentRunId":"'"$run2"'",
+              "confirmCleanup":true
+            }' >/tmp/removed2.json
+
+          jq -e '.state=="removed" and .dirty==false' /tmp/removed2.json >/dev/null
+          test ! -d "/tmp/personalai-v2711/workspace/$w2_path"
+
+          git -C /tmp/personalai-v2711/workspace/repo branch --show-current | grep -qx main
+          test "$(cat /tmp/personalai-v2711/workspace/repo/README.md)" = "base"
+
+          curl -fsS http://127.0.0.1:5116/api/development/run-worktrees/status >/tmp/final-status.json
+          jq -e '
+            .bindings==2
+            and .activeBindings==0
+            and .deferredDirtyBindings==0
+            and .removedBindings==2
+          ' /tmp/final-status.json >/dev/null
+
+          grep -Fq 'runWorktrees.EnsureAsync' src/PersonalAI.Web/Services/SelfCodingService.cs
+
+          curl -fsS http://127.0.0.1:5116/api/development/status             | jq -e '(.availableCapabilities | index("per-run-worktree-lifecycle")) != null' >/dev/null

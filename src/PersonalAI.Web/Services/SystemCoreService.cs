@@ -29,6 +29,7 @@ public sealed class SystemCoreService(
     IAutomationStore automationStore,
     IHardeningStatusService hardening,
     IAgentFrameworkService agentFramework,
+    IUnifiedPermissionService permissions,
     IAiProviderResolver providerResolver,
     ILogger<SystemCoreService> logger) : ISystemCoreService
 {
@@ -58,7 +59,8 @@ public sealed class SystemCoreService(
         "life-context",
         "decision-engine",
         "automation",
-        "agents"
+        "agents",
+        "permissions"
     ];
 
     private static readonly string[] ReservedModules =
@@ -351,6 +353,20 @@ public sealed class SystemCoreService(
                         "agents",
                         CoreHealthStatuses.Unavailable,
                         "Agent Framework chưa có agent nào được đăng ký.");
+            }));
+
+        modules.Add(Check(
+            "permissions",
+            () =>
+            {
+                var status = permissions.GetStatus();
+                return new CoreModuleHealth(
+                    "permissions",
+                    CoreHealthStatuses.Healthy,
+                    status.DefaultDeny && status.DenyOverridesAllow
+                        ? "Unified Permission System hoạt động với default-deny và deny-overrides-allow."
+                        : "Unified Permission System đang hoạt động nhưng safety contract không đúng như mong đợi.",
+                    status.ActiveRules);
             }));
 
         modules.Add(Check(

@@ -1,0 +1,161 @@
+name: Device Offline Queue v2.8.7
+
+on:
+  push:
+    branches:
+      - 'experiment/roadmap-v2-8-7-offline-queue'
+
+jobs:
+  validate-v287:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: '8.0.x'
+
+      - name: Restore
+        run: dotnet restore PersonalAI.sln
+
+      - name: Build
+        run: dotnet build PersonalAI.sln -c Release --no-restore
+
+      - name: Tests
+        run: dotnet test PersonalAI.sln -c Release --no-build
+
+      - name: Offline queue smoke test
+        shell: bash
+        run: |
+          set -euxo pipefail
+          rm -rf /tmp/personalai-v287
+          mkdir -p \
+            /tmp/personalai-v287/workspace \
+            /tmp/personalai-v287/companion \
+            /tmp/personalai-v287/hub \
+            /tmp/personalai-v287/offline
+
+          export Workspace__Root=/tmp/personalai-v287/workspace
+          export Companion__Root=/tmp/personalai-v287/companion
+          export Companion__Enabled=true
+          export Companion__AllowInsecureHttp=true
+          export DeviceHub__Root=/tmp/personalai-v287/hub
+          export OfflineQueue__Root=/tmp/personalai-v287/offline
+
+          start_app() {
+            dotnet run --project src/PersonalAI.Web/PersonalAI.Web.csproj \
+              -c Release --no-build \
+              --urls http://127.0.0.1:5128 \
+              >/tmp/personalai-v287/app.log 2>&1 &
+            APP_PID=$!
+            for i in {1..30}; do
+              if curl -fsS http://127.0.0.1:5128/api/device-hub/offline-queue/status >/tmp/status.json; then
+                return 0
+              fi
+              sleep 1
+            done
+            cat /tmp/personalai-v287/app.log
+            return 1
+          }
+
+          stop_app() {
+            kill "$APP_PID" 2>/dev/null || true
+            wait "$APP_PID" 2>/dev/null || true
+          }
+
+          trap 'stop_app || true' EXIT
+          start_app
+
+          jq -e '
+            (.version | split(".") | map(tonumber)) >= [2,8,7]
+            and .persistent==true
+            and .explicitEnqueueConfirmationRequired==true
+            and .explicitSyncConfirmationRequired==true
+            and .onlineDevicesRejectedForEnqueue==true
+            and .offlineOrUnknownDevicesQueueable==true
+            and .deliveryRequiresOnlineDevice==true
+            and .idempotentReferenceKeys==true
+          ' /tmp/status.json >/dev/null
+
+          curl -fsS -X POST http://127.0.0.1:5128/api/device-hub/admin/devices \
+            -H 'Content-Type: application/json' \
+            -d '{"name":"Offline Queue PC","deviceType":"pc","confirmRegister":true}' \
+            >/tmp/device.json
+          device_id=$(jq -r '.id' /tmp/device.json)
+          jq -e '.connectionStatus=="unknown"' /tmp/device.json >/dev/null
+
+          no_confirm=$(curl -sS -o /tmp/no-enqueue.json -w '%{http_code}' \
+            -X POST http://127.0.0.1:5128/api/device-hub/admin/devices/$device_id/offline-queue \
+            -H 'Content-Type: application/json' \
+            -d '{"kind":"task","referenceId":"task-001","payload":"Run queued build verification.","confirmEnqueue":false}')
+          test "$no_confirm" = "400"
+
+          curl -fsS -X POST \
+            http://127.0.0.1:5128/api/device-hub/admin/devices/$device_id/offline-queue \
+            -H 'Content-Type: application/json' \
+            -d '{"kind":"task","referenceId":"task-001","payload":"Run queued build verification.","confirmEnqueue":true}' \
+            >/tmp/task-item.json
+
+          curl -fsS -X POST \
+            http://127.0.0.1:5128/api/device-hub/admin/devices/$device_id/offline-queue \
+            -H 'Content-Type: application/json' \
+            -d '{"kind":"event","referenceId":"event-001","payload":"Refresh device context after reconnect.","confirmEnqueue":true}' \
+            >/tmp/event-item.json
+
+          curl -fsS -X POST \
+            http://127.0.0.1:5128/api/device-hub/admin/devices/$device_id/offline-queue \
+            -H 'Content-Type: application/json' \
+            -d '{"kind":"task","referenceId":"task-001","payload":"Run queued build verification.","confirmEnqueue":true}' \
+            >/tmp/task-item-duplicate.json
+
+          test "$(jq -r '.id' /tmp/task-item.json)" = "$(jq -r '.id' /tmp/task-item-duplicate.json)"
+
+          offline_sync=$(curl -sS -o /tmp/offline-sync.json -w '%{http_code}' \
+            -X POST http://127.0.0.1:5128/api/device-hub/admin/devices/$device_id/offline-queue/sync \
+            -H 'Content-Type: application/json' \
+            -d '{"confirmSync":true}')
+          test "$offline_sync" = "400"
+
+          curl -fsS -X POST \
+            http://127.0.0.1:5128/api/device-hub/admin/devices/$device_id/heartbeat \
+            -H 'Content-Type: application/json' \
+            -d '{"confirmHeartbeat":true}' >/tmp/heartbeat.json
+          jq -e '.connectionStatus=="online"' /tmp/heartbeat.json >/dev/null
+
+          online_enqueue=$(curl -sS -o /tmp/online-enqueue.json -w '%{http_code}' \
+            -X POST http://127.0.0.1:5128/api/device-hub/admin/devices/$device_id/offline-queue \
+            -H 'Content-Type: application/json' \
+            -d '{"kind":"event","referenceId":"event-online","payload":"Must be sent directly.","confirmEnqueue":true}')
+          test "$online_enqueue" = "400"
+
+          curl -fsS -X POST \
+            http://127.0.0.1:5128/api/device-hub/admin/devices/$device_id/offline-queue/sync \
+            -H 'Content-Type: application/json' \
+            -d '{"confirmSync":true}' >/tmp/sync.json
+
+          jq -e '
+            .deviceId=="'"$device_id"'"
+            and .deliveredCount==2
+            and (.items | length)==2
+            and all(.items[]; .status=="delivered" and .deliveredAt!=null)
+            and any(.items[]; .kind=="task" and .referenceId=="task-001")
+            and any(.items[]; .kind=="event" and .referenceId=="event-001")
+          ' /tmp/sync.json >/dev/null
+
+          curl -fsS \
+            "http://127.0.0.1:5128/api/device-hub/offline-queue?deviceId=$device_id" \
+            >/tmp/list.json
+          jq -e '
+            length==2
+            and all(.[]; .status=="delivered")
+          ' /tmp/list.json >/dev/null
+
+          stop_app
+          start_app
+
+          curl -fsS \
+            "http://127.0.0.1:5128/api/device-hub/offline-queue?deviceId=$device_id" \
+            >/tmp/persisted.json
+          jq -e '
+            length==2
+            and all(.[]; .status=="delivered" and .deliveredAt!=null)
+          ' /tmp/persisted.json >/dev/null

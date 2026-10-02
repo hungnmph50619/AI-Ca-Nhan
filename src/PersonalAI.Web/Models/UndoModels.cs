@@ -95,3 +95,26 @@ public sealed record WorkspaceUndoCheck(
 
 public sealed record WorkspaceUndoApplyResult(
     string Message);
+
+
+public sealed record UndoSystemStatus(
+    string Version,
+    string WorkspaceId,
+    string Storage,
+    int AvailabilityDays,
+    int MaximumEntries,
+    int MaximumQueryLimit,
+    int MaximumSnapshotBytes,
+    bool ExplicitConfirmationRequired,
+    bool PreconditionRevalidationRequired,
+    bool WorkspaceScoped,
+    bool InvocationCorrelationEnabled,
+    bool AuditTrailEnabled,
+    bool FileMutationsSupported,
+    bool NonFileSideEffectsSupported,
+    IReadOnlyList<string> SupportedOperations);
+
+public sealed record UndoInvocationResponse(
+    Guid InvocationId,
+    int Count,
+    IReadOnlyList<UndoItem> Items);

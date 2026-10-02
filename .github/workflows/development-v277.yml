@@ -1,0 +1,170 @@
+name: Development v2.7.7
+
+on:
+  push:
+    branches:
+      - 'experiment/roadmap-v2-7-7-current'
+
+jobs:
+  validate-v277:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: '8.0.x'
+
+      - name: Restore
+        run: dotnet restore PersonalAI.sln
+
+      - name: Build
+        run: dotnet build PersonalAI.sln -c Release --no-restore
+
+      - name: Tests
+        run: dotnet test PersonalAI.sln -c Release --no-build
+
+      - name: Automatic benchmark promotion gate smoke test
+        shell: bash
+        run: |
+          set -euo pipefail
+          rm -rf /tmp/personalai-v277
+          mkdir -p /tmp/personalai-v277/workspace
+          mkdir -p /tmp/personalai-v277/runs
+          mkdir -p /tmp/personalai-v277/security
+          mkdir -p /tmp/personalai-v277/benchmarks
+
+          export Workspace__Root=/tmp/personalai-v277/workspace
+          export Development__RunRoot=/tmp/personalai-v277/runs
+          export Development__SecurityReportRoot=/tmp/personalai-v277/security
+          export Development__BenchmarkRoot=/tmp/personalai-v277/benchmarks
+
+          dotnet run --project src/PersonalAI.Web/PersonalAI.Web.csproj             -c Release --no-build             --urls http://127.0.0.1:5112             >/tmp/personalai-v277.log 2>&1 &
+          APP_PID=$!
+          trap 'kill "$APP_PID" 2>/dev/null || true' EXIT
+
+          for i in {1..30}; do
+            if curl -fsS http://127.0.0.1:5112/api/development/benchmarks/status >/tmp/status.json; then
+              break
+            fi
+            sleep 1
+          done
+
+          jq -e '
+            (.version | split(".") | map(tonumber)) >= [2,7,7]
+            and .reportsPersisted==true
+            and .failedBenchmarkBlocksContinuation==true
+            and (.requiredGates | sort)==(
+              ["agent","performance","rag","resource","task","tool"] | sort)
+          ' /tmp/status.json >/dev/null
+
+          curl -fsS -X POST http://127.0.0.1:5112/api/development/runs             -H 'Content-Type: application/json'             -d '{
+              "goal":"v2.7.7 benchmark smoke",
+              "repositoryPath":"",
+              "branch":"experiment/v277-smoke",
+              "confirmCreate":true
+            }' >/tmp/run.json
+
+          run_id=$(jq -r '.id' /tmp/run.json)
+          workspace_id=$(jq -r '.workspaceId' /tmp/run.json)
+          safe_workspace=$(printf '%s' "$workspace_id" | sed 's/[^A-Za-z0-9_-]/_/g')
+
+          for transition in             'analysis prepared'             'coding succeeded'             'testing passed'             'review approved'; do
+            set -- $transition
+            curl -fsS -X POST http://127.0.0.1:5112/api/development/runs/$run_id/advance               -H 'Content-Type: application/json'               -d '{"expectedCurrentStage":"'"$1"'","result":"'"$2"'"}' >/tmp/advance.json
+          done
+
+          test "$(jq -r '.stage' /tmp/advance.json)" = "security"
+
+          security_id='33333333-3333-3333-3333-333333333333'
+          cat > /tmp/personalai-v277/security/development-security-reports-$safe_workspace.json <<JSON
+          [
+            {
+              "id":"$security_id",
+              "workspaceId":"$workspace_id",
+              "developmentRunId":"$run_id",
+              "reviewReportId":"22222222-2222-2222-2222-222222222222",
+              "repositoryPath":"",
+              "branch":"experiment/v277-smoke",
+              "worktreePath":".personalai-worktrees/v277",
+              "findings":[],
+              "checkedCategories":["secret-leakage","permission-bypass","injection","path-traversal","dangerous-execution"],
+              "highRiskFound":false,
+              "promotionAllowed":true,
+              "createdAt":"2026-10-01T00:00:00+00:00"
+            }
+          ]
+          JSON
+
+          curl -fsS -X POST http://127.0.0.1:5112/api/development/runs/$run_id/advance             -H 'Content-Type: application/json'             -d '{
+              "expectedCurrentStage":"security",
+              "result":"passed",
+              "securityReportId":"'"$security_id"'"
+            }' >/tmp/benchmark-stage.json
+
+          jq -e '.stage=="benchmark"' /tmp/benchmark-stage.json >/dev/null
+
+          curl -fsS -X POST http://127.0.0.1:5112/api/development/benchmarks/run             -H 'Content-Type: application/json'             -d '{
+              "developmentRunId":"'"$run_id"'",
+              "maximumCases":10,
+              "includeAgentBenchmark":false,
+              "confirmExternalExecution":false,
+              "maximumDurationMs":30000,
+              "maximumWorkingSetBytes":2147483648,
+              "confirmExecution":true
+            }' >/tmp/fail-report.json
+
+          jq -e '
+            .passed==false
+            and (.gates | length)==6
+            and any(.gates[]; .gate=="agent" and .passed==false)
+            and any(.gates[]; .gate=="rag" and .passed==false)
+            and any(.gates[]; .gate=="tool" and .passed==false)
+            and any(.gates[]; .gate=="task" and .passed==false)
+          ' /tmp/fail-report.json >/dev/null
+
+          failed_report_id=$(jq -r '.id' /tmp/fail-report.json)
+
+          blocked=$(curl -sS -o /tmp/blocked.json -w '%{http_code}'             -X POST http://127.0.0.1:5112/api/development/runs/$run_id/advance             -H 'Content-Type: application/json'             -d '{
+              "expectedCurrentStage":"benchmark",
+              "result":"passed",
+              "benchmarkReportId":"'"$failed_report_id"'"
+            }')
+          test "$blocked" = "409"
+
+          pass_id='44444444-4444-4444-4444-444444444444'
+          benchmark_file=/tmp/personalai-v277/benchmarks/development-benchmark-reports-$safe_workspace.json
+
+          jq --arg id "$pass_id" --arg run "$run_id" --arg ws "$workspace_id"             '. + [{
+              id:$id,
+              workspaceId:$ws,
+              developmentRunId:$run,
+              gates:[
+                {gate:"rag",passed:true,observed:1,threshold:0.8,detail:"seed"},
+                {gate:"tool",passed:true,observed:1,threshold:0.8,detail:"seed"},
+                {gate:"task",passed:true,observed:1,threshold:0.8,detail:"seed"},
+                {gate:"agent",passed:true,observed:1,threshold:0.8,detail:"seed"},
+                {gate:"performance",passed:true,observed:10,threshold:30000,detail:"seed"},
+                {gate:"resource",passed:true,observed:1000000,threshold:2147483648,detail:"seed"}
+              ],
+              evaluatedCases:4,
+              failedCases:0,
+              passed:true,
+              durationMs:10,
+              workingSetBytes:1000000,
+              startedAt:"2026-10-01T00:00:00+00:00",
+              completedAt:"2026-10-01T00:00:01+00:00"
+            }]' "$benchmark_file" > /tmp/benchmark-pass.json
+          mv /tmp/benchmark-pass.json "$benchmark_file"
+
+          curl -fsS -X POST http://127.0.0.1:5112/api/development/runs/$run_id/advance             -H 'Content-Type: application/json'             -d '{
+              "expectedCurrentStage":"benchmark",
+              "result":"passed",
+              "benchmarkReportId":"'"$pass_id"'"
+            }' >/tmp/push-stage.json
+
+          jq -e '
+            .stage=="push"
+            and .benchmarkReportId=="'"$pass_id"'"
+          ' /tmp/push-stage.json >/dev/null
+
+          curl -fsS http://127.0.0.1:5112/api/development/status             | jq -e '(.availableCapabilities | index("automatic-benchmark-gate")) != null' >/dev/null

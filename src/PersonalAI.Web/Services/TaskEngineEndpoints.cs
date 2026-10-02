@@ -8,6 +8,9 @@ public static class TaskEngineEndpoints
     {
         services.AddSingleton<IPersonalTaskStore, SqlitePersonalTaskStore>();
         services.AddScoped<ITaskEngineService, TaskEngineService>();
+        services.AddScoped<ITaskRouterService, TaskRouterService>();
+        services.AddScoped<IDistributedAgentExecutionService, DistributedAgentExecutionService>();
+        services.AddScoped<IDeviceContextSyncService, DeviceContextSyncService>();
         return services;
     }
 
@@ -15,6 +18,265 @@ public static class TaskEngineEndpoints
     {
         app.MapGet("/api/tasks", (ITaskEngineService taskEngine) =>
             Results.Ok(taskEngine.GetAll()));
+
+        app.MapGet("/api/tasks/router/status", (
+            ITaskRouterService router) =>
+            Results.Ok(router.GetStatus()));
+
+        app.MapGet("/api/tasks/routes", (
+            ITaskRouterService router) =>
+            Results.Ok(router.GetRoutes()));
+
+        app.MapGet("/api/tasks/{taskId:guid}/route", (
+            Guid taskId,
+            ITaskRouterService router) =>
+        {
+            var route = router.GetLatest(taskId);
+            return route is null
+                ? Results.NotFound(
+                    new ApiError(
+                        "Tác vụ chưa có quyết định routing."))
+                : Results.Ok(route);
+        });
+
+        app.MapPost("/api/tasks/{taskId:guid}/route", (
+            Guid taskId,
+            RoutePersonalTaskRequest request,
+            ITaskRouterService router) =>
+        {
+            try
+            {
+                var decision = router.Route(
+                    taskId,
+                    request);
+
+                return decision.Decision == "routed"
+                    ? Results.Ok(decision)
+                    : Results.Json(
+                        decision,
+                        statusCode:
+                            StatusCodes.Status409Conflict);
+            }
+            catch (TaskRouterValidationException exception)
+            {
+                return Results.BadRequest(
+                    new ApiError(exception.Message));
+            }
+            catch (DeviceCapabilityValidationException exception)
+            {
+                return Results.BadRequest(
+                    new ApiError(exception.Message));
+            }
+            catch (DeviceIdentityValidationException exception)
+            {
+                return Results.BadRequest(
+                    new ApiError(exception.Message));
+            }
+            catch (DeviceHubValidationException exception)
+            {
+                return Results.BadRequest(
+                    new ApiError(exception.Message));
+            }
+            catch (KeyNotFoundException exception)
+            {
+                return Results.NotFound(
+                    new ApiError(exception.Message));
+            }
+        });
+
+        app.MapGet("/api/tasks/distributed-execution/status", (
+            IDistributedAgentExecutionService distributed) =>
+            Results.Ok(distributed.GetStatus()));
+
+        app.MapGet("/api/tasks/distributed-executions", (
+            IDistributedAgentExecutionService distributed) =>
+            Results.Ok(distributed.GetAll()));
+
+        app.MapGet("/api/tasks/distributed-executions/{correlationId:guid}", (
+            Guid correlationId,
+            IDistributedAgentExecutionService distributed) =>
+        {
+            var execution = distributed.Get(correlationId);
+            return execution is null
+                ? Results.NotFound(
+                    new ApiError(
+                        "Không tìm thấy distributed execution."))
+                : Results.Ok(execution);
+        });
+
+        app.MapPost("/api/tasks/{taskId:guid}/distributed-executions", (
+            Guid taskId,
+            DispatchDistributedAgentRequest request,
+            IDistributedAgentExecutionService distributed) =>
+        {
+            try
+            {
+                return Results.Ok(
+                    distributed.Dispatch(taskId, request));
+            }
+            catch (DistributedAgentExecutionValidationException exception)
+            {
+                return Results.BadRequest(
+                    new ApiError(exception.Message));
+            }
+            catch (DeviceCapabilityValidationException exception)
+            {
+                return Results.BadRequest(
+                    new ApiError(exception.Message));
+            }
+            catch (DeviceIdentityValidationException exception)
+            {
+                return Results.BadRequest(
+                    new ApiError(exception.Message));
+            }
+            catch (DeviceHubValidationException exception)
+            {
+                return Results.BadRequest(
+                    new ApiError(exception.Message));
+            }
+            catch (KeyNotFoundException exception)
+            {
+                return Results.NotFound(
+                    new ApiError(exception.Message));
+            }
+        });
+
+        app.MapPost("/api/devices/{deviceId:guid}/distributed-executions/{correlationId:guid}/claim", (
+            Guid deviceId,
+            Guid correlationId,
+            ClaimDistributedAgentRequest request,
+            IDistributedAgentExecutionService distributed) =>
+        {
+            try
+            {
+                return Results.Ok(
+                    distributed.Claim(
+                        correlationId,
+                        deviceId,
+                        request));
+            }
+            catch (DistributedAgentExecutionValidationException exception)
+            {
+                return Results.BadRequest(
+                    new ApiError(exception.Message));
+            }
+            catch (DeviceCapabilityValidationException exception)
+            {
+                return Results.BadRequest(
+                    new ApiError(exception.Message));
+            }
+            catch (DeviceIdentityValidationException exception)
+            {
+                return Results.BadRequest(
+                    new ApiError(exception.Message));
+            }
+            catch (DeviceHubValidationException exception)
+            {
+                return Results.BadRequest(
+                    new ApiError(exception.Message));
+            }
+            catch (KeyNotFoundException exception)
+            {
+                return Results.NotFound(
+                    new ApiError(exception.Message));
+            }
+        });
+
+        app.MapPost("/api/devices/{deviceId:guid}/distributed-executions/{correlationId:guid}/complete", (
+            Guid deviceId,
+            Guid correlationId,
+            CompleteDistributedAgentRequest request,
+            IDistributedAgentExecutionService distributed) =>
+        {
+            try
+            {
+                return Results.Ok(
+                    distributed.Complete(
+                        correlationId,
+                        deviceId,
+                        request));
+            }
+            catch (DistributedAgentExecutionValidationException exception)
+            {
+                return Results.BadRequest(
+                    new ApiError(exception.Message));
+            }
+            catch (DeviceCapabilityValidationException exception)
+            {
+                return Results.BadRequest(
+                    new ApiError(exception.Message));
+            }
+            catch (DeviceIdentityValidationException exception)
+            {
+                return Results.BadRequest(
+                    new ApiError(exception.Message));
+            }
+            catch (DeviceHubValidationException exception)
+            {
+                return Results.BadRequest(
+                    new ApiError(exception.Message));
+            }
+            catch (KeyNotFoundException exception)
+            {
+                return Results.NotFound(
+                    new ApiError(exception.Message));
+            }
+        });
+
+        app.MapGet("/api/device-context-sync/status", (
+            IDeviceContextSyncService contextSync) =>
+            Results.Ok(contextSync.GetStatus()));
+
+        app.MapGet("/api/device-context-sync", (
+            IDeviceContextSyncService contextSync) =>
+            Results.Ok(contextSync.GetAll()));
+
+        app.MapGet("/api/device-context-sync/{syncId:guid}", (
+            Guid syncId,
+            IDeviceContextSyncService contextSync) =>
+        {
+            var package = contextSync.Get(syncId);
+            return package is null
+                ? Results.NotFound(
+                    new ApiError("Không tìm thấy context sync package."))
+                : Results.Ok(package);
+        });
+
+        app.MapPost("/api/tasks/distributed-executions/{correlationId:guid}/context-sync", async (
+            Guid correlationId,
+            CreateDeviceContextSyncRequest request,
+            IDeviceContextSyncService contextSync,
+            CancellationToken cancellationToken) =>
+        {
+            try
+            {
+                return Results.Ok(
+                    await contextSync.CreateAsync(
+                        correlationId,
+                        request,
+                        cancellationToken));
+            }
+            catch (DeviceContextSyncValidationException exception)
+            {
+                return Results.BadRequest(
+                    new ApiError(exception.Message));
+            }
+            catch (DeviceCapabilityValidationException exception)
+            {
+                return Results.BadRequest(
+                    new ApiError(exception.Message));
+            }
+            catch (DeviceHubValidationException exception)
+            {
+                return Results.BadRequest(
+                    new ApiError(exception.Message));
+            }
+            catch (KeyNotFoundException exception)
+            {
+                return Results.NotFound(
+                    new ApiError(exception.Message));
+            }
+        });
 
         app.MapGet("/api/tasks/{taskId:guid}", (
             Guid taskId,

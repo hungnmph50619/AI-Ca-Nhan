@@ -1,3 +1,5 @@
+using System.Security.Cryptography;
+using System.Text;
 using Microsoft.AspNetCore.Http;
 using PersonalAI.Web.Models;
 
@@ -494,6 +496,8 @@ public sealed class AutomationCoordinator(
     IAutomationStore store,
     IServiceScopeFactory scopeFactory,
     IHttpContextAccessor httpContextAccessor,
+    ILoopGuardService loopGuard,
+    IEmergencyStopService emergencyStop,
     IAuditRecorder audit,
     ILogger<AutomationCoordinator> logger) : IAutomationCoordinator
 {
@@ -503,6 +507,9 @@ public sealed class AutomationCoordinator(
     public async Task<int> RunDueAsync(
         CancellationToken cancellationToken = default)
     {
+        if (emergencyStop.IsEngaged)
+            return 0;
+
         var due = store.GetDue(
             DateTimeOffset.UtcNow,
             AutomationService.MaximumDueBatchSize);
@@ -526,7 +533,26 @@ public sealed class AutomationCoordinator(
         bool manualTrigger,
         CancellationToken cancellationToken = default)
     {
-        await _runGate.WaitAsync(cancellationToken);
+        var emergencyToken = emergencyStop.CurrentToken;
+        using var linkedCancellation =
+            CancellationTokenSource.CreateLinkedTokenSource(
+                cancellationToken,
+                emergencyToken);
+        var executionToken = linkedCancellation.Token;
+
+        try
+        {
+            await _runGate.WaitAsync(executionToken);
+        }
+        catch (OperationCanceledException)
+            when (emergencyToken.IsCancellationRequested)
+        {
+            var stopped = store.Get(
+                automation.Id,
+                automation.WorkspaceId) ?? automation;
+            return StopForEmergency(stopped, null);
+        }
+
         try
         {
             var current = store.Get(
@@ -534,6 +560,9 @@ public sealed class AutomationCoordinator(
                 automation.WorkspaceId)
                 ?? throw new AutomationValidationException(
                     "Automation không còn tồn tại.");
+
+            if (emergencyStop.IsEngaged)
+                return StopForEmergency(current, null);
 
             if (current.State
                 is AutomationStates.Completed
@@ -720,7 +749,14 @@ public sealed class AutomationCoordinator(
                         await taskEngine.ExecuteNextAsync(
                             task.Id,
                             confirmed: false,
-                            cancellationToken);
+                            executionToken);
+                }
+                catch (OperationCanceledException)
+                    when (emergencyToken.IsCancellationRequested)
+                {
+                    return StopForEmergency(
+                        running,
+                        task);
                 }
                 catch (PersonalTaskConfirmationRequiredException)
                 {
@@ -866,6 +902,36 @@ public sealed class AutomationCoordinator(
         }
     }
 
+    private AutomationRunResult StopForEmergency(
+        PersonalAutomation current,
+        PersonalTask? task)
+    {
+        var message =
+            "Automation đã bị emergency stop dừng; cần review và explicit release/resume trước khi tiếp tục.";
+        var updated = current with
+        {
+            Enabled = false,
+            State = AutomationStates.Interrupted,
+            NextRunAt = null,
+            UpdatedAt = DateTimeOffset.UtcNow,
+            LastRunAt = DateTimeOffset.UtcNow,
+            LastRunStatus = AutomationRunStatuses.Interrupted,
+            LastMessage = message
+        };
+        store.Save(updated);
+        RecordRunAudit(
+            updated,
+            AuditResults.Interrupted,
+            "emergency-stop");
+        return new AutomationRunResult(
+            updated,
+            task,
+            null,
+            false,
+            false,
+            message);
+    }
+
     private AutomationRunResult AwaitConfirmation(
         PersonalAutomation current,
         PersonalTask task,
@@ -902,6 +968,44 @@ public sealed class AutomationCoordinator(
         PersonalTask task,
         string message)
     {
+        var fingerprint = StableFingerprint(
+            $"{task.Id:D}|{task.CurrentStep}|{message}");
+        var loopDecision = loopGuard.Check(
+            current.WorkspaceId,
+            new LoopGuardCheckRequest(
+                LoopGuardScopes.Automation,
+                current.Id.ToString("D"),
+                fingerprint,
+                CostUnits: 1));
+
+        if (loopDecision.Blocked)
+        {
+            var stoppedMessage =
+                $"Loop guard đã dừng automation: {loopDecision.StopReason}";
+            var stopped = current with
+            {
+                Enabled = false,
+                State = AutomationStates.Interrupted,
+                NextRunAt = null,
+                UpdatedAt = DateTimeOffset.UtcNow,
+                LastRunAt = DateTimeOffset.UtcNow,
+                LastRunStatus = AutomationRunStatuses.Interrupted,
+                LastMessage = stoppedMessage
+            };
+            store.Save(stopped);
+            RecordRunAudit(
+                stopped,
+                AuditResults.Interrupted,
+                $"loop-guard:{loopDecision.Reason}");
+            return new AutomationRunResult(
+                stopped,
+                task,
+                null,
+                false,
+                false,
+                stoppedMessage);
+        }
+
         var next = DateTimeOffset.UtcNow
             .AddMinutes(
                 Math.Min(
@@ -1078,6 +1182,12 @@ public sealed class AutomationCoordinator(
         message = string.Empty;
         return true;
     }
+
+    private static string StableFingerprint(string value) =>
+        Convert.ToHexString(
+            SHA256.HashData(
+                Encoding.UTF8.GetBytes(value)))
+            .ToLowerInvariant();
 
     private void RecordRunAudit(
         PersonalAutomation automation,

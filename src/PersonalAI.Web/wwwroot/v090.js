@@ -87,7 +87,7 @@
     const intro = document.createElement("div");
     intro.className = "v090-task-intro";
     const introTitle = document.createElement("strong");
-    introTitle.textContent = "Tác vụ có Undo Foundation v1.8.0";
+    introTitle.textContent = "Tác vụ có nền tảng hoàn tác";
     const introText = document.createElement("p");
     introText.textContent = "Tác vụ có thể phụ thuộc vào tác vụ khác và từng bước có thể khai báo phụ thuộc vào các bước trước. PersonalAI chỉ cho chạy khi các phụ thuộc đã hoàn tất; không có chuỗi nào tự chạy." ;
     intro.append(introTitle, introText);

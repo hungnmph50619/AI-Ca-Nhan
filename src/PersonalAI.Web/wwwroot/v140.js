@@ -44,7 +44,7 @@
     status.id = "developmentAgentBadge";
     status.className = "tool-count v140-development-badge";
     status.textContent = "…";
-    status.setAttribute("aria-label", "Trạng thái Software Development Agent");
+    status.setAttribute("aria-label", "Trạng thái tác nhân phát triển phần mềm");
 
     button.append(icon, label, status);
 
@@ -76,17 +76,17 @@
     const heading = document.createElement("div");
     const eyebrow = document.createElement("p");
     eyebrow.className = "eyebrow";
-    eyebrow.textContent = "CONTROLLED CAPABILITY · NO ARBITRARY SHELL";
+    eyebrow.textContent = "KHẢ NĂNG CÓ KIỂM SOÁT · KHÔNG CHẠY LỆNH TÙY Ý";
 
     const title = document.createElement("h2");
     title.id = "developmentAgentTitle";
-    title.textContent = "Software Development Agent v1.4";
+    title.textContent = "Tác nhân phát triển phần mềm";
     heading.append(eyebrow, title);
 
     const close = document.createElement("button");
     close.type = "button";
     close.className = "dialog-close";
-    close.setAttribute("aria-label", "Đóng Software Development Agent");
+    close.setAttribute("aria-label", "Đóng tác nhân phát triển phần mềm");
     close.textContent = "×";
     close.addEventListener("click", () => dialog.close());
     header.append(heading, close);
@@ -95,7 +95,7 @@
     intro.className = "v140-development-intro";
     intro.innerHTML =
       "<strong>Source-aware, process-limited</strong>" +
-      "<p>v1.4.0 có thể inspect/search source, đọc Git status/diff và chạy dotnet restore/build/test đã đóng khung. Không có shell tùy ý, arbitrary args hay Git write actions.</p>";
+      "<p>v1.4.0 có thể kiểm tra/tìm kiếm mã nguồn, đọc trạng thái/thay đổi Git và chạy dotnet restore/build/test trong phạm vi kiểm soát. Không có lệnh shell tùy ý, đối số tùy ý hay thao tác ghi Git.</p>";
 
     const summary = document.createElement("div");
     summary.id = "developmentAgentSummary";
@@ -116,7 +116,7 @@
 
     const limitationTitle = document.createElement("h3");
     limitationTitle.className = "v140-section-title";
-    limitationTitle.textContent = "Guardrails";
+    limitationTitle.textContent = "Hàng rào an toàn";
 
     const limitations = document.createElement("ul");
     limitations.id = "developmentAgentLimitations";
@@ -215,7 +215,7 @@
     runtime.replaceChildren(
       runtimeBadge("Git", status.gitAvailable === true),
       runtimeBadge(".NET", status.dotnetAvailable === true),
-      runtimeBadge("Shell tùy ý", status.arbitraryShellEnabled === true),
+      runtimeBadge("Lệnh shell tùy ý", status.arbitraryShellEnabled === true),
       runtimeBadge("Git write", status.gitWriteActionsEnabled === true));
 
     capabilities.replaceChildren();
@@ -250,7 +250,7 @@
   function updateBadge(available) {
     const badge = document.querySelector("#developmentAgentBadge");
     if (!badge) return;
-    badge.textContent = available ? "ON" : "OFF";
+    badge.textContent = available ? "BẬT" : "TẮT";
     badge.className =
       `tool-count v140-development-badge ${available ? "is-ready" : "is-off"}`;
   }
@@ -273,6 +273,6 @@
       "dotnet-restore": "dotnet restore",
       "dotnet-build": "dotnet build",
       "dotnet-test": "dotnet test"
-    }[value] || value || "Capability";
+    }[value] || value || "Khả năng";
   }
 })();

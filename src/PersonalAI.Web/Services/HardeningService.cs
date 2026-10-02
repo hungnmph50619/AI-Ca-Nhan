@@ -11,10 +11,115 @@ public static class HardeningLimits
     public const int MaximumApiRequestsPerMinute = 600;
     public const int MaximumConcurrentApiRequests = 16;
     public const long MaximumApiRequestBytes = 12L * 1024 * 1024;
+    public const int MaximumTrackedRateWindows = 2_048;
     public const int MaximumBackupCount = 5;
     public const int MaximumBackupFiles = 20_000;
     public const long MaximumBackupSourceBytes = 512L * 1024 * 1024;
     public const int HeartbeatSeconds = 30;
+}
+
+public interface IResourceGuardMetrics
+{
+    void RecordAcceptedStart();
+    void RecordCompleted();
+    void RecordPayloadRejected();
+    void RecordRateRejected();
+    void RecordConcurrencyRejected();
+    void RecordRateWindowCapacityRejected();
+    void SetTrackedRateWindows(int count);
+    SystemResourceLimitCounters Snapshot();
+}
+
+public sealed class ResourceGuardMetrics : IResourceGuardMetrics
+{
+    private long _accepted;
+    private long _payloadRejected;
+    private long _rateRejected;
+    private long _concurrencyRejected;
+    private long _windowCapacityRejected;
+    private int _active;
+    private int _peakActive;
+    private int _trackedRateWindows;
+
+    public void RecordAcceptedStart()
+    {
+        Interlocked.Increment(ref _accepted);
+        var active = Interlocked.Increment(ref _active);
+        while (true)
+        {
+            var peak = Volatile.Read(ref _peakActive);
+            if (active <= peak
+                || Interlocked.CompareExchange(
+                    ref _peakActive,
+                    active,
+                    peak) == peak)
+            {
+                break;
+            }
+        }
+    }
+
+    public void RecordCompleted()
+    {
+        var active = Interlocked.Decrement(ref _active);
+        if (active < 0)
+            Interlocked.Exchange(ref _active, 0);
+    }
+
+    public void RecordPayloadRejected() =>
+        Interlocked.Increment(ref _payloadRejected);
+
+    public void RecordRateRejected() =>
+        Interlocked.Increment(ref _rateRejected);
+
+    public void RecordConcurrencyRejected() =>
+        Interlocked.Increment(ref _concurrencyRejected);
+
+    public void RecordRateWindowCapacityRejected() =>
+        Interlocked.Increment(ref _windowCapacityRejected);
+
+    public void SetTrackedRateWindows(int count) =>
+        Volatile.Write(ref _trackedRateWindows, Math.Max(0, count));
+
+    public SystemResourceLimitCounters Snapshot() =>
+        new(
+            Interlocked.Read(ref _accepted),
+            Interlocked.Read(ref _payloadRejected),
+            Interlocked.Read(ref _rateRejected),
+            Interlocked.Read(ref _concurrencyRejected),
+            Interlocked.Read(ref _windowCapacityRejected),
+            Volatile.Read(ref _active),
+            Volatile.Read(ref _peakActive),
+            Volatile.Read(ref _trackedRateWindows));
+}
+
+public interface ISystemResourceLimitService
+{
+    SystemResourceLimitStatus GetStatus();
+}
+
+public sealed class SystemResourceLimitService(
+    IResourceGuardMetrics metrics,
+    IWorkspaceContextAccessor workspace) : ISystemResourceLimitService
+{
+    public SystemResourceLimitStatus GetStatus() =>
+        new(
+            PersonalAiRelease.Version,
+            workspace.CurrentWorkspaceId,
+            HardeningLimits.MaximumApiRequestsPerMinute,
+            HardeningLimits.MaximumConcurrentApiRequests,
+            HardeningLimits.MaximumApiRequestBytes,
+            HardeningLimits.MaximumTrackedRateWindows,
+            HardeningLimits.MaximumBackupCount,
+            HardeningLimits.MaximumBackupSourceBytes,
+            RequestRateLimitEnforced: true,
+            ConcurrentRequestLimitEnforced: true,
+            RequestBodyLimitEnforced: true,
+            ChunkedRequestBodyLimitApplied: true,
+            RateWindowMemoryLimitEnforced: true,
+            RetryAfterProvidedOnThrottle: true,
+            FailClosed: true,
+            metrics.Snapshot());
 }
 
 public sealed class HardeningBusyException : Exception
@@ -381,6 +486,22 @@ public sealed class HardeningBackupService : IHardeningBackupService
         _ = ReadBackupInfo(source)
             ?? throw new HardeningValidationException(
                 "Backup không có manifest hợp lệ.");
+
+        var verificationStaging = Path.Combine(
+            Path.GetTempPath(),
+            "personalai-restore-verify-" + Guid.NewGuid().ToString("N"));
+        Directory.CreateDirectory(verificationStaging);
+        try
+        {
+            await ExtractBackupAsync(
+                source,
+                verificationStaging,
+                cancellationToken);
+        }
+        finally
+        {
+            TryDeleteDirectory(verificationStaging);
+        }
 
         await using var maintenance = AcquireMaintenanceLease();
 
@@ -1232,6 +1353,7 @@ public sealed class HardeningRuntimeHostedService(
 
 public sealed class HardeningApiGuardMiddleware(
     RequestDelegate next,
+    IResourceGuardMetrics metrics,
     ILogger<HardeningApiGuardMiddleware> logger)
 {
     private static readonly SemaphoreSlim ConcurrentRequests =
@@ -1251,10 +1373,19 @@ public sealed class HardeningApiGuardMiddleware(
             return;
         }
 
+        var maxBodyFeature = context.Features.Get<
+            Microsoft.AspNetCore.Http.Features.IHttpMaxRequestBodySizeFeature>();
+        if (maxBodyFeature is { IsReadOnly: false })
+        {
+            maxBodyFeature.MaxRequestBodySize =
+                HardeningLimits.MaximumApiRequestBytes;
+        }
+
         if (context.Request.ContentLength
             is long contentLength
             && contentLength > HardeningLimits.MaximumApiRequestBytes)
         {
+            metrics.RecordPayloadRejected();
             context.Response.StatusCode =
                 StatusCodes.Status413PayloadTooLarge;
             await context.Response.WriteAsJsonAsync(
@@ -1271,6 +1402,11 @@ public sealed class HardeningApiGuardMiddleware(
 
         if (!rate.Allowed)
         {
+            if (rate.Reason == "rate-window-capacity")
+                metrics.RecordRateWindowCapacityRejected();
+            else
+                metrics.RecordRateRejected();
+
             context.Response.StatusCode =
                 StatusCodes.Status429TooManyRequests;
             context.Response.Headers["Retry-After"] =
@@ -1285,6 +1421,7 @@ public sealed class HardeningApiGuardMiddleware(
             0,
             context.RequestAborted))
         {
+            metrics.RecordConcurrencyRejected();
             logger.LogWarning(
                 "API concurrency guard rejected {Path}.",
                 context.Request.Path.Value);
@@ -1297,17 +1434,39 @@ public sealed class HardeningApiGuardMiddleware(
             return;
         }
 
+        metrics.RecordAcceptedStart();
         try
         {
             await next(context);
+
+            if (context.Response.StatusCode
+                == StatusCodes.Status413PayloadTooLarge)
+            {
+                metrics.RecordPayloadRejected();
+            }
+        }
+        catch (BadHttpRequestException exception) when (
+            exception.StatusCode == StatusCodes.Status413PayloadTooLarge)
+        {
+            metrics.RecordPayloadRejected();
+            if (context.Response.HasStarted)
+                throw;
+
+            context.Response.Clear();
+            context.Response.StatusCode =
+                StatusCodes.Status413PayloadTooLarge;
+            await context.Response.WriteAsJsonAsync(
+                new ApiError(
+                    "Yêu cầu vượt quá giới hạn kích thước của hệ thống."));
         }
         finally
         {
+            metrics.RecordCompleted();
             ConcurrentRequests.Release();
         }
     }
 
-    private static RateDecision CheckRate(
+    private RateDecision CheckRate(
         HttpContext context)
     {
         var now = DateTimeOffset.UtcNow;
@@ -1327,9 +1486,26 @@ public sealed class HardeningApiGuardMiddleware(
         }
 
         var key = remote + "|" + workspace;
+
+        if (!Windows.ContainsKey(key)
+            && Windows.Count >= HardeningLimits.MaximumTrackedRateWindows)
+        {
+            CleanupWindows(now);
+            metrics.SetTrackedRateWindows(Windows.Count);
+            if (Windows.Count >= HardeningLimits.MaximumTrackedRateWindows)
+            {
+                return new RateDecision(
+                    false,
+                    0,
+                    60,
+                    "rate-window-capacity");
+            }
+        }
+
         var window = Windows.GetOrAdd(
             key,
             _ => new RequestWindow(now));
+        metrics.SetTrackedRateWindows(Windows.Count);
 
         lock (window.Gate)
         {
@@ -1351,7 +1527,8 @@ public sealed class HardeningApiGuardMiddleware(
                 return new RateDecision(
                     false,
                     0,
-                    retry);
+                    retry,
+                    "rate-limit");
             }
 
             window.Count++;
@@ -1359,15 +1536,11 @@ public sealed class HardeningApiGuardMiddleware(
                 HardeningLimits.MaximumApiRequestsPerMinute
                 - window.Count;
 
-            if (Windows.Count > 4_096)
-            {
-                CleanupWindows(now);
-            }
-
             return new RateDecision(
                 true,
                 remaining,
-                0);
+                0,
+                "allowed");
         }
     }
 
@@ -1397,7 +1570,8 @@ public sealed class HardeningApiGuardMiddleware(
     private sealed record RateDecision(
         bool Allowed,
         int Remaining,
-        int RetryAfterSeconds);
+        int RetryAfterSeconds,
+        string Reason);
 }
 
 internal static class HardeningPaths

@@ -7,8 +7,11 @@ public static class HardeningEndpoints
     public static IServiceCollection AddHardeningFoundation(
         this IServiceCollection services)
     {
+        services.AddSingleton<IResourceGuardMetrics, ResourceGuardMetrics>();
+        services.AddScoped<ISystemResourceLimitService, SystemResourceLimitService>();
         services.AddSingleton<IHardeningRuntimeState, HardeningRuntimeState>();
         services.AddSingleton<IHardeningBackupService, HardeningBackupService>();
+        services.AddScoped<IDisasterRecoveryService, DisasterRecoveryService>();
         services.AddSingleton<IHardeningPermissionAuditService, HardeningPermissionAuditService>();
         services.AddSingleton<IHardeningStatusService, HardeningStatusService>();
         services.AddHostedService<HardeningRuntimeHostedService>();
@@ -25,6 +28,68 @@ public static class HardeningEndpoints
     public static WebApplication MapHardeningFoundation(
         this WebApplication app)
     {
+        app.MapGet("/api/system/resources/status", (
+            ISystemResourceLimitService resources) =>
+            Results.Ok(resources.GetStatus()));
+
+        app.MapGet("/api/disaster-recovery/status", async (
+            IDisasterRecoveryService recovery,
+            CancellationToken cancellationToken) =>
+            Results.Ok(await recovery.GetStatusAsync(cancellationToken)));
+
+        app.MapGet("/api/disaster-recovery/backups", async (
+            IDisasterRecoveryService recovery,
+            CancellationToken cancellationToken) =>
+            Results.Ok(await recovery.VerifyAllAsync(cancellationToken)));
+
+        app.MapGet("/api/disaster-recovery/backups/{backupId}/verify", async (
+            string backupId,
+            IDisasterRecoveryService recovery,
+            CancellationToken cancellationToken) =>
+        {
+            try
+            {
+                return Results.Ok(await recovery.VerifyAsync(
+                    backupId,
+                    cancellationToken));
+            }
+            catch (DisasterRecoveryValidationException exception)
+            {
+                return Results.BadRequest(new ApiError(exception.Message));
+            }
+        });
+
+        app.MapGet("/api/disaster-recovery/plan", async (
+            IDisasterRecoveryService recovery,
+            CancellationToken cancellationToken) =>
+            Results.Ok(await recovery.GetPlanAsync(cancellationToken)));
+
+        app.MapPost("/api/disaster-recovery/restore", async (
+            QueueDisasterRecoveryRequest request,
+            IDisasterRecoveryService recovery,
+            CancellationToken cancellationToken) =>
+        {
+            try
+            {
+                var result = await recovery.QueueRestoreAsync(
+                    request,
+                    cancellationToken);
+                return Results.Json(
+                    result,
+                    statusCode: StatusCodes.Status202Accepted);
+            }
+            catch (DisasterRecoveryValidationException exception)
+            {
+                return Results.BadRequest(new ApiError(exception.Message));
+            }
+            catch (HardeningBusyException exception)
+            {
+                return Results.Json(
+                    new ApiError(exception.Message),
+                    statusCode: StatusCodes.Status409Conflict);
+            }
+        });
+
         app.MapGet("/api/hardening/status", (
             IHardeningStatusService hardening) =>
             Results.Ok(hardening.GetStatus()));

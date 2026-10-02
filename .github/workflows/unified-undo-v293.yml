@@ -1,0 +1,206 @@
+name: Unified Undo v2.9.3
+
+on:
+  push:
+    branches:
+      - 'experiment/roadmap-v2-9-3-unified-undo'
+
+jobs:
+  validate-v293:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: '8.0.x'
+
+      - name: Restore
+        run: dotnet restore PersonalAI.sln
+
+      - name: Build
+        run: dotnet build PersonalAI.sln -c Release --no-restore
+
+      - name: Tests
+        run: dotnet test PersonalAI.sln -c Release --no-build
+
+      - name: Unified undo smoke test
+        shell: bash
+        run: |
+          set -euxo pipefail
+          rm -rf /tmp/personalai-v293
+          mkdir -p \
+            /tmp/personalai-v293/workspace \
+            /tmp/personalai-v293/audit \
+            /tmp/personalai-v293/undo
+
+          export Workspace__Root=/tmp/personalai-v293/workspace
+          export Audit__Root=/tmp/personalai-v293/audit
+          export Undo__Root=/tmp/personalai-v293/undo
+
+          dotnet run --project src/PersonalAI.Web/PersonalAI.Web.csproj \
+            -c Release --no-build \
+            --urls http://127.0.0.1:5134 \
+            >/tmp/personalai-v293/app.log 2>&1 &
+          APP_PID=$!
+          trap 'kill "$APP_PID" 2>/dev/null || true; wait "$APP_PID" 2>/dev/null || true' EXIT
+
+          for i in {1..30}; do
+            if curl -fsS http://127.0.0.1:5134/api/undo/status >/tmp/undo-status.json; then
+              break
+            fi
+            sleep 1
+          done
+
+          jq -e '
+            (.version | split(".") | map(tonumber)) >= [2,9,3]
+            and .storage=="local-sqlite"
+            and .availabilityDays==7
+            and .maximumEntries==500
+            and .maximumQueryLimit==100
+            and .maximumSnapshotBytes==524288
+            and .explicitConfirmationRequired==true
+            and .preconditionRevalidationRequired==true
+            and .workspaceScoped==true
+            and .invocationCorrelationEnabled==true
+            and .auditTrailEnabled==true
+            and .fileMutationsSupported==true
+            and .nonFileSideEffectsSupported==false
+            and (.supportedOperations | index("restore-file"))!=null
+          ' /tmp/undo-status.json >/dev/null
+
+          curl -fsS -X POST http://127.0.0.1:5134/api/tools/execute \
+            -H 'Content-Type: application/json' \
+            -d '{
+              "toolName":"workspace.write_text",
+              "arguments":{
+                "path":"undo.txt",
+                "content":"version-one",
+                "mode":"create"
+              },
+              "approvedPermissions":["WRITE"],
+              "confirmed":true
+            }' >/tmp/create.json
+
+          jq -e '.success==true and .undoId!=null' /tmp/create.json >/dev/null
+
+          curl -fsS -X POST http://127.0.0.1:5134/api/tools/execute \
+            -H 'Content-Type: application/json' \
+            -d '{
+              "toolName":"workspace.write_text",
+              "arguments":{
+                "path":"undo.txt",
+                "content":"version-two",
+                "mode":"overwrite"
+              },
+              "approvedPermissions":["WRITE"],
+              "confirmed":true
+            }' >/tmp/overwrite.json
+
+          jq -e '.success==true and .undoId!=null' /tmp/overwrite.json >/dev/null
+          invocation_id=$(jq -r '.invocationId' /tmp/overwrite.json)
+          undo_id=$(jq -r '.undoId' /tmp/overwrite.json)
+
+          invocation_undo=$(curl -fsS \
+            "http://127.0.0.1:5134/api/undo/invocations/$invocation_id")
+          echo "$invocation_undo" | jq -e --arg undo "$undo_id" '
+            .count==1
+            and .items[0].undoId==$undo
+            and .items[0].status=="available"
+            and .items[0].operation=="restore-file"
+          ' >/dev/null
+
+          assessment=$(curl -fsS \
+            "http://127.0.0.1:5134/api/undo/$undo_id/assessment")
+          echo "$assessment" | jq -e '
+            .status=="available"
+            and .canUndo==true
+            and .operation=="restore-file"
+          ' >/dev/null
+
+          denied=$(curl -sS -o /tmp/undo-denied.json -w '%{http_code}' \
+            -X POST "http://127.0.0.1:5134/api/undo/$undo_id/execute" \
+            -H 'Content-Type: application/json' \
+            -d '{"confirmed":false}')
+          test "$denied" = "403"
+
+          curl -fsS -X POST http://127.0.0.1:5134/api/tools/execute \
+            -H 'Content-Type: application/json' \
+            -d '{
+              "toolName":"workspace.read_text",
+              "arguments":{"path":"undo.txt","maxCharacters":100},
+              "approvedPermissions":["READ"],
+              "confirmed":false
+            }' >/tmp/read-before-undo.json
+          jq -e '.output.content=="version-two"' /tmp/read-before-undo.json >/dev/null
+
+          curl -fsS -X POST \
+            "http://127.0.0.1:5134/api/undo/$undo_id/execute" \
+            -H 'Content-Type: application/json' \
+            -d '{"confirmed":true}' >/tmp/undo-success.json
+          jq -e '.status=="undone" and .undo.status=="undone"' /tmp/undo-success.json >/dev/null
+
+          curl -fsS -X POST http://127.0.0.1:5134/api/tools/execute \
+            -H 'Content-Type: application/json' \
+            -d '{
+              "toolName":"workspace.read_text",
+              "arguments":{"path":"undo.txt","maxCharacters":100},
+              "approvedPermissions":["READ"],
+              "confirmed":false
+            }' >/tmp/read-after-undo.json
+          jq -e '.output.content=="version-one"' /tmp/read-after-undo.json >/dev/null
+
+          timeline=$(curl -fsS \
+            "http://127.0.0.1:5134/api/system/logs?correlationId=$invocation_id")
+          echo "$timeline" | jq -e '
+            any(.items[]; .action=="tool.execute" and .source=="tools")
+            and any(.items[]; .action=="undo.available" and .source=="undo")
+            and any(.items[]; .action=="undo.execute" and .result=="denied" and .source=="undo")
+            and any(.items[]; .action=="undo.execute" and .result=="succeeded" and .source=="undo")
+          ' >/dev/null
+
+          explanation=$(curl -fsS \
+            "http://127.0.0.1:5134/api/system/explanations/correlation/$invocation_id")
+          echo "$explanation" | jq -e --arg rid "$invocation_id" '
+            .sourceGrounded==true
+            and .aiGenerated==false
+            and .hiddenReasoningExposed==false
+            and .correlationId==$rid
+            and (.evidence | length)>=4
+          ' >/dev/null
+
+          repeat_code=$(curl -sS -o /tmp/repeat.json -w '%{http_code}' \
+            -X POST "http://127.0.0.1:5134/api/undo/$undo_id/execute" \
+            -H 'Content-Type: application/json' \
+            -d '{"confirmed":true}')
+          test "$repeat_code" = "409"
+
+          curl -fsS -X POST http://127.0.0.1:5134/api/tools/execute \
+            -H 'Content-Type: application/json' \
+            -d '{
+              "toolName":"workspace.write_text",
+              "arguments":{
+                "path":"undo.txt",
+                "content":"version-three",
+                "mode":"overwrite"
+              },
+              "approvedPermissions":["WRITE"],
+              "confirmed":true
+            }' >/tmp/conflict-write.json
+
+          conflict_undo_id=$(jq -r '.undoId' /tmp/conflict-write.json)
+          test -n "$conflict_undo_id"
+          test "$conflict_undo_id" != "null"
+
+          printf '%s' 'external-change' >/tmp/personalai-v293/workspace/undo.txt
+
+          conflict_assessment=$(curl -fsS \
+            "http://127.0.0.1:5134/api/undo/$conflict_undo_id/assessment")
+          echo "$conflict_assessment" | jq -e '.canUndo==false' >/dev/null
+
+          conflict_code=$(curl -sS -o /tmp/conflict.json -w '%{http_code}' \
+            -X POST "http://127.0.0.1:5134/api/undo/$conflict_undo_id/execute" \
+            -H 'Content-Type: application/json' \
+            -d '{"confirmed":true}')
+          test "$conflict_code" = "409"
+          test "$(cat /tmp/personalai-v293/workspace/undo.txt)" = "external-change"

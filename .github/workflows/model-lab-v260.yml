@@ -1,0 +1,99 @@
+name: Model Lab v2.6.0
+
+on:
+  push:
+    branches:
+      - 'experiment/roadmap-v2-6-0-current'
+  pull_request:
+    paths:
+      - 'src/PersonalAI.Web/ModelLab/SyntheticDataModels.cs'
+      - 'src/PersonalAI.Web/Services/SyntheticDataService.cs'
+      - 'src/PersonalAI.Web/Services/ModelLabEndpoints.cs'
+      - 'src/PersonalAI.Web/Models/SystemModels.cs'
+
+jobs:
+  validate-v260:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: '8.0.x'
+
+      - name: Restore
+        run: dotnet restore PersonalAI.sln
+
+      - name: Build
+        run: dotnet build PersonalAI.sln -c Release --no-restore
+
+      - name: Tests
+        run: dotnet test PersonalAI.sln -c Release --no-build
+
+      - name: Synthetic data safety smoke test
+        shell: bash
+        run: |
+          set -euo pipefail
+          rm -rf /tmp/personalai-v260
+          mkdir -p /tmp/personalai-v260/workspace /tmp/personalai-v260/model-lab
+
+          Workspace__Root=/tmp/personalai-v260/workspace           ModelLab__Root=/tmp/personalai-v260/model-lab           dotnet run --project src/PersonalAI.Web/PersonalAI.Web.csproj             -c Release --no-build             --urls http://127.0.0.1:5091             >/tmp/personalai-v260.log 2>&1 &
+          APP_PID=$!
+          trap 'kill "$APP_PID" 2>/dev/null || true' EXIT
+
+          ready=0
+          for i in {1..30}; do
+            if curl -fsS http://127.0.0.1:5091/api/model-lab/synthetic/status >/tmp/status.json; then
+              ready=1
+              break
+            fi
+            sleep 1
+          done
+          test "$ready" = "1"
+
+          jq -e '
+            (.version | split(".") | map(tonumber)) >= [2,6,0]
+            and .maximumItemsPerDraft == 50
+            and .externalAiRequiresConfirmation == true
+            and .commitRequiresConfirmation == true
+            and .sourceVersionImmutable == true
+          ' /tmp/status.json >/dev/null
+
+          curl -fsS -X POST http://127.0.0.1:5091/api/model-lab/datasets             -H 'Content-Type: application/json'             -d '{
+              "id":"synthetic-demo",
+              "name":"Synthetic demo",
+              "description":"CI",
+              "items":[
+                {"input":"open calendar","expected":"calendar"},
+                {"input":"read email","expected":"email"}
+              ]
+            }' >/tmp/dataset.json
+
+          no_confirm_code=$(curl -sS -o /tmp/no-confirm.json -w '%{http_code}'             -X POST http://127.0.0.1:5091/api/model-lab/synthetic/generate             -H 'Content-Type: application/json'             -d '{
+              "datasetId":"synthetic-demo",
+              "sourceVersion":1,
+              "instruction":"Generate intent examples",
+              "count":5,
+              "confirmExternalAi":false
+            }')
+          test "$no_confirm_code" = "400"
+
+          too_many_code=$(curl -sS -o /tmp/too-many.json -w '%{http_code}'             -X POST http://127.0.0.1:5091/api/model-lab/synthetic/generate             -H 'Content-Type: application/json'             -d '{
+              "datasetId":"synthetic-demo",
+              "sourceVersion":1,
+              "instruction":"Generate intent examples",
+              "count":51,
+              "confirmExternalAi":true
+            }')
+          test "$too_many_code" = "400"
+
+          missing_draft_code=$(curl -sS -o /tmp/missing-draft.json -w '%{http_code}'             -X POST http://127.0.0.1:5091/api/model-lab/synthetic/commit             -H 'Content-Type: application/json'             -d '{
+              "draftId":"00000000-0000-0000-0000-000000000001",
+              "confirmCreateDatasetVersion":true
+            }')
+          test "$missing_draft_code" = "404"
+
+          no_commit_confirm_code=$(curl -sS -o /tmp/no-commit-confirm.json -w '%{http_code}'             -X POST http://127.0.0.1:5091/api/model-lab/synthetic/commit             -H 'Content-Type: application/json'             -d '{
+              "draftId":"00000000-0000-0000-0000-000000000001",
+              "confirmCreateDatasetVersion":false
+            }')
+          test "$no_commit_confirm_code" = "400"

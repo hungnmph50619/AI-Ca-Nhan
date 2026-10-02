@@ -1,0 +1,177 @@
+name: Device Context Sync v2.8.6
+
+on:
+  push:
+    branches:
+      - 'experiment/roadmap-v2-8-6-context-sync'
+
+jobs:
+  validate-v286:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: '8.0.x'
+
+      - name: Restore
+        run: dotnet restore PersonalAI.sln
+
+      - name: Build
+        run: dotnet build PersonalAI.sln -c Release --no-restore
+
+      - name: Tests
+        run: dotnet test PersonalAI.sln -c Release --no-build
+
+      - name: Selective context sync smoke test
+        shell: bash
+        run: |
+          set -euxo pipefail
+          rm -rf /tmp/personalai-v286
+          mkdir -p \
+            /tmp/personalai-v286/workspace \
+            /tmp/personalai-v286/companion \
+            /tmp/personalai-v286/hub \
+            /tmp/personalai-v286/identity \
+            /tmp/personalai-v286/capabilities \
+            /tmp/personalai-v286/router \
+            /tmp/personalai-v286/distributed
+
+          export Workspace__Root=/tmp/personalai-v286/workspace
+          export Companion__Root=/tmp/personalai-v286/companion
+          export Companion__Enabled=true
+          export Companion__AllowInsecureHttp=true
+          export DeviceHub__Root=/tmp/personalai-v286/hub
+          export DeviceIdentity__Root=/tmp/personalai-v286/identity
+          export DeviceCapability__Root=/tmp/personalai-v286/capabilities
+          export TaskRouter__Root=/tmp/personalai-v286/router
+          export DistributedAgentExecution__Root=/tmp/personalai-v286/distributed
+
+          dotnet run --project src/PersonalAI.Web/PersonalAI.Web.csproj \
+            -c Release --no-build \
+            --urls http://127.0.0.1:5127 \
+            >/tmp/personalai-v286/app.log 2>&1 &
+          APP_PID=$!
+          trap 'kill "$APP_PID" 2>/dev/null || true' EXIT
+
+          ready=false
+          for i in {1..30}; do
+            if curl -fsS http://127.0.0.1:5127/api/device-context-sync/status >/tmp/context-status.json; then
+              ready=true
+              break
+            fi
+            sleep 1
+          done
+          if [ "$ready" != "true" ]; then
+            cat /tmp/personalai-v286/app.log
+            exit 1
+          fi
+
+          jq -e '
+            (.version | split(".") | map(tonumber)) >= [2,8,6]
+            and .explicitConfirmationRequired==true
+            and .fullMemorySyncEnabled==false
+            and .queryScopedSelection==true
+            and .deviceRouteBindingRequired==true
+            and .onlineDeviceRequired==true
+            and .capabilityPermissionRevalidated==true
+            and .defaultMaximumCharacters==3000
+            and .hardMaximumCharacters==6000
+          ' /tmp/context-status.json >/dev/null
+
+          curl -fsS -X POST http://127.0.0.1:5127/api/memory \
+            -H 'Content-Type: application/json' \
+            -d '{"kind":"fact","content":"Project Orion uses a blue deployment marker for build verification.","retention":"temporary","expiresAt":"2099-01-01T00:00:00Z"}' \
+            >/tmp/relevant-memory.json
+
+          curl -fsS -X POST http://127.0.0.1:5127/api/memory \
+            -H 'Content-Type: application/json' \
+            -d '{"kind":"fact","content":"The kitchen shopping list contains apples and rice.","retention":"temporary","expiresAt":"2099-01-01T00:00:00Z"}' \
+            >/tmp/unrelated-memory.json
+
+          curl -fsS -X POST http://127.0.0.1:5127/api/device-hub/admin/devices \
+            -H 'Content-Type: application/json' \
+            -d '{"name":"Context PC","deviceType":"pc","confirmRegister":true}' \
+            >/tmp/device.json
+          device_id=$(jq -r '.id' /tmp/device.json)
+
+          curl -fsS -X POST \
+            http://127.0.0.1:5127/api/device-hub/admin/devices/$device_id/heartbeat \
+            -H 'Content-Type: application/json' \
+            -d '{"confirmHeartbeat":true}' >/dev/null
+
+          curl -fsS -X POST \
+            http://127.0.0.1:5127/api/device-hub/admin/devices/$device_id/capabilities \
+            -H 'Content-Type: application/json' \
+            -d '{"capability":"build","confirmRegister":true}' >/dev/null
+
+          curl -fsS -X POST \
+            http://127.0.0.1:5127/api/device-hub/admin/devices/$device_id/capabilities/build/permission \
+            -H 'Content-Type: application/json' \
+            -d '{"permissionGranted":true,"confirmPermissionChange":true}' >/dev/null
+
+          curl -fsS -X POST http://127.0.0.1:5127/api/tasks/prepare \
+            -H 'Content-Type: application/json' \
+            -d '{
+              "goal":"Verify Project Orion build context",
+              "plan":"Use the routed PC to inspect the build workspace.",
+              "steps":[{
+                "title":"List workspace",
+                "description":"Read-only verification step.",
+                "toolName":"workspace.list",
+                "arguments":{"path":".","maxEntries":20},
+                "dependsOn":[]
+              }]
+            }' >/tmp/task.json
+          task_id=$(jq -r '.id' /tmp/task.json)
+
+          curl -fsS -X POST http://127.0.0.1:5127/api/tasks/$task_id/route \
+            -H 'Content-Type: application/json' \
+            -d '{"requiredCapability":"build","confirmRoute":true}' >/tmp/route.json
+
+          curl -fsS -X POST \
+            http://127.0.0.1:5127/api/tasks/$task_id/distributed-executions \
+            -H 'Content-Type: application/json' \
+            -d '{
+              "agentId":"planning.planner",
+              "requiredCapability":"build",
+              "context":"Prepare Project Orion build verification.",
+              "confirmDispatch":true
+            }' >/tmp/dispatch.json
+          correlation_id=$(jq -r '.correlationId' /tmp/dispatch.json)
+
+          no_confirm=$(curl -sS -o /tmp/no-sync.json -w '%{http_code}' \
+            -X POST http://127.0.0.1:5127/api/tasks/distributed-executions/$correlation_id/context-sync \
+            -H 'Content-Type: application/json' \
+            -d '{
+              "query":"Project Orion blue deployment marker",
+              "allowedKinds":["memory","task"],
+              "maximumCharacters":2500,
+              "confirmSync":false
+            }')
+          test "$no_confirm" = "400"
+
+          curl -fsS -X POST \
+            http://127.0.0.1:5127/api/tasks/distributed-executions/$correlation_id/context-sync \
+            -H 'Content-Type: application/json' \
+            -d '{
+              "query":"Project Orion blue deployment marker",
+              "allowedKinds":["memory","task"],
+              "maximumCharacters":2500,
+              "confirmSync":true
+            }' >/tmp/sync.json
+
+          jq -e '
+            .fullMemorySync==false
+            and .deviceId=="'"$device_id"'"
+            and .maximumCharacters==2500
+            and .usedCharacters<=2500
+            and ([.items[] | select(.kind=="memory")] | length)>=1
+            and any(.items[]; .kind=="memory" and (.content | contains("Project Orion")))
+            and all(.items[]; (.content | contains("kitchen shopping list")) | not)
+            and any(.items[]; .kind=="task" and (.content | contains("Verify Project Orion build context")))
+          ' /tmp/sync.json >/dev/null
+
+          sync_id=$(jq -r '.syncId' /tmp/sync.json)
+          curl -fsS http://127.0.0.1:5127/api/device-context-sync/$sync_id \
+            | jq -e '.fullMemorySync==false and .usedCharacters<=.maximumCharacters' >/dev/null

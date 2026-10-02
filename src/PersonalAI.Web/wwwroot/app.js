@@ -81,6 +81,8 @@ initialize();
 
 async function initialize() {
   bindEvents();
+  ensureLeagueProgressPanel();
+  startLeagueProgressPolling();
   persistWorkspace();
   localStorage.removeItem(LEGACY_MESSAGES_STORAGE_KEY);
   renderConversationList();
@@ -592,6 +594,137 @@ window.PersonalAiUi = {
   prompt: showVietnamesePrompt,
   notice: showVietnameseNotice
 };
+
+let leagueProgressTimer = null;
+let leagueProgressLastUpdated = "";
+let leagueProgressHideTimer = null;
+
+function ensureLeagueProgressPanel() {
+  if (document.querySelector("#leagueVisualProgress")) return;
+
+  const panel = document.createElement("aside");
+  panel.id = "leagueVisualProgress";
+  panel.className = "league-visual-progress";
+  panel.hidden = true;
+  panel.setAttribute("aria-live", "polite");
+  panel.innerHTML = [
+    '<div class="league-progress-head">',
+    '<div><span class="league-progress-dot"></span><strong>AI đang thao tác</strong></div>',
+    '<span id="leagueProgressStats">0 quan sát · 0 click</span>',
+    '</div>',
+    '<div class="league-progress-current" id="leagueProgressCurrent">Đang chuẩn bị…</div>',
+    '<ol class="league-progress-list" id="leagueProgressList"></ol>'
+  ].join("");
+
+  document.body.appendChild(panel);
+}
+
+function startLeagueProgressPolling() {
+  if (leagueProgressTimer) return;
+
+  const poll = async () => {
+    try {
+      const response = await fetch("/api/computer/league-progress", {
+        cache: "no-store"
+      });
+      if (response.ok) {
+        const payload = await response.json().catch(() => null);
+        if (payload) renderLeagueProgress(payload);
+      }
+    } catch {
+      // Live progress is best-effort and must never block chat.
+    } finally {
+      const panel = document.querySelector("#leagueVisualProgress");
+      const active = panel && !panel.hidden && panel.dataset.active === "1";
+      leagueProgressTimer = window.setTimeout(poll, active ? 550 : 1600);
+    }
+  };
+
+  poll();
+}
+
+function renderLeagueProgress(payload) {
+  const panel = document.querySelector("#leagueVisualProgress");
+  const current = document.querySelector("#leagueProgressCurrent");
+  const list = document.querySelector("#leagueProgressList");
+  const stats = document.querySelector("#leagueProgressStats");
+  if (!panel || !current || !list || !stats) return;
+
+  const entries = Array.isArray(payload.entries) ? payload.entries : [];
+  const updated = String(payload.updatedAtUtc || "");
+  const latest = entries.length > 0 ? entries[entries.length - 1] : null;
+
+  panel.dataset.active = payload.active ? "1" : "0";
+  panel.classList.toggle("completed", payload.status === "completed");
+  panel.classList.toggle("blocked", payload.status === "blocked");
+
+  stats.textContent =
+    String(Number(payload.observationCount || 0)) +
+    " quan sát · " +
+    String(Number(payload.clickCount || 0)) +
+    " click";
+
+  if (latest) {
+    const confidence = typeof latest.confidence === "number"
+      ? " · tin cậy " + (latest.confidence * 100).toFixed(0) + "%"
+      : "";
+    current.textContent = String(latest.message || "") + confidence;
+  } else {
+    current.textContent = payload.active ? "AI đang chuẩn bị…" : "Chưa có phiên Visual Agent.";
+  }
+
+  if (updated !== leagueProgressLastUpdated) {
+    leagueProgressLastUpdated = updated;
+    list.replaceChildren();
+
+    entries.slice(-8).forEach(entry => {
+      const item = document.createElement("li");
+      const time = new Date(entry.atUtc);
+      const timeText = Number.isNaN(time.getTime())
+        ? ""
+        : time.toLocaleTimeString("vi-VN", {
+            hour: "2-digit",
+            minute: "2-digit",
+            second: "2-digit"
+          });
+
+      const stage = document.createElement("span");
+      stage.className = "league-progress-stage";
+      stage.textContent = String(entry.stage || "step");
+
+      const copy = document.createElement("span");
+      copy.className = "league-progress-copy";
+      copy.textContent =
+        (timeText ? timeText + " · " : "") +
+        String(entry.message || "");
+
+      item.append(stage, copy);
+      list.appendChild(item);
+    });
+  }
+
+  if (payload.active) {
+    if (leagueProgressHideTimer) {
+      window.clearTimeout(leagueProgressHideTimer);
+      leagueProgressHideTimer = null;
+    }
+    panel.hidden = false;
+    return;
+  }
+
+  if (entries.length === 0) {
+    panel.hidden = true;
+    return;
+  }
+
+  panel.hidden = false;
+  if (!leagueProgressHideTimer) {
+    leagueProgressHideTimer = window.setTimeout(() => {
+      panel.hidden = true;
+      leagueProgressHideTimer = null;
+    }, 9000);
+  }
+}
 
 function documentElement(tagName, className, text = "") {
   const node = document.createElement(tagName);

@@ -7,6 +7,8 @@ using PersonalAI.Web.Options;
 using PersonalAI.Web.Services;
 using PersonalAI.Web.Teams;
 
+WindowsDpiAwareness.EnsurePerMonitorAware();
+
 var builder = WebApplication.CreateBuilder(args);
 
 builder.Services.Configure<AiOptions>(builder.Configuration.GetSection(AiOptions.SectionName));
@@ -19,6 +21,9 @@ builder.Services.AddWorkspaceFoundation();
 builder.Services.AddStableCore();
 builder.Services.AddHardeningFoundation();
 builder.Services.AddPersonalAiOs();
+builder.Services.AddSingleton<ILeagueMatchSnapshotStore, LeagueMatchSnapshotStore>();
+builder.Services.AddSingleton<ILeagueCoachService, LeagueCoachService>();
+builder.Services.AddScoped<ILeagueAiCoachService, LeagueAiCoachService>();
 builder.Services.AddSingleton<IAiSettingsStore, AiSettingsStore>();
 builder.Services.AddSingleton<KnowledgeDocumentExtractor>();
 builder.Services.AddSingleton<IKnowledgeDocumentStore, SqliteKnowledgeDocumentStore>();
@@ -63,6 +68,11 @@ builder.Services.AddHttpClient<MinimapVisionService>(client =>
     client.BaseAddress = new Uri("https://generativelanguage.googleapis.com/v1beta/");
     client.Timeout = TimeSpan.FromSeconds(45);
 });
+builder.Services.AddHttpClient<DesktopVisionService>(client =>
+{
+    client.BaseAddress = new Uri("https://generativelanguage.googleapis.com/v1beta/");
+    client.Timeout = TimeSpan.FromSeconds(45);
+});
 builder.Services.AddHttpClient<MinimapBoxVisionService>(client =>
 {
     client.BaseAddress = new Uri("https://generativelanguage.googleapis.com/v1beta/");
@@ -86,6 +96,7 @@ app.Use(async (context, next) =>
 });
 
 app.UseSystemHardening();
+app.UseEmergencyStop();
 app.UseV19Hardening();
 app.UseCompanionAuthentication();
 app.UseWorkspaceValidation();

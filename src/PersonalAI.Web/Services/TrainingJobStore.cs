@@ -19,7 +19,8 @@ public interface ITrainingJobStore
 public sealed class SqliteTrainingJobStore(
     IConfiguration configuration,
     IWorkspaceContextAccessor workspace,
-    IModelLabDatasetStore datasets) : ITrainingJobStore
+    IModelLabDatasetStore datasets,
+    ITrainingProviderRegistry providers) : ITrainingJobStore
 {
     public const int MaximumJobsPerWorkspace = 500;
     public const string StorageKind = "local-sqlite";
@@ -57,7 +58,7 @@ public sealed class SqliteTrainingJobStore(
                 MaximumJobsPerWorkspace,
                 Persistent: true,
                 ConfigImmutable: true,
-                TrainingExecutionEnabled: false);
+                TrainingExecutionEnabled: true);
         }
     }
 
@@ -128,6 +129,28 @@ public sealed class SqliteTrainingJobStore(
         var parameters = NormalizeHyperparameters(request.Hyperparameters);
         if (request.Seed is < 0)
             throw new TrainingJobValidationException("Seed không được âm.");
+
+        var providerId = method switch
+        {
+            TrainingMethods.Full => MockTrainingProvider.ProviderId,
+            TrainingMethods.NaiveBayes => LocalSmallModelTrainingProvider.ProviderId,
+            TrainingMethods.LoRa or TrainingMethods.QLoRa or TrainingMethods.Adapter =>
+                PeftTrainingProvider.ProviderId,
+            _ => throw new TrainingJobValidationException(
+                $"TrainingMethod '{method}' không được hỗ trợ.")
+        };
+
+        var providerValidation = providers.Get(providerId).Validate(
+            new TrainingProviderValidationRequest(
+                providerId,
+                baseModel,
+                method,
+                parameters));
+        if (!providerValidation.Valid)
+        {
+            throw new TrainingJobValidationException(
+                string.Join(" ", providerValidation.Errors));
+        }
 
         var source = datasets.GetVersion(datasetId, request.DatasetVersion)
             ?? throw new KeyNotFoundException("Không tìm thấy dataset version dùng để training.");
@@ -224,7 +247,7 @@ public sealed class SqliteTrainingJobStore(
             if (existing.Status == TrainingJobStatuses.Running)
             {
                 throw new TrainingJobConflictException(
-                    "v2.5.3 chưa có training executor nên không hỗ trợ huỷ job đang Running.");
+                    "Không thể huỷ trực tiếp job đang Running qua legacy store; hãy dùng training executor.");
             }
 
             using var command = connection.CreateCommand();

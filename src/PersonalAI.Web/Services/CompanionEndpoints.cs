@@ -16,6 +16,13 @@ public static class CompanionEndpoints
         this IServiceCollection services)
     {
         services.AddSingleton<ICompanionService, CompanionService>();
+        services.AddScoped<IDeviceHubService, DeviceHubService>();
+        services.AddScoped<IDeviceIdentityService, DeviceIdentityService>();
+        services.AddScoped<ISecurePairingService, SecurePairingService>();
+        services.AddScoped<IDeviceCapabilityService, DeviceCapabilityService>();
+        services.AddScoped<IDeviceOfflineQueueService, DeviceOfflineQueueService>();
+        services.AddScoped<IDeviceDataConflictService, DeviceDataConflictService>();
+        services.AddScoped<IMobileCodeCommandService, MobileCodeCommandService>();
         services.AddScoped<IChatTurnService, ChatTurnService>();
         return services;
     }
@@ -100,6 +107,902 @@ public static class CompanionEndpoints
             ICompanionService companion) =>
             Results.Ok(companion.GetStatus()));
 
+        app.MapGet(
+            "/api/companion/secure-pairing/status",
+            (
+                HttpContext httpContext,
+                ISecurePairingService securePairing) =>
+            {
+                if (!IsLocalAdminRequest(httpContext))
+                {
+                    return Results.Json(
+                        new ApiError(
+                            "Chỉ desktop local mới được xem Secure Pairing status."),
+                        statusCode:
+                            StatusCodes.Status403Forbidden);
+                }
+
+                return Results.Ok(
+                    securePairing.GetStatus());
+            });
+
+        app.MapPost(
+            "/api/companion/admin/secure-pairing/start",
+            (
+                CompanionPairingStartRequest request,
+                HttpContext httpContext,
+                ISecurePairingService securePairing,
+                IWorkspaceContextAccessor workspaceContext) =>
+            {
+                if (!IsLocalAdminRequest(httpContext))
+                {
+                    return Results.Json(
+                        new ApiError(
+                            "Chỉ desktop local mới được tạo secure pairing ticket."),
+                        statusCode:
+                            StatusCodes.Status403Forbidden);
+                }
+
+                if (!request.Confirmed)
+                {
+                    return Results.Json(
+                        new ApiError(
+                            "Cần xác nhận trước khi tạo secure pairing ticket."),
+                        statusCode:
+                            StatusCodes.Status403Forbidden);
+                }
+
+                try
+                {
+                    return Results.Ok(
+                        securePairing.Start(
+                            workspaceContext.CurrentWorkspaceId));
+                }
+                catch (SecurePairingValidationException exception)
+                {
+                    return Results.BadRequest(
+                        new ApiError(exception.Message));
+                }
+                catch (CompanionDisabledException exception)
+                {
+                    return Results.Json(
+                        new ApiError(exception.Message),
+                        statusCode:
+                            StatusCodes.Status503ServiceUnavailable);
+                }
+            });
+
+        app.MapPost(
+            "/api/companion/secure-pairing/claim",
+            (
+                SecurePairingClaimRequest request,
+                HttpContext httpContext,
+                ICompanionService companion,
+                ISecurePairingService securePairing) =>
+            {
+                if (!companion.Enabled)
+                {
+                    return Results.Json(
+                        new ApiError(
+                            "Android Companion đang bị tắt."),
+                        statusCode:
+                            StatusCodes.Status503ServiceUnavailable);
+                }
+
+                if (!httpContext.Request.IsHttps
+                    && !companion.AllowInsecureHttp)
+                {
+                    return Results.Json(
+                        new ApiError(
+                            "Secure pairing yêu cầu HTTPS."),
+                        statusCode:
+                            StatusCodes.Status426UpgradeRequired);
+                }
+
+                try
+                {
+                    return Results.Ok(
+                        securePairing.Claim(request));
+                }
+                catch (SecurePairingValidationException exception)
+                {
+                    return Results.BadRequest(
+                        new ApiError(exception.Message));
+                }
+                catch (DeviceIdentityValidationException exception)
+                {
+                    return Results.BadRequest(
+                        new ApiError(exception.Message));
+                }
+                catch (DeviceHubValidationException exception)
+                {
+                    return Results.BadRequest(
+                        new ApiError(exception.Message));
+                }
+                catch (CompanionPairingException exception)
+                {
+                    return Results.BadRequest(
+                        new ApiError(exception.Message));
+                }
+            });
+
+        app.MapGet(
+            "/api/device-hub/status",
+            (
+                HttpContext httpContext,
+                IDeviceHubService hub) =>
+            {
+                if (!IsLocalAdminRequest(httpContext))
+                {
+                    return Results.Json(
+                        new ApiError(
+                            "Chỉ desktop local mới được xem Device Hub."),
+                        statusCode:
+                            StatusCodes.Status403Forbidden);
+                }
+
+                return Results.Ok(hub.GetStatus());
+            });
+
+        app.MapGet(
+            "/api/device-hub/devices",
+            (
+                HttpContext httpContext,
+                IDeviceHubService hub,
+                IWorkspaceContextAccessor workspaceContext) =>
+            {
+                if (!IsLocalAdminRequest(httpContext))
+                {
+                    return Results.Json(
+                        new ApiError(
+                            "Chỉ desktop local mới được xem thiết bị Device Hub."),
+                        statusCode:
+                            StatusCodes.Status403Forbidden);
+                }
+
+                return Results.Ok(
+                    hub.GetWorkspaceStatus(
+                        workspaceContext.CurrentWorkspaceId));
+            });
+
+        app.MapPost(
+            "/api/device-hub/admin/devices",
+            (
+                RegisterDeviceHubDeviceRequest request,
+                HttpContext httpContext,
+                IDeviceHubService hub,
+                IWorkspaceContextAccessor workspaceContext) =>
+            {
+                if (!IsLocalAdminRequest(httpContext))
+                {
+                    return Results.Json(
+                        new ApiError(
+                            "Chỉ desktop local mới được đăng ký thiết bị Device Hub."),
+                        statusCode:
+                            StatusCodes.Status403Forbidden);
+                }
+
+                try
+                {
+                    var device =
+                        hub.RegisterLocalDevice(
+                            workspaceContext.CurrentWorkspaceId,
+                            request);
+                    var identities =
+                        httpContext.RequestServices
+                            .GetRequiredService<IDeviceIdentityService>();
+                    _ = identities.EnsureDevice(device);
+                    return Results.Ok(device);
+                }
+                catch (DeviceHubValidationException exception)
+                {
+                    return Results.BadRequest(
+                        new ApiError(exception.Message));
+                }
+                catch (DeviceIdentityValidationException exception)
+                {
+                    return Results.BadRequest(
+                        new ApiError(exception.Message));
+                }
+            });
+
+        app.MapGet(
+            "/api/device-hub/capabilities/status",
+            (
+                HttpContext httpContext,
+                IDeviceCapabilityService capabilities,
+                IWorkspaceContextAccessor workspaceContext) =>
+            {
+                if (!IsLocalAdminRequest(httpContext))
+                {
+                    return Results.Json(
+                        new ApiError(
+                            "Chỉ desktop local mới được xem Device Capability status."),
+                        statusCode:
+                            StatusCodes.Status403Forbidden);
+                }
+
+                try
+                {
+                    return Results.Ok(
+                        capabilities.GetStatus(
+                            workspaceContext.CurrentWorkspaceId));
+                }
+                catch (DeviceCapabilityValidationException exception)
+                {
+                    return Results.BadRequest(
+                        new ApiError(exception.Message));
+                }
+            });
+
+        app.MapGet(
+            "/api/device-hub/devices/{deviceId:guid}/capabilities",
+            (
+                Guid deviceId,
+                HttpContext httpContext,
+                IDeviceCapabilityService capabilities,
+                IWorkspaceContextAccessor workspaceContext) =>
+            {
+                if (!IsLocalAdminRequest(httpContext))
+                {
+                    return Results.Json(
+                        new ApiError(
+                            "Chỉ desktop local mới được xem capability của thiết bị."),
+                        statusCode:
+                            StatusCodes.Status403Forbidden);
+                }
+
+                try
+                {
+                    return Results.Ok(
+                        capabilities.GetAll(
+                            workspaceContext.CurrentWorkspaceId,
+                            deviceId));
+                }
+                catch (DeviceCapabilityValidationException exception)
+                {
+                    return Results.BadRequest(
+                        new ApiError(exception.Message));
+                }
+                catch (KeyNotFoundException exception)
+                {
+                    return Results.NotFound(
+                        new ApiError(exception.Message));
+                }
+            });
+
+        app.MapPost(
+            "/api/device-hub/admin/devices/{deviceId:guid}/capabilities",
+            (
+                Guid deviceId,
+                RegisterDeviceCapabilityRequest request,
+                HttpContext httpContext,
+                IDeviceCapabilityService capabilities,
+                IWorkspaceContextAccessor workspaceContext) =>
+            {
+                if (!IsLocalAdminRequest(httpContext))
+                {
+                    return Results.Json(
+                        new ApiError(
+                            "Chỉ desktop local mới được đăng ký capability."),
+                        statusCode:
+                            StatusCodes.Status403Forbidden);
+                }
+
+                try
+                {
+                    return Results.Ok(
+                        capabilities.Register(
+                            workspaceContext.CurrentWorkspaceId,
+                            deviceId,
+                            request));
+                }
+                catch (DeviceCapabilityValidationException exception)
+                {
+                    return Results.BadRequest(
+                        new ApiError(exception.Message));
+                }
+                catch (DeviceIdentityValidationException exception)
+                {
+                    return Results.BadRequest(
+                        new ApiError(exception.Message));
+                }
+                catch (KeyNotFoundException exception)
+                {
+                    return Results.NotFound(
+                        new ApiError(exception.Message));
+                }
+            });
+
+        app.MapPost(
+            "/api/device-hub/admin/devices/{deviceId:guid}/capabilities/{capability}/permission",
+            (
+                Guid deviceId,
+                string capability,
+                SetDeviceCapabilityPermissionRequest request,
+                HttpContext httpContext,
+                IDeviceCapabilityService capabilities,
+                IWorkspaceContextAccessor workspaceContext) =>
+            {
+                if (!IsLocalAdminRequest(httpContext))
+                {
+                    return Results.Json(
+                        new ApiError(
+                            "Chỉ desktop local mới được thay đổi capability permission."),
+                        statusCode:
+                            StatusCodes.Status403Forbidden);
+                }
+
+                try
+                {
+                    return Results.Ok(
+                        capabilities.SetPermission(
+                            workspaceContext.CurrentWorkspaceId,
+                            deviceId,
+                            capability,
+                            request));
+                }
+                catch (DeviceCapabilityValidationException exception)
+                {
+                    return Results.BadRequest(
+                        new ApiError(exception.Message));
+                }
+                catch (DeviceIdentityValidationException exception)
+                {
+                    return Results.BadRequest(
+                        new ApiError(exception.Message));
+                }
+                catch (KeyNotFoundException exception)
+                {
+                    return Results.NotFound(
+                        new ApiError(exception.Message));
+                }
+            });
+
+        app.MapGet(
+            "/api/device-hub/admin/devices/{deviceId:guid}/capabilities/{capability}/access",
+            (
+                Guid deviceId,
+                string capability,
+                HttpContext httpContext,
+                IDeviceCapabilityService capabilities,
+                IWorkspaceContextAccessor workspaceContext) =>
+            {
+                if (!IsLocalAdminRequest(httpContext))
+                {
+                    return Results.Json(
+                        new ApiError(
+                            "Chỉ desktop local mới được kiểm tra capability access."),
+                        statusCode:
+                            StatusCodes.Status403Forbidden);
+                }
+
+                try
+                {
+                    var result =
+                        capabilities.CheckAccess(
+                            workspaceContext.CurrentWorkspaceId,
+                            deviceId,
+                            capability);
+
+                    return result.Allowed
+                        ? Results.Ok(result)
+                        : Results.Json(
+                            result,
+                            statusCode:
+                                StatusCodes.Status403Forbidden);
+                }
+                catch (DeviceCapabilityValidationException exception)
+                {
+                    return Results.BadRequest(
+                        new ApiError(exception.Message));
+                }
+                catch (KeyNotFoundException exception)
+                {
+                    return Results.NotFound(
+                        new ApiError(exception.Message));
+                }
+            });
+
+        app.MapGet(
+            "/api/device-hub/offline-queue/status",
+            (
+                HttpContext httpContext,
+                IDeviceOfflineQueueService offlineQueue) =>
+            {
+                if (!IsLocalAdminRequest(httpContext))
+                {
+                    return Results.Json(
+                        new ApiError(
+                            "Chỉ desktop local mới được xem Offline Queue status."),
+                        statusCode:
+                            StatusCodes.Status403Forbidden);
+                }
+
+                return Results.Ok(offlineQueue.GetStatus());
+            });
+
+        app.MapGet(
+            "/api/device-hub/offline-queue",
+            (
+                Guid? deviceId,
+                HttpContext httpContext,
+                IDeviceOfflineQueueService offlineQueue) =>
+            {
+                if (!IsLocalAdminRequest(httpContext))
+                {
+                    return Results.Json(
+                        new ApiError(
+                            "Chỉ desktop local mới được xem Offline Queue."),
+                        statusCode:
+                            StatusCodes.Status403Forbidden);
+                }
+
+                return Results.Ok(
+                    offlineQueue.GetAll(deviceId));
+            });
+
+        app.MapPost(
+            "/api/device-hub/admin/devices/{deviceId:guid}/offline-queue",
+            (
+                Guid deviceId,
+                EnqueueDeviceOfflineItemRequest request,
+                HttpContext httpContext,
+                IDeviceOfflineQueueService offlineQueue) =>
+            {
+                if (!IsLocalAdminRequest(httpContext))
+                {
+                    return Results.Json(
+                        new ApiError(
+                            "Chỉ desktop local mới được xếp Offline Queue."),
+                        statusCode:
+                            StatusCodes.Status403Forbidden);
+                }
+
+                try
+                {
+                    return Results.Ok(
+                        offlineQueue.Enqueue(
+                            deviceId,
+                            request));
+                }
+                catch (DeviceOfflineQueueValidationException exception)
+                {
+                    return Results.BadRequest(
+                        new ApiError(exception.Message));
+                }
+                catch (DeviceHubValidationException exception)
+                {
+                    return Results.BadRequest(
+                        new ApiError(exception.Message));
+                }
+                catch (KeyNotFoundException exception)
+                {
+                    return Results.NotFound(
+                        new ApiError(exception.Message));
+                }
+            });
+
+        app.MapPost(
+            "/api/device-hub/admin/devices/{deviceId:guid}/offline-queue/sync",
+            (
+                Guid deviceId,
+                SyncDeviceOfflineQueueRequest request,
+                HttpContext httpContext,
+                IDeviceOfflineQueueService offlineQueue) =>
+            {
+                if (!IsLocalAdminRequest(httpContext))
+                {
+                    return Results.Json(
+                        new ApiError(
+                            "Chỉ desktop local mới được đồng bộ Offline Queue."),
+                        statusCode:
+                            StatusCodes.Status403Forbidden);
+                }
+
+                try
+                {
+                    return Results.Ok(
+                        offlineQueue.Sync(
+                            deviceId,
+                            request));
+                }
+                catch (DeviceOfflineQueueValidationException exception)
+                {
+                    return Results.BadRequest(
+                        new ApiError(exception.Message));
+                }
+                catch (DeviceHubValidationException exception)
+                {
+                    return Results.BadRequest(
+                        new ApiError(exception.Message));
+                }
+                catch (KeyNotFoundException exception)
+                {
+                    return Results.NotFound(
+                        new ApiError(exception.Message));
+                }
+            });
+
+        app.MapGet(
+            "/api/device-hub/data-conflicts/status",
+            (
+                HttpContext httpContext,
+                IDeviceDataConflictService conflicts) =>
+            {
+                if (!IsLocalAdminRequest(httpContext))
+                {
+                    return Results.Json(
+                        new ApiError(
+                            "Chỉ desktop local mới được xem Data Conflict status."),
+                        statusCode:
+                            StatusCodes.Status403Forbidden);
+                }
+
+                return Results.Ok(conflicts.GetStatus());
+            });
+
+        app.MapGet(
+            "/api/device-hub/data-conflicts/locks",
+            (
+                HttpContext httpContext,
+                IDeviceDataConflictService conflicts) =>
+            {
+                if (!IsLocalAdminRequest(httpContext))
+                {
+                    return Results.Json(
+                        new ApiError(
+                            "Chỉ desktop local mới được xem data locks."),
+                        statusCode:
+                            StatusCodes.Status403Forbidden);
+                }
+
+                return Results.Ok(conflicts.GetLocks());
+            });
+
+        app.MapGet(
+            "/api/device-hub/data-conflicts/versions",
+            (
+                HttpContext httpContext,
+                IDeviceDataConflictService conflicts) =>
+            {
+                if (!IsLocalAdminRequest(httpContext))
+                {
+                    return Results.Json(
+                        new ApiError(
+                            "Chỉ desktop local mới được xem data versions."),
+                        statusCode:
+                            StatusCodes.Status403Forbidden);
+                }
+
+                return Results.Ok(conflicts.GetVersions());
+            });
+
+        app.MapPost(
+            "/api/device-hub/data-conflicts/locks",
+            (
+                AcquireDeviceDataLockRequest request,
+                HttpContext httpContext,
+                IDeviceDataConflictService conflicts) =>
+            {
+                if (!IsLocalAdminRequest(httpContext))
+                {
+                    return Results.Json(
+                        new ApiError(
+                            "Chỉ desktop local mới được giữ data lock."),
+                        statusCode:
+                            StatusCodes.Status403Forbidden);
+                }
+
+                try
+                {
+                    return Results.Ok(conflicts.AcquireLock(request));
+                }
+                catch (DeviceDataConflictValidationException exception)
+                {
+                    return Results.BadRequest(new ApiError(exception.Message));
+                }
+                catch (KeyNotFoundException exception)
+                {
+                    return Results.NotFound(new ApiError(exception.Message));
+                }
+            });
+
+        app.MapPost(
+            "/api/device-hub/data-conflicts/{resourceType}/{resourceId}/locks/release",
+            (
+                string resourceType,
+                string resourceId,
+                ReleaseDeviceDataLockRequest request,
+                HttpContext httpContext,
+                IDeviceDataConflictService conflicts) =>
+            {
+                if (!IsLocalAdminRequest(httpContext))
+                {
+                    return Results.Json(
+                        new ApiError(
+                            "Chỉ desktop local mới được nhả data lock."),
+                        statusCode:
+                            StatusCodes.Status403Forbidden);
+                }
+
+                try
+                {
+                    return conflicts.ReleaseLock(
+                        resourceType,
+                        resourceId,
+                        request)
+                        ? Results.Ok()
+                        : Results.NotFound();
+                }
+                catch (DeviceDataConflictValidationException exception)
+                {
+                    return Results.BadRequest(new ApiError(exception.Message));
+                }
+            });
+
+        app.MapPost(
+            "/api/device-hub/data-conflicts/apply",
+            (
+                ApplyDeviceDataMutationRequest request,
+                HttpContext httpContext,
+                IDeviceDataConflictService conflicts) =>
+            {
+                if (!IsLocalAdminRequest(httpContext))
+                {
+                    return Results.Json(
+                        new ApiError(
+                            "Chỉ desktop local mới được áp dụng data mutation."),
+                        statusCode:
+                            StatusCodes.Status403Forbidden);
+                }
+
+                try
+                {
+                    var result = conflicts.Apply(request);
+                    return result.Decision == DeviceDataConflictDecisions.Accepted
+                        ? Results.Ok(result)
+                        : Results.Json(
+                            result,
+                            statusCode:
+                                StatusCodes.Status409Conflict);
+                }
+                catch (DeviceDataConflictValidationException exception)
+                {
+                    return Results.BadRequest(new ApiError(exception.Message));
+                }
+                catch (KeyNotFoundException exception)
+                {
+                    return Results.NotFound(new ApiError(exception.Message));
+                }
+            });
+
+        app.MapGet(
+            "/api/device-hub/identities/status",
+            (
+                HttpContext httpContext,
+                IDeviceIdentityService identities,
+                IWorkspaceContextAccessor workspaceContext) =>
+            {
+                if (!IsLocalAdminRequest(httpContext))
+                {
+                    return Results.Json(
+                        new ApiError(
+                            "Chỉ desktop local mới được xem Device Identity status."),
+                        statusCode:
+                            StatusCodes.Status403Forbidden);
+                }
+
+                try
+                {
+                    return Results.Ok(
+                        identities.GetStatus(
+                            workspaceContext.CurrentWorkspaceId));
+                }
+                catch (DeviceIdentityValidationException exception)
+                {
+                    return Results.BadRequest(
+                        new ApiError(exception.Message));
+                }
+            });
+
+        app.MapGet(
+            "/api/device-hub/identities",
+            (
+                HttpContext httpContext,
+                IDeviceIdentityService identities,
+                IWorkspaceContextAccessor workspaceContext) =>
+            {
+                if (!IsLocalAdminRequest(httpContext))
+                {
+                    return Results.Json(
+                        new ApiError(
+                            "Chỉ desktop local mới được xem Device Identity."),
+                        statusCode:
+                            StatusCodes.Status403Forbidden);
+                }
+
+                try
+                {
+                    return Results.Ok(
+                        identities.GetAll(
+                            workspaceContext.CurrentWorkspaceId));
+                }
+                catch (DeviceIdentityValidationException exception)
+                {
+                    return Results.BadRequest(
+                        new ApiError(exception.Message));
+                }
+            });
+
+        app.MapGet(
+            "/api/device-hub/identities/{deviceId:guid}",
+            (
+                Guid deviceId,
+                HttpContext httpContext,
+                IDeviceIdentityService identities,
+                IWorkspaceContextAccessor workspaceContext) =>
+            {
+                if (!IsLocalAdminRequest(httpContext))
+                {
+                    return Results.Json(
+                        new ApiError(
+                            "Chỉ desktop local mới được xem Device Identity."),
+                        statusCode:
+                            StatusCodes.Status403Forbidden);
+                }
+
+                try
+                {
+                    var identity =
+                        identities.Get(
+                            workspaceContext.CurrentWorkspaceId,
+                            deviceId);
+                    return identity is null
+                        ? Results.NotFound()
+                        : Results.Ok(identity);
+                }
+                catch (DeviceIdentityValidationException exception)
+                {
+                    return Results.BadRequest(
+                        new ApiError(exception.Message));
+                }
+            });
+
+        app.MapPost(
+            "/api/device-hub/admin/devices/{deviceId:guid}/heartbeat",
+            (
+                Guid deviceId,
+                RecordDeviceHubHeartbeatRequest request,
+                HttpContext httpContext,
+                IDeviceHubService hub,
+                IWorkspaceContextAccessor workspaceContext) =>
+            {
+                if (!IsLocalAdminRequest(httpContext))
+                {
+                    return Results.Json(
+                        new ApiError(
+                            "Chỉ desktop local mới được heartbeat thiết bị local."),
+                        statusCode:
+                            StatusCodes.Status403Forbidden);
+                }
+
+                try
+                {
+                    var device =
+                        hub.RecordLocalHeartbeat(
+                            workspaceContext.CurrentWorkspaceId,
+                            deviceId,
+                            request);
+                    var identities =
+                        httpContext.RequestServices
+                            .GetRequiredService<IDeviceIdentityService>();
+                    _ = identities.EnsureDevice(device);
+                    return Results.Ok(device);
+                }
+                catch (DeviceHubValidationException exception)
+                {
+                    return Results.BadRequest(
+                        new ApiError(exception.Message));
+                }
+                catch (DeviceIdentityValidationException exception)
+                {
+                    return Results.BadRequest(
+                        new ApiError(exception.Message));
+                }
+                catch (KeyNotFoundException exception)
+                {
+                    return Results.NotFound(
+                        new ApiError(exception.Message));
+                }
+            });
+
+        app.MapGet(
+            "/api/companion/admin/development/commands/status",
+            (
+                HttpContext httpContext,
+                IMobileCodeCommandService commands) =>
+            {
+                if (!IsLocalAdminRequest(httpContext))
+                {
+                    return Results.Json(
+                        new ApiError(
+                            "Chỉ desktop local mới được xem Mobile Code Command status."),
+                        statusCode:
+                            StatusCodes.Status403Forbidden);
+                }
+
+                return Results.Ok(commands.GetStatus());
+            });
+
+        app.MapGet(
+            "/api/companion/admin/development/commands",
+            (
+                HttpContext httpContext,
+                IMobileCodeCommandService commands) =>
+            {
+                if (!IsLocalAdminRequest(httpContext))
+                {
+                    return Results.Json(
+                        new ApiError(
+                            "Chỉ desktop local mới được xem Mobile Code Commands."),
+                        statusCode:
+                            StatusCodes.Status403Forbidden);
+                }
+
+                return Results.Ok(commands.GetAll());
+            });
+
+        app.MapPost(
+            "/api/companion/admin/development/commands/{commandId:guid}/execute",
+            async (
+                Guid commandId,
+                ExecuteMobileCodeCommandRequest request,
+                HttpContext httpContext,
+                IMobileCodeCommandService commands,
+                CancellationToken cancellationToken) =>
+            {
+                if (!IsLocalAdminRequest(httpContext))
+                {
+                    return Results.Json(
+                        new ApiError(
+                            "Chỉ desktop local mới được duyệt lệnh sửa code."),
+                        statusCode:
+                            StatusCodes.Status403Forbidden);
+                }
+
+                try
+                {
+                    return Results.Ok(
+                        await commands.ExecuteAsync(
+                            commandId,
+                            request,
+                            cancellationToken));
+                }
+                catch (MobileCodeCommandValidationException exception)
+                {
+                    return Results.BadRequest(new ApiError(exception.Message));
+                }
+                catch (AutonomousDevelopmentValidationException exception)
+                {
+                    return Results.BadRequest(new ApiError(exception.Message));
+                }
+                catch (DevelopmentRunValidationException exception)
+                {
+                    return Results.BadRequest(new ApiError(exception.Message));
+                }
+                catch (DevelopmentRunConflictException exception)
+                {
+                    return Results.Json(
+                        new ApiError(exception.Message),
+                        statusCode: StatusCodes.Status409Conflict);
+                }
+                catch (KeyNotFoundException exception)
+                {
+                    return Results.NotFound(new ApiError(exception.Message));
+                }
+            });
+
         app.MapPost(
             "/api/companion/admin/pairing/start",
             (
@@ -182,6 +1085,17 @@ public static class CompanionEndpoints
                 {
                     var claimed =
                         companion.ClaimPairing(request);
+                    var hub =
+                        httpContext.RequestServices
+                            .GetRequiredService<IDeviceHubService>();
+                    var identities =
+                        httpContext.RequestServices
+                            .GetRequiredService<IDeviceIdentityService>();
+                    var hubDevice =
+                        hub.RecordCompanionHeartbeat(
+                            claimed.Device);
+                    _ = identities.EnsureDevice(
+                        hubDevice);
 
                     audit.Record(
                         AuditAgents.Companion,
@@ -195,6 +1109,16 @@ public static class CompanionEndpoints
                     return Results.Ok(claimed);
                 }
                 catch (CompanionPairingException exception)
+                {
+                    return Results.BadRequest(
+                        new ApiError(exception.Message));
+                }
+                catch (DeviceHubValidationException exception)
+                {
+                    return Results.BadRequest(
+                        new ApiError(exception.Message));
+                }
+                catch (DeviceIdentityValidationException exception)
                 {
                     return Results.BadRequest(
                         new ApiError(exception.Message));
@@ -288,8 +1212,136 @@ public static class CompanionEndpoints
                         [
                             CompanionCapabilities.Chat,
                             CompanionCapabilities.TasksRead,
-                            CompanionCapabilities.CoreStatus
+                            CompanionCapabilities.CoreStatus,
+                            CompanionCapabilities.DeviceHubStatus,
+                            CompanionCapabilities.DeviceIdentity,
+                            CompanionCapabilities.SecurePairing,
+                            CompanionCapabilities.DeviceCapabilities,
+                            CompanionCapabilities.MobileCodeCommand
                         ]));
+            });
+
+        app.MapPost(
+            "/api/companion/client/hub/heartbeat",
+            (
+                HttpContext httpContext,
+                IDeviceHubService hub) =>
+            {
+                try
+                {
+                    var device =
+                        GetAuthenticatedDevice(httpContext);
+                    var hubDevice =
+                        hub.RecordCompanionHeartbeat(
+                            device);
+                    var identities =
+                        httpContext.RequestServices
+                            .GetRequiredService<IDeviceIdentityService>();
+                    _ = identities.EnsureDevice(hubDevice);
+                    return Results.Ok(hubDevice);
+                }
+                catch (DeviceHubValidationException exception)
+                {
+                    return Results.BadRequest(
+                        new ApiError(exception.Message));
+                }
+            });
+
+        app.MapGet(
+            "/api/companion/client/hub/identity",
+            (
+                HttpContext httpContext,
+                IDeviceHubService hub,
+                IDeviceIdentityService identities) =>
+            {
+                try
+                {
+                    var companionDevice =
+                        GetAuthenticatedDevice(httpContext);
+                    var hubDevice =
+                        hub.RecordCompanionHeartbeat(
+                            companionDevice);
+                    return Results.Ok(
+                        identities.EnsureDevice(
+                            hubDevice));
+                }
+                catch (DeviceIdentityValidationException exception)
+                {
+                    return Results.BadRequest(
+                        new ApiError(exception.Message));
+                }
+            });
+
+        app.MapGet(
+            "/api/companion/client/hub/capabilities",
+            (
+                HttpContext httpContext,
+                IDeviceHubService hub,
+                IDeviceCapabilityService capabilities) =>
+            {
+                try
+                {
+                    var companionDevice =
+                        GetAuthenticatedDevice(httpContext);
+                    var hubDevice =
+                        hub.RecordCompanionHeartbeat(
+                            companionDevice);
+
+                    return Results.Ok(
+                        capabilities.GetAll(
+                            hubDevice.WorkspaceId,
+                            hubDevice.Id));
+                }
+                catch (DeviceCapabilityValidationException exception)
+                {
+                    return Results.BadRequest(
+                        new ApiError(exception.Message));
+                }
+                catch (KeyNotFoundException exception)
+                {
+                    return Results.NotFound(
+                        new ApiError(exception.Message));
+                }
+            });
+
+        app.MapPost(
+            "/api/companion/client/hub/capabilities/{capability}/authorize",
+            (
+                string capability,
+                HttpContext httpContext,
+                IDeviceHubService hub,
+                IDeviceCapabilityService capabilities) =>
+            {
+                try
+                {
+                    var companionDevice =
+                        GetAuthenticatedDevice(httpContext);
+                    var hubDevice =
+                        hub.RecordCompanionHeartbeat(
+                            companionDevice);
+                    var result =
+                        capabilities.CheckAccess(
+                            hubDevice.WorkspaceId,
+                            hubDevice.Id,
+                            capability);
+
+                    return result.Allowed
+                        ? Results.Ok(result)
+                        : Results.Json(
+                            result,
+                            statusCode:
+                                StatusCodes.Status403Forbidden);
+                }
+                catch (DeviceCapabilityValidationException exception)
+                {
+                    return Results.BadRequest(
+                        new ApiError(exception.Message));
+                }
+                catch (KeyNotFoundException exception)
+                {
+                    return Results.NotFound(
+                        new ApiError(exception.Message));
+                }
             });
 
         app.MapGet(
@@ -326,6 +1378,40 @@ public static class CompanionEndpoints
                     httpContext);
                 return Results.Ok(
                     taskEngine.GetAll());
+            });
+
+        app.MapGet(
+            "/api/companion/client/development/commands",
+            (
+                HttpContext httpContext,
+                IMobileCodeCommandService commands) =>
+            {
+                var device = GetAuthenticatedDevice(httpContext);
+                return Results.Ok(new
+                {
+                    commands = commands.GetAll()
+                        .Where(x => x.CompanionDeviceId == device.Id)
+                        .OrderByDescending(x => x.UpdatedAt)
+                        .ToArray()
+                });
+            });
+
+        app.MapPost(
+            "/api/companion/client/development/commands",
+            (
+                SubmitMobileCodeCommandRequest request,
+                HttpContext httpContext,
+                IMobileCodeCommandService commands) =>
+            {
+                try
+                {
+                    var device = GetAuthenticatedDevice(httpContext);
+                    return Results.Ok(commands.Submit(device, request));
+                }
+                catch (MobileCodeCommandValidationException exception)
+                {
+                    return Results.BadRequest(new ApiError(exception.Message));
+                }
             });
 
         app.MapPost(

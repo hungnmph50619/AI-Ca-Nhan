@@ -15,6 +15,15 @@ public static class UndoEndpoints
     public static WebApplication MapUndoFoundation(
         this WebApplication app)
     {
+        app.MapGet("/api/undo/status", (
+            IUndoService undo) =>
+            Results.Ok(undo.GetStatus()));
+
+        app.MapGet("/api/undo/invocations/{invocationId:guid}", (
+            Guid invocationId,
+            IUndoService undo) =>
+            Results.Ok(undo.GetByInvocation(invocationId)));
+
         app.MapGet("/api/undo", (
             int? limit,
             IUndoService undo) =>

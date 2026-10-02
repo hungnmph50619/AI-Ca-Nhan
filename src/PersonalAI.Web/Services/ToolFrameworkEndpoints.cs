@@ -79,7 +79,14 @@ public static class ToolFrameworkEndpoints
                 $"tool-invocation:{response.InvocationId:D}",
                 request.Confirmed ? "direct-request-confirmed" : "direct-request",
                 response.Status,
-                response.ToolName);
+                response.ToolName,
+                level: response.Success
+                    ? SystemLogLevels.Info
+                    : response.Status == ToolExecutionStatuses.Denied
+                        ? SystemLogLevels.Security
+                        : SystemLogLevels.Warning,
+                source: "tools",
+                correlationId: response.InvocationId.ToString("D"));
             var statusCode = response.Status switch
             {
                 ToolExecutionStatuses.Succeeded => StatusCodes.Status200OK,
@@ -150,7 +157,14 @@ public static class ToolFrameworkEndpoints
                     ? "approved-proposal-confirmed"
                     : "approved-proposal",
                 response.Execution.Status,
-                response.Proposal.ToolName);
+                response.Proposal.ToolName,
+                level: response.Execution.Success
+                    ? SystemLogLevels.Info
+                    : response.Execution.Status == ToolExecutionStatuses.Denied
+                        ? SystemLogLevels.Security
+                        : SystemLogLevels.Warning,
+                source: "tools",
+                correlationId: response.Execution.InvocationId.ToString("D"));
 
             return Results.Json(response, statusCode: statusCode);
         });

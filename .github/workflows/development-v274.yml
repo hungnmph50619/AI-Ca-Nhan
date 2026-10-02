@@ -1,0 +1,143 @@
+name: Development v2.7.4
+
+on:
+  push:
+    branches:
+      - 'experiment/roadmap-v2-7-4-current'
+
+jobs:
+  validate-v274:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: '8.0.x'
+
+      - name: Restore
+        run: dotnet restore PersonalAI.sln
+
+      - name: Build
+        run: dotnet build PersonalAI.sln -c Release --no-restore
+
+      - name: Tests
+        run: dotnet test PersonalAI.sln -c Release --no-build
+
+      - name: Persisted build test report smoke test
+        shell: bash
+        run: |
+          set -euo pipefail
+          rm -rf /tmp/personalai-v274
+          mkdir -p /tmp/personalai-v274/workspace/repo /tmp/personalai-v274/reports /tmp/personalai-v274/runs
+
+          cd /tmp/personalai-v274/workspace/repo
+          git init -b main
+          git config user.name "PersonalAI CI"
+          git config user.email "ci@example.invalid"
+
+          cat > Smoke.csproj <<'XML'
+          <Project Sdk="Microsoft.NET.Sdk">
+            <PropertyGroup>
+              <TargetFramework>net8.0</TargetFramework>
+            </PropertyGroup>
+          </Project>
+          XML
+
+          cat > Class1.cs <<'CS'
+          namespace Smoke;
+          public static class Class1 { public static int Value => 1; }
+          CS
+
+          git add .
+          git commit -m "initial"
+
+          cd "$GITHUB_WORKSPACE"
+          export Workspace__Root=/tmp/personalai-v274/workspace
+          export Development__RunRoot=/tmp/personalai-v274/runs
+          export Development__TestReportRoot=/tmp/personalai-v274/reports
+
+          start_app() {
+            dotnet run --project src/PersonalAI.Web/PersonalAI.Web.csproj -c Release --no-build --urls http://127.0.0.1:5109 >/tmp/personalai-v274.log 2>&1 &
+            APP_PID=$!
+            for i in {1..30}; do
+              if curl -fsS http://127.0.0.1:5109/api/development/tests/status >/tmp/test-status.json; then return 0; fi
+              sleep 1
+            done
+            return 1
+          }
+
+          stop_app() {
+            kill "$APP_PID" 2>/dev/null || true
+            wait "$APP_PID" 2>/dev/null || true
+          }
+
+          trap 'stop_app || true' EXIT
+          start_app
+
+          jq -e '
+            (.version | split(".") | map(tonumber)) >= [2,7,4]
+            and .reportsPersisted==true
+            and .failureLogsPersisted==true
+            and .failureLogsRedacted==true
+            and .worktreeOnly==true
+          ' /tmp/test-status.json >/dev/null
+
+          curl -fsS -X POST http://127.0.0.1:5109/api/development/runs             -H 'Content-Type: application/json'             -d '{"goal":"v2.7.4 test","repositoryPath":"repo","branch":"experiment/v274-smoke","confirmCreate":true}' >/tmp/run.json
+          run_id=$(jq -r '.id' /tmp/run.json)
+
+          curl -fsS -X POST http://127.0.0.1:5109/api/development/runs/$run_id/advance             -H 'Content-Type: application/json'             -d '{"expectedCurrentStage":"analysis","result":"prepared"}' >/dev/null
+
+          curl -fsS -X POST http://127.0.0.1:5109/api/development/runs/$run_id/advance             -H 'Content-Type: application/json'             -d '{"expectedCurrentStage":"coding","result":"succeeded"}' >/tmp/testing.json
+          jq -e '.stage=="testing"' /tmp/testing.json >/dev/null
+
+          curl -fsS -X POST http://127.0.0.1:5109/api/development/worktrees             -H 'Content-Type: application/json'             -d '{"repositoryPath":"repo","branch":"experiment/v274-smoke","startPoint":"main","worktreeId":"v274-smoke","confirmCreateWorktree":true}' >/tmp/worktree.json
+
+          curl -fsS -X POST http://127.0.0.1:5109/api/development/tests/run             -H 'Content-Type: application/json'             -d '{"developmentRunId":"'"$run_id"'","dotnetTargetPath":"Smoke.csproj","maximumRegressionCases":10,"confirmExecution":true}' >/tmp/pass-report.json
+
+          jq -e '
+            .succeeded==true
+            and (.phases | map(.phase)) == ["restore","build","unit","integration","regression"]
+            and (.phases[] | select(.phase=="integration") | .status)=="skipped"
+          ' /tmp/pass-report.json >/dev/null
+
+          worktree_path=$(jq -r '.worktreePath' /tmp/pass-report.json)
+          secret='ghp_V274SECRET012345678901234567890'
+
+          cat > "/tmp/personalai-v274/workspace/$worktree_path/Smoke.csproj" <<XML
+          <Project Sdk="Microsoft.NET.Sdk">
+            <PropertyGroup>
+              <TargetFramework>net8.0</TargetFramework>
+            </PropertyGroup>
+            <Target Name="LeakAndFail" BeforeTargets="Build">
+              <Message Importance="high" Text="Authorization: Bearer $secret" />
+              <Error Text="forced v2.7.4 failure" />
+            </Target>
+          </Project>
+          XML
+
+          curl -fsS -X POST http://127.0.0.1:5109/api/development/tests/run             -H 'Content-Type: application/json'             -d '{"developmentRunId":"'"$run_id"'","dotnetTargetPath":"Smoke.csproj","maximumRegressionCases":10,"confirmExecution":true}' >/tmp/fail-report.json
+
+          jq -e '
+            .succeeded==false
+            and any(.phases[]; .status=="failed")
+            and any(.phases[]; (.failureLog // "") | contains("[REDACTED]"))
+          ' /tmp/fail-report.json >/dev/null
+
+          ! grep -Fq "$secret" /tmp/fail-report.json
+
+          report_file=$(find /tmp/personalai-v274/reports -type f -name 'development-test-reports-*.json' | head -n1)
+          test -n "$report_file"
+          ! grep -Fq "$secret" "$report_file"
+          grep -Fq '[REDACTED]' "$report_file"
+
+          stop_app
+          start_app
+
+          curl -fsS http://127.0.0.1:5109/api/development/tests/reports >/tmp/reports-after-restart.json
+          jq -e '
+            length==2
+            and any(.[]; .succeeded==true)
+            and any(.[]; .succeeded==false)
+          ' /tmp/reports-after-restart.json >/dev/null
+
+          curl -fsS http://127.0.0.1:5109/api/development/status             | jq -e '(.availableCapabilities | index("development-auto-test")) != null' >/dev/null

@@ -1,0 +1,206 @@
+name: Development v2.7.10
+
+on:
+  push:
+    branches:
+      - 'experiment/roadmap-v2-7-10-current'
+
+jobs:
+  validate-v2710:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: '8.0.x'
+
+      - name: Restore
+        run: dotnet restore PersonalAI.sln
+
+      - name: Build
+        run: dotnet build PersonalAI.sln -c Release --no-restore
+
+      - name: Tests
+        run: dotnet test PersonalAI.sln -c Release --no-build
+
+      - name: Dirty-safe local sync smoke test
+        shell: bash
+        run: |
+          set -euo pipefail
+          rm -rf /tmp/personalai-v2710
+          mkdir -p             /tmp/personalai-v2710/workspace/repo             /tmp/personalai-v2710/runs             /tmp/personalai-v2710/policy             /tmp/personalai-v2710/sync
+
+          git init --bare /tmp/personalai-v2710/remote.git
+
+          cd /tmp/personalai-v2710/workspace/repo
+          git init -b main
+          git config user.name "PersonalAI CI"
+          git config user.email "ci@example.invalid"
+          printf 'base\n' > README.md
+          git add README.md
+          git commit -m "initial"
+          git remote add origin /tmp/personalai-v2710/remote.git
+          git push origin main
+          git switch -c experiment/v2710-smoke
+
+          printf 'user dirty change\n' >> README.md
+          dirty_hash_before=$(sha256sum README.md | awk '{print $1}')
+
+          git clone --branch main /tmp/personalai-v2710/remote.git /tmp/personalai-v2710/writer
+          cd /tmp/personalai-v2710/writer
+          git config user.name "Merge Writer"
+          git config user.email "writer@example.invalid"
+          printf 'merged content\n' > merged.txt
+          git add merged.txt
+          git commit -m "merged upstream"
+          merged_sha=$(git rev-parse HEAD)
+          git push origin main
+
+          cd "$GITHUB_WORKSPACE"
+          export Workspace__Root=/tmp/personalai-v2710/workspace
+          export Development__RunRoot=/tmp/personalai-v2710/runs
+          export Development__MergePolicyRoot=/tmp/personalai-v2710/policy
+          export Development__LocalSyncRoot=/tmp/personalai-v2710/sync
+
+          dotnet run --project src/PersonalAI.Web/PersonalAI.Web.csproj             -c Release --no-build             --urls http://127.0.0.1:5115             >/tmp/personalai-v2710/app.log 2>&1 &
+          APP_PID=$!
+          trap 'kill "$APP_PID" 2>/dev/null || true' EXIT
+
+          for i in {1..30}; do
+            if curl -fsS http://127.0.0.1:5115/api/development/local-sync/status >/tmp/sync-status.json; then
+              break
+            fi
+            sleep 1
+          done
+
+          jq -e '
+            (.version | split(".") | map(tonumber)) >= [2,7,10]
+            and .dirtyTreeDefersSync==true
+            and .pullFastForwardOnly==true
+            and .resetEnabled==false
+            and .cleanEnabled==false
+          ' /tmp/sync-status.json >/dev/null
+
+          curl -fsS -X POST http://127.0.0.1:5115/api/development/runs             -H 'Content-Type: application/json'             -d '{
+              "goal":"v2.7.10 local sync smoke",
+              "repositoryPath":"repo",
+              "branch":"experiment/v2710-smoke",
+              "confirmCreate":true
+            }' >/tmp/run.json
+
+          run_id=$(jq -r '.id' /tmp/run.json)
+          workspace_id=$(jq -r '.workspaceId' /tmp/run.json)
+          safe_workspace=$(printf '%s' "$workspace_id" | sed 's/[^A-Za-z0-9_-]/_/g')
+          merge_policy_id='10101010-1010-1010-1010-101010101010'
+
+          cat > /tmp/personalai-v2710/policy/development-merge-policy-$safe_workspace.json <<JSON
+          [{
+            "id":"$merge_policy_id",
+            "workspaceId":"$workspace_id",
+            "developmentRunId":"$run_id",
+            "gitHubReportId":"20202020-2020-2020-2020-202020202020",
+            "riskLevel":"low",
+            "riskEvidence":"seeded merged PR for local sync smoke",
+            "checks":[],
+            "allRequiredChecksPassed":true,
+            "automaticMergeEligible":true,
+            "requiresUserConfirmation":false,
+            "mergeAttempted":true,
+            "merged":true,
+            "decision":"merged",
+            "mergeCommitSha":"$merged_sha",
+            "createdAt":"2026-10-01T00:00:00+00:00"
+          }]
+          JSON
+
+          run_file=/tmp/personalai-v2710/runs/development-runs-$safe_workspace.json
+          jq --arg id "$run_id" --arg policy "$merge_policy_id" '
+            map(if .id==$id then
+              .stage="local-sync"
+              | .status="active"
+              | .mergePolicyReportId=$policy
+              | .updatedAt="2026-10-01T00:01:00+00:00"
+            else . end)
+          ' "$run_file" > /tmp/run-local-sync.json
+          mv /tmp/run-local-sync.json "$run_file"
+
+          curl -fsS -X POST http://127.0.0.1:5115/api/development/local-sync/run             -H 'Content-Type: application/json'             -d '{
+              "developmentRunId":"'"$run_id"'",
+              "baseBranch":"main",
+              "remote":"origin",
+              "confirmSync":true
+            }' >/tmp/deferred.json
+
+          deferred_id=$(jq -r '.id' /tmp/deferred.json)
+          jq -e '
+            .state=="deferred-dirty-tree"
+            and .fetchSucceeded==true
+            and .dirtyTreeDetected==true
+            and .checkoutPerformed==false
+            and .pullFastForwardOnly==true
+            and .synced==false
+            and .branchBefore=="experiment/v2710-smoke"
+            and .branchAfter=="experiment/v2710-smoke"
+            and .deferredReason=="working-tree-dirty"
+          ' /tmp/deferred.json >/dev/null
+
+          dirty_hash_after=$(sha256sum /tmp/personalai-v2710/workspace/repo/README.md | awk '{print $1}')
+          test "$dirty_hash_before" = "$dirty_hash_after"
+          grep -q 'user dirty change' /tmp/personalai-v2710/workspace/repo/README.md
+          test ! -f /tmp/personalai-v2710/workspace/repo/merged.txt
+          git -C /tmp/personalai-v2710/workspace/repo branch --show-current | grep -qx 'experiment/v2710-smoke'
+
+          blocked=$(curl -sS -o /tmp/completion-blocked.json -w '%{http_code}'             -X POST http://127.0.0.1:5115/api/development/runs/$run_id/advance             -H 'Content-Type: application/json'             -d '{
+              "expectedCurrentStage":"local-sync",
+              "result":"succeeded",
+              "localSyncReportId":"'"$deferred_id"'"
+            }')
+          test "$blocked" = "409"
+
+          git -C /tmp/personalai-v2710/workspace/repo checkout -- README.md
+
+          curl -fsS -X POST http://127.0.0.1:5115/api/development/local-sync/run             -H 'Content-Type: application/json'             -d '{
+              "developmentRunId":"'"$run_id"'",
+              "baseBranch":"main",
+              "remote":"origin",
+              "confirmSync":true
+            }' >/tmp/synced.json
+
+          synced_id=$(jq -r '.id' /tmp/synced.json)
+          jq -e '
+            .state=="synced"
+            and .fetchSucceeded==true
+            and .dirtyTreeDetected==false
+            and .checkoutPerformed==true
+            and .pullFastForwardOnly==true
+            and .synced==true
+            and .branchBefore=="experiment/v2710-smoke"
+            and .branchAfter=="main"
+          ' /tmp/synced.json >/dev/null
+
+          git -C /tmp/personalai-v2710/workspace/repo branch --show-current | grep -qx main
+          test -f /tmp/personalai-v2710/workspace/repo/merged.txt
+          grep -q 'merged content' /tmp/personalai-v2710/workspace/repo/merged.txt
+          test "$(git -C /tmp/personalai-v2710/workspace/repo rev-parse HEAD)" = "$merged_sha"
+
+          curl -fsS -X POST http://127.0.0.1:5115/api/development/runs/$run_id/advance             -H 'Content-Type: application/json'             -d '{
+              "expectedCurrentStage":"local-sync",
+              "result":"succeeded",
+              "localSyncReportId":"'"$synced_id"'"
+            }' >/tmp/completed.json
+
+          jq -e '
+            .stage=="completed"
+            and .status=="completed"
+            and .localSyncReportId=="'"$synced_id"'"
+            and .completedAt!=null
+          ' /tmp/completed.json >/dev/null
+
+          curl -fsS http://127.0.0.1:5115/api/development/local-sync/status >/tmp/final-status.json
+          jq -e '
+            .reports==2
+            and .syncedReports==1
+            and .deferredReports==1
+          ' /tmp/final-status.json >/dev/null
+
+          curl -fsS http://127.0.0.1:5115/api/development/status             | jq -e '(.availableCapabilities | index("safe-local-sync")) != null' >/dev/null

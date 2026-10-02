@@ -13,6 +13,25 @@ public static class ModelLabEndpoints
         services.AddScoped<IDataCleaningService, DataCleaningService>();
         services.AddScoped<ITrainingDatasetValidationService, TrainingDatasetValidationService>();
         services.AddSingleton<ITrainingJobStore, SqliteTrainingJobStore>();
+        services.AddSingleton<ITrainingProvider, MockTrainingProvider>();
+        services.AddSingleton<ITrainingProvider, LocalSmallModelTrainingProvider>();
+        services.AddSingleton<ITrainingProvider, PeftTrainingProvider>();
+        services.AddSingleton<ITrainingProviderRegistry, TrainingProviderRegistry>();
+        services.AddSingleton<ITrainingExecutionStore, JsonTrainingExecutionStore>();
+        services.AddSingleton<IModelArtifactStore, JsonModelArtifactStore>();
+        services.AddSingleton<IModelRegistry, JsonModelRegistry>();
+        services.AddSingleton<ICandidateTrainingPlanStore, JsonCandidateTrainingPlanStore>();
+        services.AddScoped<ICandidateTrainingService, CandidateTrainingService>();
+        services.AddScoped<IRegisteredModelComparisonService, RegisteredModelComparisonService>();
+        services.AddScoped<IPromotionGateService, PromotionGateService>();
+        services.AddScoped<IModelRolloutService, ModelRolloutService>();
+        services.AddScoped<IRollbackService, RollbackService>();
+        services.AddScoped<ISyntheticCriticService, SyntheticCriticService>();
+        services.AddScoped<ISyntheticVerificationService, SyntheticVerificationService>();
+        services.AddScoped<ISyntheticDataService, SyntheticDataService>();
+        services.AddSingleton<TrainingExecutor>();
+        services.AddSingleton<ITrainingExecutor>(sp => sp.GetRequiredService<TrainingExecutor>());
+        services.AddHostedService(sp => sp.GetRequiredService<TrainingExecutor>());
         return services;
     }
 
@@ -22,6 +41,555 @@ public static class ModelLabEndpoints
         endpoints.MapGet("/api/model-lab/status", (
             IModelLabDatasetStore store) =>
             Results.Ok(store.GetStatus()));
+
+        endpoints.MapGet("/api/model-lab/synthetic/verification/status", (
+            ISyntheticVerificationService verification) =>
+            Results.Ok(verification.GetStatus()));
+
+        endpoints.MapGet("/api/model-lab/synthetic/verification/reports", (
+            ISyntheticVerificationService verification) =>
+            Results.Ok(verification.GetAll()));
+
+        endpoints.MapGet("/api/model-lab/synthetic/verification/reports/{draftId:guid}/latest", (
+            Guid draftId,
+            ISyntheticVerificationService verification) =>
+        {
+            var report = verification.GetLatest(draftId);
+            return report is null ? Results.NotFound() : Results.Ok(report);
+        });
+
+        endpoints.MapPost("/api/model-lab/synthetic/verification/run", (
+            VerifySyntheticDraftRequest request,
+            ISyntheticDataService synthetic,
+            ISyntheticVerificationService verification) =>
+        {
+            try
+            {
+                var draft = synthetic.Get(request.DraftId);
+                if (draft is null)
+                    return Results.NotFound(new ApiError("Không tìm thấy synthetic draft."));
+
+                return Results.Ok(verification.Verify(draft, request));
+            }
+            catch (SyntheticVerificationException exception)
+            {
+                return Results.BadRequest(new ApiError(exception.Message));
+            }
+            catch (KeyNotFoundException exception)
+            {
+                return Results.NotFound(new ApiError(exception.Message));
+            }
+        });
+
+        endpoints.MapGet("/api/model-lab/synthetic/critic/status", (
+            ISyntheticCriticService critic) =>
+            Results.Ok(critic.GetStatus()));
+
+        endpoints.MapGet("/api/model-lab/synthetic/critic/reports", (
+            ISyntheticCriticService critic) =>
+            Results.Ok(critic.GetAll()));
+
+        endpoints.MapGet("/api/model-lab/synthetic/critic/reports/{draftId:guid}/latest", (
+            Guid draftId,
+            ISyntheticCriticService critic) =>
+        {
+            var report = critic.GetLatest(draftId);
+            return report is null ? Results.NotFound() : Results.Ok(report);
+        });
+
+        endpoints.MapPost("/api/model-lab/synthetic/critic/review", async (
+            ReviewSyntheticDraftRequest request,
+            ISyntheticDataService synthetic,
+            ISyntheticCriticService critic,
+            CancellationToken cancellationToken) =>
+        {
+            try
+            {
+                var draft = synthetic.Get(request.DraftId);
+                if (draft is null)
+                    return Results.NotFound(new ApiError("Không tìm thấy synthetic draft."));
+
+                return Results.Ok(await critic.ReviewAsync(
+                    draft,
+                    request,
+                    cancellationToken));
+            }
+            catch (SyntheticCriticValidationException exception)
+            {
+                return Results.BadRequest(new ApiError(exception.Message));
+            }
+            catch (InvalidOperationException exception)
+            {
+                return Results.BadRequest(new ApiError(exception.Message));
+            }
+        });
+
+        endpoints.MapGet("/api/model-lab/synthetic/status", (
+            ISyntheticDataService synthetic) =>
+            Results.Ok(synthetic.GetStatus()));
+
+        endpoints.MapGet("/api/model-lab/synthetic/drafts", (
+            ISyntheticDataService synthetic) =>
+            Results.Ok(synthetic.GetAll()));
+
+        endpoints.MapGet("/api/model-lab/synthetic/drafts/{draftId:guid}", (
+            Guid draftId,
+            ISyntheticDataService synthetic) =>
+        {
+            var draft = synthetic.Get(draftId);
+            return draft is null ? Results.NotFound() : Results.Ok(draft);
+        });
+
+        endpoints.MapPost("/api/model-lab/synthetic/generate", async (
+            GenerateSyntheticDataRequest request,
+            ISyntheticDataService synthetic,
+            CancellationToken cancellationToken) =>
+        {
+            try
+            {
+                return Results.Ok(await synthetic.GenerateAsync(
+                    request,
+                    cancellationToken));
+            }
+            catch (SyntheticDataValidationException exception)
+            {
+                return Results.BadRequest(new ApiError(exception.Message));
+            }
+            catch (KeyNotFoundException exception)
+            {
+                return Results.NotFound(new ApiError(exception.Message));
+            }
+            catch (InvalidOperationException exception)
+            {
+                return Results.BadRequest(new ApiError(exception.Message));
+            }
+        });
+
+        endpoints.MapPost("/api/model-lab/synthetic/commit", (
+            CommitSyntheticDataRequest request,
+            ISyntheticDataService synthetic) =>
+        {
+            try
+            {
+                return Results.Ok(synthetic.Commit(request));
+            }
+            catch (SyntheticDataValidationException exception)
+            {
+                return Results.BadRequest(new ApiError(exception.Message));
+            }
+            catch (ModelLabDatasetConflictException exception)
+            {
+                return Results.Json(
+                    new ApiError(exception.Message),
+                    statusCode: StatusCodes.Status409Conflict);
+            }
+            catch (KeyNotFoundException exception)
+            {
+                return Results.NotFound(new ApiError(exception.Message));
+            }
+        });
+
+        endpoints.MapGet("/api/model-lab/artifacts/status", (
+            IModelArtifactStore artifacts) =>
+            Results.Ok(artifacts.GetStatus()));
+
+        endpoints.MapGet("/api/model-lab/artifacts", (
+            IModelArtifactStore artifacts) =>
+            Results.Ok(artifacts.GetAll()));
+
+        endpoints.MapGet("/api/model-lab/artifacts/{artifactId:guid}", (
+            Guid artifactId,
+            IModelArtifactStore artifacts) =>
+        {
+            var artifact = artifacts.Get(artifactId);
+            return artifact is null ? Results.NotFound() : Results.Ok(artifact);
+        });
+
+        endpoints.MapPost("/api/model-lab/artifacts/{artifactId:guid}/status", (
+            Guid artifactId,
+            UpdateModelArtifactStatusRequest request,
+            IModelArtifactStore artifacts,
+            IAuditRecorder audit) =>
+        {
+            try
+            {
+                var artifact = artifacts.UpdateStatus(artifactId, request);
+                audit.Record(
+                    AuditAgents.User,
+                    "model-lab.artifact.status",
+                    $"model-artifact:{artifact.Id:D}",
+                    $"status:{artifact.Status}",
+                    AuditResults.Succeeded);
+                return Results.Ok(artifact);
+            }
+            catch (ModelArtifactValidationException exception)
+            {
+                return Results.BadRequest(new ApiError(exception.Message));
+            }
+            catch (KeyNotFoundException exception)
+            {
+                return Results.NotFound(new ApiError(exception.Message));
+            }
+        });
+
+        endpoints.MapGet("/api/model-lab/models/status", (
+            IModelRegistry registry) =>
+            Results.Ok(registry.GetStatus()));
+
+        endpoints.MapGet("/api/model-lab/models/families", (
+            IModelRegistry registry) =>
+            Results.Ok(registry.GetFamilies()));
+
+        endpoints.MapGet("/api/model-lab/models", (
+            IModelRegistry registry) =>
+            Results.Ok(registry.GetAll()));
+
+        endpoints.MapGet("/api/model-lab/models/{modelId:guid}", (
+            Guid modelId,
+            IModelRegistry registry) =>
+        {
+            var model = registry.Get(modelId);
+            return model is null ? Results.NotFound() : Results.Ok(model);
+        });
+
+        endpoints.MapGet("/api/model-lab/models/family/{family}", (
+            string family,
+            IModelRegistry registry) =>
+        {
+            try
+            {
+                return Results.Ok(registry.GetFamily(family));
+            }
+            catch (ModelRegistryValidationException exception)
+            {
+                return Results.BadRequest(new ApiError(exception.Message));
+            }
+        });
+
+        endpoints.MapPost("/api/model-lab/models", (
+            RegisterModelVersionRequest request,
+            IModelRegistry registry,
+            IAuditRecorder audit) =>
+        {
+            try
+            {
+                var model = registry.Register(request);
+                audit.Record(
+                    AuditAgents.User,
+                    "model-lab.model-register",
+                    $"model-version:{model.Id:D}",
+                    $"family:{model.Family};version:{model.Version}",
+                    AuditResults.Succeeded);
+                return Results.Created(
+                    $"/api/model-lab/models/{model.Id:D}",
+                    model);
+            }
+            catch (ModelRegistryValidationException exception)
+            {
+                return Results.BadRequest(new ApiError(exception.Message));
+            }
+            catch (ModelRegistryConflictException exception)
+            {
+                return Results.Json(
+                    new ApiError(exception.Message),
+                    statusCode: StatusCodes.Status409Conflict);
+            }
+            catch (KeyNotFoundException exception)
+            {
+                return Results.NotFound(new ApiError(exception.Message));
+            }
+        });
+
+        endpoints.MapPost("/api/model-lab/models/{modelId:guid}/stage", (
+            Guid modelId,
+            UpdateModelDeploymentStageRequest request,
+            IModelRegistry registry,
+            IAuditRecorder audit) =>
+        {
+            try
+            {
+                var model = registry.UpdateStage(modelId, request);
+                audit.Record(
+                    AuditAgents.User,
+                    "model-lab.model-stage",
+                    $"model-version:{model.Id:D}",
+                    $"stage:{model.Stage}",
+                    AuditResults.Succeeded);
+                return Results.Ok(model);
+            }
+            catch (ModelRegistryValidationException exception)
+            {
+                return Results.BadRequest(new ApiError(exception.Message));
+            }
+            catch (ModelRegistryConflictException exception)
+            {
+                return Results.Json(
+                    new ApiError(exception.Message),
+                    statusCode: StatusCodes.Status409Conflict);
+            }
+            catch (KeyNotFoundException exception)
+            {
+                return Results.NotFound(new ApiError(exception.Message));
+            }
+        });
+
+        endpoints.MapGet("/api/model-lab/rollbacks/status", (
+            IRollbackService rollbacks) =>
+            Results.Ok(rollbacks.GetStatus()));
+
+        endpoints.MapGet("/api/model-lab/rollbacks", (
+            IRollbackService rollbacks) =>
+            Results.Ok(rollbacks.GetAll()));
+
+        endpoints.MapGet("/api/model-lab/rollbacks/{decisionId:guid}", (
+            Guid decisionId,
+            IRollbackService rollbacks) =>
+        {
+            var decision = rollbacks.Get(decisionId);
+            return decision is null ? Results.NotFound() : Results.Ok(decision);
+        });
+
+        endpoints.MapPost("/api/model-lab/rollbacks/evaluate", (
+            EvaluateRollbackRequest request,
+            IRollbackService rollbacks) =>
+        {
+            try
+            {
+                return Results.Ok(rollbacks.Evaluate(request));
+            }
+            catch (RollbackValidationException exception)
+            {
+                return Results.BadRequest(new ApiError(exception.Message));
+            }
+            catch (ModelRolloutValidationException exception)
+            {
+                return Results.BadRequest(new ApiError(exception.Message));
+            }
+            catch (ModelRegistryValidationException exception)
+            {
+                return Results.BadRequest(new ApiError(exception.Message));
+            }
+            catch (ModelRegistryConflictException exception)
+            {
+                return Results.Json(
+                    new ApiError(exception.Message),
+                    statusCode: StatusCodes.Status409Conflict);
+            }
+            catch (KeyNotFoundException exception)
+            {
+                return Results.NotFound(new ApiError(exception.Message));
+            }
+        });
+
+        endpoints.MapGet("/api/model-lab/rollouts/status", (
+            IModelRolloutService rollouts) =>
+            Results.Ok(rollouts.GetStatus()));
+
+        endpoints.MapGet("/api/model-lab/rollouts", (
+            IModelRolloutService rollouts) =>
+            Results.Ok(rollouts.GetAll()));
+
+        endpoints.MapGet("/api/model-lab/rollouts/{rolloutId:guid}", (
+            Guid rolloutId,
+            IModelRolloutService rollouts) =>
+        {
+            var rollout = rollouts.Get(rolloutId);
+            return rollout is null ? Results.NotFound() : Results.Ok(rollout);
+        });
+
+        endpoints.MapPost("/api/model-lab/rollouts/start", (
+            StartModelRolloutRequest request,
+            IModelRolloutService rollouts) =>
+        {
+            try
+            {
+                return Results.Ok(rollouts.Start(request));
+            }
+            catch (ModelRolloutValidationException exception)
+            {
+                return Results.BadRequest(new ApiError(exception.Message));
+            }
+            catch (ModelRegistryValidationException exception)
+            {
+                return Results.BadRequest(new ApiError(exception.Message));
+            }
+            catch (ModelRegistryConflictException exception)
+            {
+                return Results.Json(
+                    new ApiError(exception.Message),
+                    statusCode: StatusCodes.Status409Conflict);
+            }
+            catch (KeyNotFoundException exception)
+            {
+                return Results.NotFound(new ApiError(exception.Message));
+            }
+        });
+
+        endpoints.MapPost("/api/model-lab/rollouts/{rolloutId:guid}/advance", (
+            Guid rolloutId,
+            AdvanceModelRolloutRequest request,
+            IModelRolloutService rollouts) =>
+        {
+            try
+            {
+                return Results.Ok(rollouts.Advance(rolloutId, request));
+            }
+            catch (ModelRolloutValidationException exception)
+            {
+                return Results.BadRequest(new ApiError(exception.Message));
+            }
+            catch (ModelRegistryValidationException exception)
+            {
+                return Results.BadRequest(new ApiError(exception.Message));
+            }
+            catch (ModelRegistryConflictException exception)
+            {
+                return Results.Json(
+                    new ApiError(exception.Message),
+                    statusCode: StatusCodes.Status409Conflict);
+            }
+            catch (KeyNotFoundException exception)
+            {
+                return Results.NotFound(new ApiError(exception.Message));
+            }
+        });
+
+        endpoints.MapGet("/api/model-lab/promotion-gates/status", (
+            IPromotionGateService gates) =>
+            Results.Ok(gates.GetStatus()));
+
+        endpoints.MapGet("/api/model-lab/promotion-gates", (
+            IPromotionGateService gates) =>
+            Results.Ok(gates.GetAll()));
+
+        endpoints.MapGet("/api/model-lab/promotion-gates/{gateId:guid}", (
+            Guid gateId,
+            IPromotionGateService gates) =>
+        {
+            var gate = gates.Get(gateId);
+            return gate is null ? Results.NotFound() : Results.Ok(gate);
+        });
+
+        endpoints.MapPost("/api/model-lab/promotion-gates/evaluate", (
+            EvaluatePromotionGateRequest request,
+            IPromotionGateService gates) =>
+        {
+            try
+            {
+                return Results.Ok(gates.Evaluate(request));
+            }
+            catch (PromotionGateValidationException exception)
+            {
+                return Results.BadRequest(new ApiError(exception.Message));
+            }
+            catch (KeyNotFoundException exception)
+            {
+                return Results.NotFound(new ApiError(exception.Message));
+            }
+        });
+
+        endpoints.MapGet("/api/model-lab/model-comparisons/status", (
+            IRegisteredModelComparisonService comparisons) =>
+            Results.Ok(comparisons.GetStatus()));
+
+        endpoints.MapGet("/api/model-lab/model-comparisons", (
+            IRegisteredModelComparisonService comparisons) =>
+            Results.Ok(comparisons.GetAll()));
+
+        endpoints.MapGet("/api/model-lab/model-comparisons/{comparisonId:guid}", (
+            Guid comparisonId,
+            IRegisteredModelComparisonService comparisons) =>
+        {
+            var report = comparisons.Get(comparisonId);
+            return report is null ? Results.NotFound() : Results.Ok(report);
+        });
+
+        endpoints.MapPost("/api/model-lab/model-comparisons", (
+            CompareRegisteredModelsRequest request,
+            IRegisteredModelComparisonService comparisons) =>
+        {
+            try
+            {
+                return Results.Ok(comparisons.Compare(request));
+            }
+            catch (RegisteredModelComparisonValidationException exception)
+            {
+                return Results.BadRequest(new ApiError(exception.Message));
+            }
+            catch (KeyNotFoundException exception)
+            {
+                return Results.NotFound(new ApiError(exception.Message));
+            }
+        });
+
+        endpoints.MapGet("/api/model-lab/candidate-training/status", (
+            ICandidateTrainingService candidates) =>
+            Results.Ok(candidates.GetStatus()));
+
+        endpoints.MapGet("/api/model-lab/candidate-training/plans", (
+            ICandidateTrainingService candidates) =>
+            Results.Ok(candidates.GetAll()));
+
+        endpoints.MapGet("/api/model-lab/candidate-training/plans/{planId:guid}", (
+            Guid planId,
+            ICandidateTrainingService candidates) =>
+        {
+            var plan = candidates.Get(planId);
+            return plan is null ? Results.NotFound() : Results.Ok(plan);
+        });
+
+        endpoints.MapPost("/api/model-lab/candidate-training/start", (
+            StartCandidateTrainingRequest request,
+            ICandidateTrainingService candidates) =>
+        {
+            try
+            {
+                return Results.Ok(candidates.Start(request));
+            }
+            catch (CandidateTrainingValidationException exception)
+            {
+                return Results.BadRequest(new ApiError(exception.Message));
+            }
+            catch (TrainingJobValidationException exception)
+            {
+                return Results.BadRequest(new ApiError(exception.Message));
+            }
+            catch (TrainingJobConflictException exception)
+            {
+                return Results.Json(
+                    new ApiError(exception.Message),
+                    statusCode: StatusCodes.Status409Conflict);
+            }
+            catch (KeyNotFoundException exception)
+            {
+                return Results.NotFound(new ApiError(exception.Message));
+            }
+        });
+
+        endpoints.MapGet("/api/model-lab/training/providers", (
+            ITrainingProviderRegistry registry) =>
+            Results.Ok(registry.GetAll()));
+
+        endpoints.MapPost("/api/model-lab/training/providers/{providerId}/validate", (
+            string providerId,
+            TrainingProviderValidationRequest request,
+            ITrainingProviderRegistry registry) =>
+        {
+            try
+            {
+                var provider = registry.Get(providerId);
+                var normalized = request with { ProviderId = provider.Id };
+                return Results.Ok(provider.Validate(normalized));
+            }
+            catch (TrainingProviderValidationException exception)
+            {
+                return Results.BadRequest(new ApiError(exception.Message));
+            }
+            catch (KeyNotFoundException exception)
+            {
+                return Results.NotFound(new ApiError(exception.Message));
+            }
+        });
 
         endpoints.MapGet("/api/model-lab/training/status", (
             ITrainingJobStore jobs) =>

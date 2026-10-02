@@ -1,0 +1,162 @@
+name: Disaster Recovery v2.9.7
+
+on:
+  push:
+    branches:
+      - 'experiment/roadmap-v2-9-7-disaster-recovery'
+
+jobs:
+  validate-v297:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: '8.0.x'
+
+      - name: Restore
+        run: dotnet restore PersonalAI.sln
+
+      - name: Build
+        run: dotnet build PersonalAI.sln -c Release --no-restore
+
+      - name: Tests
+        run: dotnet test PersonalAI.sln -c Release --no-build
+
+      - name: Disaster recovery smoke test
+        shell: bash
+        run: |
+          set -euxo pipefail
+          rm -rf /tmp/personalai-v297
+          mkdir -p             /tmp/personalai-v297/workspace             /tmp/personalai-v297/audit             /tmp/personalai-v297/xdg/PersonalAI/RecoverySeed
+
+          export Workspace__Root=/tmp/personalai-v297/workspace
+          export Audit__Root=/tmp/personalai-v297/audit
+          export XDG_DATA_HOME=/tmp/personalai-v297/xdg
+
+          printf 'disaster-recovery-seed-v297\n'             >/tmp/personalai-v297/xdg/PersonalAI/RecoverySeed/marker.txt
+
+          dotnet run --project src/PersonalAI.Web/PersonalAI.Web.csproj             -c Release --no-build             --urls http://127.0.0.1:5138             >/tmp/personalai-v297/app.log 2>&1 &
+          APP_PID=$!
+          trap 'kill "$APP_PID" 2>/dev/null || true; wait "$APP_PID" 2>/dev/null || true' EXIT
+
+          for i in {1..30}; do
+            if curl -fsS http://127.0.0.1:5138/api/disaster-recovery/status >/tmp/dr-status.json; then
+              break
+            fi
+            sleep 1
+          done
+
+          jq -e '
+            (.version | split(".") | map(tonumber)) >= [2,9,7]
+            and .archiveIntegrityVerificationEnabled==true
+            and .pathTraversalProtectionEnabled==true
+            and .restoreSizeLimitsEnforced==true
+            and .preRestoreBackupEnabled==true
+            and .startupRestoreEnabled==true
+            and .rollbackOnRestoreFailureEnabled==true
+            and .explicitConfirmationRequired==true
+            and .pendingRestore==false
+          ' /tmp/dr-status.json >/dev/null
+
+          no_confirm_backup=$(curl -sS -o /tmp/no-confirm-backup.json -w '%{http_code}'             -X POST http://127.0.0.1:5138/api/hardening/backups             -H 'Content-Type: application/json'             -d '{"confirmed":false}')
+          test "$no_confirm_backup" = "403"
+
+          curl -fsS -X POST http://127.0.0.1:5138/api/hardening/backups             -H 'Content-Type: application/json'             -d '{"confirmed":true}'             >/tmp/good-backup.json
+
+          good_id=$(jq -r '.backupId' /tmp/good-backup.json)
+          test -n "$good_id"
+          test "$good_id" != "null"
+
+          curl -fsS             "http://127.0.0.1:5138/api/disaster-recovery/backups/$good_id/verify"             >/tmp/good-verify.json
+
+          jq -e --arg id "$good_id" '
+            .backupId==$id
+            and .status=="verified"
+            and .restorable==true
+            and .manifestFileCount>=1
+            and .archiveFileCount==.manifestFileCount
+            and .archiveUncompressedBytes>0
+            and .archiveSizeBytes>0
+            and (.archiveSha256 | length)==64
+            and .error==null
+          ' /tmp/good-verify.json >/dev/null
+
+          backup_dir=/tmp/personalai-v297/xdg/PersonalAI/Backups
+          test -f "$backup_dir/$good_id"
+
+          python3 - <<'PY'
+          import json, zipfile, datetime, pathlib
+          p = pathlib.Path("/tmp/personalai-v297/xdg/PersonalAI/Backups/corrupt-traversal-v297.zip")
+          manifest = {
+              "schemaVersion": 1,
+              "personalAiVersion": "2.9.7",
+              "createdAt": "2026-10-02T00:00:00+00:00",
+              "reason": "corrupt-smoke",
+              "fileCount": 1,
+              "sourceBytes": 4
+          }
+          with zipfile.ZipFile(p, "w", zipfile.ZIP_DEFLATED) as z:
+              z.writestr("personalai-backup.json", json.dumps(manifest))
+              z.writestr("../escape.txt", "evil")
+          PY
+
+          all_reports=$(curl -fsS             http://127.0.0.1:5138/api/disaster-recovery/backups)
+          echo "$all_reports" | jq -e '
+            any(.[]; .backupId=="corrupt-traversal-v297.zip"
+              and .status=="invalid"
+              and .restorable==false)
+            and any(.[]; .restorable==true)
+          ' >/dev/null
+
+          curl -fsS http://127.0.0.1:5138/api/disaster-recovery/status             >/tmp/dr-status-after-corrupt.json
+          jq -e '
+            .backupCount>=2
+            and .verifiedBackups>=1
+            and .invalidBackups>=1
+          ' /tmp/dr-status-after-corrupt.json >/dev/null
+
+          curl -fsS http://127.0.0.1:5138/api/disaster-recovery/plan             >/tmp/dr-plan.json
+          jq -e --arg id "$good_id" '
+            (.version | split(".") | map(tonumber)) >= [2,9,7]
+            and .recoveryAvailable==true
+            and .recommendedBackupId==$id
+            and .recommendedBackupVerified==true
+            and .pendingRestore==false
+            and .preRestoreBackupEnabled==true
+            and .startupRestoreEnabled==true
+            and .rollbackOnRestoreFailureEnabled==true
+            and .explicitConfirmationRequired==true
+          ' /tmp/dr-plan.json >/dev/null
+
+          no_confirm_restore=$(curl -sS -o /tmp/no-confirm-restore.json -w '%{http_code}'             -X POST http://127.0.0.1:5138/api/disaster-recovery/restore             -H 'Content-Type: application/json'             -d '{"backupId":"'"$good_id"'","confirmRestore":false}')
+          test "$no_confirm_restore" = "400"
+
+          corrupt_restore=$(curl -sS -o /tmp/corrupt-restore.json -w '%{http_code}'             -X POST http://127.0.0.1:5138/api/disaster-recovery/restore             -H 'Content-Type: application/json'             -d '{"backupId":"corrupt-traversal-v297.zip","confirmRestore":true}')
+          test "$corrupt_restore" = "400"
+
+          old_corrupt_restore=$(curl -sS -o /tmp/old-corrupt-restore.json -w '%{http_code}'             -X POST http://127.0.0.1:5138/api/hardening/restore             -H 'Content-Type: application/json'             -d '{"backupId":"corrupt-traversal-v297.zip","confirmed":true}')
+          test "$old_corrupt_restore" = "400"
+
+          good_restore=$(curl -sS -o /tmp/good-restore.json -w '%{http_code}'             -X POST http://127.0.0.1:5138/api/disaster-recovery/restore             -H 'Content-Type: application/json'             -d '{"backupId":"'"$good_id"'","confirmRestore":true}')
+          test "$good_restore" = "202"
+
+          jq -e --arg id "$good_id" '
+            .backupId==$id
+            and .status=="pending-restart"
+            and .restartRequired==true
+          ' /tmp/good-restore.json >/dev/null
+
+          curl -fsS http://127.0.0.1:5138/api/disaster-recovery/status             >/tmp/dr-pending.json
+          jq -e '.pendingRestore==true' /tmp/dr-pending.json >/dev/null
+
+          logs=$(curl -fsS             'http://127.0.0.1:5138/api/system/logs?source=disaster-recovery&limit=20')
+          echo "$logs" | jq -e '
+            any(.items[];
+              .action=="disaster-recovery.restore"
+              and .result=="denied")
+            and any(.items[];
+              .action=="disaster-recovery.restore"
+              and .result=="prepared")
+          ' >/dev/null

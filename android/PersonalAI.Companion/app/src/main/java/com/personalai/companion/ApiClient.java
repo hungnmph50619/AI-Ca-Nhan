@@ -76,6 +76,34 @@ final class ApiClient {
                 20_000);
     }
 
+    JSONObject developmentCommands(String token) throws Exception {
+        return request(
+                "GET",
+                "/api/companion/client/development/commands",
+                null,
+                token,
+                20_000);
+    }
+
+    JSONObject submitDevelopmentCommand(
+            String token,
+            String goal,
+            String repositoryHint) throws Exception {
+        JSONObject body = new JSONObject();
+        body.put("goal", goal);
+        if (repositoryHint != null && !repositoryHint.trim().isEmpty()) {
+            body.put("repositoryHint", repositoryHint.trim());
+        }
+        body.put("confirmRequest", true);
+
+        return request(
+                "POST",
+                "/api/companion/client/development/commands",
+                body,
+                token,
+                30_000);
+    }
+
     JSONObject chat(
             String token,
             JSONArray messages) throws Exception {

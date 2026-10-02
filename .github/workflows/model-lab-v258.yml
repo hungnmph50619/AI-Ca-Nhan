@@ -1,0 +1,129 @@
+name: Model Lab v2.5.8
+
+on:
+  push:
+    branches:
+      - 'experiment/roadmap-v2-5-8-current'
+  pull_request:
+    paths:
+      - 'src/PersonalAI.Web/ModelLab/PeftTrainingModels.cs'
+      - 'src/PersonalAI.Web/Services/PeftTrainingProvider.cs'
+      - 'src/PersonalAI.Web/Services/TrainingJobStore.cs'
+      - 'src/PersonalAI.Web/Services/TrainingExecutor.cs'
+      - 'src/PersonalAI.Web/Services/ModelLabEndpoints.cs'
+      - 'src/PersonalAI.Web/Models/SystemModels.cs'
+
+jobs:
+  validate-v258:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: '8.0.x'
+
+      - name: Restore
+        run: dotnet restore PersonalAI.sln
+
+      - name: Build
+        run: dotnet build PersonalAI.sln -c Release --no-restore
+
+      - name: Tests
+        run: dotnet test PersonalAI.sln -c Release --no-build
+
+      - name: PEFT configuration smoke test
+        shell: bash
+        run: |
+          set -euo pipefail
+          rm -rf /tmp/personalai-v258
+          mkdir -p /tmp/personalai-v258/workspace /tmp/personalai-v258/model-lab
+
+          Workspace__Root=/tmp/personalai-v258/workspace           ModelLab__Root=/tmp/personalai-v258/model-lab           dotnet run --project src/PersonalAI.Web/PersonalAI.Web.csproj             -c Release --no-build             --urls http://127.0.0.1:5088             >/tmp/personalai-v258.log 2>&1 &
+          APP_PID=$!
+          trap 'kill "$APP_PID" 2>/dev/null || true' EXIT
+
+          ready=0
+          for i in {1..30}; do
+            if curl -fsS http://127.0.0.1:5088/api/model-lab/training/providers >/dev/null; then
+              ready=1
+              break
+            fi
+            sleep 1
+          done
+          test "$ready" = "1"
+
+          curl -fsS http://127.0.0.1:5088/api/model-lab/training/providers             | jq -e '
+              any(.[];
+                .providerId == "peft-config"
+                and .supportsLoRa == true
+                and .supportsQLoRa == true
+                and (.supportedMethods | index("adapter")) != null)
+            ' >/dev/null
+
+          valid_cfg='{
+            "providerId":"peft-config",
+            "baseModel":"demo-llm",
+            "trainingMethod":"lora",
+            "hyperparameters":{
+              "rank":8,
+              "alpha":16,
+              "dropout":0.05,
+              "targetModules":["q_proj","v_proj"],
+              "learningRate":0.0002,
+              "epochs":3,
+              "batchSize":2,
+              "gradientAccumulationSteps":4,
+              "maximumSequenceLength":2048
+            }
+          }'
+
+          curl -fsS -X POST             http://127.0.0.1:5088/api/model-lab/training/providers/peft-config/validate             -H 'Content-Type: application/json'             -d "$valid_cfg"             | jq -e '.valid == true and .trainingMethod == "lora"' >/dev/null
+
+          invalid_cfg='{
+            "providerId":"peft-config",
+            "baseModel":"demo-llm",
+            "trainingMethod":"qlora",
+            "hyperparameters":{
+              "rank":0,
+              "alpha":16,
+              "dropout":1.2,
+              "targetModules":[],
+              "learningRate":0,
+              "epochs":0,
+              "batchSize":0,
+              "gradientAccumulationSteps":0,
+              "maximumSequenceLength":32
+            }
+          }'
+
+          curl -fsS -X POST             http://127.0.0.1:5088/api/model-lab/training/providers/peft-config/validate             -H 'Content-Type: application/json'             -d "$invalid_cfg"             | jq -e '.valid == false and (.errors | length) >= 5' >/dev/null
+
+          curl -fsS -X POST http://127.0.0.1:5088/api/model-lab/datasets             -H 'Content-Type: application/json'             -d '{"id":"peft-demo","name":"PEFT demo","description":"CI","items":[{"input":"Q","expected":"A"}]}'             >/tmp/dataset.json
+
+          curl -fsS -X POST http://127.0.0.1:5088/api/model-lab/training/jobs             -H 'Content-Type: application/json'             -d '{
+              "datasetId":"peft-demo",
+              "datasetVersion":1,
+              "baseModel":"demo-llm",
+              "trainingMethod":"lora",
+              "hyperparameters":{
+                "rank":8,
+                "alpha":16,
+                "dropout":0.05,
+                "targetModules":["q_proj","v_proj"],
+                "learningRate":0.0002,
+                "epochs":3,
+                "batchSize":2,
+                "gradientAccumulationSteps":4,
+                "maximumSequenceLength":2048
+              }
+            }' >/tmp/job.json
+
+          job_id=$(jq -r '.id' /tmp/job.json)
+          sleep 3
+
+          curl -fsS http://127.0.0.1:5088/api/model-lab/training/jobs/$job_id             | jq -e '.status == "pending" and .trainingMethod == "lora"' >/dev/null
+
+          state_file=/tmp/personalai-v258/model-lab/training-executions-personal.json
+          if [ -f "$state_file" ]; then
+            jq -e --arg id "$job_id" 'all(.[]; .trainingJobId != $id)' "$state_file" >/dev/null
+          fi

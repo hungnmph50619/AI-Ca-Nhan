@@ -123,7 +123,7 @@
     const heading = document.createElement("div");
     const eyebrow = document.createElement("p");
     eyebrow.className = "eyebrow";
-    eyebrow.textContent = "MEMORY · DOCUMENTS · TASKS · FILES · CONVERSATIONS";
+    eyebrow.textContent = "TRÍ NHỚ · TÀI LIỆU · TÁC VỤ · TỆP · HỘI THOẠI";
     const title = document.createElement("h2");
     title.id = "workspaceDialogTitle";
     title.textContent = "Không gian làm việc";
@@ -139,7 +139,7 @@
 
     const intro = document.createElement("div");
     intro.className = "v094-workspace-intro";
-    intro.innerHTML = "<strong>Workspace v0.9.4</strong><p>Mỗi không gian tách riêng trí nhớ, tài liệu, tác vụ, tệp làm việc và lịch sử hội thoại. Agents và Policies đã có chỗ trong mô hình workspace nhưng được giữ ở trạng thái dành trước cho các phiên bản sau.</p>";
+    intro.innerHTML = "<strong>Không gian làm việc</strong><p>Mỗi không gian tách riêng trí nhớ, tài liệu, tác vụ, tệp làm việc và lịch sử hội thoại. Tác nhân và chính sách có vùng dữ liệu riêng nhưng chỉ được dùng khi tính năng tương ứng được bật.</p>";
 
     const form = document.createElement("form");
     form.id = "workspaceCreateForm";
@@ -205,7 +205,7 @@
 
     const note = document.createElement("p");
     note.className = "security-copy";
-    note.textContent = "Đổi workspace không di chuyển dữ liệu giữa các không gian. v0.9.4 cũng chưa cho xóa workspace để tránh vô tình làm mất hoặc bỏ mồ côi dữ liệu.";
+    note.textContent = "Đổi không gian làm việc không di chuyển dữ liệu giữa các không gian. v0.9.4 cũng chưa cho xóa không gian làm việc để tránh vô tình làm mất hoặc bỏ mồ côi dữ liệu.";
 
     card.append(header, intro, form, feedback, listHeader, list, note);
     dialog.appendChild(card);

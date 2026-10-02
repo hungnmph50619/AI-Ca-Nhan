@@ -1,0 +1,217 @@
+name: Model Lab v2.6.6
+
+on:
+  push:
+    branches:
+      - 'experiment/roadmap-v2-6-6-current'
+  pull_request:
+    paths:
+      - 'src/PersonalAI.Web/ModelLab/ModelRolloutModels.cs'
+      - 'src/PersonalAI.Web/Services/ModelRolloutService.cs'
+      - 'src/PersonalAI.Web/Services/ModelLabEndpoints.cs'
+      - 'src/PersonalAI.Web/Models/SystemModels.cs'
+
+jobs:
+  validate-v266:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: '8.0.x'
+
+      - name: Restore
+        run: dotnet restore PersonalAI.sln
+
+      - name: Build
+        run: dotnet build PersonalAI.sln -c Release --no-restore
+
+      - name: Tests
+        run: dotnet test PersonalAI.sln -c Release --no-build
+
+      - name: Staged rollout smoke test
+        shell: bash
+        run: |
+          set -euo pipefail
+          rm -rf /tmp/personalai-v266
+          mkdir -p /tmp/personalai-v266/workspace /tmp/personalai-v266/model-lab
+
+          Workspace__Root=/tmp/personalai-v266/workspace           ModelLab__Root=/tmp/personalai-v266/model-lab           dotnet run --project src/PersonalAI.Web/PersonalAI.Web.csproj             -c Release --no-build             --urls http://127.0.0.1:5097             >/tmp/personalai-v266.log 2>&1 &
+          APP_PID=$!
+          trap 'kill "$APP_PID" 2>/dev/null || true' EXIT
+
+          ready=0
+          for i in {1..30}; do
+            if curl -fsS http://127.0.0.1:5097/api/model-lab/rollouts/status >/tmp/status.json; then
+              ready=1
+              break
+            fi
+            sleep 1
+          done
+          test "$ready" = "1"
+
+          jq -e '
+            (.version | split(".") | map(tonumber)) >= [2,6,6]
+            and .directProductionPromotionEnabled == false
+            and .persisted == true
+            and .explicitConfirmationRequired == true
+          ' /tmp/status.json >/dev/null
+
+          workspace_id=$(curl -fsS http://127.0.0.1:5097/api/model-lab/status | jq -r '.workspaceId')
+          safe_workspace=$(printf '%s' "$workspace_id" | sed 's/[^A-Za-z0-9_-]/_/g')
+
+          mkdir -p /tmp/personalai-v266/model-lab/Registry
+          mkdir -p /tmp/personalai-v266/model-lab/PromotionGates
+
+          prod_artifact="aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa"
+          cand_artifact="bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb"
+          prod_model="cccccccc-cccc-cccc-cccc-cccccccccccc"
+          cand_model="dddddddd-dddd-dddd-dddd-dddddddddddd"
+          gate_id="eeeeeeee-eeee-eeee-eeee-eeeeeeeeeeee"
+
+          cat > /tmp/personalai-v266/model-lab/Registry/model-artifacts-$safe_workspace.json <<JSON
+          [
+            {
+              "id":"$prod_artifact",
+              "workspaceId":"$workspace_id",
+              "name":"prod",
+              "version":"1",
+              "baseModel":"local",
+              "trainingJobId":"11111111-1111-1111-1111-111111111111",
+              "datasetId":"d",
+              "datasetVersion":1,
+              "datasetSha256":"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+              "trainingMethod":"naive-bayes",
+              "artifactPath":"/tmp/prod.json",
+              "artifactSha256":"1111111111111111111111111111111111111111111111111111111111111111",
+              "sizeBytes":10,
+              "metrics":{},
+              "status":"validated",
+              "createdAt":"2026-10-01T00:00:00+00:00",
+              "updatedAt":"2026-10-01T00:00:00+00:00"
+            },
+            {
+              "id":"$cand_artifact",
+              "workspaceId":"$workspace_id",
+              "name":"cand",
+              "version":"1",
+              "baseModel":"local",
+              "trainingJobId":"22222222-2222-2222-2222-222222222222",
+              "datasetId":"d",
+              "datasetVersion":2,
+              "datasetSha256":"bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+              "trainingMethod":"naive-bayes",
+              "artifactPath":"/tmp/cand.json",
+              "artifactSha256":"2222222222222222222222222222222222222222222222222222222222222222",
+              "sizeBytes":10,
+              "metrics":{},
+              "status":"validated",
+              "createdAt":"2026-10-01T00:01:00+00:00",
+              "updatedAt":"2026-10-01T00:01:00+00:00"
+            }
+          ]
+          JSON
+
+          cat > /tmp/personalai-v266/model-lab/Registry/model-registry-$safe_workspace.json <<JSON
+          [
+            {
+              "id":"$prod_model",
+              "workspaceId":"$workspace_id",
+              "family":"intent-router",
+              "version":"1.0.0",
+              "artifactId":"$prod_artifact",
+              "artifactSha256":"1111111111111111111111111111111111111111111111111111111111111111",
+              "baseModel":"local",
+              "trainingMethod":"naive-bayes",
+              "datasetId":"d",
+              "datasetVersion":1,
+              "datasetSha256":"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+              "compatibleTasks":["intent"],
+              "runtime":"local",
+              "stage":"production",
+              "notes":"prod",
+              "createdAt":"2026-10-01T00:00:00+00:00",
+              "updatedAt":"2026-10-01T00:00:00+00:00"
+            },
+            {
+              "id":"$cand_model",
+              "workspaceId":"$workspace_id",
+              "family":"intent-router",
+              "version":"2.0.0",
+              "artifactId":"$cand_artifact",
+              "artifactSha256":"2222222222222222222222222222222222222222222222222222222222222222",
+              "baseModel":"local",
+              "trainingMethod":"naive-bayes",
+              "datasetId":"d",
+              "datasetVersion":2,
+              "datasetSha256":"bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+              "compatibleTasks":["intent"],
+              "runtime":"local",
+              "stage":"candidate",
+              "notes":"candidate",
+              "createdAt":"2026-10-01T00:01:00+00:00",
+              "updatedAt":"2026-10-01T00:01:00+00:00"
+            }
+          ]
+          JSON
+
+          cat > /tmp/personalai-v266/model-lab/PromotionGates/promotion-gates-$safe_workspace.json <<JSON
+          [
+            {
+              "id":"$gate_id",
+              "workspaceId":"$workspace_id",
+              "comparisonReportId":"77777777-7777-7777-7777-777777777777",
+              "candidateModelVersionId":"$cand_model",
+              "productionModelVersionId":"$prod_model",
+              "family":"intent-router",
+              "checks":[
+                {"check":"critical-regression","passed":true,"critical":true,"detail":"ok"},
+                {"check":"regression","passed":true,"critical":true,"detail":"ok"},
+                {"check":"security","passed":true,"critical":true,"detail":"ok"},
+                {"check":"lineage","passed":true,"critical":true,"detail":"ok"},
+                {"check":"latency","passed":true,"critical":false,"detail":"ok"},
+                {"check":"cost","passed":true,"critical":false,"detail":"ok"},
+                {"check":"resource","passed":true,"critical":false,"detail":"ok"}
+              ],
+              "decision":"approved-for-staging",
+              "eligibleForStaging":true,
+              "productionMutationPerformed":false,
+              "createdAt":"2026-10-01T00:02:00+00:00"
+            }
+          ]
+          JSON
+
+          no_confirm=$(curl -sS -o /tmp/no-confirm.json -w '%{http_code}'             -X POST http://127.0.0.1:5097/api/model-lab/rollouts/start             -H 'Content-Type: application/json'             -d '{"promotionGateDecisionId":"'"$gate_id"'","stagingTrafficPercent":0,"confirmStartRollout":false}')
+          test "$no_confirm" = "400"
+
+          curl -fsS -X POST http://127.0.0.1:5097/api/model-lab/rollouts/start             -H 'Content-Type: application/json'             -d '{"promotionGateDecisionId":"'"$gate_id"'","stagingTrafficPercent":0,"confirmStartRollout":true}'             >/tmp/staging.json
+
+          rollout_id=$(jq -r '.id' /tmp/staging.json)
+
+          jq -e '
+            .stage == "staging"
+            and .trafficPercent == 0
+            and .productionMutationPerformed == false
+          ' /tmp/staging.json >/dev/null
+
+          curl -fsS http://127.0.0.1:5097/api/model-lab/models/$cand_model             | jq -e '.stage == "staging"' >/dev/null
+
+          direct_prod=$(curl -sS -o /tmp/direct-prod.json -w '%{http_code}'             -X POST http://127.0.0.1:5097/api/model-lab/rollouts/$rollout_id/advance             -H 'Content-Type: application/json'             -d '{"targetStage":"production","confirmAdvance":true}')
+          test "$direct_prod" = "400"
+
+          bad_canary=$(curl -sS -o /tmp/bad-canary.json -w '%{http_code}'             -X POST http://127.0.0.1:5097/api/model-lab/rollouts/$rollout_id/advance             -H 'Content-Type: application/json'             -d '{"targetStage":"canary","canaryTrafficPercent":50,"confirmAdvance":true}')
+          test "$bad_canary" = "400"
+
+          curl -fsS -X POST             http://127.0.0.1:5097/api/model-lab/rollouts/$rollout_id/advance             -H 'Content-Type: application/json'             -d '{"targetStage":"canary","canaryTrafficPercent":10,"confirmAdvance":true}'             >/tmp/canary.json
+
+          jq -e '
+            .stage == "canary"
+            and .trafficPercent == 10
+            and .productionMutationPerformed == false
+          ' /tmp/canary.json >/dev/null
+
+          curl -fsS http://127.0.0.1:5097/api/model-lab/models/$cand_model             | jq -e '.stage == "canary"' >/dev/null
+
+          curl -fsS http://127.0.0.1:5097/api/model-lab/models/$prod_model             | jq -e '.stage == "production"' >/dev/null
+
+          curl -fsS http://127.0.0.1:5097/api/model-lab/rollouts/status             | jq -e '.rollouts == 1 and .canary == 1 and .directProductionPromotionEnabled == false' >/dev/null

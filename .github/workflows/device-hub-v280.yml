@@ -1,0 +1,163 @@
+name: Device Hub v2.8.0
+
+on:
+  push:
+    branches:
+      - 'experiment/roadmap-v2-8-0-current'
+
+jobs:
+  validate-v280:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: '8.0.x'
+
+      - name: Restore
+        run: dotnet restore PersonalAI.sln
+
+      - name: Build
+        run: dotnet build PersonalAI.sln -c Release --no-restore
+
+      - name: Tests
+        run: dotnet test PersonalAI.sln -c Release --no-build
+
+      - name: Device Hub state and permission safety smoke test
+        shell: bash
+        run: |
+          set -euo pipefail
+          rm -rf /tmp/personalai-v280
+          mkdir -p             /tmp/personalai-v280/workspace             /tmp/personalai-v280/companion             /tmp/personalai-v280/hub
+
+          export Workspace__Root=/tmp/personalai-v280/workspace
+          export Companion__Root=/tmp/personalai-v280/companion
+          export Companion__Enabled=true
+          export Companion__AllowInsecureHttp=true
+          export DeviceHub__Root=/tmp/personalai-v280/hub
+
+          dotnet run --project src/PersonalAI.Web/PersonalAI.Web.csproj             -c Release --no-build             --urls http://127.0.0.1:5121             >/tmp/personalai-v280/app.log 2>&1 &
+          APP_PID=$!
+          trap 'kill "$APP_PID" 2>/dev/null || true' EXIT
+
+          for i in {1..30}; do
+            if curl -fsS http://127.0.0.1:5121/api/device-hub/status >/tmp/hub-status.json; then
+              break
+            fi
+            sleep 1
+          done
+
+          jq -e '
+            (.version | split(".") | map(tonumber)) >= [2,8,0]
+            and .totalDevices==0
+            and .deviceStatePersisted==true
+            and .companionReconciliationEnabled==true
+            and .automaticPermissionGrantEnabled==false
+            and .remoteExecutionEnabled==false
+            and .onlineWindowMinutes==5
+            and (.supportedDeviceTypes | sort)==(["android","laptop","other","pc"] | sort)
+          ' /tmp/hub-status.json >/dev/null
+
+          no_confirm=$(curl -sS -o /tmp/no-confirm.json -w '%{http_code}'             -X POST http://127.0.0.1:5121/api/device-hub/admin/devices             -H 'Content-Type: application/json'             -d '{
+              "name":"CI Laptop",
+              "deviceType":"laptop",
+              "confirmRegister":false
+            }')
+          test "$no_confirm" = "400"
+
+          curl -fsS -X POST http://127.0.0.1:5121/api/device-hub/admin/devices             -H 'Content-Type: application/json'             -d '{
+              "name":"CI Laptop",
+              "deviceType":"laptop",
+              "confirmRegister":true
+            }' >/tmp/laptop.json
+
+          laptop_id=$(jq -r '.id' /tmp/laptop.json)
+          jq -e '
+            .deviceType=="laptop"
+            and .source=="local-admin"
+            and .connectionStatus=="unknown"
+            and .permissionsGranted==false
+            and .remoteExecutionEnabled==false
+          ' /tmp/laptop.json >/dev/null
+
+          android_admin=$(curl -sS -o /tmp/android-admin.json -w '%{http_code}'             -X POST http://127.0.0.1:5121/api/device-hub/admin/devices             -H 'Content-Type: application/json'             -d '{
+              "name":"Fake Android",
+              "deviceType":"android",
+              "confirmRegister":true
+            }')
+          test "$android_admin" = "400"
+
+          heartbeat_no_confirm=$(curl -sS -o /tmp/heartbeat-no-confirm.json -w '%{http_code}'             -X POST http://127.0.0.1:5121/api/device-hub/admin/devices/$laptop_id/heartbeat             -H 'Content-Type: application/json'             -d '{"confirmHeartbeat":false}')
+          test "$heartbeat_no_confirm" = "400"
+
+          curl -fsS -X POST http://127.0.0.1:5121/api/device-hub/admin/devices/$laptop_id/heartbeat             -H 'Content-Type: application/json'             -d '{"confirmHeartbeat":true}' >/tmp/laptop-heartbeat.json
+
+          jq -e '
+            .connectionStatus=="online"
+            and .permissionsGranted==false
+            and .remoteExecutionEnabled==false
+          ' /tmp/laptop-heartbeat.json >/dev/null
+
+          curl -fsS -X POST http://127.0.0.1:5121/api/companion/admin/pairing/start             -H 'Content-Type: application/json'             -d '{"confirmed":true}' >/tmp/pairing.json
+          pairing_code=$(jq -r '.code' /tmp/pairing.json)
+
+          curl -fsS -X POST http://127.0.0.1:5121/api/companion/pairing/claim             -H 'Content-Type: application/json'             -d '{
+              "code":"'"$pairing_code"'",
+              "deviceName":"CI Android"
+            }' >/tmp/claimed.json
+
+          token=$(jq -r '.token' /tmp/claimed.json)
+          companion_device_id=$(jq -r '.device.id' /tmp/claimed.json)
+          test -n "$token"
+
+          curl -fsS -X POST http://127.0.0.1:5121/api/companion/client/hub/heartbeat             -H "Authorization: Bearer $token"             -H 'Content-Type: application/json'             -d '{}' >/tmp/android-heartbeat.json
+
+          jq -e '
+            .deviceType=="android"
+            and .source=="companion"
+            and .connectionStatus=="online"
+            and .permissionsGranted==false
+            and .remoteExecutionEnabled==false
+          ' /tmp/android-heartbeat.json >/dev/null
+
+          test "$(jq -r '.companionDeviceId' /tmp/android-heartbeat.json)" = "$companion_device_id"
+
+          curl -fsS             -H "Authorization: Bearer $token"             http://127.0.0.1:5121/api/companion/client/me >/tmp/me.json
+          jq -e '(.capabilities | index("device-hub-status")) != null' /tmp/me.json >/dev/null
+
+          curl -fsS http://127.0.0.1:5121/api/device-hub/devices >/tmp/devices.json
+          jq -e '
+            .totalDevices==2
+            and .onlineDevices==2
+            and .offlineDevices==0
+            and .unknownDevices==0
+            and ([.devices[].permissionsGranted] | all(.==false))
+            and ([.devices[].remoteExecutionEnabled] | all(.==false))
+            and ([.devices[].deviceType] | sort)==(["android","laptop"] | sort)
+          ' /tmp/devices.json >/dev/null
+
+          hub_file=/tmp/personalai-v280/hub/device-hub-personal.json
+          test -f "$hub_file"
+
+          jq --arg id "$laptop_id" '
+            map(if .id==$id then
+              .lastSeenAt="2026-01-01T00:00:00+00:00"
+              | .connectionStatus="online"
+            else . end)
+          ' "$hub_file" >/tmp/hub-old.json
+          mv /tmp/hub-old.json "$hub_file"
+
+          curl -fsS http://127.0.0.1:5121/api/device-hub/devices >/tmp/stale.json
+          jq -e '
+            (.devices[] | select(.id=="'"$laptop_id"'") | .connectionStatus)=="offline"
+            and .offlineDevices==1
+            and .onlineDevices==1
+          ' /tmp/stale.json >/dev/null
+
+          jq -e '
+            ([.[] | .permissionsGranted] | all(.==false))
+            and ([.[] | .remoteExecutionEnabled] | all(.==false))
+          ' "$hub_file" >/dev/null
+
+          grep -Fq 'AutomaticPermissionGrantEnabled: false'             src/PersonalAI.Web/Services/DeviceHubService.cs
+          grep -Fq 'RemoteExecutionEnabled: false'             src/PersonalAI.Web/Services/DeviceHubService.cs

@@ -20,11 +20,34 @@ public interface IComputerUseService
 
     ComputerActionResponse FocusWindow(string windowId);
 
+    ComputerActionResponse MinimizeWindow(string windowId);
+
     ComputerActionResponse MoveCursor(int x, int y);
+
+    ComputerActionResponse SmoothMoveCursor(
+        int x,
+        int y,
+        int durationMs = 320);
 
     ComputerActionResponse ClickLeft(string windowId, int x, int y);
 
+    ComputerActionResponse ClickRight(string windowId, int x, int y);
+
+    ComputerActionResponse DoubleClickLeft(string windowId, int x, int y);
+
+    ComputerActionResponse Scroll(string windowId, int x, int y, int delta);
+
+    ComputerActionResponse DragLeft(
+        string windowId,
+        int startX,
+        int startY,
+        int endX,
+        int endY,
+        int durationMs = 500);
+
     ComputerActionResponse TypeNotepadText(string windowId, string text);
+
+    ComputerActionResponse OpenDefaultBrowser(string? url = null);
 }
 
 public sealed class WindowsComputerUseService(
@@ -46,6 +69,9 @@ public sealed class WindowsComputerUseService(
     public const int MaximumNotepadTextLength = 32;
     private const uint MouseLeftDown = 0x0002;
     private const uint MouseLeftUp = 0x0004;
+    private const uint MouseRightDown = 0x0008;
+    private const uint MouseRightUp = 0x0010;
+    private const uint MouseWheel = 0x0800;
 
     public ComputerUseStatusResponse GetStatus()
     {
@@ -60,9 +86,16 @@ public sealed class WindowsComputerUseService(
                 ComputerUseCapabilities.WindowList,
                 ComputerUseCapabilities.ActiveWindow,
                 ComputerUseCapabilities.FocusWindow,
+                ComputerUseCapabilities.MinimizeWindow,
                 ComputerUseCapabilities.MoveCursor,
+                ComputerUseCapabilities.SmoothMoveCursor,
                 ComputerUseCapabilities.ClickLeft,
-                ComputerUseCapabilities.TypeNotepadText
+                ComputerUseCapabilities.ClickRight,
+                ComputerUseCapabilities.DoubleClickLeft,
+                ComputerUseCapabilities.Scroll,
+                ComputerUseCapabilities.DragLeft,
+                ComputerUseCapabilities.TypeNotepadText,
+                ComputerUseCapabilities.OpenDefaultBrowser
             }
             : Array.Empty<string>();
 
@@ -70,7 +103,7 @@ public sealed class WindowsComputerUseService(
         {
             "Không chụp ảnh màn hình trong v1.1.0.",
             "Chỉ hỗ trợ nhấp trái từng lần và nhập một dòng tối đa 32 ký tự vào Notepad có xác nhận; chưa có nhấp phải, nhấp đúp, kéo thả, cuộn hoặc phím tắt.",
-            "Không mở ứng dụng, chạy shell hoặc thực thi lệnh hệ thống.",
+            "Không chạy shell hoặc thực thi lệnh hệ thống tùy ý. Chỉ cho phép mở trình duyệt mặc định của Windows tới URL HTTP/HTTPS đã kiểm tra.",
             "Các hành động thay đổi focus/cursor phải đi qua Tool Framework và xác nhận.",
             "Điều khiển được khóa lúc khởi động; phải cho phép thủ công. Nút dừng chỉ chặn các lệnh mới qua dịch vụ, không phải phím dừng toàn hệ thống.",
             "Nhấp chuột có thể kích hoạt hành động trong ứng dụng khác; chỉ thử trên cửa sổ thử nghiệm không chứa dữ liệu quan trọng.",
@@ -244,6 +277,34 @@ public sealed class WindowsComputerUseService(
             $"Đã yêu cầu Windows chuyển focus tới: {LimitInline(title, 160)}");
     }
 
+    public ComputerActionResponse MinimizeWindow(
+        string windowId) =>
+        control.RunAllowed(() => MinimizeWindowCore(windowId));
+
+    private ComputerActionResponse MinimizeWindowCore(
+        string windowId)
+    {
+        EnsureAvailable();
+
+        var handle = ParseWindowId(windowId);
+        if (!IsWindow(handle) || !IsWindowVisible(handle))
+            throw new ToolExecutionInputException(
+                "Cửa sổ cần thu nhỏ không còn tồn tại hoặc không hiển thị.");
+
+        var title = GetWindowTitle(handle);
+        if (string.IsNullOrWhiteSpace(title))
+            throw new ToolExecutionInputException(
+                "Không thể thu nhỏ cửa sổ không có tiêu đề.");
+
+        _ = ShowWindow(handle, 6); // SW_MINIMIZE
+        Thread.Sleep(180);
+
+        return new ComputerActionResponse(
+            ComputerUseCapabilities.MinimizeWindow,
+            true,
+            $"Đã thu nhỏ cửa sổ: {LimitInline(title, 160)}");
+    }
+
     public ComputerActionResponse MoveCursor(
         int x,
         int y) =>
@@ -287,6 +348,63 @@ public sealed class WindowsComputerUseService(
             ComputerUseCapabilities.MoveCursor,
             true,
             $"Đã di chuyển con trỏ tới ({x}, {y}).");
+    }
+
+    public ComputerActionResponse SmoothMoveCursor(
+        int x,
+        int y,
+        int durationMs = 320) =>
+        control.RunAllowed(() =>
+            SmoothMoveCursorCore(x, y, durationMs));
+
+    private ComputerActionResponse SmoothMoveCursorCore(
+        int x,
+        int y,
+        int durationMs)
+    {
+        EnsureAvailable();
+
+        var screen = GetScreenInfo();
+        var rightExclusive = checked(screen.VirtualLeft + screen.VirtualWidth);
+        var bottomExclusive = checked(screen.VirtualTop + screen.VirtualHeight);
+        if (x < screen.VirtualLeft ||
+            x >= rightExclusive ||
+            y < screen.VirtualTop ||
+            y >= bottomExclusive)
+            throw new ToolExecutionInputException(
+                "Tọa độ di chuyển chuột nằm ngoài desktop ảo.");
+
+        var start = GetCursorPosition();
+        if (start.X == x && start.Y == y)
+            return new ComputerActionResponse(
+                ComputerUseCapabilities.SmoothMoveCursor,
+                false,
+                "Con trỏ đã ở mục tiêu.");
+
+        var safeDuration = Math.Clamp(durationMs, 120, 1200);
+        var steps = Math.Clamp(safeDuration / 24, 6, 40);
+        var sleep = Math.Max(8, safeDuration / steps);
+
+        for (var index = 1; index <= steps; index++)
+        {
+            var progress = index / (double)steps;
+            var eased = progress * progress * (3d - 2d * progress);
+            var nextX = (int)Math.Round(
+                start.X + ((x - start.X) * eased));
+            var nextY = (int)Math.Round(
+                start.Y + ((y - start.Y) * eased));
+
+            if (!SetCursorPos(nextX, nextY))
+                throw new ToolExecutionInputException(
+                    "Windows từ chối di chuyển con trỏ trong quá trình thao tác.");
+
+            Thread.Sleep(sleep);
+        }
+
+        return new ComputerActionResponse(
+            ComputerUseCapabilities.SmoothMoveCursor,
+            true,
+            $"Đã di chuyển con trỏ nhìn thấy được tới ({x}, {y}) trong khoảng {safeDuration} ms.");
     }
 
     public ComputerActionResponse ClickLeft(
@@ -348,6 +466,311 @@ public sealed class WindowsComputerUseService(
             ComputerUseCapabilities.ClickLeft,
             true,
             "Đã gửi một lần nhấp chuột trái tại tọa độ đã xác nhận.");
+    }
+
+    public ComputerActionResponse ClickRight(
+        string windowId,
+        int x,
+        int y) =>
+        control.RunAllowed(() =>
+            ClickButtonCore(
+                windowId,
+                x,
+                y,
+                MouseRightDown,
+                MouseRightUp,
+                ComputerUseCapabilities.ClickRight,
+                "nhấp chuột phải"));
+
+    public ComputerActionResponse DoubleClickLeft(
+        string windowId,
+        int x,
+        int y) =>
+        control.RunAllowed(() =>
+        {
+            ValidatePointerTarget(windowId, x, y, out var target);
+            if (!SetCursorPos(x, y) || GetForegroundWindow() != target)
+                throw new ToolExecutionInputException(
+                    "Không thể xác nhận vị trí con trỏ và cửa sổ đích trước khi nhấp đúp.");
+
+            for (var click = 0; click < 2; click++)
+            {
+                SendMouseButton(MouseLeftDown, MouseLeftUp);
+                if (click == 0)
+                    Thread.Sleep(90);
+            }
+
+            return new ComputerActionResponse(
+                ComputerUseCapabilities.DoubleClickLeft,
+                true,
+                "Đã gửi hai lần nhấp chuột trái liên tiếp tại tọa độ đã xác nhận.");
+        });
+
+    public ComputerActionResponse Scroll(
+        string windowId,
+        int x,
+        int y,
+        int delta) =>
+        control.RunAllowed(() =>
+        {
+            ValidatePointerTarget(windowId, x, y, out var target);
+            if (delta is < -2400 or > 2400 || delta == 0)
+                throw new ToolExecutionInputException(
+                    "Độ cuộn phải nằm trong khoảng -2400..2400 và khác 0.");
+
+            if (!SetCursorPos(x, y) || GetForegroundWindow() != target)
+                throw new ToolExecutionInputException(
+                    "Không thể xác nhận con trỏ/cửa sổ trước khi cuộn.");
+
+            var input = new[]
+            {
+                new NativeInputEvent
+                {
+                    Type = InputMouse,
+                    Data = new NativeInputUnion
+                    {
+                        Mouse = new MouseInputData
+                        {
+                            MouseData = unchecked((uint)delta),
+                            Flags = MouseWheel
+                        }
+                    }
+                }
+            };
+
+            var sent = SendInput(
+                1,
+                input,
+                Marshal.SizeOf<NativeInputEvent>());
+            if (sent != 1)
+                throw new ToolExecutionInputException(
+                    "Windows không xác nhận sự kiện cuộn.");
+
+            return new ComputerActionResponse(
+                ComputerUseCapabilities.Scroll,
+                true,
+                $"Đã cuộn tại ({x}, {y}) với delta {delta}.");
+        });
+
+    public ComputerActionResponse DragLeft(
+        string windowId,
+        int startX,
+        int startY,
+        int endX,
+        int endY,
+        int durationMs = 500) =>
+        control.RunAllowed(() =>
+        {
+            ValidatePointerTarget(
+                windowId,
+                startX,
+                startY,
+                out var target);
+            ValidatePointerTarget(
+                windowId,
+                endX,
+                endY,
+                out var endTarget);
+            if (target != endTarget)
+                throw new ToolExecutionInputException(
+                    "Điểm đầu và cuối kéo-thả phải nằm trong cùng cửa sổ foreground.");
+
+            var safeDuration = Math.Clamp(durationMs, 180, 1800);
+            var steps = Math.Clamp(safeDuration / 24, 8, 60);
+            var sleep = Math.Max(8, safeDuration / steps);
+
+            if (!SetCursorPos(startX, startY) ||
+                GetForegroundWindow() != target)
+                throw new ToolExecutionInputException(
+                    "Không thể đặt con trỏ tại điểm bắt đầu kéo.");
+
+            SendMouseDown(MouseLeftDown);
+            try
+            {
+                for (var index = 1; index <= steps; index++)
+                {
+                    if (GetForegroundWindow() != target)
+                        throw new ToolExecutionInputException(
+                            "Cửa sổ foreground đã thay đổi trong lúc kéo-thả.");
+
+                    var p = index / (double)steps;
+                    var eased = p * p * (3d - 2d * p);
+                    var nextX = (int)Math.Round(
+                        startX + ((endX - startX) * eased));
+                    var nextY = (int)Math.Round(
+                        startY + ((endY - startY) * eased));
+
+                    if (!SetCursorPos(nextX, nextY))
+                        throw new ToolExecutionInputException(
+                            "Windows từ chối di chuyển chuột trong lúc kéo-thả.");
+
+                    Thread.Sleep(sleep);
+                }
+            }
+            finally
+            {
+                SendMouseUp(MouseLeftUp);
+            }
+
+            return new ComputerActionResponse(
+                ComputerUseCapabilities.DragLeft,
+                true,
+                $"Đã kéo-thả từ ({startX}, {startY}) tới ({endX}, {endY}).");
+        });
+
+    private ComputerActionResponse ClickButtonCore(
+        string windowId,
+        int x,
+        int y,
+        uint downFlag,
+        uint upFlag,
+        string capability,
+        string label)
+    {
+        ValidatePointerTarget(windowId, x, y, out var target);
+
+        if (!SetCursorPos(x, y) || GetForegroundWindow() != target)
+            throw new ToolExecutionInputException(
+                $"Không thể xác nhận vị trí con trỏ và cửa sổ trước khi {label}.");
+
+        SendMouseButton(downFlag, upFlag);
+
+        return new ComputerActionResponse(
+            capability,
+            true,
+            $"Đã gửi một lần {label} tại tọa độ đã xác nhận.");
+    }
+
+    private void ValidatePointerTarget(
+        string windowId,
+        int x,
+        int y,
+        out IntPtr target)
+    {
+        EnsureAvailable();
+        var screen = GetScreenInfo();
+        var right = checked(screen.VirtualLeft + screen.VirtualWidth);
+        var bottom = checked(screen.VirtualTop + screen.VirtualHeight);
+        if (x < screen.VirtualLeft || x >= right ||
+            y < screen.VirtualTop || y >= bottom)
+            throw new ToolExecutionInputException(
+                "Tọa độ thao tác nằm ngoài desktop ảo.");
+
+        target = ParseWindowId(windowId);
+        if (!IsWindow(target) ||
+            !IsWindowVisible(target) ||
+            target != GetForegroundWindow() ||
+            !GetWindowRect(target, out var rect) ||
+            x < rect.Left || x >= rect.Right ||
+            y < rect.Top || y >= rect.Bottom)
+            throw new ToolExecutionInputException(
+                "Cửa sổ đích không còn ở phía trước hoặc tọa độ nằm ngoài cửa sổ.");
+    }
+
+    private static void SendMouseButton(
+        uint downFlag,
+        uint upFlag)
+    {
+        SendMouseDown(downFlag);
+        SendMouseUp(upFlag);
+    }
+
+    private static void SendMouseDown(uint flag)
+    {
+        var input = new[]
+        {
+            new NativeInputEvent
+            {
+                Type = InputMouse,
+                Data = new NativeInputUnion
+                {
+                    Mouse = new MouseInputData { Flags = flag }
+                }
+            }
+        };
+
+        if (SendInput(
+                1,
+                input,
+                Marshal.SizeOf<NativeInputEvent>()) != 1)
+            throw new ToolExecutionInputException(
+                "Windows không xác nhận sự kiện nhấn chuột.");
+    }
+
+    private static void SendMouseUp(uint flag)
+    {
+        var input = new[]
+        {
+            new NativeInputEvent
+            {
+                Type = InputMouse,
+                Data = new NativeInputUnion
+                {
+                    Mouse = new MouseInputData { Flags = flag }
+                }
+            }
+        };
+
+        if (SendInput(
+                1,
+                input,
+                Marshal.SizeOf<NativeInputEvent>()) != 1)
+            throw new ToolExecutionInputException(
+                "Windows không xác nhận sự kiện nhả chuột.");
+    }
+
+    public ComputerActionResponse OpenDefaultBrowser(string? url = null) =>
+        control.RunAllowed(() => OpenDefaultBrowserCore(url));
+
+    private ComputerActionResponse OpenDefaultBrowserCore(string? url)
+    {
+        EnsureAvailable();
+
+        var target = string.IsNullOrWhiteSpace(url)
+            ? "https://www.google.com/"
+            : url.Trim();
+
+        if (target.Length > 2048 ||
+            !Uri.TryCreate(target, UriKind.Absolute, out var uri) ||
+            (uri.Scheme != Uri.UriSchemeHttp &&
+             uri.Scheme != Uri.UriSchemeHttps) ||
+            string.IsNullOrWhiteSpace(uri.Host))
+        {
+            throw new ToolExecutionInputException(
+                "Chỉ được mở URL HTTP/HTTPS tuyệt đối, tối đa 2048 ký tự.");
+        }
+
+        try
+        {
+            using var process = Process.Start(new ProcessStartInfo
+            {
+                FileName = uri.ToString(),
+                UseShellExecute = true
+            });
+
+            if (process is null)
+            {
+                throw new ToolExecutionInputException(
+                    "Windows không khởi chạy được trình duyệt mặc định.");
+            }
+        }
+        catch (ToolExecutionInputException)
+        {
+            throw;
+        }
+        catch (Exception exception) when (
+            exception is InvalidOperationException or
+            System.ComponentModel.Win32Exception or
+            NotSupportedException)
+        {
+            throw new ToolExecutionInputException(
+                "Không thể mở trình duyệt mặc định bằng Windows shell.");
+        }
+
+        return new ComputerActionResponse(
+            ComputerUseCapabilities.OpenDefaultBrowser,
+            true,
+            $"Đã yêu cầu Windows mở trình duyệt mặc định tới {uri.Scheme}://{uri.Host}.");
     }
 
     public ComputerActionResponse TypeNotepadText(
@@ -695,6 +1118,12 @@ public sealed class WindowsComputerUseService(
     [return: MarshalAs(UnmanagedType.Bool)]
     private static extern bool SetForegroundWindow(
         IntPtr hWnd);
+
+    [DllImport("user32.dll")]
+    [return: MarshalAs(UnmanagedType.Bool)]
+    private static extern bool ShowWindow(
+        IntPtr hWnd,
+        int command);
 
     [DllImport("user32.dll")]
     private static extern uint GetWindowThreadProcessId(

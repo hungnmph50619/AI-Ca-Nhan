@@ -1,0 +1,267 @@
+name: Development v2.7.12
+
+on:
+  push:
+    branches:
+      - 'experiment/roadmap-v2-7-12-current'
+
+jobs:
+  validate-v2712:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: '8.0.x'
+
+      - name: Restore
+        run: dotnet restore PersonalAI.sln
+
+      - name: Build
+        run: dotnet build PersonalAI.sln -c Release --no-restore
+
+      - name: Tests
+        run: dotnet test PersonalAI.sln -c Release --no-build
+
+      - name: Restart recovery without side-effect replay
+        shell: bash
+        run: |
+          set -euo pipefail
+          rm -rf /tmp/personalai-v2712
+          mkdir -p             /tmp/personalai-v2712/workspace             /tmp/personalai-v2712/runs             /tmp/personalai-v2712/github             /tmp/personalai-v2712/ci             /tmp/personalai-v2712/policy             /tmp/personalai-v2712/sync             /tmp/personalai-v2712/tests             /tmp/personalai-v2712/reviews             /tmp/personalai-v2712/security             /tmp/personalai-v2712/benchmarks
+
+          export Workspace__Root=/tmp/personalai-v2712/workspace
+          export Development__RunRoot=/tmp/personalai-v2712/runs
+          export Development__GitHubReportRoot=/tmp/personalai-v2712/github
+          export Development__CiRoot=/tmp/personalai-v2712/ci
+          export Development__MergePolicyRoot=/tmp/personalai-v2712/policy
+          export Development__LocalSyncRoot=/tmp/personalai-v2712/sync
+          export Development__TestReportRoot=/tmp/personalai-v2712/tests
+          export Development__ReviewRoot=/tmp/personalai-v2712/reviews
+          export Development__SecurityReportRoot=/tmp/personalai-v2712/security
+          export Development__BenchmarkRoot=/tmp/personalai-v2712/benchmarks
+
+          start_app() {
+            dotnet run --project src/PersonalAI.Web/PersonalAI.Web.csproj               -c Release --no-build               --urls http://127.0.0.1:5117               >/tmp/personalai-v2712/app.log 2>&1 &
+            APP_PID=$!
+            for i in {1..30}; do
+              if curl -fsS http://127.0.0.1:5117/api/development/recovery/status >/tmp/recovery-status.json; then
+                return 0
+              fi
+              sleep 1
+            done
+            return 1
+          }
+
+          stop_app() {
+            kill "$APP_PID" 2>/dev/null || true
+            wait "$APP_PID" 2>/dev/null || true
+          }
+
+          trap 'stop_app || true' EXIT
+          start_app
+
+          jq -e '
+            (.version | split(".") | map(tonumber)) >= [2,7,12]
+            and .persistedStateUsed==true
+            and .sideEffectReplayEnabled==false
+            and .safeReconciliationEnabled==true
+            and (.reconciliableStages | index("push")) != null
+            and (.reconciliableStages | index("merge-policy")) != null
+            and (.reconciliableStages | index("local-sync")) != null
+          ' /tmp/recovery-status.json >/dev/null
+
+          curl -fsS -X POST http://127.0.0.1:5117/api/development/runs             -H 'Content-Type: application/json'             -d '{
+              "goal":"v2.7.12 recovery smoke",
+              "repositoryPath":"",
+              "branch":"experiment/v2712-smoke",
+              "confirmCreate":true
+            }' >/tmp/run.json
+
+          run_id=$(jq -r '.id' /tmp/run.json)
+          workspace_id=$(jq -r '.workspaceId' /tmp/run.json)
+          safe_workspace=$(printf '%s' "$workspace_id" | sed 's/[^A-Za-z0-9_-]/_/g')
+          run_file=/tmp/personalai-v2712/runs/development-runs-$safe_workspace.json
+
+          unresolved=$(curl -fsS -X POST http://127.0.0.1:5117/api/development/recovery/run             -H 'Content-Type: application/json'             -d '{"developmentRunId":"'"$run_id"'","confirmRecovery":true}')
+          printf '%s' "$unresolved" >/tmp/unresolved.json
+          jq -e '
+            .stageBefore=="analysis"
+            and .stageAfter=="analysis"
+            and .advanced==false
+            and .sideEffectReplayed==false
+            and .nextAction=="continue-analysis"
+          ' /tmp/unresolved.json >/dev/null
+
+          jq --arg id "$run_id" '
+            map(if .id==$id then
+              .stage="push"
+              | .status="active"
+              | .updatedAt="2026-10-01T00:01:00+00:00"
+            else . end)
+          ' "$run_file" >/tmp/run-push.json
+          mv /tmp/run-push.json "$run_file"
+
+          github_id='12121212-1212-1212-1212-121212121212'
+          cat > /tmp/personalai-v2712/github/development-github-reports-$safe_workspace.json <<JSON
+          [{
+            "id":"$github_id",
+            "workspaceId":"$workspace_id",
+            "developmentRunId":"$run_id",
+            "repository":"owner/repo",
+            "branch":"experiment/v2712-smoke",
+            "baseBranch":"main",
+            "worktreePath":".personalai-worktrees/run-$run_id",
+            "remote":"origin",
+            "pushed":true,
+            "pullRequestCreated":true,
+            "pullRequestNumber":712,
+            "pullRequestUrl":"https://example.invalid/owner/repo/pull/712",
+            "ciRunId":null,
+            "ciState":null,
+            "ciConclusion":null,
+            "ciRepairAttempts":0,
+            "maximumCiRepairAttempts":3,
+            "createdAt":"2026-10-01T00:00:00+00:00",
+            "updatedAt":"2026-10-01T00:01:00+00:00"
+          }]
+          JSON
+
+          stop_app
+          start_app
+
+          curl -fsS -X POST http://127.0.0.1:5117/api/development/recovery/run             -H 'Content-Type: application/json'             -d '{"developmentRunId":"'"$run_id"'","confirmRecovery":true}' >/tmp/recover-push.json
+
+          jq -e '
+            .stageBefore=="push"
+            and .stageAfter=="ci"
+            and .advanced==true
+            and .sideEffectReplayed==false
+            and .evidence[0].evidenceType=="development-github-report"
+            and .evidence[0].evidenceId=="'"$github_id"'"
+          ' /tmp/recover-push.json >/dev/null
+
+          jq -e '
+            .stage=="ci"
+            and .gitHubReportId=="'"$github_id"'"
+          ' <(curl -fsS http://127.0.0.1:5117/api/development/runs/$run_id) >/dev/null
+
+          ci_id='13131313-1313-1313-1313-131313131313'
+          cat > /tmp/personalai-v2712/ci/ci-runs-$safe_workspace.json <<JSON
+          [{
+            "id":"$ci_id",
+            "workspaceId":"$workspace_id",
+            "repository":"owner/repo",
+            "sourceEventType":"workflow_run",
+            "deliveryId":"delivery-v2712",
+            "externalId":"2712001",
+            "ref":"experiment/v2712-smoke",
+            "sha":"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+            "state":"completed",
+            "conclusion":"success",
+            "repairAttempts":0,
+            "maximumRepairAttempts":3,
+            "failureLogExcerpt":null,
+            "failureLogTruncated":false,
+            "firstSeenAt":"2026-10-01T00:02:00+00:00",
+            "updatedAt":"2026-10-01T00:03:00+00:00",
+            "completedAt":"2026-10-01T00:03:00+00:00"
+          }]
+          JSON
+
+          stop_app
+          start_app
+
+          curl -fsS -X POST http://127.0.0.1:5117/api/development/recovery/run             -H 'Content-Type: application/json'             -d '{"developmentRunId":"'"$run_id"'","confirmRecovery":true}' >/tmp/recover-ci.json
+
+          jq -e '
+            .stageBefore=="ci"
+            and .stageAfter=="merge-policy"
+            and .sideEffectReplayed==false
+            and .evidence[0].evidenceType=="ci-run"
+            and .evidence[0].evidenceId=="'"$ci_id"'"
+          ' /tmp/recover-ci.json >/dev/null
+
+          merge_id='14141414-1414-1414-1414-141414141414'
+          cat > /tmp/personalai-v2712/policy/development-merge-policy-$safe_workspace.json <<JSON
+          [{
+            "id":"$merge_id",
+            "workspaceId":"$workspace_id",
+            "developmentRunId":"$run_id",
+            "gitHubReportId":"$github_id",
+            "riskLevel":"low",
+            "riskEvidence":"persisted merge before restart",
+            "checks":[],
+            "allRequiredChecksPassed":true,
+            "automaticMergeEligible":true,
+            "requiresUserConfirmation":false,
+            "mergeAttempted":true,
+            "merged":true,
+            "decision":"merged",
+            "mergeCommitSha":"bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+            "createdAt":"2026-10-01T00:04:00+00:00"
+          }]
+          JSON
+
+          stop_app
+          start_app
+
+          curl -fsS -X POST http://127.0.0.1:5117/api/development/recovery/run             -H 'Content-Type: application/json'             -d '{"developmentRunId":"'"$run_id"'","confirmRecovery":true}' >/tmp/recover-merge.json
+
+          jq -e '
+            .stageBefore=="merge-policy"
+            and .stageAfter=="local-sync"
+            and .sideEffectReplayed==false
+            and .evidence[0].evidenceType=="development-merge-policy-report"
+            and .evidence[0].evidenceId=="'"$merge_id"'"
+          ' /tmp/recover-merge.json >/dev/null
+
+          sync_id='15151515-1515-1515-1515-151515151515'
+          cat > /tmp/personalai-v2712/sync/development-local-sync-$safe_workspace.json <<JSON
+          [{
+            "id":"$sync_id",
+            "workspaceId":"$workspace_id",
+            "developmentRunId":"$run_id",
+            "repositoryPath":"",
+            "remote":"origin",
+            "baseBranch":"main",
+            "branchBefore":"experiment/v2712-smoke",
+            "branchAfter":"main",
+            "state":"synced",
+            "fetchSucceeded":true,
+            "dirtyTreeDetected":false,
+            "checkoutPerformed":true,
+            "pullFastForwardOnly":true,
+            "synced":true,
+            "deferredReason":null,
+            "createdAt":"2026-10-01T00:05:00+00:00"
+          }]
+          JSON
+
+          stop_app
+          start_app
+
+          curl -fsS -X POST http://127.0.0.1:5117/api/development/recovery/run             -H 'Content-Type: application/json'             -d '{"developmentRunId":"'"$run_id"'","confirmRecovery":true}' >/tmp/recover-sync.json
+
+          jq -e '
+            .stageBefore=="local-sync"
+            and .stageAfter=="completed"
+            and .advanced==true
+            and .sideEffectReplayed==false
+            and .nextAction=="completed"
+            and .evidence[0].evidenceType=="development-local-sync-report"
+            and .evidence[0].evidenceId=="'"$sync_id"'"
+          ' /tmp/recover-sync.json >/dev/null
+
+          curl -fsS http://127.0.0.1:5117/api/development/runs/$run_id >/tmp/final-run.json
+          jq -e '
+            .stage=="completed"
+            and .status=="completed"
+            and .gitHubReportId=="'"$github_id"'"
+            and .ciRunId=="'"$ci_id"'"
+            and .mergePolicyReportId=="'"$merge_id"'"
+            and .localSyncReportId=="'"$sync_id"'"
+            and .completedAt!=null
+          ' /tmp/final-run.json >/dev/null
+
+          curl -fsS http://127.0.0.1:5117/api/development/status             | jq -e '(.availableCapabilities | index("restart-safe-recovery")) != null' >/dev/null

@@ -1,0 +1,195 @@
+name: Development v2.7.13
+
+on:
+  push:
+    branches:
+      - 'experiment/roadmap-v2-7-13-current'
+
+jobs:
+  validate-v2713:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: '8.0.x'
+
+      - name: Restore
+        run: dotnet restore PersonalAI.sln
+
+      - name: Build
+        run: dotnet build PersonalAI.sln -c Release --no-restore
+
+      - name: Tests
+        run: dotnet test PersonalAI.sln -c Release --no-build
+
+      - name: Controlled dependency maintenance smoke test
+        shell: bash
+        run: |
+          set -euo pipefail
+          rm -rf /tmp/personalai-v2713
+          mkdir -p             /tmp/personalai-v2713/workspace/repo             /tmp/personalai-v2713/runs             /tmp/personalai-v2713/run-worktrees             /tmp/personalai-v2713/dependencies
+
+          cd /tmp/personalai-v2713/workspace/repo
+          git init -b main
+          git config user.name "PersonalAI CI"
+          git config user.email "ci@example.invalid"
+
+          cat > Demo.csproj <<'XML'
+          <Project Sdk="Microsoft.NET.Sdk">
+            <PropertyGroup>
+              <TargetFramework>net8.0</TargetFramework>
+            </PropertyGroup>
+            <ItemGroup>
+              <PackageReference Include="Example.Package" Version="1.2.3" />
+              <PackageReference Include="Other.Package">
+                <Version>2.4.0</Version>
+              </PackageReference>
+            </ItemGroup>
+          </Project>
+          XML
+
+          git add Demo.csproj
+          git commit -m "initial dependency manifest"
+          main_hash_before=$(sha256sum Demo.csproj | awk '{print $1}')
+
+          cd "$GITHUB_WORKSPACE"
+          export Workspace__Root=/tmp/personalai-v2713/workspace
+          export Development__RunRoot=/tmp/personalai-v2713/runs
+          export Development__RunWorktreeRoot=/tmp/personalai-v2713/run-worktrees
+          export Development__DependencyMaintenanceRoot=/tmp/personalai-v2713/dependencies
+
+          dotnet run --project src/PersonalAI.Web/PersonalAI.Web.csproj             -c Release --no-build             --urls http://127.0.0.1:5118             >/tmp/personalai-v2713/app.log 2>&1 &
+          APP_PID=$!
+          trap 'kill "$APP_PID" 2>/dev/null || true' EXIT
+
+          for i in {1..30}; do
+            if curl -fsS http://127.0.0.1:5118/api/development/dependencies/status >/tmp/status.json; then
+              break
+            fi
+            sleep 1
+          done
+
+          jq -e '
+            (.version | split(".") | map(tonumber)) >= [2,7,13]
+            and .majorAutoUpgradeAllowed==false
+            and .worktreeOnly==true
+            and .shaGuardEnabled==true
+            and (.requiredPostApplyGates | sort)==(["benchmark","review","security","testing"] | sort)
+          ' /tmp/status.json >/dev/null
+
+          curl -fsS -X POST http://127.0.0.1:5118/api/development/runs             -H 'Content-Type: application/json'             -d '{
+              "goal":"v2.7.13 dependency maintenance smoke",
+              "repositoryPath":"repo",
+              "branch":"experiment/v2713-smoke",
+              "confirmCreate":true
+            }' >/tmp/run.json
+
+          run_id=$(jq -r '.id' /tmp/run.json)
+
+          curl -fsS -X POST http://127.0.0.1:5118/api/development/runs/$run_id/advance             -H 'Content-Type: application/json'             -d '{"expectedCurrentStage":"analysis","result":"prepared"}' >/tmp/coding.json
+          jq -e '.stage=="coding"' /tmp/coding.json >/dev/null
+
+          curl -fsS -X POST http://127.0.0.1:5118/api/development/dependencies/plan             -H 'Content-Type: application/json'             -d '{
+              "developmentRunId":"'"$run_id"'",
+              "projectPath":"Demo.csproj",
+              "packageId":"Example.Package",
+              "targetVersion":"1.2.4",
+              "startPoint":"main",
+              "confirmCreateWorktree":true
+            }' >/tmp/patch-plan.json
+
+          patch_plan=$(jq -r '.id' /tmp/patch-plan.json)
+          worktree_path=$(jq -r '.worktreePath' /tmp/patch-plan.json)
+
+          jq -e '
+            .currentVersion=="1.2.3"
+            and .targetVersion=="1.2.4"
+            and .upgradeKind=="patch"
+            and .riskLevel=="low"
+            and .automaticEligible==true
+            and .requiresUserApproval==false
+            and .state=="planned"
+          ' /tmp/patch-plan.json >/dev/null
+
+          curl -fsS -X POST http://127.0.0.1:5118/api/development/dependencies/apply             -H 'Content-Type: application/json'             -d '{
+              "planId":"'"$patch_plan"'",
+              "confirmApply":true,
+              "confirmMajorUpgrade":false
+            }' >/tmp/patch-applied.json
+
+          jq -e '
+            .state=="applied"
+            and .resultSha256!=null
+            and (.requiredPostApplyGates | sort)==(["benchmark","review","security","testing"] | sort)
+          ' /tmp/patch-applied.json >/dev/null
+
+          grep -Fq 'Include="Example.Package" Version="1.2.4"'             "/tmp/personalai-v2713/workspace/$worktree_path/Demo.csproj"
+
+          main_hash_after=$(sha256sum /tmp/personalai-v2713/workspace/repo/Demo.csproj | awk '{print $1}')
+          test "$main_hash_before" = "$main_hash_after"
+          grep -Fq 'Include="Example.Package" Version="1.2.3"'             /tmp/personalai-v2713/workspace/repo/Demo.csproj
+
+          curl -fsS -X POST http://127.0.0.1:5118/api/development/dependencies/plan             -H 'Content-Type: application/json'             -d '{
+              "developmentRunId":"'"$run_id"'",
+              "projectPath":"Demo.csproj",
+              "packageId":"Other.Package",
+              "targetVersion":"3.0.0",
+              "startPoint":"main",
+              "confirmCreateWorktree":true
+            }' >/tmp/major-plan.json
+
+          major_plan=$(jq -r '.id' /tmp/major-plan.json)
+          jq -e '
+            .currentVersion=="2.4.0"
+            and .targetVersion=="3.0.0"
+            and .upgradeKind=="major"
+            and .riskLevel=="high"
+            and .automaticEligible==false
+            and .requiresUserApproval==true
+            and .state=="blocked-major"
+          ' /tmp/major-plan.json >/dev/null
+
+          major_auto=$(curl -sS -o /tmp/major-auto.json -w '%{http_code}'             -X POST http://127.0.0.1:5118/api/development/dependencies/apply             -H 'Content-Type: application/json'             -d '{
+              "planId":"'"$major_plan"'",
+              "confirmApply":true,
+              "confirmMajorUpgrade":false
+            }')
+          test "$major_auto" = "400"
+          grep -qi 'Major upgrade' /tmp/major-auto.json
+          grep -Fq '<Version>2.4.0</Version>'             "/tmp/personalai-v2713/workspace/$worktree_path/Demo.csproj"
+
+          curl -fsS -X POST http://127.0.0.1:5118/api/development/dependencies/plan             -H 'Content-Type: application/json'             -d '{
+              "developmentRunId":"'"$run_id"'",
+              "projectPath":"Demo.csproj",
+              "packageId":"Other.Package",
+              "targetVersion":"2.5.0",
+              "startPoint":"main",
+              "confirmCreateWorktree":true
+            }' >/tmp/stale-plan.json
+          stale_plan=$(jq -r '.id' /tmp/stale-plan.json)
+
+          python3 - <<PY
+          from pathlib import Path
+          p=Path("/tmp/personalai-v2713/workspace/$worktree_path/Demo.csproj")
+          s=p.read_text()
+          p.write_text(s.replace("<Version>2.4.0</Version>", "<Version>2.4.1</Version>"))
+          PY
+
+          stale_code=$(curl -sS -o /tmp/stale.json -w '%{http_code}'             -X POST http://127.0.0.1:5118/api/development/dependencies/apply             -H 'Content-Type: application/json'             -d '{
+              "planId":"'"$stale_plan"'",
+              "confirmApply":true,
+              "confirmMajorUpgrade":false
+            }')
+          test "$stale_code" = "400"
+          grep -qi 'đã thay đổi' /tmp/stale.json
+          grep -Fq '<Version>2.4.1</Version>'             "/tmp/personalai-v2713/workspace/$worktree_path/Demo.csproj"
+
+          curl -fsS http://127.0.0.1:5118/api/development/dependencies/status >/tmp/final-status.json
+          jq -e '
+            .plans==3
+            and .appliedPlans==1
+            and .blockedMajorPlans==1
+          ' /tmp/final-status.json >/dev/null
+
+          curl -fsS http://127.0.0.1:5118/api/development/status             | jq -e '(.availableCapabilities | index("controlled-dependency-maintenance")) != null' >/dev/null

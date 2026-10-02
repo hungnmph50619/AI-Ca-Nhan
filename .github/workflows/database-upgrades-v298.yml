@@ -1,0 +1,217 @@
+name: Database Upgrades v2.9.8
+
+on:
+  push:
+    branches:
+      - 'experiment/roadmap-v2-9-8-database-upgrades'
+
+jobs:
+  validate-v298:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: '8.0.x'
+
+      - name: Restore
+        run: dotnet restore PersonalAI.sln
+
+      - name: Build
+        run: dotnet build PersonalAI.sln -c Release --no-restore
+
+      - name: Tests
+        run: dotnet test PersonalAI.sln -c Release --no-build
+
+      - name: Database upgrade smoke test
+        shell: bash
+        run: |
+          set -euxo pipefail
+          rm -rf /tmp/personalai-v298
+          mkdir -p             /tmp/personalai-v298/workspace             /tmp/personalai-v298/audit             /tmp/personalai-v298/undo             /tmp/personalai-v298/xdg
+
+          export Workspace__Root=/tmp/personalai-v298/workspace
+          export Audit__Root=/tmp/personalai-v298/audit
+          export Undo__Root=/tmp/personalai-v298/undo
+          export XDG_DATA_HOME=/tmp/personalai-v298/xdg
+
+          python3 - <<'PY'
+          import sqlite3
+          p = "/tmp/personalai-v298/audit/audit.db"
+          con = sqlite3.connect(p)
+          con.executescript("""
+          CREATE TABLE audit_events (
+            audit_id TEXT PRIMARY KEY,
+            occurred_at TEXT NOT NULL,
+            workspace_id TEXT NOT NULL,
+            agent TEXT NOT NULL,
+            action TEXT NOT NULL,
+            tool TEXT NULL,
+            target TEXT NOT NULL,
+            reason TEXT NOT NULL,
+            result TEXT NOT NULL
+          );
+          INSERT INTO audit_events (
+            audit_id, occurred_at, workspace_id, agent, action,
+            tool, target, reason, result
+          ) VALUES (
+            '22222222-2222-2222-2222-222222222222',
+            '2026-10-02T00:00:00+00:00',
+            'personal',
+            'system',
+            'legacy.migration.smoke',
+            NULL,
+            'legacy-db',
+            'pre-v2.9.8',
+            'succeeded'
+          );
+          """)
+          con.commit()
+          con.close()
+          PY
+
+          start_app() {
+            local port="$1"
+            local log="$2"
+            dotnet run --project src/PersonalAI.Web/PersonalAI.Web.csproj               -c Release --no-build               --urls "http://127.0.0.1:$port"               >"$log" 2>&1 &
+            APP_PID=$!
+            for i in {1..30}; do
+              if curl -fsS "http://127.0.0.1:$port/api/system/database-upgrades/status"                   >/tmp/personalai-v298/db-status.json; then
+                return 0
+              fi
+              if ! kill -0 "$APP_PID" 2>/dev/null; then
+                cat "$log"
+                return 1
+              fi
+              sleep 1
+            done
+            cat "$log"
+            return 1
+          }
+
+          stop_app() {
+            if [ -n "${APP_PID:-}" ]; then
+              kill "$APP_PID" 2>/dev/null || true
+              wait "$APP_PID" 2>/dev/null || true
+            fi
+          }
+
+          trap 'stop_app || true' EXIT
+
+          start_app 5139 /tmp/personalai-v298/app-1.log
+
+          jq -e '
+            (.version | split(".") | map(tonumber)) >= [2,9,8]
+            and .upToDate==true
+            and .startupMigrationEnabled==true
+            and .checksumValidationEnabled==true
+            and .atomicMigrationEnabled==true
+            and .failClosed==true
+            and .registeredComponents==2
+            and .expectedMigrations==3
+            and .appliedMigrations==3
+            and any(.components[];
+              .component=="audit"
+              and .expectedMigrations==2
+              and .appliedMigrations==2
+              and .upToDate==true
+              and (.appliedIds | index("audit-001-baseline"))!=null
+              and (.appliedIds | index("audit-002-system-log"))!=null)
+            and any(.components[];
+              .component=="undo"
+              and .expectedMigrations==1
+              and .appliedMigrations==1
+              and .upToDate==true
+              and (.appliedIds | index("undo-001-baseline"))!=null)
+          ' /tmp/personalai-v298/db-status.json >/dev/null
+
+          legacy=$(curl -fsS             'http://127.0.0.1:5139/api/system/logs?action=legacy.migration.smoke')
+          echo "$legacy" | jq -e '
+            (.items | length)==1
+            and .items[0].level=="info"
+            and .items[0].source=="system"
+          ' >/dev/null
+
+          python3 - <<'PY'
+          import sqlite3
+
+          for p, expected in [
+              ("/tmp/personalai-v298/audit/audit.db", 2),
+              ("/tmp/personalai-v298/undo/undo.db", 1),
+          ]:
+              con = sqlite3.connect(p)
+              rows = con.execute(
+                  "SELECT migration_id, checksum, applied_at "
+                  "FROM personalai_schema_migrations ORDER BY migration_id"
+              ).fetchall()
+              assert len(rows) == expected, (p, rows)
+              assert all(len(r[1]) == 64 for r in rows)
+              assert all(r[2] for r in rows)
+              con.close()
+
+          con = sqlite3.connect("/tmp/personalai-v298/audit/audit.db")
+          cols = {
+              row[1] for row in con.execute("PRAGMA table_info(audit_events)")
+          }
+          assert {"level", "source", "correlation_id"} <= cols
+          con.close()
+          PY
+
+          stop_app
+          APP_PID=""
+
+          start_app 5140 /tmp/personalai-v298/app-2.log
+          jq -e '
+            .upToDate==true
+            and .expectedMigrations==3
+            and .appliedMigrations==3
+          ' /tmp/personalai-v298/db-status.json >/dev/null
+
+          python3 - <<'PY'
+          import sqlite3
+          con = sqlite3.connect("/tmp/personalai-v298/audit/audit.db")
+          count = con.execute(
+              "SELECT COUNT(*) FROM personalai_schema_migrations"
+          ).fetchone()[0]
+          assert count == 2
+          con.close()
+          PY
+
+          stop_app
+          APP_PID=""
+
+          python3 - <<'PY'
+          import sqlite3
+          p = "/tmp/personalai-v298/audit/audit.db"
+          con = sqlite3.connect(p)
+          con.execute(
+              "UPDATE personalai_schema_migrations "
+              "SET checksum='tampered' "
+              "WHERE migration_id='audit-002-system-log'"
+          )
+          con.commit()
+          con.close()
+          PY
+
+          dotnet run --project src/PersonalAI.Web/PersonalAI.Web.csproj             -c Release --no-build             --urls http://127.0.0.1:5141             >/tmp/personalai-v298/app-tampered.log 2>&1 &
+          BAD_PID=$!
+
+          bad_exited=0
+          for i in {1..20}; do
+            if ! kill -0 "$BAD_PID" 2>/dev/null; then
+              bad_exited=1
+              break
+            fi
+            if curl -fsS http://127.0.0.1:5141/api/status >/dev/null 2>&1; then
+              echo "Tampered migration history unexpectedly allowed app startup."
+              cat /tmp/personalai-v298/app-tampered.log
+              kill "$BAD_PID" 2>/dev/null || true
+              exit 1
+            fi
+            sleep 1
+          done
+
+          test "$bad_exited" = "1"
+          wait "$BAD_PID" 2>/dev/null || true
+          grep -Fq 'Migration checksum mismatch: audit/audit-002-system-log'             /tmp/personalai-v298/app-tampered.log

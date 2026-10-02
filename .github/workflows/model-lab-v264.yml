@@ -1,0 +1,229 @@
+name: Model Lab v2.6.4
+
+on:
+  push:
+    branches:
+      - 'experiment/roadmap-v2-6-4-current'
+  pull_request:
+    paths:
+      - 'src/PersonalAI.Web/ModelLab/RegisteredModelComparisonModels.cs'
+      - 'src/PersonalAI.Web/Services/RegisteredModelComparisonService.cs'
+      - 'src/PersonalAI.Web/Services/ModelLabEndpoints.cs'
+      - 'src/PersonalAI.Web/Models/SystemModels.cs'
+
+jobs:
+  validate-v264:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: '8.0.x'
+
+      - name: Restore
+        run: dotnet restore PersonalAI.sln
+
+      - name: Build
+        run: dotnet build PersonalAI.sln -c Release --no-restore
+
+      - name: Tests
+        run: dotnet test PersonalAI.sln -c Release --no-build
+
+      - name: Registered model comparison smoke test
+        shell: bash
+        run: |
+          set -euo pipefail
+          rm -rf /tmp/personalai-v264
+          mkdir -p /tmp/personalai-v264/workspace /tmp/personalai-v264/model-lab
+
+          Workspace__Root=/tmp/personalai-v264/workspace           ModelLab__Root=/tmp/personalai-v264/model-lab           dotnet run --project src/PersonalAI.Web/PersonalAI.Web.csproj             -c Release --no-build             --urls http://127.0.0.1:5095             >/tmp/personalai-v264.log 2>&1 &
+          APP_PID=$!
+          trap 'kill "$APP_PID" 2>/dev/null || true' EXIT
+
+          ready=0
+          for i in {1..30}; do
+            if curl -fsS http://127.0.0.1:5095/api/model-lab/model-comparisons/status >/tmp/status.json; then
+              ready=1
+              break
+            fi
+            sleep 1
+          done
+          test "$ready" = "1"
+
+          jq -e '
+            (.version | split(".") | map(tonumber)) >= [2,6,4]
+            and .productionBaselineRequired == true
+            and .sameBenchmarkRequired == true
+            and .autoPromotionEnabled == false
+            and .persistent == true
+          ' /tmp/status.json >/dev/null
+
+          mkdir -p /tmp/personalai-v264/model-lab/Registry
+          workspace_id=$(curl -fsS http://127.0.0.1:5095/api/model-lab/status | jq -r '.workspaceId')
+          safe_workspace=$(printf '%s' "$workspace_id" | sed 's/[^A-Za-z0-9_-]/_/g')
+
+          prod_artifact="aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa"
+          cand_artifact="bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb"
+          prod_model="cccccccc-cccc-cccc-cccc-cccccccccccc"
+          cand_model="dddddddd-dddd-dddd-dddd-dddddddddddd"
+
+          cat > /tmp/personalai-v264/model-lab/Registry/model-artifacts-$safe_workspace.json <<JSON
+          [
+            {
+              "id":"$prod_artifact",
+              "workspaceId":"$workspace_id",
+              "name":"intent-prod",
+              "version":"1",
+              "baseModel":"local-text-classifier",
+              "trainingJobId":"11111111-1111-1111-1111-111111111111",
+              "datasetId":"intent-data",
+              "datasetVersion":1,
+              "datasetSha256":"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+              "trainingMethod":"naive-bayes",
+              "artifactPath":"/tmp/prod.json",
+              "artifactSha256":"1111111111111111111111111111111111111111111111111111111111111111",
+              "sizeBytes":10,
+              "metrics":{},
+              "status":"validated",
+              "createdAt":"2026-10-01T00:00:00+00:00",
+              "updatedAt":"2026-10-01T00:00:00+00:00"
+            },
+            {
+              "id":"$cand_artifact",
+              "workspaceId":"$workspace_id",
+              "name":"intent-candidate",
+              "version":"1",
+              "baseModel":"local-text-classifier",
+              "trainingJobId":"22222222-2222-2222-2222-222222222222",
+              "datasetId":"intent-data",
+              "datasetVersion":2,
+              "datasetSha256":"bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+              "trainingMethod":"naive-bayes",
+              "artifactPath":"/tmp/candidate.json",
+              "artifactSha256":"2222222222222222222222222222222222222222222222222222222222222222",
+              "sizeBytes":10,
+              "metrics":{},
+              "status":"candidate",
+              "createdAt":"2026-10-01T00:01:00+00:00",
+              "updatedAt":"2026-10-01T00:01:00+00:00"
+            }
+          ]
+          JSON
+
+          cat > /tmp/personalai-v264/model-lab/Registry/model-registry-$safe_workspace.json <<JSON
+          [
+            {
+              "id":"$prod_model",
+              "workspaceId":"$workspace_id",
+              "family":"intent-router",
+              "version":"1.0.0",
+              "artifactId":"$prod_artifact",
+              "artifactSha256":"1111111111111111111111111111111111111111111111111111111111111111",
+              "baseModel":"local-text-classifier",
+              "trainingMethod":"naive-bayes",
+              "datasetId":"intent-data",
+              "datasetVersion":1,
+              "datasetSha256":"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+              "compatibleTasks":["intent-classification"],
+              "runtime":"local",
+              "stage":"production",
+              "notes":"current production",
+              "createdAt":"2026-10-01T00:00:00+00:00",
+              "updatedAt":"2026-10-01T00:00:00+00:00"
+            },
+            {
+              "id":"$cand_model",
+              "workspaceId":"$workspace_id",
+              "family":"intent-router",
+              "version":"2.0.0",
+              "artifactId":"$cand_artifact",
+              "artifactSha256":"2222222222222222222222222222222222222222222222222222222222222222",
+              "baseModel":"local-text-classifier",
+              "trainingMethod":"naive-bayes",
+              "datasetId":"intent-data",
+              "datasetVersion":2,
+              "datasetSha256":"bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+              "compatibleTasks":["intent-classification"],
+              "runtime":"local",
+              "stage":"candidate",
+              "notes":"candidate",
+              "createdAt":"2026-10-01T00:01:00+00:00",
+              "updatedAt":"2026-10-01T00:01:00+00:00"
+            }
+          ]
+          JSON
+
+          benchmark_sha="1234567890abcdef1234567890abcdef1234567890abcdef1234567890abcdef"
+
+          curl -fsS -X POST             http://127.0.0.1:5095/api/model-lab/model-comparisons             -H 'Content-Type: application/json'             -d '{
+              "candidateModelVersionId":"'"$cand_model"'",
+              "productionModelVersionId":"'"$prod_model"'",
+              "candidateMetrics":{
+                "benchmarkId":"intent-suite-v1",
+                "benchmarkSha256":"'"$benchmark_sha"'",
+                "cases":100,
+                "accuracy":0.94,
+                "taskSuccessRate":0.92,
+                "averageLatencyMilliseconds":18.0,
+                "averageCostPerCase":0.001,
+                "regressionPassRate":0.98
+              },
+              "productionMetrics":{
+                "benchmarkId":"intent-suite-v1",
+                "benchmarkSha256":"'"$benchmark_sha"'",
+                "cases":100,
+                "accuracy":0.90,
+                "taskSuccessRate":0.89,
+                "averageLatencyMilliseconds":20.0,
+                "averageCostPerCase":0.0015,
+                "regressionPassRate":0.97
+              }
+            }' >/tmp/comparison.json
+
+          jq -e '
+            .family == "intent-router"
+            and .candidateVersion == "2.0.0"
+            and .productionVersion == "1.0.0"
+            and .deltaCandidateMinusProduction.accuracy > 0
+            and .deltaCandidateMinusProduction.taskSuccessRate > 0
+            and .deltaCandidateMinusProduction.averageLatencyMilliseconds < 0
+            and .deltaCandidateMinusProduction.averageCostPerCase < 0
+            and .deltaCandidateMinusProduction.regressionPassRate > 0
+            and (.inputSha256 | length) == 64
+            and .reproducibleInputs == true
+            and .productionMutationPerformed == false
+          ' /tmp/comparison.json >/dev/null
+
+          comparison_id=$(jq -r '.id' /tmp/comparison.json)
+
+          curl -fsS             http://127.0.0.1:5095/api/model-lab/model-comparisons/$comparison_id             | jq -e '.id == "'"$comparison_id"'"' >/dev/null
+
+          mismatch_code=$(curl -sS -o /tmp/mismatch.json -w '%{http_code}'             -X POST http://127.0.0.1:5095/api/model-lab/model-comparisons             -H 'Content-Type: application/json'             -d '{
+              "candidateModelVersionId":"'"$cand_model"'",
+              "productionModelVersionId":"'"$prod_model"'",
+              "candidateMetrics":{
+                "benchmarkId":"suite-a",
+                "benchmarkSha256":"'"$benchmark_sha"'",
+                "cases":10,
+                "accuracy":0.9,
+                "taskSuccessRate":0.9,
+                "averageLatencyMilliseconds":10,
+                "averageCostPerCase":0,
+                "regressionPassRate":1
+              },
+              "productionMetrics":{
+                "benchmarkId":"suite-b",
+                "benchmarkSha256":"'"$benchmark_sha"'",
+                "cases":10,
+                "accuracy":0.9,
+                "taskSuccessRate":0.9,
+                "averageLatencyMilliseconds":10,
+                "averageCostPerCase":0,
+                "regressionPassRate":1
+              }
+            }')
+          test "$mismatch_code" = "400"
+
+          curl -fsS http://127.0.0.1:5095/api/model-lab/models/$prod_model             | jq -e '.stage == "production"' >/dev/null
+
+          curl -fsS http://127.0.0.1:5095/api/model-lab/models/$cand_model             | jq -e '.stage == "candidate"' >/dev/null

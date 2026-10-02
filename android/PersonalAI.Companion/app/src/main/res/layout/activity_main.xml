@@ -148,6 +148,48 @@
                 android:layout_width="wrap_content"
                 android:layout_height="wrap_content"
                 android:layout_marginTop="18dp"
+                android:text="Sửa code từ điện thoại"
+                android:textSize="18sp"
+                android:textStyle="bold" />
+
+            <EditText
+                android:id="@+id/codeGoalInput"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="8dp"
+                android:hint="Mô tả thay đổi code cần thực hiện"
+                android:inputType="textMultiLine"
+                android:maxLines="6"
+                android:minLines="2" />
+
+            <EditText
+                android:id="@+id/repositoryHintInput"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="6dp"
+                android:hint="Gợi ý repo (không bắt buộc)"
+                android:inputType="text"
+                android:singleLine="true" />
+
+            <Button
+                android:id="@+id/sendCodeCommandButton"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="6dp"
+                android:text="Gửi yêu cầu sửa code" />
+
+            <TextView
+                android:id="@+id/codeCommandsText"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="8dp"
+                android:padding="10dp"
+                android:text="Chưa có yêu cầu sửa code." />
+
+            <TextView
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="18dp"
                 android:text="Tasks (read-only)"
                 android:textSize="18sp"
                 android:textStyle="bold" />

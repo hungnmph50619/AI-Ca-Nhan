@@ -1,0 +1,107 @@
+name: Resource Limits v2.9.4
+
+on:
+  push:
+    branches:
+      - 'experiment/roadmap-v2-9-4-resource-limits'
+
+jobs:
+  validate-v294:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: '8.0.x'
+
+      - name: Restore
+        run: dotnet restore PersonalAI.sln
+
+      - name: Build
+        run: dotnet build PersonalAI.sln -c Release --no-restore
+
+      - name: Tests
+        run: dotnet test PersonalAI.sln -c Release --no-build
+
+      - name: Resource limits smoke test
+        shell: bash
+        run: |
+          set -euxo pipefail
+          rm -rf /tmp/personalai-v294
+          mkdir -p /tmp/personalai-v294/workspace
+
+          export Workspace__Root=/tmp/personalai-v294/workspace
+
+          dotnet run --project src/PersonalAI.Web/PersonalAI.Web.csproj \
+            -c Release --no-build \
+            --urls http://127.0.0.1:5135 \
+            >/tmp/personalai-v294/app.log 2>&1 &
+          APP_PID=$!
+          trap 'kill "$APP_PID" 2>/dev/null || true; wait "$APP_PID" 2>/dev/null || true' EXIT
+
+          for i in {1..30}; do
+            if curl -fsS http://127.0.0.1:5135/api/system/resources/status >/tmp/resources.json; then
+              break
+            fi
+            sleep 1
+          done
+
+          jq -e '
+            (.version | split(".") | map(tonumber)) >= [2,9,4]
+            and .maximumApiRequestsPerMinute==600
+            and .maximumConcurrentApiRequests==16
+            and .maximumApiRequestBytes==12582912
+            and .maximumTrackedRateWindows==2048
+            and .maximumBackupCount==5
+            and .maximumBackupSourceBytes==536870912
+            and .requestRateLimitEnforced==true
+            and .concurrentRequestLimitEnforced==true
+            and .requestBodyLimitEnforced==true
+            and .chunkedRequestBodyLimitApplied==true
+            and .rateWindowMemoryLimitEnforced==true
+            and .retryAfterProvidedOnThrottle==true
+            and .failClosed==true
+            and .counters.acceptedApiRequests>=1
+            and .counters.activeApiRequests>=1
+            and .counters.peakActiveApiRequests>=1
+            and .counters.trackedRateWindows>=1
+          ' /tmp/resources.json >/dev/null
+
+          baseline=$(jq -r '.counters.acceptedApiRequests' /tmp/resources.json)
+          curl -fsS http://127.0.0.1:5135/api/status >/dev/null
+          curl -fsS http://127.0.0.1:5135/api/system/resources/status >/tmp/resources-after-normal.json
+          accepted=$(jq -r '.counters.acceptedApiRequests' /tmp/resources-after-normal.json)
+          test "$accepted" -ge "$((baseline + 2))"
+
+          python3 - <<'PY'
+          prefix = b'{"subjectType":"device","subjectId":"'
+          suffix = b'","resource":"capability:git","action":"use"}'
+          target = 12 * 1024 * 1024 + 1
+          padding = b'x' * (target - len(prefix) - len(suffix))
+          with open('/tmp/personalai-v294/oversized.json', 'wb') as f:
+              f.write(prefix + padding + suffix)
+          PY
+
+          oversized_code=$(curl -sS -o /tmp/oversized-response.json -w '%{http_code}' \
+            -X POST http://127.0.0.1:5135/api/system/permissions/evaluate \
+            -H 'Content-Type: application/json' \
+            --data-binary @/tmp/personalai-v294/oversized.json)
+          test "$oversized_code" = "413"
+
+          chunked_code=$(curl -sS -o /tmp/chunked-response.json -w '%{http_code}' \
+            -X POST http://127.0.0.1:5135/api/system/permissions/evaluate \
+            -H 'Content-Type: application/json' \
+            -H 'Transfer-Encoding: chunked' \
+            --data-binary @/tmp/personalai-v294/oversized.json)
+          test "$chunked_code" = "413"
+
+          curl -fsS http://127.0.0.1:5135/api/system/resources/status >/tmp/resources-after-reject.json
+          jq -e '
+            .counters.rejectedPayloadRequests>=2
+            and .counters.activeApiRequests>=1
+            and .counters.peakActiveApiRequests>=1
+          ' /tmp/resources-after-reject.json >/dev/null
+
+          test "$(jq -r '.error // .message // ""' /tmp/oversized-response.json | wc -c)" -gt 1
+          test -f /tmp/chunked-response.json

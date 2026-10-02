@@ -1,0 +1,206 @@
+name: Development v2.6.10
+
+on:
+  push:
+    branches:
+      - 'experiment/roadmap-v2-6-10-current'
+  pull_request:
+    paths:
+      - 'src/PersonalAI.Web/Models/DevelopmentLeaseModels.cs'
+      - 'src/PersonalAI.Web/Services/DevelopmentLeaseService.cs'
+      - 'src/PersonalAI.Web/Services/RoadmapAutopilotService.cs'
+      - 'src/PersonalAI.Web/Services/DevelopmentEndpoints.cs'
+      - 'src/PersonalAI.Web/Models/DevelopmentModels.cs'
+      - 'src/PersonalAI.Web/Services/DevelopmentAgentService.cs'
+      - 'src/PersonalAI.Web/Models/SystemModels.cs'
+
+jobs:
+  validate-v2610:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: '8.0.x'
+
+      - name: Restore
+        run: dotnet restore PersonalAI.sln
+
+      - name: Build
+        run: dotnet build PersonalAI.sln -c Release --no-restore
+
+      - name: Tests
+        run: dotnet test PersonalAI.sln -c Release --no-build
+
+      - name: Lease hierarchy smoke test
+        shell: bash
+        run: |
+          set -euo pipefail
+          rm -rf /tmp/personalai-v2610
+          mkdir -p /tmp/personalai-v2610/workspace/repo /tmp/personalai-v2610/state
+
+          cd /tmp/personalai-v2610/workspace/repo
+          git init -b main
+          git config user.name "PersonalAI CI"
+          git config user.email "ci@example.invalid"
+          printf 'base\n' > README.md
+          git add README.md
+          git commit -m "initial"
+
+          cd "$GITHUB_WORKSPACE"
+
+          Workspace__Root=/tmp/personalai-v2610/workspace           Development__StateRoot=/tmp/personalai-v2610/state           dotnet run --project src/PersonalAI.Web/PersonalAI.Web.csproj             -c Release --no-build             --urls http://127.0.0.1:5101             >/tmp/personalai-v2610.log 2>&1 &
+          APP_PID=$!
+          trap 'kill "$APP_PID" 2>/dev/null || true' EXIT
+
+          ready=0
+          for i in {1..30}; do
+            if curl -fsS http://127.0.0.1:5101/api/development/leases/status >/tmp/status.json; then
+              ready=1
+              break
+            fi
+            sleep 1
+          done
+          test "$ready" = "1"
+
+          jq -e '
+            (.version | split(".") | map(tonumber)) >= [2,6,10]
+            and .minimumLeaseSeconds == 30
+            and .maximumLeaseSeconds == 3600
+            and .repositoryScopeBlocksChildren == true
+            and .duplicateWriterBlocked == true
+            and .expiryEnabled == true
+          ' /tmp/status.json >/dev/null
+
+          curl -fsS -X POST http://127.0.0.1:5101/api/development/leases/acquire             -H 'Content-Type: application/json'             -d '{
+              "ownerId":"agent-a",
+              "resourceType":"branch",
+              "repositoryPath":"repo",
+              "branch":"experiment/feature-a",
+              "leaseSeconds":300
+            }' >/tmp/branch-a.json
+
+          lease_a=$(jq -r '.id' /tmp/branch-a.json)
+
+          duplicate_code=$(curl -sS -o /tmp/duplicate.json -w '%{http_code}'             -X POST http://127.0.0.1:5101/api/development/leases/acquire             -H 'Content-Type: application/json'             -d '{
+              "ownerId":"agent-b",
+              "resourceType":"branch",
+              "repositoryPath":"repo",
+              "branch":"experiment/feature-a",
+              "leaseSeconds":300
+            }')
+          test "$duplicate_code" = "409"
+
+          child_code=$(curl -sS -o /tmp/child.json -w '%{http_code}'             -X POST http://127.0.0.1:5101/api/development/leases/acquire             -H 'Content-Type: application/json'             -d '{
+              "ownerId":"agent-c",
+              "resourceType":"file",
+              "repositoryPath":"repo",
+              "branch":"experiment/feature-a",
+              "filePath":"src/A.cs",
+              "leaseSeconds":300
+            }')
+          test "$child_code" = "409"
+
+          wrong_owner=$(curl -sS -o /tmp/wrong-owner.json -w '%{http_code}'             -X POST http://127.0.0.1:5101/api/development/leases/renew             -H 'Content-Type: application/json'             -d '{
+              "leaseId":"'"$lease_a"'",
+              "ownerId":"agent-b",
+              "leaseSeconds":600
+            }')
+          test "$wrong_owner" = "409"
+
+          curl -fsS -X POST http://127.0.0.1:5101/api/development/leases/renew             -H 'Content-Type: application/json'             -d '{
+              "leaseId":"'"$lease_a"'",
+              "ownerId":"agent-a",
+              "leaseSeconds":600
+            }' | jq -e '.ownerId == "agent-a"' >/dev/null
+
+          curl -fsS -o /dev/null -X POST http://127.0.0.1:5101/api/development/leases/release             -H 'Content-Type: application/json'             -d '{"leaseId":"'"$lease_a"'","ownerId":"agent-a"}'
+
+          curl -fsS -X POST http://127.0.0.1:5101/api/development/leases/acquire             -H 'Content-Type: application/json'             -d '{
+              "ownerId":"agent-c",
+              "resourceType":"file",
+              "repositoryPath":"repo",
+              "branch":"experiment/feature-a",
+              "filePath":"src/A.cs",
+              "leaseSeconds":300
+            }' >/tmp/file-a.json
+          file_a=$(jq -r '.id' /tmp/file-a.json)
+
+          same_file_code=$(curl -sS -o /tmp/same-file.json -w '%{http_code}'             -X POST http://127.0.0.1:5101/api/development/leases/acquire             -H 'Content-Type: application/json'             -d '{
+              "ownerId":"agent-d",
+              "resourceType":"file",
+              "repositoryPath":"repo",
+              "branch":"experiment/feature-a",
+              "filePath":"src/A.cs",
+              "leaseSeconds":300
+            }')
+          test "$same_file_code" = "409"
+
+          curl -fsS -X POST http://127.0.0.1:5101/api/development/leases/acquire             -H 'Content-Type: application/json'             -d '{
+              "ownerId":"agent-d",
+              "resourceType":"file",
+              "repositoryPath":"repo",
+              "branch":"experiment/feature-a",
+              "filePath":"src/B.cs",
+              "leaseSeconds":300
+            }' >/tmp/file-b.json
+          file_b=$(jq -r '.id' /tmp/file-b.json)
+
+          repo_code=$(curl -sS -o /tmp/repo-lock.json -w '%{http_code}'             -X POST http://127.0.0.1:5101/api/development/leases/acquire             -H 'Content-Type: application/json'             -d '{
+              "ownerId":"agent-e",
+              "resourceType":"repository",
+              "repositoryPath":"repo",
+              "leaseSeconds":300
+            }')
+          test "$repo_code" = "409"
+
+          for pair in "$file_a agent-c" "$file_b agent-d"; do
+            set -- $pair
+            curl -fsS -o /dev/null -X POST http://127.0.0.1:5101/api/development/leases/release               -H 'Content-Type: application/json'               -d '{"leaseId":"'"$1"'","ownerId":"'"$2"'"}'
+          done
+
+          curl -fsS -X POST http://127.0.0.1:5101/api/development/leases/acquire             -H 'Content-Type: application/json'             -d '{
+              "ownerId":"agent-e",
+              "resourceType":"repository",
+              "repositoryPath":"repo",
+              "leaseSeconds":300
+            }' >/tmp/repo.json
+          repo_lease=$(jq -r '.id' /tmp/repo.json)
+
+          child_under_repo=$(curl -sS -o /tmp/child-under-repo.json -w '%{http_code}'             -X POST http://127.0.0.1:5101/api/development/leases/acquire             -H 'Content-Type: application/json'             -d '{
+              "ownerId":"agent-f",
+              "resourceType":"branch",
+              "repositoryPath":"repo",
+              "branch":"experiment/feature-z",
+              "leaseSeconds":300
+            }')
+          test "$child_under_repo" = "409"
+
+          curl -fsS -o /dev/null -X POST http://127.0.0.1:5101/api/development/leases/release             -H 'Content-Type: application/json'             -d '{"leaseId":"'"$repo_lease"'","ownerId":"agent-e"}'
+
+          workspace_id=$(curl -fsS http://127.0.0.1:5101/api/development/leases/status | jq -r '.workspaceId')
+          safe_workspace=$(printf '%s' "$workspace_id" | sed 's/[^A-Za-z0-9_-]/_/g')
+          mkdir -p /tmp/personalai-v2610/state/Leases
+
+          cat > /tmp/personalai-v2610/state/Leases/development-leases-$safe_workspace.json <<JSON
+          [
+            {
+              "id":"ffffffff-ffff-ffff-ffff-ffffffffffff",
+              "workspaceId":"$workspace_id",
+              "ownerId":"expired-agent",
+              "resourceType":"repository",
+              "repositoryPath":"repo",
+              "branch":null,
+              "filePath":null,
+              "acquiredAt":"2026-01-01T00:00:00+00:00",
+              "expiresAt":"2026-01-01T00:01:00+00:00",
+              "updatedAt":"2026-01-01T00:00:00+00:00"
+            }
+          ]
+          JSON
+
+          curl -fsS http://127.0.0.1:5101/api/development/leases/status             | jq -e '.activeLeases == 0 and .expiredLeasesIgnored == 1' >/dev/null
+
+          curl -fsS http://127.0.0.1:5101/api/development/leases             | jq -e 'length == 0' >/dev/null
+
+          curl -fsS http://127.0.0.1:5101/api/development/status             | jq -e '(.availableCapabilities | index("development-leases")) != null' >/dev/null

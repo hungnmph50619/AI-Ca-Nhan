@@ -14,6 +14,7 @@ public static class SystemHardeningMiddleware
         {
             var requestId = Guid.NewGuid().ToString("N");
             context.TraceIdentifier = requestId;
+            var startedAt = System.Diagnostics.Stopwatch.GetTimestamp();
 
             context.Response.OnStarting(() =>
             {
@@ -67,6 +68,49 @@ public static class SystemHardeningMiddleware
                         "Đã xảy ra lỗi nội bộ. Hãy thử lại.",
                         requestId));
             }
+
+            var path = context.Request.Path.Value ?? string.Empty;
+            if (path.StartsWith("/api", StringComparison.OrdinalIgnoreCase)
+                && !path.StartsWith("/api/audit", StringComparison.OrdinalIgnoreCase)
+                && !path.StartsWith("/api/system/logs", StringComparison.OrdinalIgnoreCase))
+            {
+                var elapsedMs = System.Diagnostics.Stopwatch.GetElapsedTime(
+                    startedAt).TotalMilliseconds;
+                var statusCode = context.Response.StatusCode;
+                var level = statusCode >= 500
+                    ? SystemLogLevels.Error
+                    : statusCode is 401 or 403
+                        ? SystemLogLevels.Security
+                        : statusCode >= 400
+                            ? SystemLogLevels.Warning
+                            : SystemLogLevels.Info;
+                var result = statusCode >= 500
+                    ? AuditResults.Failed
+                    : statusCode is 401 or 403
+                        ? AuditResults.Denied
+                        : statusCode >= 400
+                            ? AuditResults.Failed
+                            : AuditResults.Succeeded;
+
+                try
+                {
+                    var recorder = context.RequestServices
+                        .GetRequiredService<IAuditRecorder>();
+                    recorder.Record(
+                        AuditAgents.System,
+                        "http.request",
+                        $"{context.Request.Method} {path}",
+                        $"status:{statusCode};duration-ms:{elapsedMs:F1}",
+                        result,
+                        level: level,
+                        source: "http",
+                        correlationId: requestId);
+                }
+                catch
+                {
+                    // Request logging must never change the API response.
+                }
+            }
         });
 
         return app;
@@ -79,6 +123,12 @@ public static class SystemEndpoints
         this IServiceCollection services)
     {
         services.AddScoped<ISystemCoreService, SystemCoreService>();
+        services.AddScoped<IUnifiedPermissionService, UnifiedPermissionService>();
+        services.AddScoped<IActionExplanationService, ActionExplanationService>();
+        services.AddSingleton<ILoopGuardService, LoopGuardService>();
+        services.AddSingleton<IEmergencyStopService, EmergencyStopService>();
+        services.AddSingleton<IDatabaseUpgradeService, DatabaseUpgradeService>();
+        services.AddHostedService<DatabaseUpgradeHostedService>();
         return services;
     }
 
@@ -88,6 +138,211 @@ public static class SystemEndpoints
         app.MapGet("/api/system/capabilities", (
             ISystemCoreService core) =>
             Results.Ok(core.GetCapabilities()));
+
+        app.MapGet("/api/system/permissions/status", (
+            IUnifiedPermissionService permissions) =>
+            Results.Ok(permissions.GetStatus()));
+
+        app.MapGet("/api/system/permissions", (
+            IUnifiedPermissionService permissions) =>
+            Results.Ok(permissions.GetAll()));
+
+        app.MapPost("/api/system/permissions", (
+            SetUnifiedPermissionRequest request,
+            IUnifiedPermissionService permissions) =>
+        {
+            try
+            {
+                return Results.Ok(permissions.Set(request));
+            }
+            catch (UnifiedPermissionValidationException exception)
+            {
+                return Results.BadRequest(new ApiError(exception.Message));
+            }
+        });
+
+        app.MapPost("/api/system/permissions/evaluate", (
+            EvaluateUnifiedPermissionRequest request,
+            IUnifiedPermissionService permissions) =>
+        {
+            try
+            {
+                var decision = permissions.Evaluate(request);
+                return decision.Allowed
+                    ? Results.Ok(decision)
+                    : Results.Json(
+                        decision,
+                        statusCode: StatusCodes.Status403Forbidden);
+            }
+            catch (UnifiedPermissionValidationException exception)
+            {
+                return Results.BadRequest(new ApiError(exception.Message));
+            }
+        });
+
+        app.MapDelete("/api/system/permissions/{ruleId:guid}", (
+            Guid ruleId,
+            [Microsoft.AspNetCore.Mvc.FromBody] RevokeUnifiedPermissionRequest request,
+            IUnifiedPermissionService permissions) =>
+        {
+            try
+            {
+                return permissions.Revoke(ruleId, request)
+                    ? Results.NoContent()
+                    : Results.NotFound();
+            }
+            catch (UnifiedPermissionValidationException exception)
+            {
+                return Results.BadRequest(new ApiError(exception.Message));
+            }
+        });
+
+        app.MapGet("/api/system/emergency-stop/status", (
+            IEmergencyStopService emergencyStop) =>
+            Results.Ok(emergencyStop.GetStatus()));
+
+        app.MapPost("/api/system/emergency-stop/engage", (
+            EngageEmergencyStopRequest request,
+            IEmergencyStopService emergencyStop,
+            IWorkspaceContextAccessor workspace) =>
+        {
+            try
+            {
+                return Results.Ok(emergencyStop.Engage(
+                    workspace.CurrentWorkspaceId,
+                    request));
+            }
+            catch (EmergencyStopValidationException exception)
+            {
+                return Results.BadRequest(new ApiError(exception.Message));
+            }
+        });
+
+        app.MapPost("/api/system/emergency-stop/release", (
+            ReleaseEmergencyStopRequest request,
+            IEmergencyStopService emergencyStop,
+            IWorkspaceContextAccessor workspace) =>
+        {
+            try
+            {
+                return Results.Ok(emergencyStop.Release(
+                    workspace.CurrentWorkspaceId,
+                    request));
+            }
+            catch (EmergencyStopValidationException exception)
+            {
+                return Results.BadRequest(new ApiError(exception.Message));
+            }
+        });
+
+        app.MapGet("/api/system/loop-guard/status", (
+            ILoopGuardService loopGuard,
+            IWorkspaceContextAccessor workspace) =>
+            Results.Ok(loopGuard.GetStatus(
+                workspace.CurrentWorkspaceId)));
+
+        app.MapPost("/api/system/loop-guard/check", (
+            LoopGuardCheckRequest request,
+            bool? confirmed,
+            ILoopGuardService loopGuard,
+            IWorkspaceContextAccessor workspace) =>
+        {
+            if (confirmed != true)
+            {
+                return Results.Json(
+                    new ApiError(
+                        "Cần confirmed=true để chạy loop-guard diagnostic check."),
+                    statusCode: StatusCodes.Status403Forbidden);
+            }
+
+            try
+            {
+                var decision = loopGuard.Check(
+                    workspace.CurrentWorkspaceId,
+                    request);
+                return decision.Allowed
+                    ? Results.Ok(decision)
+                    : Results.Json(
+                        decision,
+                        statusCode: StatusCodes.Status409Conflict);
+            }
+            catch (LoopGuardValidationException exception)
+            {
+                return Results.BadRequest(
+                    new ApiError(exception.Message));
+            }
+        });
+
+        app.MapDelete("/api/system/loop-guard/{scope}/{runId}", (
+            string scope,
+            string runId,
+            bool? confirmed,
+            ILoopGuardService loopGuard,
+            IWorkspaceContextAccessor workspace) =>
+        {
+            if (confirmed != true)
+            {
+                return Results.Json(
+                    new ApiError(
+                        "Cần confirmed=true để reset loop-guard state."),
+                    statusCode: StatusCodes.Status403Forbidden);
+            }
+
+            try
+            {
+                loopGuard.Reset(
+                    workspace.CurrentWorkspaceId,
+                    scope,
+                    runId);
+                return Results.NoContent();
+            }
+            catch (LoopGuardValidationException exception)
+            {
+                return Results.BadRequest(
+                    new ApiError(exception.Message));
+            }
+        });
+
+        app.MapGet("/api/system/explanations/status", (
+            IActionExplanationService explanations) =>
+            Results.Ok(explanations.GetStatus()));
+
+        app.MapGet("/api/system/explanations/audit/{auditId:guid}", (
+            Guid auditId,
+            IActionExplanationService explanations) =>
+        {
+            try
+            {
+                return Results.Ok(explanations.ExplainAudit(auditId));
+            }
+            catch (KeyNotFoundException exception)
+            {
+                return Results.NotFound(new ApiError(exception.Message));
+            }
+        });
+
+        app.MapGet("/api/system/explanations/correlation/{correlationId}", (
+            string correlationId,
+            IActionExplanationService explanations) =>
+        {
+            try
+            {
+                return Results.Ok(
+                    explanations.ExplainCorrelation(correlationId));
+            }
+            catch (ActionExplanationValidationException exception)
+            {
+                return Results.BadRequest(new ApiError(exception.Message));
+            }
+            catch (KeyNotFoundException exception)
+            {
+                return Results.NotFound(new ApiError(exception.Message));
+            }
+        });
+
+        app.MapGet("/api/system/database-upgrades/status", (
+            [Microsoft.AspNetCore.Mvc.FromServices] IDatabaseUpgradeService upgrades) =>
+            Results.Ok(upgrades.GetStatus()));
 
         app.MapGet("/api/system/health", async (
             ISystemCoreService core,

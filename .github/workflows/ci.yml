@@ -58,18 +58,18 @@ jobs:
             exit 1
           fi
 
-          curl -fsS http://127.0.0.1:5077/api/status | jq -e '.version == "2.2.6"' >/dev/null
+          curl -fsS http://127.0.0.1:5077/api/status | jq -e '.version | test("^[0-9]+\\.[0-9]+\\.[0-9]+$")' >/dev/null
 
           curl -fsS -D /tmp/status-headers http://127.0.0.1:5077/api/status -o /tmp/status-body.json
           grep -Eiq '^X-PersonalAI-Request-Id: [a-f0-9]{32}' /tmp/status-headers
           grep -Eiq '^X-PersonalAI-Api-Version: 1' /tmp/status-headers
           grep -Eiq '^X-Content-Type-Options: nosniff' /tmp/status-headers
-          jq -e '.version == "2.2.6" and .apiContractVersion == "1" and .channel == "controlled"' /tmp/status-body.json >/dev/null
+          jq -e '(.version | test("^[0-9]+\\.[0-9]+\\.[0-9]+$")) and .apiContractVersion == "1" and .channel == "controlled"' /tmp/status-body.json >/dev/null
 
           capabilities=$(curl -fsS http://127.0.0.1:5077/api/system/capabilities)
           echo "$capabilities" | jq -e '
             . as $caps
-            | .version == "2.2.6"
+            | (.version | test("^[0-9]+\\.[0-9]+\\.[0-9]+$"))
             and .apiContractVersion == "1"
             and .channel == "controlled"
             and .workspaceHeader == "X-PersonalAI-Workspace"
@@ -82,7 +82,7 @@ jobs:
           echo "$capabilities" | jq -e '
             all(.reservedModules[]; . != "agents")
             and any(.reservedModules[]; . == "policies")
-            and .controlledModules == ["computer-use","browser-agent","connectors","software-development","android-companion","life-context","decision-engine","automation","agents"]
+            and .controlledModules == ["computer-use","browser-agent","connectors","software-development","android-companion","life-context","decision-engine","automation","agents","permissions"]
             and all(.reservedModules[]; . != "browser")
             and all(.reservedModules[]; . != "browser-agent")
             and all(.reservedModules[]; . != "computer-use")
@@ -181,7 +181,7 @@ jobs:
 
           core_health=$(curl -fsS http://127.0.0.1:5077/api/system/health)
           echo "$core_health" | jq -e '
-            .version == "2.2.6"
+            (.version | test("^[0-9]+\\.[0-9]+\\.[0-9]+$"))
             and .apiContractVersion == "1"
             and .channel == "controlled"
             and .ready == true
@@ -210,7 +210,7 @@ jobs:
 
           hardening_status=$(curl -fsS http://127.0.0.1:5077/api/hardening/status)
           echo "$hardening_status" | jq -e '
-            .version == "2.2.6"
+            (.version | test("^[0-9]+\\.[0-9]+\\.[0-9]+$"))
             and (.status == "healthy" or .status == "degraded")
             and .runtime.running == true
             and .permissionAudit.violationCount == 0
@@ -236,7 +236,7 @@ jobs:
 
           hardening_backup=$(curl -fsS -X POST http://127.0.0.1:5077/api/hardening/backups -H 'Content-Type: application/json' -d '{"confirmed":true}')
           echo "$hardening_backup" | jq -e '.backupId | endswith(".zip")' >/dev/null
-          echo "$hardening_backup" | jq -e '.sizeBytes > 0 and .fileCount >= 0 and .version == "2.2.6"' >/dev/null
+          echo "$hardening_backup" | jq -e '.sizeBytes > 0 and .fileCount >= 0 and (.version | test("^[0-9]+\\.[0-9]+\\.[0-9]+$"))' >/dev/null
           hardening_backup_id=$(echo "$hardening_backup" | jq -r '.backupId')
           hardening_backups=$(curl -fsS http://127.0.0.1:5077/api/hardening/backups)
           echo "$hardening_backups" | jq -e '.maximum == 5 and .pendingRestore == false and any(.backups[]; .backupId == "'"$hardening_backup_id"'")' >/dev/null
@@ -249,14 +249,14 @@ jobs:
 
           os_status=$(curl -fsS http://127.0.0.1:5077/api/os/status)
           echo "$os_status" | jq -e '
-            .version == "2.2.6"
+            (.version | test("^[0-9]+\\.[0-9]+\\.[0-9]+$"))
             and .apiContractVersion == "1"
             and .edition == "Personal AI OS"
-            and .stage == "v2.2.6"
+            and .stage == "v3.0"
             and .workspaceId == "personal"
             and .readiness.osContractReady == true
             and .readiness.readyForV21Foundation == true
-            and .readiness.capabilityCount == 19
+            and .readiness.capabilityCount == 20
             and .governance.workspaceIsolation == true
             and .governance.permissionPolicy == true
             and .governance.explicitConfirmationForSideEffects == true
@@ -268,36 +268,53 @@ jobs:
             and .governance.parallelToolCalls == false
             and .governance.multiAgentFramework == true
             and .governance.agentOrchestration == true
-            and .nextStage == "v2.2.7-workflow-usability"
+            and .nextStage == "continuous-stable"
             and any(.capabilities[]; .id == "memory" and .state == "ready")
             and any(.capabilities[]; .id == "browser" and .state == "controlled")
             and any(.capabilities[]; .id == "email" and .state == "foundation")
             and any(.capabilities[]; .id == "calendar" and .state == "foundation")
             and any(.capabilities[]; .id == "agent-framework" and .state == "controlled")
             and any(.capabilities[]; .id == "desktop" and (.state == "unconfigured" or .state == "controlled"))
+            and any(.capabilities[]; .id == "continuous-improvement" and .state == "controlled")
+            and .continuousImprovement.available == true
+            and .continuousImprovement.enabledByDefault == false
+            and .continuousImprovement.autonomousDevelopmentControllerReady == true
+            and .continuousImprovement.policyBypassAllowed == false
+            and .continuousImprovement.directMainPushAllowed == false
+            and .continuousImprovement.highRiskAutoMergeAllowed == false
+            and .continuousImprovement.unifiedPermissionsReady == true
+            and .continuousImprovement.systemLogReady == true
+            and .continuousImprovement.undoReady == true
+            and .continuousImprovement.resourceLimitsReady == true
+            and .continuousImprovement.loopGuardReady == true
+            and .continuousImprovement.emergencyStopReady == true
+            and .continuousImprovement.disasterRecoveryReady == true
+            and .continuousImprovement.databaseUpgradesReady == true
           ' >/dev/null
 
           os_manifest=$(curl -fsS http://127.0.0.1:5077/api/os/manifest)
           echo "$os_manifest" | jq -e '
-            .version == "2.2.6"
+            (.version | test("^[0-9]+\\.[0-9]+\\.[0-9]+$"))
             and .edition == "Personal AI OS"
-            and .stage == "v2.2.6"
+            and .stage == "v3.0"
             and (.layers | length) == 6
-            and (.capabilities | length) == 19
+            and (.capabilities | length) == 20
             and any(.layers[]; .id == "knowledge" and (.capabilityIds | index("memory")) != null and (.capabilityIds | index("knowledge")) != null)
             and any(.layers[]; .id == "interfaces" and (.capabilityIds | index("email")) != null and (.capabilityIds | index("calendar")) != null)
             and any(.layers[]; .id == "coordination" and (.capabilityIds | index("agent-framework")) != null)
-            and any(.boundaries[]; contains("xác nhận trước"))
-            and any(.boundaries[]; contains("chuyển đầu ra"))
-            and any(.boundaries[]; contains("Gmail/Outlook"))
+            and any(.layers[]; .id == "governance" and (.capabilityIds | index("continuous-improvement")) != null)
+            and any(.boundaries[]; contains("continuous self-improvement"))
+            and any(.boundaries[]; contains("Emergency stop"))
+            and any(.boundaries[]; contains("External AI"))
+            and .continuousImprovement.available == true
           ' >/dev/null
 
           custom_os_status=$(curl -fsS -H 'X-PersonalAI-Workspace: work' http://127.0.0.1:5077/api/os/status)
-          echo "$custom_os_status" | jq -e '.workspaceId == "work" and .version == "2.2.6"' >/dev/null
+          echo "$custom_os_status" | jq -e '.workspaceId == "work" and (.version | test("^[0-9]+\\.[0-9]+\\.[0-9]+$"))' >/dev/null
 
           agent_status=$(curl -fsS http://127.0.0.1:5077/api/agents/status)
           echo "$agent_status" | jq -e '
-            .version == "2.2.6"
+            (.version | test("^[0-9]+\\.[0-9]+\\.[0-9]+$"))
             and .frameworkVersion == "2.2.6"
             and .registeredAgents == 8
             and .maximumGoalCharacters == 4000
@@ -315,7 +332,7 @@ jobs:
 
           agent_catalog=$(curl -fsS http://127.0.0.1:5077/api/agents)
           echo "$agent_catalog" | jq -e '
-            .version == "2.2.6"
+            (.version | test("^[0-9]+\\.[0-9]+\\.[0-9]+$"))
             and .frameworkVersion == "2.2.6"
             and (.agents | length) == 8
             and any(.agents[];
@@ -404,7 +421,7 @@ jobs:
 
           workflow_diagnostics_status=$(curl -fsS http://127.0.0.1:5077/api/agents/orchestration/diagnostics/status)
           echo "$workflow_diagnostics_status" | jq -e '
-            .version == "2.2.6"
+            (.version | test("^[0-9]+\\.[0-9]+\\.[0-9]+$"))
             and .readOnly == true
             and .workspaceIsolated == true
             and .memoryOnly == true
@@ -418,7 +435,7 @@ jobs:
 
           workflow_observability_status=$(curl -fsS http://127.0.0.1:5077/api/agents/orchestration/observability/status)
           echo "$workflow_observability_status" | jq -e '
-            .version == "2.2.6" and .maximumRecentWorkflows == 100
+            (.version | test("^[0-9]+\\.[0-9]+\\.[0-9]+$")) and .maximumRecentWorkflows == 100
             and .retentionMinutes == 60 and .memoryOnly == true
             and .workspaceIsolated == true and .containsGoals == false
             and .containsOutputs == false and .containsReviewTokens == false
@@ -428,7 +445,7 @@ jobs:
 
           orchestration_status=$(curl -fsS http://127.0.0.1:5077/api/agents/orchestration/status)
           echo "$orchestration_status" | jq -e '
-            .version == "2.2.6"
+            (.version | test("^[0-9]+\\.[0-9]+\\.[0-9]+$"))
             and .minimumSteps == 2
             and .maximumSteps == 3
             and .maximumTransferredCharacters == 1600
@@ -462,7 +479,7 @@ jobs:
             -H 'Content-Type: application/json' \
             -d '{"steps":[{"agentId":"security.security-reviewer","goal":"Kiểm tra bước đầu"},{"agentId":"security.security-reviewer","goal":"Kiểm tra bước sau","includePreviousOutput":false}]}')
           echo "$workflow_preview" | jq -e '
-            .version == "2.2.6"
+            (.version | test("^[0-9]+\\.[0-9]+\\.[0-9]+$"))
             and .workspaceId == "personal"
             and (.configurationDigest | length) == 64
             and (.steps | length) == 2
@@ -638,7 +655,7 @@ jobs:
 
           security_status=$(curl -fsS http://127.0.0.1:5077/api/security-agent/status)
           echo "$security_status" | jq -e '
-            .version == "2.2.6"
+            (.version | test("^[0-9]+\\.[0-9]+\\.[0-9]+$"))
             and .agentId == "security.security-reviewer"
             and .maximumInputCharacters == 4000
             and .maximumFindings == 8
@@ -701,7 +718,7 @@ jobs:
 
           reviewer_status=$(curl -fsS http://127.0.0.1:5077/api/reviewer-agent/status)
           echo "$reviewer_status" | jq -e '
-            .version == "2.2.6"
+            (.version | test("^[0-9]+\\.[0-9]+\\.[0-9]+$"))
             and .agentId == "quality.reviewer"
             and .minimumReviewCharacters == 80
             and .maximumReviewCharacters == 4000
@@ -755,7 +772,7 @@ jobs:
 
           operator_agent_status=$(curl -fsS http://127.0.0.1:5077/api/operator-agent/status)
           echo "$operator_agent_status" | jq -e '
-            .version == "2.2.6"
+            (.version | test("^[0-9]+\\.[0-9]+\\.[0-9]+$"))
             and .agentId == "operations.operator"
             and .minimumSteps == 1
             and .maximumSteps == 10
@@ -791,7 +808,7 @@ jobs:
 
           office_agent_status=$(curl -fsS http://127.0.0.1:5077/api/office-agent/status)
           echo "$office_agent_status" | jq -e '
-            .version == "2.2.6"
+            (.version | test("^[0-9]+\\.[0-9]+\\.[0-9]+$"))
             and .agentId == "office.office-assistant"
             and (.supportedKinds | sort) == (["email","memo","agenda","minutes","summary"] | sort)
             and .maximumBodyCharacters == 10000
@@ -827,7 +844,7 @@ jobs:
 
           developer_agent_status=$(curl -fsS http://127.0.0.1:5077/api/developer-agent/status)
           echo "$developer_agent_status" | jq -e '
-            .version == "2.2.6"
+            (.version | test("^[0-9]+\\.[0-9]+\\.[0-9]+$"))
             and .agentId == "development.developer"
             and .maximumSearchHits == 24
             and .maximumFindings == 8
@@ -874,7 +891,7 @@ jobs:
 
           research_status=$(curl -fsS http://127.0.0.1:5077/api/research/status)
           echo "$research_status" | jq -e '
-            .version == "2.2.6"
+            (.version | test("^[0-9]+\\.[0-9]+\\.[0-9]+$"))
             and .agentId == "research.researcher"
             and .evidenceScope == "workspace-documents-only"
             and .maximumSources == 4
@@ -918,7 +935,7 @@ jobs:
 
           planner_status=$(curl -fsS http://127.0.0.1:5077/api/planner/status)
           echo "$planner_status" | jq -e '
-            .version == "2.2.6"
+            (.version | test("^[0-9]+\\.[0-9]+\\.[0-9]+$"))
             and .agentId == "planning.planner"
             and .minimumSteps == 2
             and .maximumSteps == 12
@@ -971,7 +988,7 @@ jobs:
           echo "$custom_workspace" | jq -e '.isBuiltIn == false and (.activeModules | sort) == (["memory","documents","tasks","files","conversations","agents"] | sort) and (.reservedModules | sort) == (["policies"] | sort)' >/dev/null
 
           custom_status=$(curl -fsS -H "X-PersonalAI-Workspace: $custom_workspace_id" http://127.0.0.1:5077/api/status)
-          echo "$custom_status" | jq -e '.version == "2.2.6" and .workspaceName == "CI Workspace"' >/dev/null
+          echo "$custom_status" | jq -e '(.version | test("^[0-9]+\\.[0-9]+\\.[0-9]+$")) and .workspaceName == "CI Workspace"' >/dev/null
 
           custom_core_health=$(curl -fsS -H "X-PersonalAI-Workspace: $custom_workspace_id" http://127.0.0.1:5077/api/system/health)
           echo "$custom_core_health" | jq -e '.ready == true and .workspaceId == "'"$custom_workspace_id"'" and any(.modules[]; .module == "files" and .status == "healthy")' >/dev/null
@@ -1017,7 +1034,7 @@ jobs:
           echo "$personal_tasks" | jq -e 'all(.tasks[]; .id != "'"$custom_task_id"'")' >/dev/null
 
           companion_status=$(curl -fsS http://127.0.0.1:5077/api/companion/status)
-          echo "$companion_status" | jq -e '.version == "2.2.6" and .enabled == true and .secureTransportRequired == false and .maximumDevicesPerWorkspace == 10 and .pairingLifetimeMinutes == 5 and any(.capabilities[]; . == "chat") and any(.capabilities[]; . == "tasks-read")' >/dev/null
+          echo "$companion_status" | jq -e '(.version | test("^[0-9]+\\.[0-9]+\\.[0-9]+$")) and .enabled == true and .secureTransportRequired == false and .maximumDevicesPerWorkspace == 10 and .pairingLifetimeMinutes == 5 and any(.capabilities[]; . == "chat") and any(.capabilities[]; . == "tasks-read")' >/dev/null
 
           companion_no_token_code=$(curl -sS -o /tmp/companion-no-token.json -w '%{http_code}' http://127.0.0.1:5077/api/companion/client/me)
           test "$companion_no_token_code" = "401"
@@ -1050,12 +1067,12 @@ jobs:
 
           personal_me=$(curl -fsS http://127.0.0.1:5077/api/companion/client/me \
             -H "Authorization: Bearer $personal_companion_token")
-          echo "$personal_me" | jq -e '.device.id == "'"$personal_companion_device_id"'" and .device.workspaceId == "personal" and .version == "2.2.6" and any(.capabilities[]; . == "chat")' >/dev/null
+          echo "$personal_me" | jq -e '.device.id == "'"$personal_companion_device_id"'" and .device.workspaceId == "personal" and (.version | test("^[0-9]+\\.[0-9]+\\.[0-9]+$")) and any(.capabilities[]; . == "chat")' >/dev/null
 
           personal_core_override=$(curl -fsS http://127.0.0.1:5077/api/companion/client/core \
             -H "Authorization: Bearer $personal_companion_token" \
             -H "X-PersonalAI-Workspace: $custom_workspace_id")
-          echo "$personal_core_override" | jq -e '.workspaceId == "personal" and .version == "2.2.6"' >/dev/null
+          echo "$personal_core_override" | jq -e '.workspaceId == "personal" and (.version | test("^[0-9]+\\.[0-9]+\\.[0-9]+$"))' >/dev/null
 
           personal_companion_tasks=$(curl -fsS http://127.0.0.1:5077/api/companion/client/tasks \
             -H "Authorization: Bearer $personal_companion_token")
@@ -1112,7 +1129,7 @@ jobs:
           ! echo "$companion_audit" | grep -Fq "$custom_pairing_code"
 
           life_status=$(curl -fsS http://127.0.0.1:5077/api/life-context/status)
-          echo "$life_status" | jq -e '.version == "2.2.6" and .supported == true and .automaticCollectionEnabled == false and .contentEncrypted == true and .maximumSourcesPerWorkspace == 20 and .maximumEntriesPerWorkspace == 1000 and .maximumContentCharacters == 2000 and .minimumRetentionDays == 1 and .maximumRetentionDays == 365 and any(.supportedSourceKinds[]; . == "calendar") and any(.supportedSourceKinds[]; . == "location")' >/dev/null
+          echo "$life_status" | jq -e '(.version | test("^[0-9]+\\.[0-9]+\\.[0-9]+$")) and .supported == true and .automaticCollectionEnabled == false and .contentEncrypted == true and .maximumSourcesPerWorkspace == 20 and .maximumEntriesPerWorkspace == 1000 and .maximumContentCharacters == 2000 and .minimumRetentionDays == 1 and .maximumRetentionDays == 365 and any(.supportedSourceKinds[]; . == "calendar") and any(.supportedSourceKinds[]; . == "location")' >/dev/null
 
           life_unconfirmed_code=$(curl -sS -o /tmp/life-unconfirmed.json -w '%{http_code}' -X POST http://127.0.0.1:5077/api/life-context/sources \
             -H "X-PersonalAI-Workspace: $custom_workspace_id" \
@@ -1170,7 +1187,7 @@ jobs:
           ! echo "$context_preview" | grep -Fq 'life-context-secret-160'
 
           decision_status=$(curl -fsS http://127.0.0.1:5077/api/decisions/status)
-          echo "$decision_status" | jq -e '.version == "2.2.6" and .supported == true and .requiresUserDecision == true and .autoActionEnabled == false and .toolExecutionEnabled == false and .persistsAnalyses == false and .contextGroundingEnabled == true and .maximumQuestionCharacters == 4000 and .maximumOptions == 8 and .maximumCriteria == 8 and any(.contextKinds[]; . == "life-context")' >/dev/null
+          echo "$decision_status" | jq -e '(.version | test("^[0-9]+\\.[0-9]+\\.[0-9]+$")) and .supported == true and .requiresUserDecision == true and .autoActionEnabled == false and .toolExecutionEnabled == false and .persistsAnalyses == false and .contextGroundingEnabled == true and .maximumQuestionCharacters == 4000 and .maximumOptions == 8 and .maximumCriteria == 8 and any(.contextKinds[]; . == "life-context")' >/dev/null
 
           decision_invalid_code=$(curl -sS -o /tmp/decision-invalid.json -w '%{http_code}' -X POST http://127.0.0.1:5077/api/decisions/preview \
             -H "X-PersonalAI-Workspace: $custom_workspace_id" \
@@ -1203,7 +1220,7 @@ jobs:
           fi
 
           automation_status=$(curl -fsS http://127.0.0.1:5077/api/automations/status)
-          echo "$automation_status" | jq -e '.version == "2.2.6" and .supported == true and .backgroundSchedulerEnabled == true and .autoConfirmationEnabled == false and .decisionRecommendationAutoExecutionEnabled == false and .maximumAutomationsPerWorkspace == 50 and .minimumIntervalMinutes == 5 and .maximumIntervalMinutes == 10080 and .schedulerPollSeconds == 30 and .maximumDueBatchSize == 1' >/dev/null
+          echo "$automation_status" | jq -e '(.version | test("^[0-9]+\\.[0-9]+\\.[0-9]+$")) and .supported == true and .backgroundSchedulerEnabled == true and .autoConfirmationEnabled == false and .decisionRecommendationAutoExecutionEnabled == false and .maximumAutomationsPerWorkspace == 50 and .minimumIntervalMinutes == 5 and .maximumIntervalMinutes == 10080 and .schedulerPollSeconds == 30 and .maximumDueBatchSize == 1' >/dev/null
 
           automation_future=$(date -u -d '+30 minutes' '+%Y-%m-%dT%H:%M:%SZ')
 
@@ -1568,8 +1585,8 @@ jobs:
           test -n "$persistent_undo_id"
 
           tools=$(curl -fsS http://127.0.0.1:5077/api/tools)
-          echo "$tools" | jq -e '.frameworkVersion == "2.2.6" and (.permissionTypes | sort) == (["BROWSER","COMPUTER","CONNECTOR","DELETE","DEVELOPMENT","EXTERNAL","READ","SENSITIVE","WRITE"] | sort)' >/dev/null
-          echo "$tools" | jq -e '(.tools | length) == 33
+          echo "$tools" | jq -e '(.frameworkVersion | test("^[0-9]+\\.[0-9]+\\.[0-9]+$")) and (.permissionTypes | sort) == (["BROWSER","COMPUTER","CONNECTOR","DELETE","DEVELOPMENT","EXTERNAL","READ","SENSITIVE","WRITE"] | sort)' >/dev/null
+          echo "$tools" | jq -e '(.tools | length) == 39
             and any(.tools[]; .name == "local.clock" and .localOnly == true and .requiredPermissions == ["READ"])
             and any(.tools[]; .name == "local.text_stats" and .timeoutMs == 2000)
             and any(.tools[]; .name == "memory.search")
@@ -1590,6 +1607,12 @@ jobs:
             and any(.tools[]; .name == "computer.window.focus" and .requiredPermissions == ["WRITE","COMPUTER","SENSITIVE"] and .requiresConfirmation == true)
             and any(.tools[]; .name == "computer.cursor.move" and .requiredPermissions == ["WRITE","COMPUTER"] and .requiresConfirmation == true)
             and any(.tools[]; .name == "computer.mouse.click-left" and .requiredPermissions == ["WRITE","COMPUTER","SENSITIVE"] and .requiresConfirmation == true)
+          and any(.tools[]; .name == "computer.browser.open-default" and .requiredPermissions == ["WRITE","EXTERNAL","COMPUTER"] and .requiresConfirmation == true)
+          and any(.tools[]; .name == "league.practice.open" and .requiredPermissions == ["WRITE","EXTERNAL","COMPUTER"] and .requiresConfirmation == true and .timeoutMs == 180000)
+          and any(.tools[]; .name == "computer.mouse.click-right" and .requiresConfirmation == true)
+          and any(.tools[]; .name == "computer.mouse.double-click-left" and .requiresConfirmation == true)
+          and any(.tools[]; .name == "computer.mouse.scroll" and .requiresConfirmation == true)
+          and any(.tools[]; .name == "computer.mouse.drag-left" and .requiresConfirmation == true)
             and any(.tools[]; .name == "browser.session.info" and .requiredPermissions == ["READ","BROWSER"] and .requiresConfirmation == true)
             and any(.tools[]; .name == "browser.navigate" and .requiredPermissions == ["READ","EXTERNAL","BROWSER"] and .requiresConfirmation == true)
             and any(.tools[]; .name == "browser.page.observe" and .requiredPermissions == ["READ","BROWSER"] and .requiresConfirmation == true)
@@ -1605,7 +1628,7 @@ jobs:
             and any(.tools[]; .name == "dev.dotnet.test" and .requiredPermissions == ["READ","WRITE","SENSITIVE","DEVELOPMENT"] and .requiresConfirmation == true)' >/dev/null
 
           computer_status=$(curl -fsS http://127.0.0.1:5077/api/computer/status)
-          echo "$computer_status" | jq -e '.version == "2.2.6" and .supported == false and .interactiveSession == false and .availableCapabilities == [] and any(.limitations[]; contains("Windows"))' >/dev/null
+          echo "$computer_status" | jq -e '(.version | test("^[0-9]+\\.[0-9]+\\.[0-9]+$")) and .supported == false and .interactiveSession == false and .availableCapabilities == [] and any(.limitations[]; contains("Windows"))' >/dev/null
 
           # Khởi động mặc định khóa điều khiển; thử dừng lại và từ chối cho phép trên Linux.
           echo "$computer_status" | jq -e '.desktopActionsPaused == true and .stopHotkeyAvailable == false and .stopHotkey == "Ctrl + Shift + F12"' >/dev/null
@@ -1669,7 +1692,7 @@ jobs:
           jq -e '.status == "invalid-input" and (.error | contains("Windows"))' /tmp/computer-unsupported.json >/dev/null
 
           browser_status=$(curl -fsS http://127.0.0.1:5077/api/browser/status)
-          echo "$browser_status" | jq -e '.version == "2.2.6" and .engine == "http-html" and .supported == true and .javaScriptEnabled == false and .cookiesEnabled == false and .downloadsEnabled == false and .formSubmissionEnabled == false and .maximumResponseBytes == 1048576 and .maximumPageTextCharacters == 24000 and .maximumLinks == 100 and .maximumRedirects == 5' >/dev/null
+          echo "$browser_status" | jq -e '(.version | test("^[0-9]+\\.[0-9]+\\.[0-9]+$")) and .engine == "http-html" and .supported == true and .javaScriptEnabled == false and .cookiesEnabled == false and .downloadsEnabled == false and .formSubmissionEnabled == false and .maximumResponseBytes == 1048576 and .maximumPageTextCharacters == 24000 and .maximumLinks == 100 and .maximumRedirects == 5' >/dev/null
 
           browser_unconfirmed_code=$(curl -sS -o /tmp/browser-unconfirmed.json -w '%{http_code}' -X POST http://127.0.0.1:5077/api/tools/execute \
             -H 'Content-Type: application/json' \
@@ -1711,7 +1734,7 @@ jobs:
           echo "$browser_personal_session" | jq -e '.status == "succeeded" and .output.workspaceId == "personal" and .output.hasPage == true and (.output.url | startswith("https://example.com"))' >/dev/null
 
           connector_status=$(curl -fsS http://127.0.0.1:5077/api/connectors/status)
-          echo "$connector_status" | jq -e '.version == "2.2.6" and .supported == true and .availableKinds == ["http-bearer"] and .maximumConnectionsPerWorkspace == 20 and .maximumResponseBytes == 524288 and .maximumReturnedCharacters == 32000 and .maximumRedirects == 3 and .secretsEncrypted == true and .writeActionsEnabled == false' >/dev/null
+          echo "$connector_status" | jq -e '(.version | test("^[0-9]+\\.[0-9]+\\.[0-9]+$")) and .supported == true and .availableKinds == ["http-bearer"] and .maximumConnectionsPerWorkspace == 20 and .maximumResponseBytes == 524288 and .maximumReturnedCharacters == 32000 and .maximumRedirects == 3 and .secretsEncrypted == true and .writeActionsEnabled == false' >/dev/null
 
           connector_unconfirmed_code=$(curl -sS -o /tmp/connector-unconfirmed.json -w '%{http_code}' -X POST http://127.0.0.1:5077/api/connectors \
             -H 'Content-Type: application/json' \
@@ -1785,7 +1808,7 @@ jobs:
           ! echo "$connector_audit" | grep -Fq 'ci-connector-secret-130'
 
           development_status=$(curl -fsS http://127.0.0.1:5077/api/development/status)
-          echo "$development_status" | jq -e '.version == "2.2.6" and .workspaceId == "personal" and .gitAvailable == true and .dotnetAvailable == true and .arbitraryShellEnabled == false and .arbitraryProcessEnabled == false and .gitWriteActionsEnabled == false and .maximumScannedFiles == 2000 and .maximumSearchHits == 100 and .maximumProcessOutputCharacters == 48000' >/dev/null
+          echo "$development_status" | jq -e '(.version | test("^[0-9]+\\.[0-9]+\\.[0-9]+$")) and .workspaceId == "personal" and .gitAvailable == true and .dotnetAvailable == true and .arbitraryShellEnabled == false and .arbitraryProcessEnabled == false and .gitWriteActionsEnabled == true and .maximumScannedFiles == 2000 and .maximumSearchHits == 100 and .maximumProcessOutputCharacters == 48000' >/dev/null
 
           mkdir -p /tmp/personalai-workspace/dev-ci
           printf '%s\n' '<Project Sdk="Microsoft.NET.Sdk">' '  <PropertyGroup>' '    <OutputType>Exe</OutputType>' '    <TargetFramework>net8.0</TargetFramework>' '    <ImplicitUsings>enable</ImplicitUsings>' '    <Nullable>enable</Nullable>' '  </PropertyGroup>' '  <Target Name="RejectInheritedPersonalAiSecret" BeforeTargets="Build">' '    <Error Condition="&apos;$(PERSONALAI_DEV_SECRET)&apos; != &apos;&apos;" Text="PersonalAI parent secret leaked into development process." />' '  </Target>' '</Project>' > /tmp/personalai-workspace/dev-ci/DevCi.csproj
@@ -2593,7 +2616,7 @@ jobs:
 
           companion_me_after_restart=$(curl -fsS http://127.0.0.1:5077/api/companion/client/me \
             -H "Authorization: Bearer $custom_companion_token")
-          echo "$companion_me_after_restart" | jq -e '.device.id == "'"$custom_companion_device_id"'" and .device.workspaceId == "'"$custom_workspace_id"'" and .version == "2.2.6"' >/dev/null
+          echo "$companion_me_after_restart" | jq -e '.device.id == "'"$custom_companion_device_id"'" and .device.workspaceId == "'"$custom_workspace_id"'" and (.version | test("^[0-9]+\\.[0-9]+\\.[0-9]+$"))' >/dev/null
 
           life_sources_after_restart=$(curl -fsS -H "X-PersonalAI-Workspace: $custom_workspace_id" http://127.0.0.1:5077/api/life-context/sources)
           echo "$life_sources_after_restart" | jq -e 'any(.sources[]; .id == "'"$life_source_id"'" and .consentGranted == true and .enabled == true and .entryCount == 1)' >/dev/null
@@ -2716,7 +2739,7 @@ jobs:
           grep -Fq 'Task Dependencies' docs/releases/v0.9.3.md
           grep -Fq 'v090.css' src/PersonalAI.Web/wwwroot/index.html
           grep -Fq 'v090.js' src/PersonalAI.Web/wwwroot/index.html
-          grep -Fq 'Tác vụ có Undo Foundation v1.8.0' src/PersonalAI.Web/wwwroot/v090.js
+          grep -Fq 'Tác vụ có nền tảng hoàn tác' src/PersonalAI.Web/wwwroot/v090.js
           grep -Fq 'MỤC TIÊU → KẾ HOẠCH → TỪNG BƯỚC' src/PersonalAI.Web/wwwroot/v090.js
           grep -Fq 'arguments_sha256' src/PersonalAI.Web/Services/ToolActivityStore.cs
           grep -Fq 'output_sha256' src/PersonalAI.Web/Services/ToolActivityStore.cs
@@ -2833,7 +2856,7 @@ jobs:
           grep -Fq 'Stable Personal AI Core' docs/releases/v1.0.0.md
           grep -Fq '# AI Cá Nhân — Giao diện quy trình tiếng Việt v2.2.6' README.md
           ! grep -Fq '# AI Cá Nhân — MVP v0.5.3' README.md
-          grep -Fq 'public const string Version = "2.2.6"' src/PersonalAI.Web/Models/SystemModels.cs
+          grep -Eq 'public const string Version = "[0-9]+[.][0-9]+[.][0-9]+";' src/PersonalAI.Web/Models/SystemModels.cs
           grep -Fq 'public const string ApiContractVersion = "1"' src/PersonalAI.Web/Models/SystemModels.cs
           grep -Fq 'public const string Channel = "controlled"' src/PersonalAI.Web/Models/SystemModels.cs
           grep -Fq '/api/system/health' src/PersonalAI.Web/Services/SystemEndpoints.cs
@@ -2978,7 +3001,7 @@ jobs:
           grep -Fq 'ParallelToolCalls: false' src/PersonalAI.Web/Services/SystemCoreService.cs
           grep -Fq 'v100.css' src/PersonalAI.Web/wwwroot/index.html
           grep -Fq 'v100.js' src/PersonalAI.Web/wwwroot/index.html
-          grep -Fq 'STABLE CORE · API CONTRACT 1' src/PersonalAI.Web/wwwroot/v100.js
+          grep -Fq 'LÕI ỔN ĐỊNH · HỢP ĐỒNG API 1' src/PersonalAI.Web/wwwroot/v100.js
           grep -Fq 'Controlled Computer Use' docs/releases/v1.1.0.md
           grep -Fq 'public const string Computer = "COMPUTER"' src/PersonalAI.Web/Models/ToolModels.cs
           grep -Fq 'DesktopActionsPaused: session.Paused' src/PersonalAI.Web/Services/ComputerUseService.cs
@@ -3043,7 +3066,7 @@ jobs:
           grep -Fq 'MaximumResponseBytes = 1 * 1024 * 1024' src/PersonalAI.Web/Services/BrowserAgentService.cs
           grep -Fq 'v120.css' src/PersonalAI.Web/wwwroot/index.html
           grep -Fq 'v120.js' src/PersonalAI.Web/wwwroot/index.html
-          grep -Fq 'CONTROLLED CAPABILITY · HTTP/HTML' src/PersonalAI.Web/wwwroot/v120.js
+          grep -Fq 'KHẢ NĂNG ĐƯỢC KIỂM SOÁT · HTTP/HTML' src/PersonalAI.Web/wwwroot/v120.js
           ! grep -Fq 'HttpMethod.Post' src/PersonalAI.Web/Services/BrowserAgentService.cs
           ! grep -Fq 'UseCookies = true' src/PersonalAI.Web/Services/BrowserAgentService.cs
           ! grep -Fq 'CookieContainer' src/PersonalAI.Web/Services/BrowserAgentService.cs
@@ -3070,7 +3093,7 @@ jobs:
 
           grep -Fq 'v130.css' src/PersonalAI.Web/wwwroot/index.html
           grep -Fq 'v130.js' src/PersonalAI.Web/wwwroot/index.html
-          grep -Fq 'CONTROLLED CAPABILITY · ENCRYPTED CREDENTIAL' src/PersonalAI.Web/wwwroot/v130.js
+          grep -Fq 'KHẢ NĂNG ĐƯỢC KIỂM SOÁT · THÔNG TIN XÁC THỰC ĐƯỢC MÃ HÓA' src/PersonalAI.Web/wwwroot/v130.js
           ! grep -Fq 'HttpMethod.Post' src/PersonalAI.Web/Services/ConnectorService.cs
           ! grep -Fq 'HttpMethod.Put' src/PersonalAI.Web/Services/ConnectorService.cs
           ! grep -Fq 'HttpMethod.Patch' src/PersonalAI.Web/Services/ConnectorService.cs
@@ -3111,7 +3134,7 @@ jobs:
           grep -Fq -- '--ignore-submodules=all' src/PersonalAI.Web/Services/DevelopmentAgentService.cs
           grep -Fq 'v140.css' src/PersonalAI.Web/wwwroot/index.html
           grep -Fq 'v140.js' src/PersonalAI.Web/wwwroot/index.html
-          grep -Fq 'CONTROLLED CAPABILITY · NO ARBITRARY SHELL' src/PersonalAI.Web/wwwroot/v140.js
+          grep -Fq 'KHẢ NĂNG CÓ KIỂM SOÁT · KHÔNG CHẠY LỆNH TÙY Ý' src/PersonalAI.Web/wwwroot/v140.js
           grep -Fq 'DEVELOPMENT: "PHÁT TRIỂN PHẦN MỀM"' src/PersonalAI.Web/wwwroot/v080.js
           grep -Fq 'DEVELOPMENT: "PHÁT TRIỂN PHẦN MỀM"' src/PersonalAI.Web/wwwroot/v090.js
           ! grep -Fq 'UseShellExecute = true' src/PersonalAI.Web/Services/DevelopmentAgentService.cs

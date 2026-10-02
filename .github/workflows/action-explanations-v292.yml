@@ -1,0 +1,132 @@
+name: Action Explanations v2.9.2
+
+on:
+  push:
+    branches:
+      - 'experiment/roadmap-v2-9-2-action-explanations'
+
+jobs:
+  validate-v292:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: '8.0.x'
+
+      - name: Restore
+        run: dotnet restore PersonalAI.sln
+
+      - name: Build
+        run: dotnet build PersonalAI.sln -c Release --no-restore
+
+      - name: Tests
+        run: dotnet test PersonalAI.sln -c Release --no-build
+
+      - name: Action explanation smoke test
+        shell: bash
+        run: |
+          set -euxo pipefail
+          rm -rf /tmp/personalai-v292
+          mkdir -p /tmp/personalai-v292/audit /tmp/personalai-v292/workspace
+
+          export Audit__Root=/tmp/personalai-v292/audit
+          export Workspace__Root=/tmp/personalai-v292/workspace
+
+          start_app() {
+            dotnet run --project src/PersonalAI.Web/PersonalAI.Web.csproj \
+              -c Release --no-build \
+              --urls http://127.0.0.1:5133 \
+              >/tmp/personalai-v292/app.log 2>&1 &
+            APP_PID=$!
+            for i in {1..30}; do
+              if curl -fsS http://127.0.0.1:5133/api/system/explanations/status >/tmp/explain-status.json; then
+                return 0
+              fi
+              sleep 1
+            done
+            cat /tmp/personalai-v292/app.log
+            return 1
+          }
+
+          stop_app() {
+            kill "$APP_PID" 2>/dev/null || true
+            wait "$APP_PID" 2>/dev/null || true
+          }
+
+          trap 'stop_app || true' EXIT
+          start_app
+
+          jq -e '
+            (.version | split(".") | map(tonumber)) >= [2,9,2]
+            and .auditGrounded==true
+            and .correlationTimelineSupported==true
+            and .aiGenerated==false
+            and .hiddenReasoningExposed==false
+            and .sideEffectsEnabled==false
+            and .maximumCorrelationEvents==50
+          ' /tmp/explain-status.json >/dev/null
+
+          curl -sS -D /tmp/request-headers.txt \
+            'http://127.0.0.1:5133/api/status?private_marker=DO_NOT_EXPLAIN_292' \
+            >/tmp/status.json
+
+          request_id=$(awk 'BEGIN{IGNORECASE=1} /^X-PersonalAI-Request-Id:/ {gsub("\r","",$2); print $2}' /tmp/request-headers.txt)
+          test -n "$request_id"
+
+          logs=$(curl -fsS \
+            "http://127.0.0.1:5133/api/system/logs?correlationId=$request_id")
+          audit_id=$(echo "$logs" | jq -r '.items[0].auditId')
+          test -n "$audit_id"
+          test "$audit_id" != "null"
+
+          curl -fsS \
+            "http://127.0.0.1:5133/api/system/explanations/audit/$audit_id" \
+            >/tmp/audit-explanation.json
+
+          jq -e --arg rid "$request_id" '
+            (.version | split(".") | map(tonumber)) >= [2,9,2]
+            and .explanationType=="audit-event"
+            and .sourceGrounded==true
+            and .aiGenerated==false
+            and .hiddenReasoningExposed==false
+            and .actor=="system"
+            and .action=="http.request"
+            and .target=="GET /api/status"
+            and .result=="succeeded"
+            and .correlationId==$rid
+            and (.evidence | length)==1
+            and .evidence[0].auditId!=null
+          ' /tmp/audit-explanation.json >/dev/null
+
+          ! grep -Fq 'DO_NOT_EXPLAIN_292' /tmp/audit-explanation.json
+
+          curl -fsS \
+            "http://127.0.0.1:5133/api/system/explanations/correlation/$request_id" \
+            >/tmp/correlation-explanation.json
+
+          jq -e --arg rid "$request_id" '
+            .explanationType=="correlation-timeline"
+            and .correlationId==$rid
+            and .sourceGrounded==true
+            and .aiGenerated==false
+            and .hiddenReasoningExposed==false
+            and (.evidence | length)>=1
+            and all(.evidence[]; .correlationId==$rid)
+          ' /tmp/correlation-explanation.json >/dev/null
+
+          missing_code=$(curl -sS -o /tmp/missing.json -w '%{http_code}' \
+            http://127.0.0.1:5133/api/system/explanations/audit/00000000-0000-0000-0000-000000000001)
+          test "$missing_code" = "404"
+
+          stop_app
+          start_app
+
+          curl -fsS \
+            "http://127.0.0.1:5133/api/system/explanations/audit/$audit_id" \
+            >/tmp/persisted-explanation.json
+          jq -e --arg rid "$request_id" '
+            .sourceGrounded==true
+            and .correlationId==$rid
+            and .target=="GET /api/status"
+          ' /tmp/persisted-explanation.json >/dev/null

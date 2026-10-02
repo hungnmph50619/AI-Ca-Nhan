@@ -1,0 +1,167 @@
+name: Unified Permissions v2.9.0
+
+on:
+  push:
+    branches:
+      - 'experiment/roadmap-v2-9-0-unified-permissions'
+
+jobs:
+  validate-v290:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: '8.0.x'
+
+      - name: Restore
+        run: dotnet restore PersonalAI.sln
+
+      - name: Build
+        run: dotnet build PersonalAI.sln -c Release --no-restore
+
+      - name: Tests
+        run: dotnet test PersonalAI.sln -c Release --no-build
+
+      - name: Unified permissions smoke test
+        shell: bash
+        run: |
+          set -euxo pipefail
+          rm -rf /tmp/personalai-v290
+          mkdir -p \
+            /tmp/personalai-v290/workspace \
+            /tmp/personalai-v290/companion \
+            /tmp/personalai-v290/hub \
+            /tmp/personalai-v290/identity \
+            /tmp/personalai-v290/capabilities \
+            /tmp/personalai-v290/permissions
+
+          export Workspace__Root=/tmp/personalai-v290/workspace
+          export Companion__Root=/tmp/personalai-v290/companion
+          export Companion__Enabled=true
+          export Companion__AllowInsecureHttp=true
+          export DeviceHub__Root=/tmp/personalai-v290/hub
+          export DeviceIdentity__Root=/tmp/personalai-v290/identity
+          export DeviceCapability__Root=/tmp/personalai-v290/capabilities
+          export UnifiedPermission__Root=/tmp/personalai-v290/permissions
+
+          start_app() {
+            dotnet run --project src/PersonalAI.Web/PersonalAI.Web.csproj \
+              -c Release --no-build \
+              --urls http://127.0.0.1:5131 \
+              >/tmp/personalai-v290/app.log 2>&1 &
+            APP_PID=$!
+            for i in {1..30}; do
+              if curl -fsS http://127.0.0.1:5131/api/system/permissions/status >/tmp/permission-status.json; then
+                return 0
+              fi
+              sleep 1
+            done
+            cat /tmp/personalai-v290/app.log
+            return 1
+          }
+
+          stop_app() {
+            kill "$APP_PID" 2>/dev/null || true
+            wait "$APP_PID" 2>/dev/null || true
+          }
+
+          trap 'stop_app || true' EXIT
+          start_app
+
+          jq -e '
+            (.version | split(".") | map(tonumber)) >= [2,9,0]
+            and .defaultDeny==true
+            and .denyOverridesAllow==true
+            and .workspaceScoped==true
+            and .expirySupported==true
+            and .explicitChangeConfirmationRequired==true
+          ' /tmp/permission-status.json >/dev/null
+
+          default_deny=$(curl -sS -o /tmp/default-deny.json -w '%{http_code}' \
+            -X POST http://127.0.0.1:5131/api/system/permissions/evaluate \
+            -H 'Content-Type: application/json' \
+            -d '{
+              "subjectType":"device",
+              "subjectId":"missing-device",
+              "resource":"capability:git",
+              "action":"use"
+            }')
+          test "$default_deny" = "403"
+          jq -e '.allowed==false and .reason=="default-deny"' /tmp/default-deny.json >/dev/null
+
+          curl -fsS -X POST http://127.0.0.1:5131/api/device-hub/admin/devices \
+            -H 'Content-Type: application/json' \
+            -d '{"name":"Permission PC","deviceType":"pc","confirmRegister":true}' \
+            >/tmp/device.json
+          device_id=$(jq -r '.id' /tmp/device.json)
+
+          curl -fsS -X POST \
+            http://127.0.0.1:5131/api/device-hub/admin/devices/$device_id/heartbeat \
+            -H 'Content-Type: application/json' \
+            -d '{"confirmHeartbeat":true}' >/dev/null
+
+          curl -fsS -X POST \
+            http://127.0.0.1:5131/api/device-hub/admin/devices/$device_id/capabilities \
+            -H 'Content-Type: application/json' \
+            -d '{"capability":"git","confirmRegister":true}' >/dev/null
+
+          pre_grant=$(curl -sS -o /tmp/pre-grant.json -w '%{http_code}' \
+            http://127.0.0.1:5131/api/device-hub/admin/devices/$device_id/capabilities/git/access)
+          test "$pre_grant" = "403"
+
+          curl -fsS -X POST \
+            http://127.0.0.1:5131/api/device-hub/admin/devices/$device_id/capabilities/git/permission \
+            -H 'Content-Type: application/json' \
+            -d '{"permissionGranted":true,"confirmPermissionChange":true}' >/tmp/grant.json
+
+          permissions=$(curl -fsS http://127.0.0.1:5131/api/system/permissions)
+          echo "$permissions" | jq -e --arg device "$device_id" '
+            any(.[]; .subjectType=="device"
+              and .subjectId==$device
+              and .resource=="capability:git"
+              and .action=="use"
+              and .effect=="allow")
+          ' >/dev/null
+
+          curl -fsS http://127.0.0.1:5131/api/device-hub/admin/devices/$device_id/capabilities/git/access \
+            >/tmp/authorized.json
+          jq -e '.allowed==true' /tmp/authorized.json >/dev/null
+
+          curl -fsS -X POST http://127.0.0.1:5131/api/system/permissions \
+            -H 'Content-Type: application/json' \
+            -d '{
+              "subjectType":"device",
+              "subjectId":"'"$device_id"'",
+              "resource":"*",
+              "action":"*",
+              "effect":"deny",
+              "confirmChange":true
+            }' >/tmp/deny-rule.json
+          deny_rule_id=$(jq -r '.id' /tmp/deny-rule.json)
+
+          denied=$(curl -sS -o /tmp/denied.json -w '%{http_code}' \
+            http://127.0.0.1:5131/api/device-hub/admin/devices/$device_id/capabilities/git/access)
+          test "$denied" = "403"
+          jq -e '.allowed==false and .reason=="explicit-deny"' /tmp/denied.json >/dev/null
+
+          stop_app
+          start_app
+
+          persisted_denied=$(curl -sS -o /tmp/persisted-denied.json -w '%{http_code}' \
+            http://127.0.0.1:5131/api/device-hub/admin/devices/$device_id/capabilities/git/access)
+          test "$persisted_denied" = "403"
+
+          curl -fsS -X DELETE \
+            http://127.0.0.1:5131/api/system/permissions/$deny_rule_id \
+            -H 'Content-Type: application/json' \
+            -d '{"confirmRevoke":true}' >/dev/null
+
+          curl -fsS http://127.0.0.1:5131/api/device-hub/admin/devices/$device_id/capabilities/git/access \
+            >/tmp/reallowed.json
+          jq -e '.allowed==true and .reason=="explicit-allow"' /tmp/reallowed.json >/dev/null
+
+          curl -fsS http://127.0.0.1:5131/api/system/health >/tmp/health.json
+          jq -e '
+            any(.modules[]; .module=="permissions" and .status=="healthy")
+          ' /tmp/health.json >/dev/null

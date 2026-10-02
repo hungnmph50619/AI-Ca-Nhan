@@ -1,0 +1,143 @@
+name: Development v2.6.9
+
+on:
+  push:
+    branches:
+      - 'experiment/roadmap-v2-6-9-current'
+  pull_request:
+    paths:
+      - 'src/PersonalAI.Web/Models/DevelopmentWorktreeModels.cs'
+      - 'src/PersonalAI.Web/Services/DevelopmentWorktreeService.cs'
+      - 'src/PersonalAI.Web/Services/RoadmapAutopilotService.cs'
+      - 'src/PersonalAI.Web/Services/DevelopmentAgentService.cs'
+      - 'src/PersonalAI.Web/Services/DevelopmentEndpoints.cs'
+      - 'src/PersonalAI.Web/Models/SystemModels.cs'
+
+jobs:
+  validate-v269:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: '8.0.x'
+
+      - name: Restore
+        run: dotnet restore PersonalAI.sln
+
+      - name: Build
+        run: dotnet build PersonalAI.sln -c Release --no-restore
+
+      - name: Tests
+        run: dotnet test PersonalAI.sln -c Release --no-build
+
+      - name: Dirty-tree and worktree isolation smoke test
+        shell: bash
+        run: |
+          set -euo pipefail
+          rm -rf /tmp/personalai-v269
+          mkdir -p /tmp/personalai-v269/workspace/repo
+
+          cd /tmp/personalai-v269/workspace/repo
+          git init -b main
+          git config user.name "PersonalAI CI"
+          git config user.email "ci@example.invalid"
+          printf 'base\n' > source.txt
+          git add source.txt
+          git commit -m "initial"
+
+          printf 'user dirty change\n' >> source.txt
+          dirty_before=$(sha256sum source.txt | awk '{print $1}')
+
+          cd "$GITHUB_WORKSPACE"
+
+          Workspace__Root=/tmp/personalai-v269/workspace           dotnet run --project src/PersonalAI.Web/PersonalAI.Web.csproj             -c Release --no-build             --urls http://127.0.0.1:5100             >/tmp/personalai-v269.log 2>&1 &
+          APP_PID=$!
+          trap 'kill "$APP_PID" 2>/dev/null || true' EXIT
+
+          ready=0
+          for i in {1..30}; do
+            if curl -fsS http://127.0.0.1:5100/api/development/worktrees/status >/tmp/status.json; then
+              ready=1
+              break
+            fi
+            sleep 1
+          done
+          test "$ready" = "1"
+
+          jq -e '
+            (.version | split(".") | map(tonumber)) >= [2,6,9]
+            and .worktreeIsolationEnabled == true
+            and .dirtyTreeOverwriteProtection == true
+            and .automaticResetEnabled == false
+            and .cleanupRequiresConfirmation == true
+          ' /tmp/status.json >/dev/null
+
+          curl -fsS -X POST http://127.0.0.1:5100/api/development/worktrees             -H 'Content-Type: application/json'             -d '{
+              "repositoryPath":"repo",
+              "branch":"experiment/v269-smoke",
+              "startPoint":"main",
+              "worktreeId":"v269-smoke",
+              "confirmCreateWorktree":true
+            }' >/tmp/worktree.json
+
+          jq -e '
+            .created == true
+            and .branch == "experiment/v269-smoke"
+            and (.worktreePath | contains(".personalai-worktrees/v269-smoke"))
+          ' /tmp/worktree.json >/dev/null
+
+          dirty_after=$(sha256sum /tmp/personalai-v269/workspace/repo/source.txt | awk '{print $1}')
+          test "$dirty_before" = "$dirty_after"
+          grep -q 'user dirty change' /tmp/personalai-v269/workspace/repo/source.txt
+
+          curl -fsS             'http://127.0.0.1:5100/api/development/worktrees?repositoryPath=repo'             >/tmp/worktrees.json
+
+          jq -e '
+            any(.[];
+              .branch == "experiment/v269-smoke"
+              and .isMainWorktree == false
+              and .isDirty == false)
+          ' /tmp/worktrees.json >/dev/null
+
+          printf 'agent change\n' >> /tmp/personalai-v269/workspace/.personalai-worktrees/v269-smoke/source.txt
+
+          remove_dirty=$(curl -sS -o /tmp/remove-dirty.json -w '%{http_code}'             -X DELETE http://127.0.0.1:5100/api/development/worktrees             -H 'Content-Type: application/json'             -d '{
+              "repositoryPath":"repo",
+              "worktreePath":".personalai-worktrees/v269-smoke",
+              "confirmRemoveWorktree":true
+            }')
+          test "$remove_dirty" = "400"
+
+          grep -q 'agent change' /tmp/personalai-v269/workspace/.personalai-worktrees/v269-smoke/source.txt
+          grep -q 'user dirty change' /tmp/personalai-v269/workspace/repo/source.txt
+
+          cd /tmp/personalai-v269/workspace/.personalai-worktrees/v269-smoke
+          git config user.name "PersonalAI CI Agent"
+          git config user.email "agent@example.invalid"
+          git add source.txt
+          git commit -m "agent: isolated change"
+
+          cd "$GITHUB_WORKSPACE"
+
+          curl -fsS -X DELETE http://127.0.0.1:5100/api/development/worktrees             -H 'Content-Type: application/json'             -d '{
+              "repositoryPath":"repo",
+              "worktreePath":".personalai-worktrees/v269-smoke",
+              "confirmRemoveWorktree":true
+            }'             | jq -e '.removed == true' >/dev/null
+
+          test ! -d /tmp/personalai-v269/workspace/.personalai-worktrees/v269-smoke
+
+          dirty_final=$(sha256sum /tmp/personalai-v269/workspace/repo/source.txt | awk '{print $1}')
+          test "$dirty_before" = "$dirty_final"
+
+          git -C /tmp/personalai-v269/workspace/repo status --porcelain             | grep -q 'source.txt'
+
+          if git -C /tmp/personalai-v269/workspace/repo reflog --all --format='%gs'             | grep -qi 'reset'; then
+            echo "Unexpected reset operation found"
+            exit 1
+          fi
+
+          curl -fsS http://127.0.0.1:5100/api/development/status             | jq -e '
+              (.availableCapabilities | index("git-worktree-isolation")) != null
+            ' >/dev/null

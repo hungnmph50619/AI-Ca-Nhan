@@ -71,17 +71,17 @@
     const heading = document.createElement("div");
     const eyebrow = document.createElement("p");
     eyebrow.className = "eyebrow";
-    eyebrow.textContent = "CONTROLLED CAPABILITY · HTTP/HTML";
+    eyebrow.textContent = "KHẢ NĂNG ĐƯỢC KIỂM SOÁT · HTTP/HTML";
 
     const title = document.createElement("h2");
     title.id = "browserAgentTitle";
-    title.textContent = "Browser Agent v1.2";
+    title.textContent = "Tác nhân trình duyệt";
     heading.append(eyebrow, title);
 
     const close = document.createElement("button");
     close.type = "button";
     close.className = "dialog-close";
-    close.setAttribute("aria-label", "Đóng Browser Agent");
+    close.setAttribute("aria-label", "Đóng tác nhân trình duyệt");
     close.textContent = "×";
     close.addEventListener("click", () => dialog.close());
     header.append(heading, close);
@@ -90,7 +90,7 @@
     intro.className = "v120-browser-intro";
     intro.innerHTML =
       "<strong>Điều hướng web có guard</strong>" +
-      "<p>Browser Agent v1.2 dùng HTTP GET và snapshot text/links theo workspace. Không chạy JavaScript, không giữ cookie/login, không submit form và không tải tệp.</p>";
+      "<p>Tác nhân trình duyệt v1.2 dùng HTTP GET và bản chụp văn bản/liên kết theo không gian làm việc. Không chạy JavaScript, không giữ cookie/đăng nhập, không gửi biểu mẫu và không tải tệp.</p>";
 
     const summary = document.createElement("div");
     summary.id = "browserAgentSummary";
@@ -166,13 +166,13 @@
       const response = await fetch("/api/browser/status", { cache: "no-store" });
       const payload = await response.json().catch(() => ({}));
       if (!response.ok) {
-        throw new Error(payload.error || "Không đọc được trạng thái Browser Agent.");
+        throw new Error(payload.error || "Không đọc được trạng thái tác nhân trình duyệt.");
       }
 
       renderStatus(payload);
       updateBadge(payload.supported === true);
     } catch (error) {
-      setFeedback(error.message || "Không đọc được trạng thái Browser Agent.", true);
+      setFeedback(error.message || "Không đọc được trạng thái tác nhân trình duyệt.", true);
       updateBadge(false);
     } finally {
       loading = false;
@@ -214,7 +214,7 @@
   function updateBadge(available) {
     const badge = document.querySelector("#browserAgentBadge");
     if (!badge) return;
-    badge.textContent = available ? "ON" : "OFF";
+    badge.textContent = available ? "BẬT" : "TẮT";
     badge.className =
       `tool-count v120-browser-badge ${available ? "is-ready" : "is-off"}`;
   }

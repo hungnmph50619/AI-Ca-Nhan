@@ -12,6 +12,12 @@ on:
     paths:
       - 'src/PersonalAI.Web/Services/ComputerUse*'
       - 'src/PersonalAI.Web/Services/ComputerClickLeftTool.cs'
+      - 'src/PersonalAI.Web/Services/ComputerOpenDefaultBrowserTool.cs'
+      - 'src/PersonalAI.Web/Services/DesktopScreenshotService.cs'
+      - 'src/PersonalAI.Web/Services/DesktopVisionService.cs'
+      - 'src/PersonalAI.Web/Services/LeaguePracticeAutomationService.cs'
+      - 'src/PersonalAI.Web/Services/LeaguePracticeOpenTool.cs'
+      - 'src/PersonalAI.Web/Models/DesktopVisionModels.cs'
       - 'src/PersonalAI.Web/Services/ComputerControlGate.cs'
       - 'src/PersonalAI.Web/Services/WindowsStopHotkeyService.cs'
       - 'src/PersonalAI.Web/Models/ComputerUseModels.cs'
@@ -81,6 +87,7 @@ jobs:
               confirmed = $true
             } | ConvertTo-Json -Depth 5
             $blockedTool = Invoke-WebRequest "$base/api/tools/execute" -Method Post -ContentType "application/json" -Body $toolBody -SkipHttpErrorCheck
+            Write-Host "blocked cursor response status=$($blockedTool.StatusCode) body=$($blockedTool.Content)"
             $blocked = $blockedTool.Content | ConvertFrom-Json
             if ($blockedTool.StatusCode -ne 400 -or $blocked.status -ne "invalid-input" -or $blocked.error -notmatch "tạm dừng") {
               throw "Công cụ điều khiển không tuân thủ trạng thái dừng."

@@ -9,8 +9,12 @@ public static class ComputerUseEndpoints
         this IServiceCollection services)
     {
         services.AddSingleton<ComputerControlGate>();
+        services.AddSingleton<LeagueVisualProgressStore>();
+        services.AddHostedService<WindowsLeagueVisualOverlayService>();
         services.AddHostedService<WindowsStopHotkeyService>();
         services.AddSingleton<IComputerUseService, WindowsComputerUseService>();
+        services.AddSingleton<IDesktopScreenshotService, WindowsDesktopScreenshotService>();
+        services.AddSingleton<ILeaguePracticeAutomationService, LeaguePracticeAutomationService>();
         services.AddSingleton<IPersonalAiTool, ComputerScreenInfoTool>();
         services.AddSingleton<IPersonalAiTool, ComputerCursorPositionTool>();
         services.AddSingleton<IPersonalAiTool, ComputerWindowsListTool>();
@@ -18,6 +22,12 @@ public static class ComputerUseEndpoints
         services.AddSingleton<IPersonalAiTool, ComputerFocusWindowTool>();
         services.AddSingleton<IPersonalAiTool, ComputerMoveCursorTool>();
         services.AddSingleton<IPersonalAiTool, ComputerClickLeftTool>();
+        services.AddSingleton<IPersonalAiTool, ComputerClickRightTool>();
+        services.AddSingleton<IPersonalAiTool, ComputerDoubleClickLeftTool>();
+        services.AddSingleton<IPersonalAiTool, ComputerScrollTool>();
+        services.AddSingleton<IPersonalAiTool, ComputerDragLeftTool>();
+        services.AddSingleton<IPersonalAiTool, ComputerOpenDefaultBrowserTool>();
+        services.AddSingleton<IPersonalAiTool, LeaguePracticeOpenTool>();
         return services;
     }
 
@@ -27,6 +37,10 @@ public static class ComputerUseEndpoints
         app.MapGet("/api/computer/status", (
             IComputerUseService computer) =>
             Results.Ok(computer.GetStatus()));
+
+        app.MapGet("/api/computer/league-progress", (
+            LeagueVisualProgressStore progress) =>
+            Results.Ok(progress.Get()));
 
         // Chỉ nhận thao tác bật/tắt từ máy đang chạy chương trình.
         // Không xem header này là xác thực: người dùng không nên mở máy chủ trên mạng công cộng.

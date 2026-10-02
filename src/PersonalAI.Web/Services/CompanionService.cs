@@ -19,6 +19,10 @@ public interface ICompanionService
     CompanionPairingClaimResponse ClaimPairing(
         CompanionPairingClaimRequest request);
 
+    CompanionPairingClaimResponse CreateSecurePairedDevice(
+        string workspaceId,
+        string deviceName);
+
     CompanionDevice? Authenticate(
         string token);
 
@@ -121,7 +125,11 @@ public sealed class CompanionService : ICompanionService
                 CompanionCapabilities.Pairing,
                 CompanionCapabilities.Chat,
                 CompanionCapabilities.TasksRead,
-                CompanionCapabilities.CoreStatus
+                CompanionCapabilities.CoreStatus,
+                CompanionCapabilities.DeviceHubStatus,
+                CompanionCapabilities.DeviceIdentity,
+                CompanionCapabilities.SecurePairing,
+                CompanionCapabilities.DeviceCapabilities
             ],
             [
                 "Pairing code chỉ tồn tại tạm thời và chỉ được tạo từ admin request cục bộ.",
@@ -129,6 +137,10 @@ public sealed class CompanionService : ICompanionService
                 "Companion chat không được đề xuất hoặc thực thi tool.",
                 "Task API trên Android là read-only trong v1.5.0.",
                 "Remote Memory/Documents/Files/Tools/Undo/Connector/Development mutation chưa được mở.",
+                "Device Hub theo dõi presence/status; không tự cấp permission hoặc remote execution.",
+                "Device Identity dùng stable device ID + ECDSA public key; private key được mã hóa và capabilities chưa tự cấp.",
+                "Secure Pairing yêu cầu one-time code + ECDSA challenge proof; chỉ secure pairing mới nâng trust lên trusted, legacy pairing vẫn untrusted.",
+                "Device Capability v2.8.3 tách đăng ký khỏi permission; capability chưa đăng ký hoặc chưa được cấp quyền luôn bị từ chối, Android cần trusted trước khi được grant.",
                 AllowInsecureHttp
                     ? "HTTP không mã hóa đang được cho phép bằng cấu hình explicit; chỉ dùng trên mạng tin cậy."
                     : "Client pairing và client API yêu cầu HTTPS."
@@ -217,6 +229,46 @@ public sealed class CompanionService : ICompanionService
 
             _state.Devices.Add(device);
             _pairings.Remove(code);
+            SaveLocked();
+
+            return new CompanionPairingClaimResponse(
+                token,
+                ToPublic(device));
+        }
+    }
+
+    public CompanionPairingClaimResponse CreateSecurePairedDevice(
+        string workspaceId,
+        string deviceName)
+    {
+        EnsureEnabled();
+        var normalizedWorkspace = NormalizeWorkspaceId(workspaceId);
+        var name = NormalizeDeviceName(deviceName);
+        var now = DateTimeOffset.UtcNow;
+
+        lock (_gate)
+        {
+            var count = _state.Devices.Count(item =>
+                item.WorkspaceId.Equals(
+                    normalizedWorkspace,
+                    StringComparison.OrdinalIgnoreCase));
+
+            if (count >= MaximumDevicesPerWorkspace)
+                throw new CompanionPairingException(
+                    $"Workspace đã đạt giới hạn {MaximumDevicesPerWorkspace} thiết bị companion.");
+
+            var token = CreateDeviceToken();
+            var device = new StoredCompanionDevice
+            {
+                Id = Guid.NewGuid(),
+                WorkspaceId = normalizedWorkspace,
+                Name = name,
+                TokenSha256 = HashToken(token),
+                CreatedAt = now,
+                LastSeenAt = now
+            };
+
+            _state.Devices.Add(device);
             SaveLocked();
 
             return new CompanionPairingClaimResponse(

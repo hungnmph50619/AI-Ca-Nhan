@@ -1,0 +1,131 @@
+name: Model Lab v2.6.1
+
+on:
+  push:
+    branches:
+      - 'experiment/roadmap-v2-6-1-current'
+  pull_request:
+    paths:
+      - 'src/PersonalAI.Web/ModelLab/SyntheticCriticModels.cs'
+      - 'src/PersonalAI.Web/Services/SyntheticCriticService.cs'
+      - 'src/PersonalAI.Web/Services/SyntheticDataService.cs'
+      - 'src/PersonalAI.Web/Services/ModelLabEndpoints.cs'
+      - 'src/PersonalAI.Web/Models/SystemModels.cs'
+
+jobs:
+  validate-v261:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: '8.0.x'
+
+      - name: Restore
+        run: dotnet restore PersonalAI.sln
+
+      - name: Build
+        run: dotnet build PersonalAI.sln -c Release --no-restore
+
+      - name: Tests
+        run: dotnet test PersonalAI.sln -c Release --no-build
+
+      - name: Critic safety smoke test
+        shell: bash
+        run: |
+          set -euo pipefail
+          rm -rf /tmp/personalai-v261
+          mkdir -p /tmp/personalai-v261/workspace /tmp/personalai-v261/model-lab
+
+          Workspace__Root=/tmp/personalai-v261/workspace           ModelLab__Root=/tmp/personalai-v261/model-lab           dotnet run --project src/PersonalAI.Web/PersonalAI.Web.csproj             -c Release --no-build             --urls http://127.0.0.1:5092             >/tmp/personalai-v261.log 2>&1 &
+          APP_PID=$!
+          trap 'kill "$APP_PID" 2>/dev/null || true' EXIT
+
+          ready=0
+          for i in {1..30}; do
+            if curl -fsS http://127.0.0.1:5092/api/model-lab/synthetic/critic/status >/tmp/critic-status.json; then
+              ready=1
+              break
+            fi
+            sleep 1
+          done
+          test "$ready" = "1"
+
+          jq -e '
+            (.version | split(".") | map(tonumber)) >= [2,6,1]
+            and .defaultMinimumScore == 0.75
+            and .semanticReviewRequiredForCommit == true
+            and .externalAiRequiresConfirmation == true
+          ' /tmp/critic-status.json >/dev/null
+
+          curl -fsS -X POST http://127.0.0.1:5092/api/model-lab/datasets             -H 'Content-Type: application/json'             -d '{
+              "id":"critic-demo",
+              "name":"Critic demo",
+              "description":"CI",
+              "items":[
+                {"input":"open calendar","expected":"calendar"},
+                {"input":"read email","expected":"email"}
+              ]
+            }' >/tmp/dataset.json
+
+          source_sha=$(curl -fsS             http://127.0.0.1:5092/api/model-lab/datasets/critic-demo/versions/1             | jq -r '.contentSha256')
+
+          workspace_id=$(curl -fsS             http://127.0.0.1:5092/api/model-lab/synthetic/status             | jq -r '.workspaceId')
+          safe_workspace=$(printf '%s' "$workspace_id" | sed 's/[^A-Za-z0-9_-]/_/g')
+
+          mkdir -p /tmp/personalai-v261/model-lab/Synthetic
+          draft_id="11111111-1111-1111-1111-111111111111"
+
+          cat > /tmp/personalai-v261/model-lab/Synthetic/synthetic-drafts-$safe_workspace.json <<JSON
+          [
+            {
+              "id":"$draft_id",
+              "workspaceId":"$workspace_id",
+              "datasetId":"critic-demo",
+              "sourceVersion":1,
+              "sourceSha256":"$source_sha",
+              "provider":"OpenAI",
+              "model":"generator-model",
+              "promptSha256":"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+              "instruction":"Classify each input into a tool intent.",
+              "requestedCount":3,
+              "items":[
+                {"input":"show calendar","expected":"calendar","synthetic":true},
+                {"input":"show calendar","expected":"calendar","synthetic":true},
+                {"input":"secret sample","expected":"sk-123456789012345678901234567890","synthetic":true}
+              ],
+              "acceptedCount":3,
+              "rejectedCount":0,
+              "issues":[],
+              "readyToCommit":true,
+              "createdAt":"2026-10-01T00:00:00+00:00"
+            }
+          ]
+          JSON
+
+          curl -fsS -X POST             http://127.0.0.1:5092/api/model-lab/synthetic/critic/review             -H 'Content-Type: application/json'             -d '{
+              "draftId":"'"$draft_id"'",
+              "minimumScore":0.75,
+              "confirmExternalAi":false
+            }' >/tmp/report.json
+
+          jq -e '
+            .semanticReviewed == false
+            and .passed == false
+            and .items == 3
+            and .acceptedItems == 0
+            and (.reviews[1].consistency <= 0.25)
+            and (.reviews[2].safety == 0)
+          ' /tmp/report.json >/dev/null
+
+          curl -fsS             http://127.0.0.1:5092/api/model-lab/synthetic/critic/reports/$draft_id/latest             | jq -e '.draftId == "'"$draft_id"'" and .passed == false' >/dev/null
+
+          commit_code=$(curl -sS -o /tmp/commit.json -w '%{http_code}'             -X POST http://127.0.0.1:5092/api/model-lab/synthetic/commit             -H 'Content-Type: application/json'             -d '{
+              "draftId":"'"$draft_id"'",
+              "confirmCreateDatasetVersion":true
+            }')
+          test "$commit_code" = "400"
+
+          jq -e '
+            .criticPassRequiredForCommit == true
+          ' <(curl -fsS http://127.0.0.1:5092/api/model-lab/synthetic/status) >/dev/null

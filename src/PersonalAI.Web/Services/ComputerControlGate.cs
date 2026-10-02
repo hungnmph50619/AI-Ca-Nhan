@@ -80,6 +80,29 @@ public sealed class ComputerControlGate
         }
     }
 
+    internal ComputerControlSessionStatus EnableScopedAutomation(
+        int maximumActions,
+        int maximumSeconds)
+    {
+        lock (_synchronization)
+        {
+            if (!_stopHotkeyAvailable)
+                throw new ToolExecutionInputException(
+                    "Không thể chạy tự động hóa desktop vì phím dừng Ctrl + Shift + F12 chưa sẵn sàng.");
+
+            var actions = Math.Clamp(maximumActions, 1, 16);
+            var seconds = Math.Clamp(maximumSeconds, 15, 300);
+            _paused = false;
+            _expiresAt = DateTimeOffset.UtcNow + TimeSpan.FromSeconds(seconds);
+            _remainingActions = actions;
+            return new ComputerControlSessionStatus(
+                false,
+                _expiresAt,
+                _remainingActions,
+                _stopHotkeyAvailable);
+        }
+    }
+
     /// <summary>
     /// Mỗi lần gọi tốn một suất ngay cả khi Windows từ chối thao tác.
     /// Không dùng cho tác vụ kéo dài; lệnh đang chạy có thể kết thúc

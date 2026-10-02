@@ -9,6 +9,9 @@ public interface IUndoStore
     void MarkAvailable(Guid undoId, string? postSha256);
     void Abandon(Guid undoId);
     StoredUndoItem? Get(Guid undoId, string workspaceId);
+    IReadOnlyList<UndoItem> GetByInvocation(
+        Guid invocationId,
+        string workspaceId);
     UndoListResponse GetRecent(string workspaceId, int limit = 50);
     UndoItem MarkUndone(Guid undoId, string workspaceId);
 }
@@ -262,6 +265,58 @@ public sealed class SqliteUndoStore : IUndoStore
         }
     }
 
+    public IReadOnlyList<UndoItem> GetByInvocation(
+        Guid invocationId,
+        string workspaceId)
+    {
+        lock (_gate)
+        {
+            EnsureInitialized();
+            using var connection = OpenConnection();
+            Cleanup(connection);
+
+            using var command = connection.CreateCommand();
+            command.CommandText =
+                """
+                SELECT
+                    undo_id,
+                    invocation_id,
+                    created_at,
+                    expires_at,
+                    workspace_id,
+                    tool_name,
+                    operation,
+                    primary_path,
+                    secondary_path,
+                    before_sha256,
+                    post_sha256,
+                    snapshot,
+                    status
+                FROM undo_entries
+                WHERE invocation_id = $invocationId
+                  AND workspace_id = $workspaceId
+                  AND status != $abandoned
+                ORDER BY created_at DESC, rowid DESC;
+                """;
+            command.Parameters.AddWithValue(
+                "$invocationId",
+                invocationId.ToString("D"));
+            command.Parameters.AddWithValue(
+                "$workspaceId",
+                NormalizeWorkspace(workspaceId));
+            command.Parameters.AddWithValue(
+                "$abandoned",
+                UndoStatuses.Abandoned);
+
+            using var reader = command.ExecuteReader();
+            var items = new List<UndoItem>();
+            while (reader.Read())
+                items.Add(ToPublic(ReadStored(reader)));
+
+            return items;
+        }
+    }
+
     public UndoListResponse GetRecent(
         string workspaceId,
         int limit = 50)
@@ -418,37 +473,48 @@ public sealed class SqliteUndoStore : IUndoStore
     private void EnsureInitialized()
     {
         if (_initialized)
-        {
             return;
-        }
 
         using var connection = OpenConnection();
-        using var command = connection.CreateCommand();
-        command.CommandText =
-            """
-            CREATE TABLE IF NOT EXISTS undo_entries (
-                undo_id TEXT PRIMARY KEY,
-                invocation_id TEXT NOT NULL,
-                created_at TEXT NOT NULL,
-                expires_at TEXT NOT NULL,
-                workspace_id TEXT NOT NULL,
-                tool_name TEXT NOT NULL,
-                operation TEXT NOT NULL,
-                primary_path TEXT NOT NULL,
-                secondary_path TEXT NULL,
-                before_sha256 TEXT NULL,
-                post_sha256 TEXT NULL,
-                snapshot BLOB NULL,
-                status TEXT NOT NULL
-            );
+        _ = SqliteSchemaMigrationEngine.Apply(
+            connection,
+            "undo",
+            [
+                new SqliteMigrationStep(
+                    "undo-001-baseline",
+                    "Create undo entry schema and indexes.",
+                    "undo-v1-baseline-2026-10-02",
+                    static connection =>
+                    {
+                        using var command = connection.CreateCommand();
+                        command.CommandText =
+                            """
+                            CREATE TABLE IF NOT EXISTS undo_entries (
+                                undo_id TEXT PRIMARY KEY,
+                                invocation_id TEXT NOT NULL,
+                                created_at TEXT NOT NULL,
+                                expires_at TEXT NOT NULL,
+                                workspace_id TEXT NOT NULL,
+                                tool_name TEXT NOT NULL,
+                                operation TEXT NOT NULL,
+                                primary_path TEXT NOT NULL,
+                                secondary_path TEXT NULL,
+                                before_sha256 TEXT NULL,
+                                post_sha256 TEXT NULL,
+                                snapshot BLOB NULL,
+                                status TEXT NOT NULL
+                            );
 
-            CREATE INDEX IF NOT EXISTS ix_undo_workspace_created
-                ON undo_entries(workspace_id, created_at DESC);
+                            CREATE INDEX IF NOT EXISTS ix_undo_workspace_created
+                                ON undo_entries(workspace_id, created_at DESC);
 
-            CREATE INDEX IF NOT EXISTS ix_undo_invocation
-                ON undo_entries(invocation_id);
-            """;
-        command.ExecuteNonQuery();
+                            CREATE INDEX IF NOT EXISTS ix_undo_invocation
+                                ON undo_entries(invocation_id);
+                            """;
+                        command.ExecuteNonQuery();
+                    })
+            ]);
+
         _initialized = true;
     }
 

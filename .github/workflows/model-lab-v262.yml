@@ -1,0 +1,193 @@
+name: Model Lab v2.6.2
+
+on:
+  push:
+    branches:
+      - 'experiment/roadmap-v2-6-2-current'
+  pull_request:
+    paths:
+      - 'src/PersonalAI.Web/ModelLab/SyntheticVerificationModels.cs'
+      - 'src/PersonalAI.Web/Services/SyntheticVerificationService.cs'
+      - 'src/PersonalAI.Web/Services/SyntheticDataService.cs'
+      - 'src/PersonalAI.Web/Services/ModelLabEndpoints.cs'
+      - 'src/PersonalAI.Web/Models/SystemModels.cs'
+
+jobs:
+  validate-v262:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: '8.0.x'
+
+      - name: Restore
+        run: dotnet restore PersonalAI.sln
+
+      - name: Build
+        run: dotnet build PersonalAI.sln -c Release --no-restore
+
+      - name: Tests
+        run: dotnet test PersonalAI.sln -c Release --no-build
+
+      - name: Multi-layer verification smoke test
+        shell: bash
+        run: |
+          set -euo pipefail
+          rm -rf /tmp/personalai-v262
+          mkdir -p /tmp/personalai-v262/workspace /tmp/personalai-v262/model-lab
+
+          Workspace__Root=/tmp/personalai-v262/workspace           ModelLab__Root=/tmp/personalai-v262/model-lab           dotnet run --project src/PersonalAI.Web/PersonalAI.Web.csproj             -c Release --no-build             --urls http://127.0.0.1:5093             >/tmp/personalai-v262.log 2>&1 &
+          APP_PID=$!
+          trap 'kill "$APP_PID" 2>/dev/null || true' EXIT
+
+          ready=0
+          for i in {1..30}; do
+            if curl -fsS http://127.0.0.1:5093/api/model-lab/synthetic/verification/status >/tmp/verification-status.json; then
+              ready=1
+              break
+            fi
+            sleep 1
+          done
+          test "$ready" = "1"
+
+          jq -e '
+            (.version | split(".") | map(tonumber)) >= [2,6,2]
+            and .criticRequired == true
+            and .datasetValidationRequired == true
+            and .referenceVerificationRequired == true
+            and .evaluationGateRequired == true
+            and .humanReviewOptional == true
+            and .verificationRequiredForCommit == true
+          ' /tmp/verification-status.json >/dev/null
+
+          curl -fsS -X POST http://127.0.0.1:5093/api/model-lab/datasets             -H 'Content-Type: application/json'             -d '{
+              "id":"verification-demo",
+              "name":"Verification demo",
+              "description":"CI",
+              "items":[
+                {"input":"open calendar","expected":"calendar"},
+                {"input":"read email","expected":"email"}
+              ]
+            }' >/tmp/dataset.json
+
+          source_sha=$(curl -fsS             http://127.0.0.1:5093/api/model-lab/datasets/verification-demo/versions/1             | jq -r '.contentSha256')
+
+          workspace_id=$(curl -fsS             http://127.0.0.1:5093/api/model-lab/synthetic/status             | jq -r '.workspaceId')
+          safe_workspace=$(printf '%s' "$workspace_id" | sed 's/[^A-Za-z0-9_-]/_/g')
+
+          draft_id="22222222-2222-2222-2222-222222222222"
+          critic_id="33333333-3333-3333-3333-333333333333"
+
+          mkdir -p /tmp/personalai-v262/model-lab/Synthetic/Critic
+
+          cat > /tmp/personalai-v262/model-lab/Synthetic/synthetic-drafts-$safe_workspace.json <<JSON
+          [
+            {
+              "id":"$draft_id",
+              "workspaceId":"$workspace_id",
+              "datasetId":"verification-demo",
+              "sourceVersion":1,
+              "sourceSha256":"$source_sha",
+              "provider":"OpenAI",
+              "model":"generator-model",
+              "promptSha256":"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+              "instruction":"Classify inputs into tool intents.",
+              "requestedCount":2,
+              "items":[
+                {"input":"show my meetings","expected":"calendar","synthetic":true},
+                {"input":"check inbox","expected":"email","synthetic":true}
+              ],
+              "acceptedCount":2,
+              "rejectedCount":0,
+              "issues":[],
+              "readyToCommit":true,
+              "createdAt":"2026-10-01T00:00:00+00:00"
+            }
+          ]
+          JSON
+
+          cat > /tmp/personalai-v262/model-lab/Synthetic/Critic/critic-reports-$safe_workspace.json <<JSON
+          [
+            {
+              "id":"$critic_id",
+              "draftId":"$draft_id",
+              "workspaceId":"$workspace_id",
+              "provider":"Gemini",
+              "model":"critic-model",
+              "semanticReviewed":true,
+              "minimumScore":0.75,
+              "items":2,
+              "acceptedItems":2,
+              "rejectedItems":0,
+              "passed":true,
+              "reviews":[
+                {
+                  "index":0,
+                  "correctness":0.95,
+                  "relevance":0.96,
+                  "consistency":0.95,
+                  "safety":0.99,
+                  "overall":0.95,
+                  "accepted":true,
+                  "reason":"Good supervised example."
+                },
+                {
+                  "index":1,
+                  "correctness":0.94,
+                  "relevance":0.96,
+                  "consistency":0.95,
+                  "safety":0.99,
+                  "overall":0.94,
+                  "accepted":true,
+                  "reason":"Good supervised example."
+                }
+              ],
+              "createdAt":"2026-10-01T00:01:00+00:00"
+            }
+          ]
+          JSON
+
+          preverify_code=$(curl -sS -o /tmp/preverify-commit.json -w '%{http_code}'             -X POST http://127.0.0.1:5093/api/model-lab/synthetic/commit             -H 'Content-Type: application/json'             -d '{
+              "draftId":"'"$draft_id"'",
+              "confirmCreateDatasetVersion":true
+            }')
+          test "$preverify_code" = "400"
+
+          curl -fsS -X POST             http://127.0.0.1:5093/api/model-lab/synthetic/verification/run             -H 'Content-Type: application/json'             -d '{
+              "draftId":"'"$draft_id"'",
+              "minimumCriticAverage":0.80,
+              "minimumSafetyAverage":0.90,
+              "maximumSyntheticRatio":0.50
+            }' >/tmp/verification.json
+
+          jq -e '
+            .eligibleForTraining == true
+            and .datasetValid == true
+            and .referenceVerified == true
+            and .evaluationGatePassed == true
+            and .status == "verified"
+            and .criticAverage >= 0.94
+            and .safetyAverage >= 0.99
+            and .syntheticRatio == 0.5
+            and ([.layers[] | select(.passed == true)] | length) == 6
+          ' /tmp/verification.json >/dev/null
+
+          curl -fsS -X POST             http://127.0.0.1:5093/api/model-lab/synthetic/commit             -H 'Content-Type: application/json'             -d '{
+              "draftId":"'"$draft_id"'",
+              "confirmCreateDatasetVersion":true,
+              "expectedLatestVersion":1
+            }' >/tmp/commit.json
+
+          jq -e '
+            .createdVersion == 2
+            and .sourceVersion == 1
+            and .sourceItems == 2
+            and .syntheticItems == 2
+            and .totalItems == 4
+          ' /tmp/commit.json >/dev/null
+
+          jq -e '
+            .verificationRequiredForCommit == true
+            and .criticPassRequiredForCommit == true
+          ' <(curl -fsS http://127.0.0.1:5093/api/model-lab/synthetic/status) >/dev/null

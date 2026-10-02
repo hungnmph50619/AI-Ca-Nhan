@@ -79,6 +79,7 @@ public sealed class ToolResultSynthesisService(
                 execution.ToolName,
                 value),
             "computer.operator.run-task" => SummarizeComputerOperatorTask(value),
+            "computer.vision.locate" => SummarizeComputerVisionLocate(value),
             _ => $"Công cụ {GetToolDisplayName(execution.ToolName)} đã chạy thành công."
         };
     }
@@ -331,6 +332,32 @@ UNTRUSTED_TOOL_RESULT:
             : $"Cửa sổ foreground hiện tại là “{title}”.";
     }
 
+    private static string SummarizeComputerVisionLocate(JsonElement output)
+    {
+        var found = output.TryGetProperty("found", out var foundValue)
+            && foundValue.ValueKind == JsonValueKind.True;
+        var label = GetString(output, "label");
+        var confidence = output.TryGetProperty("confidence", out var confidenceValue)
+            && confidenceValue.TryGetDouble(out var parsedConfidence)
+                ? parsedConfidence
+                : 0;
+        var x = GetInt64(output, "desktopX");
+        var y = GetInt64(output, "desktopY");
+
+        if (!found)
+            return "Desktop Vision chưa tìm thấy phần tử được yêu cầu trên frame ổn định.";
+
+        var target = string.IsNullOrWhiteSpace(label)
+            ? "phần tử UI"
+            : $"“{label}”";
+
+        var coordinates = x is long px && y is long py
+            ? $" tại ({px}, {py})"
+            : string.Empty;
+
+        return $"Desktop Vision đã tìm thấy {target}{coordinates}, độ tin cậy {confidence:P0}.";
+    }
+
     private static string SummarizeComputerOperatorTask(JsonElement output)
     {
         var completed = output.TryGetProperty("completed", out var completedValue)
@@ -397,6 +424,7 @@ UNTRUSTED_TOOL_RESULT:
             "computer.keyboard.hotkey" => "Nhấn tổ hợp phím",
             "computer.browser.open-default" => "Mở trình duyệt mặc định",
             "computer.operator.run-task" => "Computer Operator · tác vụ nhiều bước",
+            "computer.vision.locate" => "Desktop Vision · tìm phần tử",
             "league.practice.open" => "Mở League Practice Tool",
             _ => string.IsNullOrWhiteSpace(toolName)
                 ? "không xác định"

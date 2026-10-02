@@ -11,6 +11,8 @@ public static class ComputerUseEndpoints
         services.AddSingleton<ComputerControlGate>();
         services.AddHostedService<WindowsStopHotkeyService>();
         services.AddSingleton<IComputerUseService, WindowsComputerUseService>();
+        services.AddSingleton<IDesktopScreenshotService, WindowsDesktopScreenshotService>();
+        services.AddSingleton<ILeaguePracticeAutomationService, LeaguePracticeAutomationService>();
         services.AddSingleton<IPersonalAiTool, ComputerScreenInfoTool>();
         services.AddSingleton<IPersonalAiTool, ComputerCursorPositionTool>();
         services.AddSingleton<IPersonalAiTool, ComputerWindowsListTool>();
@@ -19,6 +21,7 @@ public static class ComputerUseEndpoints
         services.AddSingleton<IPersonalAiTool, ComputerMoveCursorTool>();
         services.AddSingleton<IPersonalAiTool, ComputerClickLeftTool>();
         services.AddSingleton<IPersonalAiTool, ComputerOpenDefaultBrowserTool>();
+        services.AddSingleton<IPersonalAiTool, LeaguePracticeOpenTool>();
         return services;
     }
 

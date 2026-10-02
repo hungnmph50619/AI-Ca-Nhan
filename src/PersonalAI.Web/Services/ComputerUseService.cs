@@ -263,15 +263,11 @@ public sealed class WindowsComputerUseService(
         EnsureAvailable();
 
         var windows = GetWindows(MaximumWindows).Windows;
-        return windows
-            .Where(window =>
-                x >= window.Left &&
-                y >= window.Top &&
-                x < window.Left + window.Width &&
-                y < window.Top + window.Height)
-            .OrderByDescending(window => window.IsForeground)
-            .ThenBy(window => window.Width * window.Height)
-            .FirstOrDefault();
+        return windows.FirstOrDefault(window =>
+            x >= window.Left &&
+            y >= window.Top &&
+            x < window.Left + window.Width &&
+            y < window.Top + window.Height);
     }
 
     public ComputerActionResponse FocusWindow(

@@ -20,7 +20,14 @@ public interface IComputerUseService
 
     ComputerActionResponse FocusWindow(string windowId);
 
+    ComputerActionResponse MinimizeWindow(string windowId);
+
     ComputerActionResponse MoveCursor(int x, int y);
+
+    ComputerActionResponse SmoothMoveCursor(
+        int x,
+        int y,
+        int durationMs = 320);
 
     ComputerActionResponse ClickLeft(string windowId, int x, int y);
 
@@ -62,7 +69,9 @@ public sealed class WindowsComputerUseService(
                 ComputerUseCapabilities.WindowList,
                 ComputerUseCapabilities.ActiveWindow,
                 ComputerUseCapabilities.FocusWindow,
+                ComputerUseCapabilities.MinimizeWindow,
                 ComputerUseCapabilities.MoveCursor,
+                ComputerUseCapabilities.SmoothMoveCursor,
                 ComputerUseCapabilities.ClickLeft,
                 ComputerUseCapabilities.TypeNotepadText,
                 ComputerUseCapabilities.OpenDefaultBrowser
@@ -247,6 +256,34 @@ public sealed class WindowsComputerUseService(
             $"Đã yêu cầu Windows chuyển focus tới: {LimitInline(title, 160)}");
     }
 
+    public ComputerActionResponse MinimizeWindow(
+        string windowId) =>
+        control.RunAllowed(() => MinimizeWindowCore(windowId));
+
+    private ComputerActionResponse MinimizeWindowCore(
+        string windowId)
+    {
+        EnsureAvailable();
+
+        var handle = ParseWindowId(windowId);
+        if (!IsWindow(handle) || !IsWindowVisible(handle))
+            throw new ToolExecutionInputException(
+                "Cửa sổ cần thu nhỏ không còn tồn tại hoặc không hiển thị.");
+
+        var title = GetWindowTitle(handle);
+        if (string.IsNullOrWhiteSpace(title))
+            throw new ToolExecutionInputException(
+                "Không thể thu nhỏ cửa sổ không có tiêu đề.");
+
+        _ = ShowWindow(handle, 6); // SW_MINIMIZE
+        Thread.Sleep(180);
+
+        return new ComputerActionResponse(
+            ComputerUseCapabilities.MinimizeWindow,
+            true,
+            $"Đã thu nhỏ cửa sổ: {LimitInline(title, 160)}");
+    }
+
     public ComputerActionResponse MoveCursor(
         int x,
         int y) =>
@@ -290,6 +327,63 @@ public sealed class WindowsComputerUseService(
             ComputerUseCapabilities.MoveCursor,
             true,
             $"Đã di chuyển con trỏ tới ({x}, {y}).");
+    }
+
+    public ComputerActionResponse SmoothMoveCursor(
+        int x,
+        int y,
+        int durationMs = 320) =>
+        control.RunAllowed(() =>
+            SmoothMoveCursorCore(x, y, durationMs));
+
+    private ComputerActionResponse SmoothMoveCursorCore(
+        int x,
+        int y,
+        int durationMs)
+    {
+        EnsureAvailable();
+
+        var screen = GetScreenInfo();
+        var rightExclusive = checked(screen.VirtualLeft + screen.VirtualWidth);
+        var bottomExclusive = checked(screen.VirtualTop + screen.VirtualHeight);
+        if (x < screen.VirtualLeft ||
+            x >= rightExclusive ||
+            y < screen.VirtualTop ||
+            y >= bottomExclusive)
+            throw new ToolExecutionInputException(
+                "Tọa độ di chuyển chuột nằm ngoài desktop ảo.");
+
+        var start = GetCursorPosition();
+        if (start.X == x && start.Y == y)
+            return new ComputerActionResponse(
+                ComputerUseCapabilities.SmoothMoveCursor,
+                false,
+                "Con trỏ đã ở mục tiêu.");
+
+        var safeDuration = Math.Clamp(durationMs, 120, 1200);
+        var steps = Math.Clamp(safeDuration / 24, 6, 40);
+        var sleep = Math.Max(8, safeDuration / steps);
+
+        for (var index = 1; index <= steps; index++)
+        {
+            var progress = index / (double)steps;
+            var eased = progress * progress * (3d - 2d * progress);
+            var nextX = (int)Math.Round(
+                start.X + ((x - start.X) * eased));
+            var nextY = (int)Math.Round(
+                start.Y + ((y - start.Y) * eased));
+
+            if (!SetCursorPos(nextX, nextY))
+                throw new ToolExecutionInputException(
+                    "Windows từ chối di chuyển con trỏ trong quá trình thao tác.");
+
+            Thread.Sleep(sleep);
+        }
+
+        return new ComputerActionResponse(
+            ComputerUseCapabilities.SmoothMoveCursor,
+            true,
+            $"Đã di chuyển con trỏ nhìn thấy được tới ({x}, {y}) trong khoảng {safeDuration} ms.");
     }
 
     public ComputerActionResponse ClickLeft(
@@ -752,6 +846,12 @@ public sealed class WindowsComputerUseService(
     [return: MarshalAs(UnmanagedType.Bool)]
     private static extern bool SetForegroundWindow(
         IntPtr hWnd);
+
+    [DllImport("user32.dll")]
+    [return: MarshalAs(UnmanagedType.Bool)]
+    private static extern bool ShowWindow(
+        IntPtr hWnd,
+        int command);
 
     [DllImport("user32.dll")]
     private static extern uint GetWindowThreadProcessId(

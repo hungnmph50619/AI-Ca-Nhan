@@ -11,6 +11,10 @@ public static class ComputerUseCapabilities
     public const string MoveCursor = "move-cursor";
     public const string SmoothMoveCursor = "smooth-move-cursor";
     public const string ClickLeft = "click-left";
+    public const string ClickRight = "click-right";
+    public const string DoubleClickLeft = "double-click-left";
+    public const string Scroll = "scroll";
+    public const string DragLeft = "drag-left";
     public const string TypeNotepadText = "type-notepad-text";
     public const string OpenDefaultBrowser = "open-default-browser";
 }

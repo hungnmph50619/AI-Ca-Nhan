@@ -194,18 +194,6 @@ public sealed class LeaguePracticeAutomationService(
         if (FindClientWindow() is not null)
             return;
 
-        if (IsClientProcessRunning())
-        {
-            var existingWindow = await WaitForClientWindowAsync(
-                TimeSpan.FromSeconds(60),
-                cancellationToken);
-            if (existingWindow is not null)
-                return;
-
-            throw new ToolExecutionInputException(
-                "Riot/League đang chạy nhưng chưa tạo cửa sổ client hiển thị sau 60 giây.");
-        }
-
         var candidates = new[]
         {
             Path.Combine(
@@ -237,23 +225,25 @@ public sealed class LeaguePracticeAutomationService(
                     StringComparison.OrdinalIgnoreCase))
             .FirstOrDefault(File.Exists);
 
-        if (executable is null)
+        var riotClient = new[]
         {
-            var riotClient = new[]
-            {
-                @"C:\Riot Games\Riot Client\RiotClientServices.exe",
-                Path.Combine(
-                    Environment.GetFolderPath(
-                        Environment.SpecialFolder.ProgramFiles),
-                    "Riot Games",
-                    "Riot Client",
-                    "RiotClientServices.exe")
-            }.FirstOrDefault(File.Exists);
+            @"C:\Riot Games\Riot Client\RiotClientServices.exe",
+            Path.Combine(
+                Environment.GetFolderPath(
+                    Environment.SpecialFolder.ProgramFiles),
+                "Riot Games",
+                "Riot Client",
+                "RiotClientServices.exe"),
+            Path.Combine(
+                Environment.GetFolderPath(
+                    Environment.SpecialFolder.ProgramFilesX86),
+                "Riot Games",
+                "Riot Client",
+                "RiotClientServices.exe")
+        }.FirstOrDefault(File.Exists);
 
-            if (riotClient is null)
-                throw new ToolExecutionInputException(
-                    "Không tìm thấy LeagueClient.exe hoặc RiotClientServices.exe ở các thư mục Riot mặc định.");
-
+        if (riotClient is not null)
+        {
             Process.Start(new ProcessStartInfo
             {
                 FileName = riotClient,
@@ -264,7 +254,7 @@ public sealed class LeaguePracticeAutomationService(
                     ?? Environment.CurrentDirectory
             });
         }
-        else
+        else if (executable is not null)
         {
             Process.Start(new ProcessStartInfo
             {
@@ -273,6 +263,11 @@ public sealed class LeaguePracticeAutomationService(
                 WorkingDirectory = Path.GetDirectoryName(executable)
                     ?? Environment.CurrentDirectory
             });
+        }
+        else
+        {
+            throw new ToolExecutionInputException(
+                "Không tìm thấy LeagueClient.exe hoặc RiotClientServices.exe ở các thư mục Riot mặc định.");
         }
 
         var launchedWindow = await WaitForClientWindowAsync(
@@ -284,26 +279,6 @@ public sealed class LeaguePracticeAutomationService(
         throw new ToolExecutionInputException(
             "Đã mở Riot/League nhưng không thấy cửa sổ client hiển thị trong 75 giây.");
     }
-
-    private bool IsClientProcessRunning() =>
-        Process.GetProcesses()
-            .Any(process =>
-            {
-                try
-                {
-                    return ClientProcesses.Contains(
-                        process.ProcessName,
-                        StringComparer.OrdinalIgnoreCase);
-                }
-                catch
-                {
-                    return false;
-                }
-                finally
-                {
-                    process.Dispose();
-                }
-            });
 
     private async Task<ComputerWindowInfo?> WaitForClientWindowAsync(
         TimeSpan timeout,
@@ -327,10 +302,33 @@ public sealed class LeaguePracticeAutomationService(
         var windows = computer.GetWindows(50).Windows;
         return windows
             .Where(window =>
-                window.ProcessName is not null &&
-                ClientProcesses.Contains(
-                    window.ProcessName,
-                    StringComparer.OrdinalIgnoreCase))
+            {
+                var processName = window.ProcessName ?? string.Empty;
+                var title = window.Title ?? string.Empty;
+
+                var processMatch =
+                    ClientProcesses.Contains(
+                        processName,
+                        StringComparer.OrdinalIgnoreCase) ||
+                    processName.StartsWith(
+                        "RiotClient",
+                        StringComparison.OrdinalIgnoreCase) ||
+                    processName.StartsWith(
+                        "LeagueClient",
+                        StringComparison.OrdinalIgnoreCase);
+
+                var titleMatch =
+                    title.Contains(
+                        "Riot Client",
+                        StringComparison.OrdinalIgnoreCase) ||
+                    title.Contains(
+                        "League of Legends",
+                        StringComparison.OrdinalIgnoreCase);
+
+                return window.Width >= 200 &&
+                    window.Height >= 150 &&
+                    (processMatch || titleMatch);
+            })
             .OrderByDescending(window => window.IsForeground)
             .ThenByDescending(window => window.Width * window.Height)
             .FirstOrDefault();

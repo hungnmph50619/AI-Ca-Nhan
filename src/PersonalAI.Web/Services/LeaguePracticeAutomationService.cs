@@ -19,8 +19,11 @@ public sealed class LeaguePracticeAutomationService(
     private static readonly string[] ClientProcesses =
     [
         "LeagueClientUx",
+        "LeagueClientUxRender",
         "LeagueClient",
-        "RiotClientServices"
+        "RiotClientServices",
+        "RiotClientUx",
+        "RiotClientUxRender"
     ];
 
     private static readonly (string Phase, string Target, int DelayMs)[] Steps =
@@ -86,22 +89,30 @@ public sealed class LeaguePracticeAutomationService(
         var completed = 0;
         try
         {
-            for (var attempt = 0; attempt < 12; attempt++)
+            while (completed < Steps.Length)
             {
                 cancellationToken.ThrowIfCancellationRequested();
 
-                var window = FindClientWindow();
+                var window = await WaitForClientWindowAsync(
+                    TimeSpan.FromSeconds(20),
+                    cancellationToken);
                 if (window is null)
                 {
-                    await Task.Delay(1000, cancellationToken);
-                    continue;
+                    return Result(
+                        "blocked",
+                        Steps[completed].Phase,
+                        completed,
+                        "Riot/League đang chạy nhưng chưa có cửa sổ client hiển thị để xác minh.",
+                        startedAt);
                 }
 
                 if (!window.IsForeground)
                 {
                     computer.FocusWindow(window.WindowId);
-                    await Task.Delay(500, cancellationToken);
-                    window = FindClientWindow();
+                    await Task.Delay(700, cancellationToken);
+                    window = await WaitForClientWindowAsync(
+                        TimeSpan.FromSeconds(5),
+                        cancellationToken);
                     if (window is null || !window.IsForeground)
                     {
                         return Result(
@@ -111,16 +122,6 @@ public sealed class LeaguePracticeAutomationService(
                             "Không giữ được Riot/League client ở foreground.",
                             startedAt);
                     }
-                }
-
-                if (completed >= Steps.Length)
-                {
-                    return Result(
-                        "completed",
-                        "practice-tool",
-                        completed,
-                        "Đã hoàn tất chuỗi thao tác mở Practice Tool.",
-                        startedAt);
                 }
 
                 var step = Steps[completed];
@@ -154,12 +155,10 @@ public sealed class LeaguePracticeAutomationService(
             }
 
             return Result(
-                "blocked",
-                completed < Steps.Length
-                    ? Steps[completed].Phase
-                    : "verify",
+                "completed",
+                "practice-tool",
                 completed,
-                "Đã chạm giới hạn vòng lặp trước khi xác minh hoàn tất.",
+                "Đã hoàn tất chuỗi thao tác mở Practice Tool.",
                 startedAt);
         }
         catch (OperationCanceledException)
@@ -192,23 +191,19 @@ public sealed class LeaguePracticeAutomationService(
     private async Task EnsureLeagueClientAsync(
         CancellationToken cancellationToken)
     {
-        if (FindClientWindow() is not null ||
-            Process.GetProcesses()
-                .Any(process =>
-                {
-                    try
-                    {
-                        return ClientProcesses.Contains(
-                            process.ProcessName,
-                            StringComparer.OrdinalIgnoreCase);
-                    }
-                    catch
-                    {
-                        return false;
-                    }
-                }))
-        {
+        if (FindClientWindow() is not null)
             return;
+
+        if (IsClientProcessRunning())
+        {
+            var existingWindow = await WaitForClientWindowAsync(
+                TimeSpan.FromSeconds(60),
+                cancellationToken);
+            if (existingWindow is not null)
+                return;
+
+            throw new ToolExecutionInputException(
+                "Riot/League đang chạy nhưng chưa tạo cửa sổ client hiển thị sau 60 giây.");
         }
 
         var candidates = new[]
@@ -280,16 +275,51 @@ public sealed class LeaguePracticeAutomationService(
             });
         }
 
-        for (var i = 0; i < 45; i++)
-        {
-            cancellationToken.ThrowIfCancellationRequested();
-            if (FindClientWindow() is not null)
-                return;
-            await Task.Delay(1000, cancellationToken);
-        }
+        var launchedWindow = await WaitForClientWindowAsync(
+            TimeSpan.FromSeconds(75),
+            cancellationToken);
+        if (launchedWindow is not null)
+            return;
 
         throw new ToolExecutionInputException(
-            "Đã mở Riot/League nhưng không thấy cửa sổ client trong 45 giây.");
+            "Đã mở Riot/League nhưng không thấy cửa sổ client hiển thị trong 75 giây.");
+    }
+
+    private bool IsClientProcessRunning() =>
+        Process.GetProcesses()
+            .Any(process =>
+            {
+                try
+                {
+                    return ClientProcesses.Contains(
+                        process.ProcessName,
+                        StringComparer.OrdinalIgnoreCase);
+                }
+                catch
+                {
+                    return false;
+                }
+                finally
+                {
+                    process.Dispose();
+                }
+            });
+
+    private async Task<ComputerWindowInfo?> WaitForClientWindowAsync(
+        TimeSpan timeout,
+        CancellationToken cancellationToken)
+    {
+        var deadline = DateTimeOffset.UtcNow + timeout;
+        while (DateTimeOffset.UtcNow < deadline)
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            var window = FindClientWindow();
+            if (window is not null)
+                return window;
+            await Task.Delay(750, cancellationToken);
+        }
+
+        return null;
     }
 
     private ComputerWindowInfo? FindClientWindow()

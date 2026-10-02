@@ -43,6 +43,7 @@ public sealed class WindowsAiOperatorConsoleService
     private const int IdPause = 4101;
     private const int IdResume = 4102;
     private const int IdStop = 4103;
+    private const int IdClose = 4104;
 
     private readonly object _sync = new();
     private readonly WindowProcedure _windowProcedure;
@@ -53,8 +54,8 @@ public sealed class WindowsAiOperatorConsoleService
     private IntPtr _pauseButton;
     private IntPtr _resumeButton;
     private IntPtr _stopButton;
+    private IntPtr _closeButton;
     private IntPtr _blackBrush;
-    private DateTimeOffset _keepVisibleUntilUtc;
     private string _lastText = string.Empty;
     private string? _registeredClass;
     private volatile bool _started;
@@ -63,6 +64,8 @@ public sealed class WindowsAiOperatorConsoleService
     private string? _lastError;
     private long _forceVisibleUntilUtcTicks;
     private long _lastLoopUtcTicks;
+    private long _lastTaskStartedAtUtcTicks;
+    private volatile bool _userHidden;
 
     public object GetDiagnosticStatus()
     {
@@ -76,6 +79,7 @@ public sealed class WindowsAiOperatorConsoleService
             windowCreated = _windowCreated,
             visible = _visible,
             nativeVisible = _window != IntPtr.Zero && IsWindowVisible(_window),
+            userHidden = _userHidden,
             lastError = _lastError,
             environmentUserInteractive = Environment.UserInteractive,
             operatingSystem = Environment.OSVersion.ToString(),
@@ -91,6 +95,7 @@ public sealed class WindowsAiOperatorConsoleService
 
     public void ShowTestConsole(TimeSpan duration)
     {
+        _userHidden = false;
         var until = DateTimeOffset.UtcNow.Add(
             duration <= TimeSpan.Zero ? TimeSpan.FromSeconds(15) : duration);
         Interlocked.Exchange(
@@ -282,8 +287,14 @@ public sealed class WindowsAiOperatorConsoleService
                 14,
                 IdStop,
                 instance);
+            _closeButton = CreateButton(
+                "ĐÓNG",
+                14 + (ButtonWidth + Gap) * 3,
+                14,
+                IdClose,
+                instance);
 
-            foreach (var handle in new[] { _text, _pauseButton, _resumeButton, _stopButton })
+            foreach (var handle in new[] { _text, _pauseButton, _resumeButton, _stopButton, _closeButton })
             {
                 if (handle != IntPtr.Zero && font != IntPtr.Zero)
                     _ = SendMessage(handle, WmSetFont, font, new IntPtr(1));
@@ -312,27 +323,35 @@ public sealed class WindowsAiOperatorConsoleService
                 var selectedStatus = useOperator
                     ? operatorSnapshot.Status
                     : leagueSnapshot.Status;
-                var selectedUpdatedAt = useOperator
-                    ? operatorSnapshot.UpdatedAtUtc
-                    : leagueSnapshot.UpdatedAtUtc;
+                var selectedStartedAt = useOperator
+                    ? operatorSnapshot.StartedAtUtc
+                    : leagueSnapshot.StartedAtUtc;
+
+                var startedTicks = selectedStartedAt?.UtcTicks ?? 0;
+                if (startedTicks > 0 &&
+                    startedTicks != Interlocked.Read(ref _lastTaskStartedAtUtcTicks))
+                {
+                    Interlocked.Exchange(
+                        ref _lastTaskStartedAtUtcTicks,
+                        startedTicks);
+                    _userHidden = false;
+                }
 
                 var forceVisibleTicks = Interlocked.Read(
                     ref _forceVisibleUntilUtcTicks);
                 var testVisible =
                     forceVisibleTicks > 0 &&
                     DateTimeOffset.UtcNow.UtcTicks <= forceVisibleTicks;
-                var shouldShow = selectedActive || testVisible;
-                if (selectedActive)
-                {
-                    _keepVisibleUntilUtc = DateTimeOffset.UtcNow.AddSeconds(3);
-                }
-                else if (selectedStatus is "completed" or "blocked" or "stopped")
-                {
-                    var target = selectedUpdatedAt.AddSeconds(12);
-                    if (_keepVisibleUntilUtc < target)
-                        _keepVisibleUntilUtc = target;
-                    shouldShow = DateTimeOffset.UtcNow <= _keepVisibleUntilUtc;
-                }
+
+                var hasDisplayableState =
+                    selectedActive ||
+                    selectedStatus is "completed" or "blocked" or "stopped" or "paused";
+
+                // Console hoạt động như Output window: giữ nguyên trạng thái cuối
+                // cho đến khi người dùng chủ động bấm ĐÓNG. Không còn tự ẩn.
+                var shouldShow =
+                    testVisible ||
+                    (!_userHidden && hasDisplayableState);
 
                 if (shouldShow)
                 {
@@ -425,6 +444,9 @@ public sealed class WindowsAiOperatorConsoleService
         _ = EnableWindow(
             _stopButton,
             operatorRunning || leagueSnapshot.Active);
+        _ = EnableWindow(
+            _closeButton,
+            true);
     }
 
     private IntPtr WindowProc(
@@ -456,6 +478,14 @@ public sealed class WindowsAiOperatorConsoleService
                     logger.LogWarning(
                         "Người dùng đã dừng Computer Operator từ console nổi.");
                     return IntPtr.Zero;
+
+                case IdClose:
+                    _userHidden = true;
+                    ShowWindow(_window, SwHide);
+                    _visible = false;
+                    logger.LogInformation(
+                        "Người dùng đã đóng AI Operator Console. Console sẽ tự hiện lại khi có task mới.");
+                    return IntPtr.Zero;
             }
         }
 
@@ -468,7 +498,9 @@ public sealed class WindowsAiOperatorConsoleService
 
         if (message == WmClose)
         {
+            _userHidden = true;
             ShowWindow(handle, SwHide);
+            _visible = false;
             return IntPtr.Zero;
         }
 
@@ -485,9 +517,10 @@ public sealed class WindowsAiOperatorConsoleService
 Console native đang hoạt động.
 Nếu bạn nhìn thấy bảng này thì lớp hiển thị Win32 đã hoạt động bình thường.
 
-[TẠM DỪNG] [TIẾP TỤC] [DỪNG NGAY]
+[TẠM DỪNG] [TIẾP TỤC] [DỪNG NGAY] [ĐÓNG]
 
-Bảng này bị loại khỏi ảnh Desktop Vision.
+Console chỉ ẩn khi bạn bấm ĐÓNG; task mới sẽ tự hiện lại.
+Ảnh nội bộ gửi Desktop Vision sẽ che vùng console.
 """;
 
     private static string BuildOperatorText(
@@ -521,7 +554,7 @@ Bảng này bị loại khỏi ảnh Desktop Vision.
                 $"⚠ WATCHDOG: Không có bước mới trong {snapshot.StaleSeconds}s. Có thể đang chờ dịch vụ ngoài hoặc bị treo.");
         }
 
-        builder.AppendLine("Ctrl + Shift + F12 hoặc nút DỪNG NGAY để hủy.");
+        builder.AppendLine("Ctrl + Shift + F12 hoặc DỪNG NGAY để hủy; ĐÓNG chỉ ẩn console.");
         builder.AppendLine(new string('─', 66));
 
         foreach (var entry in snapshot.Entries.TakeLast(11))
@@ -555,7 +588,7 @@ Bảng này bị loại khỏi ảnh Desktop Vision.
         builder.AppendLine(heading);
         builder.AppendLine(
             $"Quan sát: {snapshot.ObservationCount}   Click: {snapshot.ClickCount}");
-        builder.AppendLine("Ctrl + Shift + F12 hoặc nút DỪNG NGAY để hủy.");
+        builder.AppendLine("Ctrl + Shift + F12 hoặc DỪNG NGAY để hủy; ĐÓNG chỉ ẩn console.");
         builder.AppendLine(new string('─', 66));
 
         foreach (var entry in snapshot.Entries.TakeLast(11))

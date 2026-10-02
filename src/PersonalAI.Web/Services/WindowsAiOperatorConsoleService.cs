@@ -316,10 +316,10 @@ public sealed class WindowsAiOperatorConsoleService
         var operatorRunning = useOperator && operatorSnapshot.Active;
         _ = EnableWindow(
             _pauseButton,
-            operatorRunning && !operatorSnapshot.Paused);
+            operatorRunning && execution.Pausable && !operatorSnapshot.Paused);
         _ = EnableWindow(
             _resumeButton,
-            operatorRunning && operatorSnapshot.Paused);
+            operatorRunning && execution.Pausable && operatorSnapshot.Paused);
         _ = EnableWindow(
             _stopButton,
             operatorRunning || leagueSnapshot.Active);

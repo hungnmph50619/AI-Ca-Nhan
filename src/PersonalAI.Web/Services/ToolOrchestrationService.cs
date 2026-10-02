@@ -88,6 +88,16 @@ public sealed class ToolOrchestrationService : IToolOrchestrationService
         var provider = _providerResolver.GetActive();
         var definitions = _registry.GetAll();
 
+        if (ShouldUseComputerOperatorTask(messages))
+        {
+            definitions = definitions
+                .Where(definition =>
+                    definition.Name.Equals(
+                        "computer.operator.run-task",
+                        StringComparison.OrdinalIgnoreCase))
+                .ToArray();
+        }
+
         var mapped = definitions
             .Select(definition => new
             {
@@ -684,6 +694,40 @@ public sealed class ToolOrchestrationService : IToolOrchestrationService
             .ToLowerInvariant()[..10];
 
         return $"pai_{readable}_{hash}";
+    }
+
+    private static bool ShouldUseComputerOperatorTask(
+        IReadOnlyList<ChatMessage> messages)
+    {
+        var latestUser = messages
+            .LastOrDefault(message =>
+                message.Role.Equals(
+                    "user",
+                    StringComparison.OrdinalIgnoreCase))
+            ?.Content;
+
+        if (string.IsNullOrWhiteSpace(latestUser))
+            return false;
+
+        var text = latestUser.Trim();
+
+        var computerActionTerms = new[]
+        {
+            "chuyển sang", "mở ", "gõ", "nhập", "nhấn",
+            "thu nhỏ", "phóng to", "khôi phục", "minimize",
+            "maximize", "restore", "type", "press", "switch to"
+        };
+
+        var actionCount = computerActionTerms.Count(term =>
+            text.Contains(term, StringComparison.OrdinalIgnoreCase));
+
+        var hasSequenceConnector =
+            text.Contains(" rồi ", StringComparison.OrdinalIgnoreCase)
+            || text.Contains(" sau đó ", StringComparison.OrdinalIgnoreCase)
+            || text.Contains(" then ", StringComparison.OrdinalIgnoreCase)
+            || text.Contains(" và ", StringComparison.OrdinalIgnoreCase);
+
+        return actionCount >= 2 && hasSequenceConnector;
     }
 
     private static string BuildProviderFunctionDescription(ToolDefinition definition)

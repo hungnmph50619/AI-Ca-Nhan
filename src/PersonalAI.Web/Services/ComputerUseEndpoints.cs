@@ -12,7 +12,9 @@ public static class ComputerUseEndpoints
         services.AddSingleton<LeagueVisualProgressStore>();
         services.AddSingleton<ComputerOperatorProgressStore>();
         services.AddSingleton<ComputerOperatorExecutionControl>();
-        services.AddHostedService<WindowsAiOperatorConsoleService>();
+        services.AddSingleton<WindowsAiOperatorConsoleService>();
+        services.AddHostedService(sp =>
+            sp.GetRequiredService<WindowsAiOperatorConsoleService>());
         services.AddHostedService<WindowsStopHotkeyService>();
         services.AddSingleton<IComputerUseService, WindowsComputerUseService>();
         services.AddSingleton<IComputerOperatorTaskService, ComputerOperatorTaskService>();
@@ -58,6 +60,31 @@ public static class ComputerUseEndpoints
         app.MapGet("/api/computer/operator-progress", (
             ComputerOperatorProgressStore progress) =>
             Results.Ok(progress.Get()));
+
+        app.MapGet("/api/computer/operator-console/status", (
+            HttpContext context,
+            WindowsAiOperatorConsoleService console) =>
+        {
+            if (!IsLocalRequest(context))
+                return Results.StatusCode(StatusCodes.Status403Forbidden);
+
+            return Results.Ok(console.GetDiagnosticStatus());
+        });
+
+        app.MapPost("/api/computer/operator-console/test", (
+            HttpContext context,
+            WindowsAiOperatorConsoleService console) =>
+        {
+            if (!IsLocalRequest(context))
+                return Results.StatusCode(StatusCodes.Status403Forbidden);
+
+            console.ShowTestConsole(TimeSpan.FromSeconds(15));
+            return Results.Ok(new
+            {
+                message = "Đã yêu cầu hiển thị AI Operator Console trong 15 giây.",
+                status = console.GetDiagnosticStatus()
+            });
+        });
 
         // Chỉ nhận thao tác bật/tắt từ máy đang chạy chương trình.
         // Không xem header này là xác thực: người dùng không nên mở máy chủ trên mạng công cộng.

@@ -96,7 +96,6 @@ public sealed class ToolExecutionService(
     IToolPolicy policy,
     IUndoService undo,
     IEmergencyStopService emergencyStop,
-    ComputerControlGate computerControl,
     ILogger<ToolExecutionService> logger) : IToolExecutionService
 {
     public async Task<ToolExecutionResponse> ExecuteAsync(
@@ -172,38 +171,6 @@ public sealed class ToolExecutionService(
                 startedAt,
                 definition.RequiredPermissions,
                 policyDecision.ApprovedPermissions);
-        }
-
-        if (request.Confirmed
-            && definition.Name.StartsWith(
-                "computer.",
-                StringComparison.OrdinalIgnoreCase)
-            && definition.RequiredPermissions.Any(permission =>
-                permission.Equals(
-                    ToolPermissions.Computer,
-                    StringComparison.OrdinalIgnoreCase))
-            && computerControl.Paused)
-        {
-            try
-            {
-                computerControl.EnableScopedAutomation(
-                    maximumActions: 5,
-                    maximumSeconds: 60);
-            }
-            catch (ToolExecutionInputException exception)
-            {
-                return Complete(
-                    invocationId,
-                    definition.Name,
-                    ToolExecutionStatuses.Denied,
-                    false,
-                    null,
-                    exception.Message,
-                    stopwatch,
-                    startedAt,
-                    definition.RequiredPermissions,
-                    policyDecision.ApprovedPermissions);
-            }
         }
 
         var emergencyToken = emergencyStop.CurrentToken;

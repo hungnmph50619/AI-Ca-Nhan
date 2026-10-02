@@ -110,6 +110,8 @@ public sealed class LeaguePracticeAutomationService(
                             startedAt);
                     }
 
+                    progress.Block(
+                        "Không còn thấy cửa sổ Riot/League để tiếp tục quan sát.");
                     return Result(
                         "blocked",
                         lastAction ?? "observe",
@@ -118,23 +120,54 @@ public sealed class LeaguePracticeAutomationService(
                         startedAt);
                 }
 
-                if (!window.IsForeground)
+                var activeClient = GetActiveClientWindow();
+                if (activeClient is null ||
+                    !string.Equals(
+                        activeClient.WindowId,
+                        window.WindowId,
+                        StringComparison.OrdinalIgnoreCase))
                 {
+                    progress.Add(
+                        "focus",
+                        "Đang đưa đúng cửa sổ Riot/League lên foreground trước khi chụp.");
+
                     computer.FocusWindow(window.WindowId);
-                    await Task.Delay(650, cancellationToken);
-                    window = FindClientWindow();
-                    if (window is null || !window.IsForeground)
+                    await Task.Delay(700, cancellationToken);
+
+                    activeClient = GetActiveClientWindow();
+                    if (activeClient is null)
                     {
+                        progress.Block(
+                            "Không xác minh được Riot/League là cửa sổ foreground; đã hủy chụp để tránh nhìn nhầm ứng dụng.");
                         return Result(
                             "blocked",
                             "focus",
                             clicks,
-                            "Không giữ được Riot/League client ở foreground.",
+                            "Không xác minh được Riot/League ở foreground.",
                             startedAt);
                     }
                 }
 
-                using var frame = CaptureDisposable(window);
+                window = activeClient;
+
+                var verifiedBeforeCapture = GetActiveClientWindow();
+                if (verifiedBeforeCapture is null ||
+                    !string.Equals(
+                        verifiedBeforeCapture.WindowId,
+                        window.WindowId,
+                        StringComparison.OrdinalIgnoreCase))
+                {
+                    progress.Block(
+                        "Foreground đã đổi ngay trước lúc chụp; đã hủy để không gửi ảnh ứng dụng khác cho Vision.");
+                    return Result(
+                        "blocked",
+                        "focus",
+                        clicks,
+                        "Cửa sổ foreground đã thay đổi trước lúc chụp.",
+                        startedAt);
+                }
+
+                using var frame = CaptureDisposable(verifiedBeforeCapture);
                 progress.Add(
                     "capture",
                     $"Đã chụp vùng cửa sổ League {frame.Value.Width}x{frame.Value.Height} để phân tích.",
@@ -180,6 +213,8 @@ public sealed class LeaguePracticeAutomationService(
                     lastAction = "wait";
                     if (consecutiveWaits >= 5)
                     {
+                        progress.Block(
+                            $"Visual Agent chờ quá lâu mà trạng thái không tiến triển: {decision.Reason}");
                         return Result(
                             "blocked",
                             "wait",
@@ -429,37 +464,48 @@ public sealed class LeaguePracticeAutomationService(
     {
         var windows = computer.GetWindows(50).Windows;
         return windows
-            .Where(window =>
-            {
-                var processName = window.ProcessName ?? string.Empty;
-                var title = window.Title ?? string.Empty;
-
-                var processMatch =
-                    ClientProcesses.Contains(
-                        processName,
-                        StringComparer.OrdinalIgnoreCase) ||
-                    processName.StartsWith(
-                        "RiotClient",
-                        StringComparison.OrdinalIgnoreCase) ||
-                    processName.StartsWith(
-                        "LeagueClient",
-                        StringComparison.OrdinalIgnoreCase);
-
-                var titleMatch =
-                    title.Contains(
-                        "Riot Client",
-                        StringComparison.OrdinalIgnoreCase) ||
-                    title.Contains(
-                        "League of Legends",
-                        StringComparison.OrdinalIgnoreCase);
-
-                return window.Width >= 200 &&
-                    window.Height >= 150 &&
-                    (processMatch || titleMatch);
-            })
+            .Where(IsLeagueClientWindow)
             .OrderByDescending(window => window.IsForeground)
             .ThenByDescending(window => window.Width * window.Height)
             .FirstOrDefault();
+    }
+
+    private ComputerWindowInfo? GetActiveClientWindow()
+    {
+        var active = computer.GetActiveWindow();
+        return active is not null && IsLeagueClientWindow(active)
+            ? active
+            : null;
+    }
+
+    private static bool IsLeagueClientWindow(
+        ComputerWindowInfo window)
+    {
+        var processName = window.ProcessName ?? string.Empty;
+        var title = window.Title ?? string.Empty;
+
+        var processMatch =
+            ClientProcesses.Contains(
+                processName,
+                StringComparer.OrdinalIgnoreCase) ||
+            processName.StartsWith(
+                "RiotClient",
+                StringComparison.OrdinalIgnoreCase) ||
+            processName.StartsWith(
+                "LeagueClient",
+                StringComparison.OrdinalIgnoreCase);
+
+        var titleMatch =
+            title.Contains(
+                "Riot Client",
+                StringComparison.OrdinalIgnoreCase) ||
+            title.Contains(
+                "League of Legends",
+                StringComparison.OrdinalIgnoreCase);
+
+        return window.Width >= 200 &&
+            window.Height >= 150 &&
+            (processMatch || titleMatch);
     }
 
     private static bool IsSafeClick(

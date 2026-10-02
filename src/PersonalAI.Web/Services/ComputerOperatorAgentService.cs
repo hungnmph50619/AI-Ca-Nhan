@@ -7,7 +7,7 @@ namespace PersonalAI.Web.Services;
 
 public interface IComputerOperatorAgentService
 {
-    Task<string> RunAsync(
+    Task<string?> RunAsync(
         IReadOnlyList<ChatMessage> messages,
         CancellationToken cancellationToken = default);
 }
@@ -26,7 +26,7 @@ public sealed class ComputerOperatorAgentService(
     private const int MaximumHistoryCharacters = 28_000;
     private const int MaximumToolResultCharacters = 8_000;
 
-    public async Task<string> RunAsync(
+    public async Task<string?> RunAsync(
         IReadOnlyList<ChatMessage> messages,
         CancellationToken cancellationToken = default)
     {
@@ -108,7 +108,7 @@ public sealed class ComputerOperatorAgentService(
             if (decision is null)
             {
                 return completed.Count == 0
-                    ? "Computer Operator không tìm thấy thao tác máy tính phù hợp cho yêu cầu này."
+                    ? null
                     : $"Đã hoàn tất chuỗi Computer Operator gồm {completed.Count} bước: {string.Join(" → ", completed)}.";
             }
 

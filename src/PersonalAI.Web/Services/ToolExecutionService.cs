@@ -220,6 +220,21 @@ public sealed class ToolExecutionService(
                 definition.RequiredPermissions,
                 policyDecision.ApprovedPermissions);
         }
+        catch (ToolExecutionStoppedByUserException exception)
+        {
+            undo.Abandon(undoPreparation);
+            return Complete(
+                invocationId,
+                definition.Name,
+                ToolExecutionStatuses.Denied,
+                false,
+                null,
+                exception.Message,
+                stopwatch,
+                startedAt,
+                definition.RequiredPermissions,
+                policyDecision.ApprovedPermissions);
+        }
         catch (ToolExecutionFailedException exception)
         {
             undo.Abandon(undoPreparation);
@@ -394,6 +409,8 @@ public sealed class ToolExecutionService(
 }
 
 public sealed class ToolExecutionInputException(string message) : Exception(message);
+
+public sealed class ToolExecutionStoppedByUserException(string message) : Exception(message);
 
 public sealed class ToolExecutionFailedException : Exception
 {

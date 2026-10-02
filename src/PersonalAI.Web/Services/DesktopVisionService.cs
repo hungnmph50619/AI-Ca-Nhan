@@ -81,7 +81,8 @@ confidence phải từ 0 đến 1.
             generationConfig = new
             {
                 maxOutputTokens = 300,
-                temperature = 0.0
+                temperature = 0.0,
+                responseMimeType = "application/json"
             }
         };
 
@@ -227,7 +228,8 @@ confidence từ 0 đến 1.
             generationConfig = new
             {
                 maxOutputTokens = 350,
-                temperature = 0.0
+                temperature = 0.0,
+                responseMimeType = "application/json"
             }
         };
 
@@ -258,24 +260,30 @@ confidence từ 0 đến 1.
             throw new InvalidOperationException(
                 "Desktop Vision không trả kết quả.");
 
-        LeagueVisualDecision? result;
+        LeagueVisualDecision result;
         try
         {
-            result = JsonSerializer.Deserialize<LeagueVisualDecision>(
-                ExtractJsonObject(text),
-                new JsonSerializerOptions(JsonSerializerDefaults.Web)
-                {
-                    PropertyNameCaseInsensitive = true
-                });
+            result = ParseLeagueDecision(
+                ExtractJsonObject(text));
         }
-        catch (JsonException)
+        catch (Exception exception) when (
+            exception is JsonException or
+            InvalidOperationException or
+            FormatException)
         {
+            var preview = string.Join(
+                " ",
+                text.Split(
+                    [' ', '\t', '\r', '\n'],
+                    StringSplitOptions.RemoveEmptyEntries));
+            if (preview.Length > 260)
+                preview = preview[..260] + "…";
+
             throw new InvalidOperationException(
-                "Desktop Vision trả JSON quyết định không hợp lệ.");
+                $"Desktop Vision trả JSON quyết định không hợp lệ. Phản hồi: {preview}");
         }
 
-        if (result is null ||
-            !double.IsFinite(result.Confidence) ||
+        if (!double.IsFinite(result.Confidence) ||
             result.Confidence is < 0 or > 1 ||
             result.State.Length > 160 ||
             result.Action.Length > 40 ||
@@ -323,6 +331,94 @@ confidence từ 0 đến 1.
         {
             Action = result.Action.Trim().ToLowerInvariant()
         };
+    }
+
+    private static LeagueVisualDecision ParseLeagueDecision(
+        string json)
+    {
+        using var document = JsonDocument.Parse(json);
+        var root = document.RootElement;
+        if (root.ValueKind != JsonValueKind.Object)
+            throw new InvalidOperationException(
+                "Quyết định Vision không phải JSON object.");
+
+        var state = ReadString(root, "state");
+        var action = ReadString(root, "action");
+        var label = ReadString(root, "label");
+        var reason = ReadString(root, "reason");
+
+        var confidence = ReadDouble(root, "confidence");
+        var imageX = ReadInt(root, "x", "imageX");
+        var imageY = ReadInt(root, "y", "imageY");
+
+        return new LeagueVisualDecision(
+            state,
+            action,
+            label,
+            imageX,
+            imageY,
+            confidence,
+            reason);
+    }
+
+    private static string ReadString(
+        JsonElement root,
+        string name)
+    {
+        if (!root.TryGetProperty(name, out var value) ||
+            value.ValueKind is JsonValueKind.Null or JsonValueKind.Undefined)
+            return string.Empty;
+
+        return value.ValueKind == JsonValueKind.String
+            ? value.GetString() ?? string.Empty
+            : value.ToString();
+    }
+
+    private static double ReadDouble(
+        JsonElement root,
+        string name)
+    {
+        if (!root.TryGetProperty(name, out var value))
+            return 0;
+
+        if (value.ValueKind == JsonValueKind.Number &&
+            value.TryGetDouble(out var number))
+            return number;
+
+        if (value.ValueKind == JsonValueKind.String &&
+            double.TryParse(
+                value.GetString(),
+                System.Globalization.NumberStyles.Float,
+                System.Globalization.CultureInfo.InvariantCulture,
+                out number))
+            return number;
+
+        return 0;
+    }
+
+    private static int ReadInt(
+        JsonElement root,
+        string primaryName,
+        string alternateName)
+    {
+        JsonElement value;
+        if (!root.TryGetProperty(primaryName, out value) &&
+            !root.TryGetProperty(alternateName, out value))
+            return 0;
+
+        if (value.ValueKind == JsonValueKind.Number &&
+            value.TryGetInt32(out var number))
+            return number;
+
+        if (value.ValueKind == JsonValueKind.String &&
+            int.TryParse(
+                value.GetString(),
+                System.Globalization.NumberStyles.Integer,
+                System.Globalization.CultureInfo.InvariantCulture,
+                out number))
+            return number;
+
+        return 0;
     }
 
     private static string ExtractText(JsonElement root)

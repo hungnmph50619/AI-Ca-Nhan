@@ -13,7 +13,8 @@ public sealed class LeaguePracticeAutomationService(
     IComputerUseService computer,
     IDesktopScreenshotService screenshots,
     DesktopVisionService vision,
-    ComputerControlGate control)
+    ComputerControlGate control,
+    LeagueVisualProgressStore progress)
     : ILeaguePracticeAutomationService
 {
     private static readonly string[] ClientProcesses =
@@ -30,31 +31,41 @@ public sealed class LeaguePracticeAutomationService(
         CancellationToken cancellationToken = default)
     {
         var startedAt = DateTimeOffset.UtcNow;
+        progress.Start("Đang khởi động Visual Agent cho Riot/League.");
         if (!OperatingSystem.IsWindows() || !Environment.UserInteractive)
+        {
+            progress.Block("Không thể chạy: chỉ hỗ trợ phiên Windows đang tương tác.");
             return Result(
                 "blocked",
                 "platform",
                 0,
                 "Chỉ hỗ trợ phiên Windows đang tương tác.",
                 startedAt);
+        }
 
         if (!vision.Ready)
+        {
+            progress.Block("Không thể chạy: Desktop Vision chưa sẵn sàng.");
             return Result(
                 "blocked",
                 "vision",
                 0,
                 "Cần cấu hình Gemini để Desktop Vision xác minh từng trạng thái UI.",
                 startedAt);
+        }
 
         try
         {
+            progress.Add("launch", "Đang kiểm tra và mở Riot/League client.");
             await EnsureLeagueClientAsync(cancellationToken);
+            progress.Add("launch", "Đã thấy cửa sổ Riot/League hiển thị.");
         }
         catch (Exception ex) when (
             ex is ToolExecutionInputException or
             InvalidOperationException or
             System.ComponentModel.Win32Exception)
         {
+            progress.Block($"Dừng ở bước mở client: {ex.Message}");
             return Result(
                 "blocked",
                 "launch",
@@ -90,6 +101,7 @@ public sealed class LeaguePracticeAutomationService(
                         "start-game",
                         StringComparison.OrdinalIgnoreCase))
                     {
+                        progress.Complete("Đã nhấn Bắt đầu và client đã chuyển khỏi menu.");
                         return Result(
                             "completed",
                             "start-game",
@@ -123,12 +135,26 @@ public sealed class LeaguePracticeAutomationService(
                 }
 
                 using var frame = CaptureDisposable(window);
+                progress.Add(
+                    "capture",
+                    $"Đã chụp vùng cửa sổ League {frame.Value.Width}x{frame.Value.Height} để phân tích.",
+                    observation: true);
+
                 var decision = await vision.DecideLeaguePracticeActionAsync(
                     frame.Value,
                     cancellationToken);
 
+                progress.Add(
+                    "vision",
+                    $"Vision nhận định trạng thái: {decision.State}. Hành động tiếp theo: {decision.Action}. {decision.Reason}",
+                    decision.Action,
+                    decision.Confidence,
+                    decision.ImageX,
+                    decision.ImageY);
+
                 if (decision.Action == "complete")
                 {
+                    progress.Complete($"Hoàn tất: {decision.Reason}");
                     return Result(
                         "completed",
                         "practice-tool",
@@ -139,6 +165,7 @@ public sealed class LeaguePracticeAutomationService(
 
                 if (decision.Action == "blocked")
                 {
+                    progress.Block($"Visual Agent dừng an toàn: {decision.Reason}");
                     return Result(
                         "blocked",
                         "vision",
@@ -161,6 +188,11 @@ public sealed class LeaguePracticeAutomationService(
                             startedAt);
                     }
 
+                    progress.Add(
+                        "wait",
+                        $"Đang chờ giao diện thay đổi ({consecutiveWaits}/5): {decision.Reason}",
+                        "wait",
+                        decision.Confidence);
                     await Task.Delay(1200, cancellationToken);
                     continue;
                 }
@@ -170,6 +202,8 @@ public sealed class LeaguePracticeAutomationService(
                     decision.Action == "play" ? 0.72 : 0.80;
                 if (decision.Confidence < minimumConfidence)
                 {
+                    progress.Block(
+                        $"Dừng vì độ tin cậy thấp: {decision.Action} {decision.Confidence:0.00} < {minimumConfidence:0.00}.");
                     return Result(
                         "blocked",
                         decision.Action,
@@ -180,6 +214,7 @@ public sealed class LeaguePracticeAutomationService(
 
                 if (!IsSafeClick(frame.Value, decision))
                 {
+                    progress.Block("Dừng vì tọa độ click không an toàn.");
                     return Result(
                         "blocked",
                         decision.Action,
@@ -204,6 +239,7 @@ public sealed class LeaguePracticeAutomationService(
 
                 if (repeatedDecisionCount >= 2)
                 {
+                    progress.Block("Dừng vì Visual Agent lặp lại cùng thao tác mà giao diện không thay đổi.");
                     return Result(
                         "blocked",
                         decision.Action,
@@ -214,6 +250,26 @@ public sealed class LeaguePracticeAutomationService(
 
                 var screenX = checked(frame.Value.Left + decision.ImageX);
                 var screenY = checked(frame.Value.Top + decision.ImageY);
+
+                progress.Add(
+                    "pointer",
+                    $"Đang đưa con trỏ tới mục tiêu {decision.Label} tại ({screenX}, {screenY}).",
+                    decision.Action,
+                    decision.Confidence,
+                    screenX,
+                    screenY);
+
+                computer.MoveCursor(screenX, screenY);
+
+                progress.Add(
+                    "click",
+                    $"Đang nhấp {decision.Label}.",
+                    decision.Action,
+                    decision.Confidence,
+                    screenX,
+                    screenY,
+                    click: true);
+
                 computer.ClickLeft(
                     window.WindowId,
                     screenX,
@@ -227,6 +283,7 @@ public sealed class LeaguePracticeAutomationService(
                     cancellationToken);
             }
 
+            progress.Block("Visual Agent đã chạm giới hạn 16 lần quan sát.");
             return Result(
                 "blocked",
                 lastAction ?? "observe",
@@ -245,6 +302,7 @@ public sealed class LeaguePracticeAutomationService(
             HttpRequestException or
             TaskCanceledException)
         {
+            progress.Block($"Visual Agent gặp lỗi: {ex.Message}");
             return Result(
                 "blocked",
                 lastAction ?? "observe",

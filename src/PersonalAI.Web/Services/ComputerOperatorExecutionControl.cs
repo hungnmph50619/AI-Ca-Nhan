@@ -6,6 +6,7 @@ public sealed class ComputerOperatorExecutionControl : IDisposable
     private CancellationTokenSource? _stop;
     private bool _running;
     private bool _paused;
+    private bool _pausable;
     private string _taskName = string.Empty;
 
     public string TaskName
@@ -23,7 +24,14 @@ public sealed class ComputerOperatorExecutionControl : IDisposable
         get { lock (_sync) return _paused; }
     }
 
-    public CancellationToken Begin(string taskName)
+    public bool Pausable
+    {
+        get { lock (_sync) return _pausable; }
+    }
+
+    public CancellationToken Begin(
+        string taskName,
+        bool pausable = true)
     {
         lock (_sync)
         {
@@ -32,6 +40,7 @@ public sealed class ComputerOperatorExecutionControl : IDisposable
             _stop = new CancellationTokenSource();
             _running = true;
             _paused = false;
+            _pausable = pausable;
             _taskName = (taskName ?? string.Empty).Trim();
             return _stop.Token;
         }
@@ -41,7 +50,7 @@ public sealed class ComputerOperatorExecutionControl : IDisposable
     {
         lock (_sync)
         {
-            if (!_running || _paused)
+            if (!_running || !_pausable || _paused)
                 return false;
 
             _paused = true;
@@ -70,6 +79,7 @@ public sealed class ComputerOperatorExecutionControl : IDisposable
 
             _running = false;
             _paused = false;
+            _pausable = false;
             _stop?.Cancel();
             return true;
         }
@@ -81,6 +91,7 @@ public sealed class ComputerOperatorExecutionControl : IDisposable
         {
             _running = false;
             _paused = false;
+            _pausable = false;
         }
     }
 

@@ -7,7 +7,8 @@ public sealed class ComputerVisionClickTargetTool(
     IDesktopScreenshotService screenshots,
     DesktopVisionService vision,
     IComputerUseService computer,
-    ComputerOperatorProgressStore progress) : IPersonalAiTool
+    ComputerOperatorProgressStore progress,
+    ComputerOperatorExecutionControl execution) : IPersonalAiTool
 {
     private const double MinimumLocateConfidence = 0.78;
     private const double MinimumVerifyConfidence = 0.72;
@@ -59,11 +60,24 @@ public sealed class ComputerVisionClickTargetTool(
         var target = RequiredString(arguments, "target");
         var expectedAfter = RequiredString(arguments, "expectedAfter");
 
+        var operatorToken = execution.Begin(
+            $"Visual click: {target}");
+        using var linked = CancellationTokenSource.CreateLinkedTokenSource(
+            cancellationToken,
+            operatorToken);
+
         progress.Start($"Visual click target: {target}");
 
-        var before = await screenshots.CaptureStableVirtualScreenAsync(
-            5000,
-            cancellationToken);
+        try
+        {
+            progress.Add(
+                "stabilize",
+                "Đang chờ desktop ổn định trước khi chụp ảnh.");
+            await execution.WaitIfPausedAsync(linked.Token);
+
+            var before = await screenshots.CaptureStableVirtualScreenAsync(
+                5000,
+                linked.Token);
 
         DesktopVisionTarget located;
         try
@@ -76,10 +90,11 @@ public sealed class ComputerVisionClickTargetTool(
                 "analyze",
                 $"Vision đang tìm: {target}");
 
+            await execution.WaitIfPausedAsync(linked.Token);
             located = await vision.LocateAsync(
                 before,
                 target,
-                cancellationToken);
+                linked.Token);
         }
         finally
         {
@@ -134,16 +149,20 @@ public sealed class ComputerVisionClickTargetTool(
                 "act",
                 $"Focus cửa sổ chứa target: {targetWindow.Title}",
                 "focus-window",
-                located.Confidence);
+                located.Confidence,
+                actionTaken: true);
+            await execution.WaitIfPausedAsync(linked.Token);
             computer.FocusWindow(targetWindow.WindowId);
-            await Task.Delay(250, cancellationToken);
+            await Task.Delay(250, linked.Token);
         }
 
         progress.Add(
             "act",
             $"Di chuột tới ({desktopX}, {desktopY}).",
             "move",
-            located.Confidence);
+            located.Confidence,
+            actionTaken: true);
+        await execution.WaitIfPausedAsync(linked.Token);
         computer.SmoothMoveCursor(
             desktopX,
             desktopY,
@@ -153,7 +172,9 @@ public sealed class ComputerVisionClickTargetTool(
             "act",
             $"Click target {located.Label}.",
             "click-left",
-            located.Confidence);
+            located.Confidence,
+            actionTaken: true);
+        await execution.WaitIfPausedAsync(linked.Token);
         computer.ClickLeft(
             targetWindow.WindowId,
             desktopX,
@@ -163,47 +184,82 @@ public sealed class ComputerVisionClickTargetTool(
             "verify",
             "Đang chờ giao diện phản hồi rồi chụp lại để xác minh.");
 
-        await Task.Delay(650, cancellationToken);
+        DesktopVisionVerification verification = new(
+            false,
+            0,
+            "Chưa xác minh.");
+        var verified = false;
 
-        var after = await screenshots.CaptureStableVirtualScreenAsync(
-            5000,
-            cancellationToken);
-
-        DesktopVisionVerification verification;
-        try
+        for (var verifyAttempt = 1; verifyAttempt <= 3; verifyAttempt++)
         {
+            var delayMs = verifyAttempt switch
+            {
+                1 => 700,
+                2 => 900,
+                _ => 1200
+            };
+
+            await Task.Delay(delayMs, linked.Token);
+            await execution.WaitIfPausedAsync(linked.Token);
+
             progress.Add(
-                "observe",
-                $"Đã chụp frame hậu hành động {after.Width}x{after.Height}.",
-                observation: true);
+                "stabilize",
+                verifyAttempt == 1
+                    ? "Đang chờ giao diện ổn định để chụp ảnh hậu hành động."
+                    : $"VERIFY-RETRY {verifyAttempt}/3: chờ giao diện ổn định rồi quan sát lại.");
+
+            var after = await screenshots.CaptureStableVirtualScreenAsync(
+                5000,
+                linked.Token);
+
+            try
+            {
+                progress.Add(
+                    "observe",
+                    $"Đã chụp frame hậu hành động {after.Width}x{after.Height} (lần {verifyAttempt}/3).",
+                    observation: true);
+                progress.Add(
+                    "analyze",
+                    $"Vision đang xác minh lần {verifyAttempt}/3: {expectedAfter}");
+
+                await execution.WaitIfPausedAsync(linked.Token);
+                verification = await vision.VerifyAsync(
+                    after,
+                    expectedAfter,
+                    linked.Token);
+            }
+            finally
+            {
+                after.Clear();
+            }
+
             progress.Add(
-                "analyze",
-                $"Vision đang xác minh: {expectedAfter}");
+                "verify-result",
+                $"Lần {verifyAttempt}/3: {verification.Reason}",
+                verification.Satisfied ? "verified" : "not-verified",
+                verification.Confidence);
 
-            verification = await vision.VerifyAsync(
-                after,
-                expectedAfter,
-                cancellationToken);
+            verified =
+                verification.Satisfied &&
+                verification.Confidence >= MinimumVerifyConfidence;
+
+            if (verified)
+                break;
+
+            if (verifyAttempt < 3)
+            {
+                progress.Add(
+                    "verify-retry",
+                    $"Chưa xác minh được sau lần {verifyAttempt}; sẽ quan sát lại trước khi kết luận.",
+                    "retry-verify",
+                    verification.Confidence);
+            }
         }
-        finally
-        {
-            after.Clear();
-        }
-
-        progress.Add(
-            "verify-result",
-            verification.Reason,
-            verification.Satisfied ? "verified" : "not-verified",
-            verification.Confidence);
-
-        var verified =
-            verification.Satisfied &&
-            verification.Confidence >= MinimumVerifyConfidence;
 
         if (verified)
-            progress.Complete("Visual click đã được xác minh bằng frame mới.");
+            progress.Complete("Visual click đã được xác minh bằng frame hậu hành động.");
         else
-            progress.Block("Click đã thực hiện nhưng trạng thái hậu hành động chưa được Vision xác minh.");
+            progress.Block("Click đã thực hiện nhưng sau 3 lần quan sát lại, trạng thái hậu hành động vẫn chưa được Vision xác minh.");
 
         return JsonSerializer.SerializeToElement(new
         {
@@ -219,6 +275,17 @@ public sealed class ComputerVisionClickTargetTool(
             verifyConfidence = verification.Confidence,
             verifyReason = verification.Reason
         });
+        }
+        catch (OperationCanceledException) when (operatorToken.IsCancellationRequested)
+        {
+            progress.StopByUser();
+            throw new ToolExecutionStoppedByUserException(
+                "Người dùng đã dừng thao tác Vision Click từ AI Operator Console.");
+        }
+        finally
+        {
+            execution.Complete();
+        }
     }
 
     private static string RequiredString(

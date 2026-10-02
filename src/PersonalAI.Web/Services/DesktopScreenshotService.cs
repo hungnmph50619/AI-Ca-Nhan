@@ -19,7 +19,9 @@ public interface IDesktopScreenshotService
         int height);
 }
 
-public sealed class WindowsDesktopScreenshotService : IDesktopScreenshotService
+public sealed class WindowsDesktopScreenshotService(
+    WindowsAiOperatorConsoleService operatorConsole)
+    : IDesktopScreenshotService
 {
     public DesktopScreenshotFrame CaptureVirtualScreen()
     {
@@ -98,6 +100,7 @@ public sealed class WindowsDesktopScreenshotService : IDesktopScreenshotService
         ValidateRegion(width, height);
 
         using var bitmap = CaptureBitmap(left, top, width, height);
+        MaskOperatorConsole(bitmap, left, top);
         var signature = ComputeSignature(bitmap);
         var frame = EncodeFrame(bitmap, left, top, width, height);
 
@@ -167,12 +170,53 @@ public sealed class WindowsDesktopScreenshotService : IDesktopScreenshotService
             top,
             width,
             height);
+        MaskOperatorConsole(bitmap, left, top);
         return EncodeFrame(
             bitmap,
             left,
             top,
             width,
             height);
+    }
+
+    private void MaskOperatorConsole(
+        Bitmap bitmap,
+        int captureLeft,
+        int captureTop)
+    {
+        if (!operatorConsole.TryGetVisibleBounds(
+            out var consoleLeft,
+            out var consoleTop,
+            out var consoleWidth,
+            out var consoleHeight))
+            return;
+
+        var captureRight = captureLeft + bitmap.Width;
+        var captureBottom = captureTop + bitmap.Height;
+        var consoleRight = consoleLeft + consoleWidth;
+        var consoleBottom = consoleTop + consoleHeight;
+
+        var overlapLeft = Math.Max(captureLeft, consoleLeft);
+        var overlapTop = Math.Max(captureTop, consoleTop);
+        var overlapRight = Math.Min(captureRight, consoleRight);
+        var overlapBottom = Math.Min(captureBottom, consoleBottom);
+
+        if (overlapRight <= overlapLeft || overlapBottom <= overlapTop)
+            return;
+
+        var localX = overlapLeft - captureLeft;
+        var localY = overlapTop - captureTop;
+        var localWidth = overlapRight - overlapLeft;
+        var localHeight = overlapBottom - overlapTop;
+
+        using var graphics = Graphics.FromImage(bitmap);
+        using var brush = new SolidBrush(Color.FromArgb(18, 18, 18));
+        graphics.FillRectangle(
+            brush,
+            localX,
+            localY,
+            localWidth,
+            localHeight);
     }
 
     private static void ValidateRegion(

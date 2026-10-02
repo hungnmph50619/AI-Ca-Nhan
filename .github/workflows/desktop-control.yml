@@ -57,6 +57,38 @@ jobs:
               } catch { }
             }
             if (-not $ready) { throw "Ứng dụng không khởi động trong thời gian chờ." }
+
+            $appStatus = Invoke-RestMethod "$base/api/status"
+            if ($appStatus.version -ne "3.3.1") { throw "Ứng dụng không công bố version 3.3.1." }
+
+            $operatorInitial = Invoke-RestMethod "$base/api/computer/operator-progress"
+            if ($operatorInitial.active -ne $false -or $operatorInitial.status -ne "idle") {
+              throw "AI Operator Console không khởi tạo ở trạng thái idle."
+            }
+
+            $pauseIdle = Invoke-RestMethod "$base/api/computer/operator/pause" -Method Post
+            if ($pauseIdle.changed -ne $false) { throw "Pause thay đổi trạng thái khi chưa có task." }
+            $resumeIdle = Invoke-RestMethod "$base/api/computer/operator/resume" -Method Post
+            if ($resumeIdle.changed -ne $false) { throw "Resume thay đổi trạng thái khi chưa có task." }
+
+            $clockBody = @{
+              toolName = "local.clock"
+              arguments = @{}
+              approvedPermissions = @("READ")
+              confirmed = $false
+            } | ConvertTo-Json -Depth 5
+            $clockResponse = Invoke-WebRequest "$base/api/tools/execute" -Method Post -ContentType "application/json" -Body $clockBody -SkipHttpErrorCheck
+            if ($clockResponse.StatusCode -ne 200) { throw "Tool local.clock không chạy được trong smoke test console." }
+
+            $operatorAfterClock = Invoke-RestMethod "$base/api/computer/operator-progress"
+            if ($operatorAfterClock.status -ne "completed" -or $operatorAfterClock.active -ne $false) {
+              throw "AI Operator Console không ghi trạng thái completed cho tool thường."
+            }
+            $stages = @($operatorAfterClock.entries | ForEach-Object { $_.stage })
+            if ($stages -notcontains "running" -or $stages -notcontains "complete") {
+              throw "AI Operator Console thiếu lifecycle running/complete của Tool Framework."
+            }
+
             if (-not $status.supported) { throw "Windows chưa được nhận diện." }
             if ($status.desktopActionsPaused -ne $true) { throw "Điều khiển không khóa khi khởi động." }
             # Lệnh nhập mẫu không được gửi khi đang tạm dừng; CI không gõ ký tự thật.

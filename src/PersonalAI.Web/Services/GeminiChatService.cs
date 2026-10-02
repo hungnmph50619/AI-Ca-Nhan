@@ -560,8 +560,9 @@ Function calling is disabled in this continuation. Produce only the final user-f
                     ? idElement.GetString()
                     : null;
 
-                var function = functions.FirstOrDefault(candidateFunction =>
-                    candidateFunction.Name.Equals(name, StringComparison.Ordinal));
+                var function = ResolveReturnedFunctionName(
+                    name,
+                    functions);
                 if (function is null)
                 {
                     _logger.LogWarning(
@@ -570,10 +571,19 @@ Function calling is disabled in this continuation. Produce only the final user-f
                     return null;
                 }
 
+                var canonicalName = function.Name;
+                if (!canonicalName.Equals(name, StringComparison.Ordinal))
+                {
+                    _logger.LogInformation(
+                        "Gemini returned shortened function alias {ReturnedName}; resolved safely to catalog function {CanonicalName}.",
+                        name,
+                        canonicalName);
+                }
+
                 var context = new ProviderFunctionCallContext(
                     Name,
                     planningModel,
-                    name,
+                    canonicalName,
                     ResponseId: null,
                     CallId: functionCallId,
                     arguments,
@@ -582,7 +592,7 @@ Function calling is disabled in this continuation. Produce only the final user-f
                     content.Clone());
 
                 calls.Add(new ProviderFunctionCallDecision(
-                    name,
+                    canonicalName,
                     arguments,
                     context));
             }
@@ -599,6 +609,41 @@ Function calling is disabled in this continuation. Produce only the final user-f
         return calls.Count == 1 ? calls[0] : null;
     }
 
+
+    private static ProviderFunctionDefinition? ResolveReturnedFunctionName(
+        string returnedName,
+        IReadOnlyList<ProviderFunctionDefinition> functions)
+    {
+        var exact = functions.FirstOrDefault(function =>
+            function.Name.Equals(
+                returnedName,
+                StringComparison.Ordinal));
+        if (exact is not null)
+            return exact;
+
+        if (!returnedName.StartsWith(
+            "pai_",
+            StringComparison.Ordinal))
+            return null;
+
+        var prefix = returnedName.EndsWith(
+            "_",
+            StringComparison.Ordinal)
+            ? returnedName
+            : returnedName + "_";
+
+        var candidates = functions
+            .Where(function =>
+                function.Name.StartsWith(
+                    prefix,
+                    StringComparison.Ordinal))
+            .Take(2)
+            .ToArray();
+
+        return candidates.Length == 1
+            ? candidates[0]
+            : null;
+    }
 
     private static JsonElement SanitizeFunctionSchema(JsonElement schema)
     {

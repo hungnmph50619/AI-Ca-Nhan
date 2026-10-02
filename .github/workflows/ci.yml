@@ -2849,7 +2849,7 @@ jobs:
           grep -Fq '/api/audit' src/PersonalAI.Web/Services/AuditEndpoints.cs
           grep -Fq '/api/audit/summary' src/PersonalAI.Web/Services/AuditEndpoints.cs
           grep -Fq 'app.MapAuditFoundation();' src/PersonalAI.Web/Program.cs
-          grep -Fq 'TIME · AGENT · ACTION · TOOL · TARGET · REASON · RESULT' src/PersonalAI.Web/wwwroot/v096.js
+          grep -Fq 'THỜI GIAN · TÁC NHÂN · HÀNH ĐỘNG · CÔNG CỤ · ĐÍCH · LÝ DO · KẾT QUẢ' src/PersonalAI.Web/wwwroot/v096.js
           grep -Fq 'v096.css' src/PersonalAI.Web/wwwroot/index.html
           grep -Fq 'v096.js' src/PersonalAI.Web/wwwroot/index.html
           ! grep -Fq 'MapDelete("/api/audit' src/PersonalAI.Web/Services/AuditEndpoints.cs

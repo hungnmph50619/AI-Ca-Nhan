@@ -10,6 +10,8 @@ namespace PersonalAI.Web.Services;
 /// </summary>
 public sealed class WindowsStopHotkeyService(
     ComputerControlGate control,
+    ComputerOperatorExecutionControl execution,
+    ComputerOperatorProgressStore progress,
     ILogger<WindowsStopHotkeyService> logger) : IHostedService
 {
     private const int HotkeyId = 0x5041;
@@ -101,8 +103,12 @@ public sealed class WindowsStopHotkeyService(
                 if (message.Message == WindowMessageHotkey
                     && message.WParam == new IntPtr(HotkeyId))
                 {
+                    execution.Stop();
                     control.Stop();
-                    logger.LogWarning("Đã dừng điều khiển máy tính bằng phím tắt Windows.");
+                    progress.StopByUser(
+                        "Người dùng đã nhấn Ctrl + Shift + F12.");
+                    logger.LogWarning(
+                        "Đã dừng Computer Operator bằng phím tắt Windows.");
                 }
             }
         }

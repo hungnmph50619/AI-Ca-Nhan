@@ -735,6 +735,9 @@ public sealed class ToolOrchestrationService : IToolOrchestrationService
             text.Contains("trên màn hình", StringComparison.OrdinalIgnoreCase)
             || text.Contains("trên screen", StringComparison.OrdinalIgnoreCase)
             || text.Contains("on screen", StringComparison.OrdinalIgnoreCase)
+            || text.Contains("taskbar", StringComparison.OrdinalIgnoreCase)
+            || text.Contains("thanh tác vụ", StringComparison.OrdinalIgnoreCase)
+            || text.Contains("desktop", StringComparison.OrdinalIgnoreCase)
             || text.Contains("nhìn", StringComparison.OrdinalIgnoreCase)
             || text.Contains("vision", StringComparison.OrdinalIgnoreCase);
 

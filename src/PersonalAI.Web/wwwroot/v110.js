@@ -113,7 +113,7 @@
     introTitle.textContent = "Thao tác như người dùng thật";
     const introCopy = document.createElement("p");
     introCopy.textContent =
-      "v3.1 hỗ trợ chuyển/thu nhỏ/phóng to/khôi phục cửa sổ, di chuột nhìn thấy được, click trái/phải/đúp, cuộn, kéo-thả, nhập văn bản, phím đơn và hotkey. Có thể dùng phiên giới hạn hoặc ủy quyền Computer Operator có thời hạn.";
+      "v3.1 hỗ trợ chuyển/thu nhỏ/phóng to/khôi phục cửa sổ, di chuột nhìn thấy được, click trái/phải/đúp, cuộn, kéo-thả, nhập văn bản, phím đơn và hotkey. Mục tiêu là xác nhận một lần cho mỗi tác vụ cấp cao thay vì hỏi lại từng thao tác con.";
     intro.append(introTitle, introCopy);
 
     const summary = document.createElement("div");
@@ -140,7 +140,7 @@
     const safety = document.createElement("div");
     safety.className = "v110-computer-safety";
     safety.textContent =
-      "Nhấn Ctrl + Shift + F12 để dừng ngay. Chế độ ủy quyền chỉ áp dụng cho nhóm computer.* trong thời hạn phiên; không tự cấp quyền xóa dữ liệu, connector hay development. Khi cần lập bước bằng AI, tiêu đề cửa sổ/kết quả computer tool có thể được gửi tới nhà cung cấp AI đang cấu hình.";
+      "Nhấn Ctrl + Shift + F12 để dừng ngay. Mỗi tác vụ Computer Operator vẫn có chốt xác nhận ở cấp tác vụ; các thao tác con trong tác vụ không nên yêu cầu xác nhận lặp lại. Không dùng bàn phím tổng quát cho mật khẩu, OTP hoặc bí mật.";
 
     const feedback = document.createElement("div");
     feedback.id = "computerUseFeedback";
@@ -458,8 +458,20 @@
       "window-list": "Danh sách cửa sổ",
       "active-window": "Cửa sổ đang sử dụng",
       "focus-window": "Chuyển cửa sổ",
+      "focus-window-by-query": "Chuyển cửa sổ theo tên",
+      "minimize-window": "Thu nhỏ cửa sổ",
+      "maximize-window": "Phóng to cửa sổ",
+      "restore-window": "Khôi phục cửa sổ",
       "move-cursor": "Di chuyển con trỏ",
-      "click-left": "Nhấp chuột trái một lần",
+      "smooth-move-cursor": "Di chuột nhìn thấy được",
+      "click-left": "Nhấp chuột trái",
+      "click-right": "Nhấp chuột phải",
+      "double-click-left": "Nhấp đúp chuột trái",
+      "scroll": "Cuộn chuột",
+      "drag-left": "Kéo-thả chuột trái",
+      "type-text": "Nhập văn bản",
+      "press-key": "Nhấn phím",
+      "press-hotkey": "Nhấn tổ hợp phím",
       "type-notepad-text": "Nhập một dòng thử nghiệm vào Notepad"
     }[value] || value || "Chức năng";
   }

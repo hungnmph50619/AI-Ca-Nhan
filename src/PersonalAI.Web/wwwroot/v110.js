@@ -1,5 +1,5 @@
 (() => {
-  const VERSION = "1.1.0";
+  const VERSION = "3.1.0";
   let loading = false;
   let pendingKeyboardTimer = null;
 
@@ -91,11 +91,11 @@
     const heading = document.createElement("div");
     const eyebrow = document.createElement("p");
     eyebrow.className = "eyebrow";
-    eyebrow.textContent = "KHẢ NĂNG ĐIỀU KHIỂN CÓ XÁC NHẬN · WINDOWS";
+    eyebrow.textContent = "COMPUTER OPERATOR · WINDOWS";
 
     const title = document.createElement("h2");
     title.id = "computerUseTitle";
-    title.textContent = "Điều khiển máy tính · Bản thử nghiệm";
+    title.textContent = "Computer Operator · v3.1";
     heading.style.minWidth = "0";
     heading.append(eyebrow, title);
 
@@ -110,10 +110,10 @@
     const intro = document.createElement("div");
     intro.className = "v110-computer-intro";
     const introTitle = document.createElement("strong");
-    introTitle.textContent = "Quan sát trước, hành động có xác nhận";
+    introTitle.textContent = "Thao tác như người dùng thật";
     const introCopy = document.createElement("p");
     introCopy.textContent =
-      "Bản thử nghiệm hỗ trợ di chuyển chuột, nhấp trái và nhập một dòng tối đa 32 ký tự vào Notepad. Mỗi lần bật có tối đa 60 giây và 5 thao tác. Chưa hỗ trợ tổ hợp phím, chụp màn hình hay AI tự thao tác liên tục. Chỉ dùng trên dữ liệu thử nghiệm.";
+      "v3.1 hỗ trợ chuyển/thu nhỏ/phóng to/khôi phục cửa sổ, di chuột nhìn thấy được, click trái/phải/đúp, cuộn, kéo-thả, nhập văn bản, phím đơn và hotkey. Có thể dùng phiên giới hạn hoặc ủy quyền Computer Operator có thời hạn.";
     intro.append(introTitle, introCopy);
 
     const summary = document.createElement("div");
@@ -140,7 +140,7 @@
     const safety = document.createElement("div");
     safety.className = "v110-computer-safety";
     safety.textContent =
-      "Nhấn Ctrl + Shift + F12 để dừng điều khiển từ bất kỳ cửa sổ thông thường nào của Windows khi phím tắt đã sẵn sàng. Mỗi thao tác vẫn cần quyền và xác nhận riêng. Phím dừng không hoàn tác thao tác đã thực hiện và không hoạt động trên màn hình bảo mật Windows.";
+      "Nhấn Ctrl + Shift + F12 để dừng ngay. Chế độ ủy quyền chỉ áp dụng cho nhóm computer.* trong thời hạn phiên; không tự cấp quyền xóa dữ liệu, connector hay development. Khi cần lập bước bằng AI, tiêu đề cửa sổ/kết quả computer tool có thể được gửi tới nhà cung cấp AI đang cấu hình.";
 
     const feedback = document.createElement("div");
     feedback.id = "computerUseFeedback";

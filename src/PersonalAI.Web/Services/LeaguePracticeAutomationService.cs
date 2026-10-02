@@ -81,7 +81,7 @@ public sealed class LeaguePracticeAutomationService(
 
         control.EnableScopedAutomation(
             maximumActions: 14,
-            maximumSeconds: 240);
+            maximumSeconds: 170);
 
         var completed = 0;
         try

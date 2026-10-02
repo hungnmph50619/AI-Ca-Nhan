@@ -7,6 +7,7 @@ public static class ComputerUseCapabilities
     public const string WindowList = "window-list";
     public const string ActiveWindow = "active-window";
     public const string FocusWindow = "focus-window";
+    public const string FocusWindowByQuery = "focus-window-by-query";
     public const string MinimizeWindow = "minimize-window";
     public const string MaximizeWindow = "maximize-window";
     public const string RestoreWindow = "restore-window";

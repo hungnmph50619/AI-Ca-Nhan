@@ -57,6 +57,27 @@ public sealed class WindowsAiOperatorConsoleService
     private DateTimeOffset _keepVisibleUntilUtc;
     private string _lastText = string.Empty;
     private string? _registeredClass;
+    private volatile bool _started;
+    private volatile bool _windowCreated;
+    private volatile bool _visible;
+    private string? _lastError;
+    private DateTimeOffset _forceVisibleUntilUtc;
+
+    public object GetDiagnosticStatus() => new
+    {
+        started = _started,
+        windowCreated = _windowCreated,
+        visible = _visible,
+        lastError = _lastError,
+        environmentUserInteractive = Environment.UserInteractive,
+        operatingSystem = Environment.OSVersion.ToString()
+    };
+
+    public void ShowTestConsole(TimeSpan duration)
+    {
+        _forceVisibleUntilUtc = DateTimeOffset.UtcNow.Add(
+            duration <= TimeSpan.Zero ? TimeSpan.FromSeconds(15) : duration);
+    }
 
     public WindowsAiOperatorConsoleService(
         LeagueVisualProgressStore leagueProgress,
@@ -75,8 +96,12 @@ public sealed class WindowsAiOperatorConsoleService
 
     public Task StartAsync(CancellationToken cancellationToken)
     {
-        if (!OperatingSystem.IsWindows() || !Environment.UserInteractive)
+        if (!OperatingSystem.IsWindows())
             return Task.CompletedTask;
+
+        logger.LogInformation(
+            "AI Operator Console đang khởi động. UserInteractive={UserInteractive}.",
+            Environment.UserInteractive);
 
         lock (_sync)
         {
@@ -84,6 +109,7 @@ public sealed class WindowsAiOperatorConsoleService
                 return Task.CompletedTask;
 
             _shutdown = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
+            _started = true;
             _thread = new Thread(() => Run(_shutdown.Token))
             {
                 IsBackground = true,
@@ -130,9 +156,11 @@ public sealed class WindowsAiOperatorConsoleService
 
             if (RegisterClassEx(ref windowClass) == 0)
             {
+                var error = Marshal.GetLastWin32Error();
+                _lastError = $"RegisterClassEx failed: {error}";
                 logger.LogWarning(
                     "Không đăng ký được lớp cửa sổ AI Operator Console. Win32={Error}.",
-                    Marshal.GetLastWin32Error());
+                    error);
                 return;
             }
 
@@ -152,11 +180,19 @@ public sealed class WindowsAiOperatorConsoleService
 
             if (_window == IntPtr.Zero)
             {
+                var error = Marshal.GetLastWin32Error();
+                _lastError = $"CreateWindowEx failed: {error}";
                 logger.LogWarning(
                     "Không tạo được AI Operator Console. Win32={Error}.",
-                    Marshal.GetLastWin32Error());
+                    error);
                 return;
             }
+
+            _windowCreated = true;
+            _lastError = null;
+            logger.LogInformation(
+                "AI Operator Console đã tạo cửa sổ native thành công. Handle=0x{Handle}.",
+                _window.ToInt64().ToString("X"));
 
             _ = SetLayeredWindowAttributes(_window, 0, 244, LwaAlpha);
             _ = SetWindowDisplayAffinity(_window, 0x00000011); // WDA_EXCLUDEFROMCAPTURE
@@ -224,7 +260,8 @@ public sealed class WindowsAiOperatorConsoleService
                     ? operatorSnapshot.UpdatedAtUtc
                     : leagueSnapshot.UpdatedAtUtc;
 
-                var shouldShow = selectedActive;
+                var testVisible = DateTimeOffset.UtcNow <= _forceVisibleUntilUtc;
+                var shouldShow = selectedActive || testVisible;
                 if (selectedActive)
                 {
                     _keepVisibleUntilUtc = DateTimeOffset.UtcNow.AddSeconds(3);
@@ -239,9 +276,11 @@ public sealed class WindowsAiOperatorConsoleService
 
                 if (shouldShow)
                 {
-                    var text = useOperator
-                        ? BuildOperatorText(operatorSnapshot)
-                        : BuildLeagueText(leagueSnapshot);
+                    var text = testVisible && !selectedActive
+                        ? BuildTestText()
+                        : useOperator
+                            ? BuildOperatorText(operatorSnapshot)
+                            : BuildLeagueText(leagueSnapshot);
 
                     if (!string.Equals(text, _lastText, StringComparison.Ordinal))
                     {
@@ -252,6 +291,7 @@ public sealed class WindowsAiOperatorConsoleService
                     UpdateButtons(operatorSnapshot, leagueSnapshot, useOperator);
                     PositionConsole(_window);
                     ShowWindow(_window, SwShowNoActivate);
+                    _visible = true;
                     _ = SetWindowPos(
                         _window,
                         new IntPtr(-1),
@@ -264,6 +304,7 @@ public sealed class WindowsAiOperatorConsoleService
                 else
                 {
                     ShowWindow(_window, SwHide);
+                    _visible = false;
                 }
 
                 Thread.Sleep(180);
@@ -271,6 +312,7 @@ public sealed class WindowsAiOperatorConsoleService
         }
         catch (Exception exception)
         {
+            _lastError = exception.ToString();
             logger.LogWarning(
                 exception,
                 "AI Operator Console đã dừng ngoài dự kiến.");
@@ -375,6 +417,18 @@ public sealed class WindowsAiOperatorConsoleService
 
         return DefWindowProc(handle, message, wParam, lParam);
     }
+
+    private static string BuildTestText() =>
+        """
+● AI OPERATOR CONSOLE · TEST
+
+Console native đang hoạt động.
+Nếu bạn nhìn thấy bảng này thì lớp hiển thị Win32 đã hoạt động bình thường.
+
+[TẠM DỪNG] [TIẾP TỤC] [DỪNG NGAY]
+
+Bảng này bị loại khỏi ảnh Desktop Vision.
+""";
 
     private static string BuildOperatorText(
         ComputerOperatorProgressSnapshot snapshot)

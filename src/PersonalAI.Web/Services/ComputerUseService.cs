@@ -154,7 +154,9 @@ public sealed class WindowsComputerUseService(
             DesktopActionsPaused: session.Paused,
             DesktopSessionExpiresAt: session.ExpiresAt,
             DesktopRemainingActions: session.RemainingActions,
-            StopHotkeyAvailable: session.StopHotkeyAvailable);
+            StopHotkeyAvailable: session.StopHotkeyAvailable,
+            DelegatedOperator: session.DelegatedOperator,
+            AllowExternalAiContext: session.AllowExternalAiContext);
     }
 
     public ComputerScreenInfo GetScreenInfo()

@@ -6,7 +6,11 @@ public sealed record DesktopScreenshotFrame(
     int Top,
     int Width,
     int Height,
-    DateTimeOffset CapturedAtUtc)
+    DateTimeOffset CapturedAtUtc,
+    string CaptureScope = "virtual-desktop",
+    string? WindowId = null,
+    string? WindowTitle = null,
+    bool WindowWasForeground = false)
 {
     public void Clear()
     {

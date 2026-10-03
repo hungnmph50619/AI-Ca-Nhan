@@ -3041,7 +3041,7 @@ jobs:
           grep -Fq 'SensitiveComputerObservationRequiresConfirmation: true' src/PersonalAI.Web/Services/SystemCoreService.cs
           grep -Fq 'v110.css' src/PersonalAI.Web/wwwroot/index.html
           grep -Fq 'v110.js' src/PersonalAI.Web/wwwroot/index.html
-          grep -Fq 'COMPUTER OPERATOR · WINDOWS' src/PersonalAI.Web/wwwroot/v110.js
+          grep -Fq 'computerUseDialog' src/PersonalAI.Web/wwwroot/v110.js
           ! grep -Fq '"computer.mouse.click"' src/PersonalAI.Web/Services/ComputerUseTools.cs
           ! grep -Fq '"computer.keyboard' src/PersonalAI.Web/Services/ComputerUseTools.cs
           grep -Fq 'control.RunAllowed(() => ClickLeftCore' src/PersonalAI.Web/Services/ComputerUseService.cs
@@ -3170,7 +3170,7 @@ jobs:
           grep -Fq 'CompanionRemoteTaskMutationEnabled: false' src/PersonalAI.Web/Services/SystemCoreService.cs
           grep -Fq 'v150.css' src/PersonalAI.Web/wwwroot/index.html
           grep -Fq 'v150.js' src/PersonalAI.Web/wwwroot/index.html
-          grep -Fq 'ANDROID ĐỒNG HÀNH · THIẾT BỊ ĐÃ GHÉP NỐI' src/PersonalAI.Web/wwwroot/v150.js
+          grep -Fq 'androidCompanionTitle' src/PersonalAI.Web/wwwroot/v150.js
           grep -Fq 'versionName "1.5.0"' android/PersonalAI.Companion/app/build.gradle
           grep -Fq 'android.permission.INTERNET' android/PersonalAI.Companion/app/src/main/AndroidManifest.xml
           grep -Fq 'AndroidKeyStore' android/PersonalAI.Companion/app/src/main/java/com/personalai/companion/SecureTokenStore.java

@@ -12,6 +12,14 @@ public interface IDesktopScreenshotService
         int maximumWaitMs = 5000,
         CancellationToken cancellationToken = default);
 
+    DesktopScreenshotFrame CaptureWindow(
+        string windowId);
+
+    Task<DesktopScreenshotFrame> CaptureStableWindowAsync(
+        string windowId,
+        int maximumWaitMs = 5000,
+        CancellationToken cancellationToken = default);
+
     DesktopScreenshotFrame CaptureRegion(
         int left,
         int top,
@@ -20,7 +28,8 @@ public interface IDesktopScreenshotService
 }
 
 public sealed class WindowsDesktopScreenshotService(
-    WindowsAiOperatorConsoleService operatorConsole)
+    WindowsAiOperatorConsoleService operatorConsole,
+    IComputerUseService computer)
     : IDesktopScreenshotService
 {
     public DesktopScreenshotFrame CaptureVirtualScreen()
@@ -80,6 +89,201 @@ public sealed class WindowsDesktopScreenshotService(
             previous?.Frame.Clear();
             throw;
         }
+    }
+
+    public DesktopScreenshotFrame CaptureWindow(
+        string windowId)
+    {
+        EnsureAvailable();
+
+        var window = ResolveWindow(windowId);
+        var region = GetVisibleWindowRegion(window);
+
+        using var bitmap = CaptureBitmap(
+            region.Left,
+            region.Top,
+            region.Width,
+            region.Height);
+        MaskOperatorConsole(
+            bitmap,
+            region.Left,
+            region.Top);
+
+        var frame = EncodeFrame(
+            bitmap,
+            region.Left,
+            region.Top,
+            region.Width,
+            region.Height);
+
+        return frame with
+        {
+            CaptureScope = "window",
+            WindowId = window.WindowId,
+            WindowTitle = window.Title,
+            WindowWasForeground = window.IsForeground
+        };
+    }
+
+    public async Task<DesktopScreenshotFrame> CaptureStableWindowAsync(
+        string windowId,
+        int maximumWaitMs = 5000,
+        CancellationToken cancellationToken = default)
+    {
+        EnsureAvailable();
+
+        var timeout = Math.Clamp(
+            maximumWaitMs,
+            800,
+            10_000);
+        var started = Environment.TickCount64;
+        CaptureSample? previous = null;
+
+        try
+        {
+            while (Environment.TickCount64 - started < timeout)
+            {
+                cancellationToken.ThrowIfCancellationRequested();
+
+                var current = CaptureWindowSample(
+                    windowId);
+
+                if (previous is not null)
+                {
+                    var sameGeometry =
+                        previous.Frame.Left == current.Frame.Left &&
+                        previous.Frame.Top == current.Frame.Top &&
+                        previous.Frame.Width == current.Frame.Width &&
+                        previous.Frame.Height == current.Frame.Height;
+
+                    var difference = sameGeometry
+                        ? MeanSignatureDifference(
+                            previous.Signature,
+                            current.Signature)
+                        : double.MaxValue;
+
+                    if (difference <= 7.5)
+                    {
+                        previous.Frame.Clear();
+                        return current.Frame;
+                    }
+
+                    previous.Frame.Clear();
+                }
+
+                previous = current;
+                await Task.Delay(
+                    450,
+                    cancellationToken);
+            }
+
+            if (previous is not null)
+                return previous.Frame;
+
+            return CaptureWindow(windowId);
+        }
+        catch
+        {
+            previous?.Frame.Clear();
+            throw;
+        }
+    }
+
+    private CaptureSample CaptureWindowSample(
+        string windowId)
+    {
+        var window = ResolveWindow(windowId);
+        var region = GetVisibleWindowRegion(window);
+
+        using var bitmap = CaptureBitmap(
+            region.Left,
+            region.Top,
+            region.Width,
+            region.Height);
+        MaskOperatorConsole(
+            bitmap,
+            region.Left,
+            region.Top);
+
+        var signature = ComputeSignature(bitmap);
+        var frame = EncodeFrame(
+            bitmap,
+            region.Left,
+            region.Top,
+            region.Width,
+            region.Height) with
+        {
+            CaptureScope = "window",
+            WindowId = window.WindowId,
+            WindowTitle = window.Title,
+            WindowWasForeground = window.IsForeground
+        };
+
+        return new(
+            frame,
+            signature);
+    }
+
+    private ComputerWindowInfo ResolveWindow(
+        string windowId)
+    {
+        var id = (windowId ?? string.Empty).Trim();
+        if (id.Length == 0)
+            throw new ToolExecutionInputException(
+                "Thiếu windowId cho ảnh chụp cửa sổ.");
+
+        return computer.GetWindows(50).Windows
+            .FirstOrDefault(window =>
+                window.WindowId.Equals(
+                    id,
+                    StringComparison.OrdinalIgnoreCase))
+            ?? throw new ToolExecutionInputException(
+                "Cửa sổ cần chụp không còn tồn tại hoặc không còn hiển thị.");
+    }
+
+    private (int Left, int Top, int Width, int Height) GetVisibleWindowRegion(
+        ComputerWindowInfo window)
+    {
+        if (window.Width <= 0 ||
+            window.Height <= 0)
+            throw new ToolExecutionInputException(
+                "Cửa sổ cần chụp không có kích thước hợp lệ.");
+
+        var screen = computer.GetScreenInfo();
+        var virtualRight = checked(
+            screen.VirtualLeft + screen.VirtualWidth);
+        var virtualBottom = checked(
+            screen.VirtualTop + screen.VirtualHeight);
+        var windowRight = checked(
+            window.Left + window.Width);
+        var windowBottom = checked(
+            window.Top + window.Height);
+
+        var left = Math.Max(
+            screen.VirtualLeft,
+            window.Left);
+        var top = Math.Max(
+            screen.VirtualTop,
+            window.Top);
+        var right = Math.Min(
+            virtualRight,
+            windowRight);
+        var bottom = Math.Min(
+            virtualBottom,
+            windowBottom);
+
+        var width = right - left;
+        var height = bottom - top;
+
+        ValidateRegion(
+            width,
+            height);
+
+        return (
+            left,
+            top,
+            width,
+            height);
     }
 
     private CaptureSample CaptureVirtualSample()

@@ -18,6 +18,7 @@ public static class ComputerUseEndpoints
         services.AddHostedService<WindowsStopHotkeyService>();
         services.AddSingleton<IComputerUseService, WindowsComputerUseService>();
         services.AddSingleton<IComputerDisplayTopologyService, WindowsComputerDisplayTopologyService>();
+        services.AddSingleton<IComputerDpiCalibrationService, ComputerDpiCalibrationService>();
         services.AddSingleton<IComputerCoordinateTransformService, ComputerCoordinateTransformService>();
         services.AddSingleton<IComputerSafeTargetingService, ComputerSafeTargetingService>();
         services.AddSingleton<IComputerOperatorAcceptanceService, ComputerOperatorAcceptanceService>();
@@ -84,6 +85,17 @@ public static class ComputerUseEndpoints
         app.MapGet("/api/computer/displays", (
             IComputerDisplayTopologyService displays) =>
             Results.Ok(displays.GetTopology()));
+
+        app.MapGet("/api/computer/dpi-calibration", (
+            HttpContext context,
+            IComputerDpiCalibrationService calibration) =>
+        {
+            if (!IsLocalRequest(context))
+                return Results.StatusCode(StatusCodes.Status403Forbidden);
+
+            return Results.Ok(
+                calibration.GetStatus());
+        });
 
         app.MapGet("/api/computer/operator-console/status", (
             HttpContext context,

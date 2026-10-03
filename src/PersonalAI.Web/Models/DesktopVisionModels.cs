@@ -50,6 +50,12 @@ public sealed record DesktopOperatorDecision(
     string Key,
     IReadOnlyList<string> Keys,
     string Url,
+    string TargetLabel,
+    int ImageX,
+    int ImageY,
+    int EndImageX,
+    int EndImageY,
+    int ScrollDelta,
     string ExpectedEffect,
     double Confidence,
     string Reason);

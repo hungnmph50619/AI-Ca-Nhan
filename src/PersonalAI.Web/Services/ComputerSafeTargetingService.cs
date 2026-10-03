@@ -21,19 +21,14 @@ public sealed class ComputerSafeTargetingService(
             ? ComputerCoordinateSpaces.ImagePixel
             : decision.CoordinateSpace.Trim().ToLowerInvariant();
 
-        var hasBox = HasValidBox(decision, space);
+        var hasBox = HasValidBox(
+            decision,
+            frame,
+            space);
 
         if (!hasBox)
-        {
-            var fallback = coordinates.ToDesktopPoint(
-                BuildPointRequest(decision, useEnd: false),
-                frame);
-
-            return new(
-                fallback,
-                false,
-                "AI không trả vùng mục tiêu hợp lệ; dùng điểm fallback đã kiểm tra.");
-        }
+            throw new ToolExecutionInputException(
+                "Hành động click cần bounding box hợp lệ; hệ thống từ chối click theo một điểm đơn lẻ.");
 
         var safeRequest = BuildSafeCenterRequest(
             decision,
@@ -51,6 +46,7 @@ public sealed class ComputerSafeTargetingService(
 
     private static bool HasValidBox(
         DesktopOperatorDecision decision,
+        DesktopScreenshotFrame frame,
         string space)
     {
         if (space == ComputerCoordinateSpaces.ImagePixel)
@@ -58,7 +54,9 @@ public sealed class ComputerSafeTargetingService(
             return decision.BoxLeft >= 0 &&
                    decision.BoxTop >= 0 &&
                    decision.BoxWidth > 1 &&
-                   decision.BoxHeight > 1;
+                   decision.BoxHeight > 1 &&
+                   decision.BoxLeft + decision.BoxWidth <= frame.Width &&
+                   decision.BoxTop + decision.BoxHeight <= frame.Height;
         }
 
         return double.IsFinite(decision.BoxNormalizedLeft) &&
@@ -79,16 +77,20 @@ public sealed class ComputerSafeTargetingService(
     {
         if (space == ComputerCoordinateSpaces.ImagePixel)
         {
-            var safeInsetX = Math.Max(
-                1,
-                (int)Math.Round(
-                    decision.BoxWidth * 0.18,
-                    MidpointRounding.AwayFromZero));
-            var safeInsetY = Math.Max(
-                1,
-                (int)Math.Round(
-                    decision.BoxHeight * 0.18,
-                    MidpointRounding.AwayFromZero));
+            var safeInsetX = Math.Min(
+                14,
+                Math.Max(
+                    1,
+                    (int)Math.Round(
+                        decision.BoxWidth * 0.18,
+                        MidpointRounding.AwayFromZero)));
+            var safeInsetY = Math.Min(
+                14,
+                Math.Max(
+                    1,
+                    (int)Math.Round(
+                        decision.BoxHeight * 0.18,
+                        MidpointRounding.AwayFromZero)));
 
             var safeLeft = checked(decision.BoxLeft + safeInsetX);
             var safeTop = checked(decision.BoxTop + safeInsetY);
@@ -138,23 +140,6 @@ public sealed class ComputerSafeTargetingService(
             0,
             normalizedX,
             normalizedY,
-            decision.CoordinateWindowId);
-    }
-
-    private static ComputerCoordinateRequest BuildPointRequest(
-        DesktopOperatorDecision decision,
-        bool useEnd)
-    {
-        var space = string.IsNullOrWhiteSpace(decision.CoordinateSpace)
-            ? ComputerCoordinateSpaces.ImagePixel
-            : decision.CoordinateSpace.Trim().ToLowerInvariant();
-
-        return new(
-            space,
-            useEnd ? decision.EndImageX : decision.ImageX,
-            useEnd ? decision.EndImageY : decision.ImageY,
-            useEnd ? decision.EndNormalizedX : decision.NormalizedX,
-            useEnd ? decision.EndNormalizedY : decision.NormalizedY,
             decision.CoordinateWindowId);
     }
 

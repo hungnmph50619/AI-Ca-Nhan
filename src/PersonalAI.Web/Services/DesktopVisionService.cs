@@ -513,8 +513,13 @@ Quy tắc an toàn:
 - Không shell, không xóa dữ liệu, không connector.
 - Không nhập mật khẩu, OTP, API key, token, private key hoặc bí mật.
 - Với hành động chuột, chỉ chọn phần tử đang nhìn thấy rõ trên ảnh hiện tại.
-- x,y là tọa độ pixel tương đối so với góc trên-trái của ảnh desktop hiện tại.
-- drag-left dùng x,y làm điểm bắt đầu và endX,endY làm điểm kết thúc.
+- Với hành động chuột, chọn một hệ tọa độ phù hợp:
+  * image-pixel: dùng x,y theo pixel trong ảnh.
+  * image-normalized: dùng normalizedX,normalizedY trong khoảng 0..1.
+  * window-normalized: dùng normalizedX,normalizedY trong cửa sổ cụ thể và phải trả coordinateWindowId đúng theo metadata.
+  * virtual-desktop-normalized: dùng normalizedX,normalizedY trên toàn desktop ảo.
+- Ưu tiên tọa độ chuẩn hóa khi phần tử nằm trong một vùng/cửa sổ ổn định; dùng pixel ảnh khi cần bám chính xác vào phần tử đang nhìn thấy.
+- drag-left dùng cùng hệ tọa độ cho điểm đầu và điểm cuối; điểm cuối dùng endX,endY hoặc endNormalizedX,endNormalizedY tương ứng.
 - scroll dùng x,y là vị trí cuộn và scrollDelta là lượng cuộn; âm là cuộn xuống, dương là cuộn lên.
 - Với action không dùng chuột, x=y=endX=endY=scrollDelta=0.
 - focus-window dùng query là cửa sổ/process cần chuyển tới.
@@ -537,10 +542,16 @@ Trả đúng một JSON object, không markdown:
   "keys":[],
   "url":"",
   "targetLabel":"",
+  "coordinateSpace":"image-pixel",
+  "coordinateWindowId":"",
   "x":0,
   "y":0,
   "endX":0,
   "endY":0,
+  "normalizedX":0.0,
+  "normalizedY":0.0,
+  "endNormalizedX":0.0,
+  "endNormalizedY":0.0,
   "scrollDelta":0,
   "expectedEffect":"...",
   "confidence":0.95,
@@ -652,6 +663,8 @@ Các field không dùng để chuỗi rỗng hoặc [].
             decision.Key.Length > 20 ||
             decision.Url.Length > 2048 ||
             decision.TargetLabel.Length > 160 ||
+            decision.CoordinateSpace.Length > 40 ||
+            decision.CoordinateWindowId.Length > 40 ||
             decision.ExpectedEffect.Length > 500 ||
             decision.Reason.Length > 600 ||
             decision.Keys.Count > 4)
@@ -671,20 +684,53 @@ Các field không dùng để chuỗi rỗng hoặc [].
 
         if (pointerActions.Contains(decision.Action))
         {
-            if (decision.ImageX < 0 ||
-                decision.ImageX >= frame.Width ||
-                decision.ImageY < 0 ||
-                decision.ImageY >= frame.Height)
-                throw new InvalidOperationException(
-                    "Desktop Vision trả tọa độ chuột ngoài ảnh.");
+            var space = string.IsNullOrWhiteSpace(decision.CoordinateSpace)
+                ? ComputerCoordinateSpaces.ImagePixel
+                : decision.CoordinateSpace.Trim().ToLowerInvariant();
 
-            if (decision.Action.Equals("drag-left", StringComparison.OrdinalIgnoreCase) &&
-                (decision.EndImageX < 0 ||
-                 decision.EndImageX >= frame.Width ||
-                 decision.EndImageY < 0 ||
-                 decision.EndImageY >= frame.Height))
+            if (!ComputerCoordinateSpaces.All.Contains(space))
                 throw new InvalidOperationException(
-                    "Desktop Vision trả tọa độ kéo thả ngoài ảnh.");
+                    "Desktop Vision trả hệ tọa độ không hợp lệ.");
+
+            if (space == ComputerCoordinateSpaces.ImagePixel &&
+                (decision.ImageX < 0 ||
+                 decision.ImageX >= frame.Width ||
+                 decision.ImageY < 0 ||
+                 decision.ImageY >= frame.Height))
+                throw new InvalidOperationException(
+                    "Desktop Vision trả tọa độ pixel ngoài ảnh.");
+
+            if (space != ComputerCoordinateSpaces.ImagePixel &&
+                (!double.IsFinite(decision.NormalizedX) ||
+                 !double.IsFinite(decision.NormalizedY) ||
+                 decision.NormalizedX is < 0 or > 1 ||
+                 decision.NormalizedY is < 0 or > 1))
+                throw new InvalidOperationException(
+                    "Desktop Vision trả tọa độ chuẩn hóa không hợp lệ.");
+
+            if (space == ComputerCoordinateSpaces.WindowNormalized &&
+                string.IsNullOrWhiteSpace(decision.CoordinateWindowId))
+                throw new InvalidOperationException(
+                    "Desktop Vision thiếu windowId cho hệ tọa độ cửa sổ.");
+
+            if (decision.Action.Equals("drag-left", StringComparison.OrdinalIgnoreCase))
+            {
+                if (space == ComputerCoordinateSpaces.ImagePixel &&
+                    (decision.EndImageX < 0 ||
+                     decision.EndImageX >= frame.Width ||
+                     decision.EndImageY < 0 ||
+                     decision.EndImageY >= frame.Height))
+                    throw new InvalidOperationException(
+                        "Desktop Vision trả tọa độ kết thúc kéo thả ngoài ảnh.");
+
+                if (space != ComputerCoordinateSpaces.ImagePixel &&
+                    (!double.IsFinite(decision.EndNormalizedX) ||
+                     !double.IsFinite(decision.EndNormalizedY) ||
+                     decision.EndNormalizedX is < 0 or > 1 ||
+                     decision.EndNormalizedY is < 0 or > 1))
+                    throw new InvalidOperationException(
+                        "Desktop Vision trả tọa độ kết thúc chuẩn hóa không hợp lệ.");
+            }
 
             if (decision.Action.Equals("scroll", StringComparison.OrdinalIgnoreCase) &&
                 (decision.ScrollDelta == 0 ||
@@ -948,10 +994,16 @@ Các field không dùng để chuỗi rỗng hoặc [].
             keys,
             ReadString(root, "url"),
             ReadString(root, "targetLabel"),
+            ReadString(root, "coordinateSpace"),
+            ReadString(root, "coordinateWindowId"),
             ReadInt(root, "x", "imageX"),
             ReadInt(root, "y", "imageY"),
             ReadInt(root, "endX", "endImageX"),
             ReadInt(root, "endY", "endImageY"),
+            ReadDouble(root, "normalizedX"),
+            ReadDouble(root, "normalizedY"),
+            ReadDouble(root, "endNormalizedX"),
+            ReadDouble(root, "endNormalizedY"),
             ReadInt(root, "scrollDelta", "delta"),
             ReadString(root, "expectedEffect"),
             ReadDouble(root, "confidence"),

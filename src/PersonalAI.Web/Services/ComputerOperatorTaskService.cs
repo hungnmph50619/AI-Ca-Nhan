@@ -79,6 +79,7 @@ public sealed class ComputerOperatorTaskService(
         var steps = new List<ComputerOperatorTaskStep>();
         var taskHistory = new List<string>();
         var recovery = new ComputerOperatorRecoverySession();
+        var loopGuard = new ComputerOperatorLoopGuardSession();
         var lowConfidenceCount = 0;
 
         try
@@ -149,11 +150,47 @@ public sealed class ComputerOperatorTaskService(
                     frame.Clear();
                 }
 
+                var loopStrategy =
+                    decision.Action is "complete" or "blocked" or "wait"
+                        ? string.Empty
+                        : BuildActionSignature(decision);
+
+                var loopAssessment = loopGuard.Observe(
+                    decision.State,
+                    loopStrategy);
+
                 progress.Add(
                     "state",
                     string.IsNullOrWhiteSpace(decision.State)
                         ? "AI đã cập nhật trạng thái desktop."
                         : $"STATE: {decision.State}");
+
+                if (loopAssessment.Detected)
+                {
+                    taskHistory.Add(
+                        $"LOOP-WARNING {loopAssessment.Kind}: {loopAssessment.Detail}");
+
+                    progress.Add(
+                        "loop-detected",
+                        $"Phát hiện nguy cơ vòng lặp: {loopAssessment.Detail} Cảnh báo tích lũy: {loopAssessment.Occurrences}.",
+                        "replan",
+                        decision.Confidence);
+
+                    if (loopAssessment.RequiresStrategyChange)
+                    {
+                        taskHistory.Add(
+                            "LOOP-DIRECTIVE: BẮT BUỘC đổi chiến lược. Không lặp lại cùng action/target. Nếu không còn phương án an toàn hợp lý, trả blocked và giải thích.");
+
+                        progress.Add(
+                            "replan",
+                            "Chiến lược hiện tại đã nằm trong vòng lặp; không thực hiện lại. AI phải quan sát trạng thái hiện tại và chọn chiến lược khác.",
+                            "replan",
+                            decision.Confidence);
+
+                        await Task.Delay(250, linked.Token);
+                        continue;
+                    }
+                }
 
                 progress.Add(
                     "plan",
@@ -326,11 +363,13 @@ public sealed class ComputerOperatorTaskService(
 
                     if (failures >= 3)
                     {
-                        progress.Block(
-                            $"Cùng một chiến lược đã bị từ chối {failures} lần; dừng để tránh lặp vô hạn.");
-                        return Finish(
-                            false,
-                            $"Dừng sau {failures} lần cùng một chiến lược bị từ chối.");
+                        taskHistory.Add(
+                            "REPLAN-DIRECTIVE: chiến lược này đã bị loại bỏ. Phải chọn chiến lược khác; chỉ trả blocked nếu không còn lựa chọn an toàn hợp lý.");
+                        progress.Add(
+                            "replan",
+                            "Chiến lược bị từ chối nhiều lần và đã được đánh dấu không dùng lại. AI phải đổi cách tiếp cận.",
+                            "replan",
+                            decision.Confidence);
                     }
 
                     await Task.Delay(500, linked.Token);
@@ -364,11 +403,13 @@ public sealed class ComputerOperatorTaskService(
 
                     if (failures >= 3)
                     {
-                        progress.Block(
-                            $"Cùng một chiến lược không hiệu lực {failures} lần; dừng để tránh lặp vô hạn.");
-                        return Finish(
-                            false,
-                            "Dừng để tránh vòng lặp hành động không hiệu lực.");
+                        taskHistory.Add(
+                            "REPLAN-DIRECTIVE: chiến lược không hiệu lực đã bị loại bỏ. Phải chọn chiến lược khác; chỉ trả blocked nếu không còn lựa chọn an toàn hợp lý.");
+                        progress.Add(
+                            "replan",
+                            "Chiến lược không tạo thay đổi nhiều lần và đã bị loại bỏ. AI phải đổi cách tiếp cận.",
+                            "replan",
+                            decision.Confidence);
                     }
 
                     await Task.Delay(500, linked.Token);
@@ -409,11 +450,13 @@ public sealed class ComputerOperatorTaskService(
 
                     if (failures >= 3)
                     {
-                        progress.Block(
-                            $"Cùng một chiến lược không đạt kết quả mong đợi {failures} lần; dừng để tránh lặp vô hạn.");
-                        return Finish(
-                            false,
-                            "Dừng sau nhiều lần cùng một chiến lược không đạt kết quả mong đợi.");
+                        taskHistory.Add(
+                            "REPLAN-DIRECTIVE: chiến lược không đạt expected effect đã bị loại bỏ. Phải chọn chiến lược khác; chỉ trả blocked nếu không còn lựa chọn an toàn hợp lý.");
+                        progress.Add(
+                            "replan",
+                            "Chiến lược không đạt kết quả mong đợi nhiều lần và đã bị loại bỏ. AI phải đổi cách tiếp cận.",
+                            "replan",
+                            verification.Confidence);
                     }
 
                     await Task.Delay(350, linked.Token);
@@ -422,6 +465,8 @@ public sealed class ComputerOperatorTaskService(
 
                 taskHistory.Add(
                     $"STEP {index}: VERIFIED {actionSignature} — {verification.Detail}; EXPECTED: {decision.ExpectedEffect}");
+
+                loopGuard.MarkProgress();
 
                 progress.Add(
                     "verify-result",

@@ -3042,6 +3042,8 @@ jobs:
           grep -Fq 'v110.css' src/PersonalAI.Web/wwwroot/index.html
           grep -Fq 'v110.js' src/PersonalAI.Web/wwwroot/index.html
           grep -Fq 'computerUseDialog' src/PersonalAI.Web/wwwroot/v110.js
+          grep -Fq 'loopGuard.MarkProgress()' src/PersonalAI.Web/Services/ComputerOperatorTaskService.cs
+          ! grep -Eiq 'notepad|calculator|paint|explorer' src/PersonalAI.Web/Services/ComputerOperatorLoopGuardSession.cs src/PersonalAI.Web/Services/ComputerOperatorRecoverySession.cs src/PersonalAI.Web/Services/ComputerOperatorTaskService.cs
           grep -Fq 'VerifyAppliedActionAsync' src/PersonalAI.Web/Services/ComputerOperatorTaskService.cs
           grep -Fq 'CaptureStableVirtualScreenAsync' src/PersonalAI.Web/Services/ComputerOperatorTaskService.cs
           grep -Fq 'vision.VerifyAsync' src/PersonalAI.Web/Services/ComputerOperatorTaskService.cs

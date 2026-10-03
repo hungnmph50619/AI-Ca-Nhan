@@ -75,3 +75,21 @@ public sealed record ComputerSafeTargetPoint(
     ComputerCoordinatePoint Point,
     bool UsedBoundingBox,
     string Detail);
+
+
+public sealed record ComputerDpiAwarenessStatus(
+    bool Windows,
+    bool InitializationAttempted,
+    bool SetContextSucceeded,
+    int SetContextWin32Error,
+    string Awareness,
+    bool PerMonitorAware,
+    bool PerMonitorAwareV2,
+    bool PhysicalPixelCoordinatesExpected,
+    string Detail);
+
+public sealed record ComputerDpiCalibrationResponse(
+    ComputerDpiAwarenessStatus Awareness,
+    int MonitorCount,
+    bool TopologyValid,
+    IReadOnlyList<string> Warnings);

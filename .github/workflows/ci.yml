@@ -1586,7 +1586,7 @@ jobs:
 
           tools=$(curl -fsS http://127.0.0.1:5077/api/tools)
           echo "$tools" | jq -e '(.frameworkVersion | test("^[0-9]+\\.[0-9]+\\.[0-9]+$")) and (.permissionTypes | sort) == (["BROWSER","COMPUTER","CONNECTOR","DELETE","DEVELOPMENT","EXTERNAL","READ","SENSITIVE","WRITE"] | sort)' >/dev/null
-          echo "$tools" | jq -e '(.tools | length) == 49
+          echo "$tools" | jq -e '(.tools | length) == 50
             and any(.tools[]; .name == "local.clock" and .localOnly == true and .requiredPermissions == ["READ"])
             and any(.tools[]; .name == "local.text_stats" and .timeoutMs == 2000)
             and any(.tools[]; .name == "memory.search")
@@ -1618,6 +1618,7 @@ jobs:
           and any(.tools[]; .name == "computer.window.restore" and .requiresConfirmation == true)
           and any(.tools[]; .name == "computer.window.focus-by-query" and .requiresConfirmation == true)
           and any(.tools[]; .name == "computer.operator.run-task" and .requiresConfirmation == true and .timeoutMs == 100000)
+          and any(.tools[]; .name == "computer.app.launch" and .requiredPermissions == ["WRITE","EXTERNAL","COMPUTER","SENSITIVE"] and .requiresConfirmation == true and .timeoutMs == 100000)
           and any(.tools[]; .name == "computer.vision.locate" and .requiresConfirmation == true and .timeoutMs == 30000)
           and any(.tools[]; .name == "computer.vision.click-target" and .requiresConfirmation == true and .timeoutMs == 45000)
           and any(.tools[]; .name == "computer.keyboard.type-text" and .requiresConfirmation == true)
@@ -3042,8 +3043,10 @@ jobs:
           grep -Fq 'v110.css' src/PersonalAI.Web/wwwroot/index.html
           grep -Fq 'v110.js' src/PersonalAI.Web/wwwroot/index.html
           grep -Fq 'computerUseDialog' src/PersonalAI.Web/wwwroot/v110.js
-          grep -Fq 'loopGuard.MarkProgress()' src/PersonalAI.Web/Services/ComputerOperatorTaskService.cs
-          ! grep -Eiq 'notepad|calculator|paint|explorer' src/PersonalAI.Web/Services/ComputerOperatorLoopGuardSession.cs src/PersonalAI.Web/Services/ComputerOperatorRecoverySession.cs src/PersonalAI.Web/Services/ComputerOperatorTaskService.cs
+          grep -Fq 'Bạn KHÔNG chạy kịch bản cố định theo tên ứng dụng.' src/PersonalAI.Web/Services/DesktopVisionService.cs
+          grep -Fq 'computer.app.launch' src/PersonalAI.Web/Services/ComputerGenericAppLaunchTool.cs
+          grep -Fq 'tự quan sát' src/PersonalAI.Web/Services/ComputerGenericAppLaunchTool.cs
+          ! grep -Eiq 'notepad\.exe|calc\.exe|mspaint|explorer\.exe' src/PersonalAI.Web/Services/ComputerGenericAppLaunchTool.cs src/PersonalAI.Web/Services/ComputerOperatorTaskService.cs src/PersonalAI.Web/Services/DesktopVisionService.cs
           grep -Fq 'VerifyAppliedActionAsync' src/PersonalAI.Web/Services/ComputerOperatorTaskService.cs
           grep -Fq 'CaptureStableVirtualScreenAsync' src/PersonalAI.Web/Services/ComputerOperatorTaskService.cs
           grep -Fq 'vision.VerifyAsync' src/PersonalAI.Web/Services/ComputerOperatorTaskService.cs
@@ -3066,6 +3069,13 @@ jobs:
           grep -Fq 'LOOP-DIRECTIVE: BẮT BUỘC đổi chiến lược' src/PersonalAI.Web/Services/ComputerOperatorTaskService.cs
           ! grep -Fq 'loopAssessment.Occurrences >= 3' src/PersonalAI.Web/Services/ComputerOperatorTaskService.cs
           ! grep -Eiq 'notepad|calculator|mspaint|paint|explorer\.exe|notepad\.exe|calc\.exe' src/PersonalAI.Web/Services/ComputerOperatorLoopGuardSession.cs
+          grep -Fq 'ComputerGenericAppLaunchTool' src/PersonalAI.Web/Services/ComputerGenericAppLaunchTool.cs
+          grep -Fq '"computer.app.launch"' src/PersonalAI.Web/Services/ComputerGenericAppLaunchTool.cs
+          grep -Fq 'taskService.RunAsync' src/PersonalAI.Web/Services/ComputerGenericAppLaunchTool.cs
+          grep -Fq 'ComputerGenericAppLaunchTool' src/PersonalAI.Web/Services/ComputerUseEndpoints.cs
+          ! grep -Fq 'Process.Start' src/PersonalAI.Web/Services/ComputerGenericAppLaunchTool.cs
+          ! grep -Fq 'UseShellExecute' src/PersonalAI.Web/Services/ComputerGenericAppLaunchTool.cs
+          ! grep -Eiq 'notepad|calculator|mspaint|paint|explorer\.exe|notepad\.exe|calc\.exe' src/PersonalAI.Web/Services/ComputerGenericAppLaunchTool.cs
           ! grep -Fq '"computer.mouse.click"' src/PersonalAI.Web/Services/ComputerUseTools.cs
           ! grep -Fq '"computer.keyboard' src/PersonalAI.Web/Services/ComputerUseTools.cs
           grep -Fq 'control.RunAllowed(() => ClickLeftCore' src/PersonalAI.Web/Services/ComputerUseService.cs

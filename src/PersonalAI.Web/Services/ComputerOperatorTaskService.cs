@@ -33,6 +33,7 @@ public sealed class ComputerOperatorTaskService(
     IComputerDisplayTopologyService displays,
     IComputerSafeTargetingService targeting,
     IDesktopFrameDifferenceService frameDifferences,
+    IDesktopTemporalSceneService temporalScenes,
     ILogger<ComputerOperatorTaskService> logger)
     : IComputerOperatorTaskService
 {
@@ -87,6 +88,8 @@ public sealed class ComputerOperatorTaskService(
         var currentSubgoal = string.Empty;
         var latestGoalProgress = 0.0;
         var lowConfidenceCount = 0;
+        IReadOnlyList<DesktopSceneElement> previousScene = Array.Empty<DesktopSceneElement>();
+        var temporalSceneContext = string.Empty;
 
         try
         {
@@ -152,12 +155,39 @@ public sealed class ComputerOperatorTaskService(
                             verifiedMilestones,
                             currentSubgoal,
                             latestGoalProgress),
+                        temporalSceneContext,
                         linked.Token);
                 }
                 finally
                 {
                     frame.Clear();
                 }
+
+                var currentScene =
+                    decision.SceneElements ?? Array.Empty<DesktopSceneElement>();
+
+                if (previousScene.Count > 0 || currentScene.Count > 0)
+                {
+                    var temporalAnalysis = temporalScenes.Analyze(
+                        previousScene,
+                        currentScene);
+                    temporalSceneContext = temporalAnalysis.ToPromptSummary();
+
+                    progress.Add(
+                        "temporal-scene",
+                        $"Scene theo thời gian: stable={temporalAnalysis.StableCount}; moved={temporalAnalysis.MovedCount}; appeared={temporalAnalysis.AppearedIds.Count}; disappeared={temporalAnalysis.DisappearedIds.Count}.",
+                        observation: true);
+
+                    taskHistory.Add(
+                        $"TEMPORAL-SCENE: {temporalSceneContext}");
+                }
+
+                previousScene = currentScene
+                    .Select(item => item with
+                    {
+                        Relations = item.Relations.ToArray()
+                    })
+                    .ToArray();
 
                 if (!string.IsNullOrWhiteSpace(decision.CurrentSubgoal) &&
                     !decision.CurrentSubgoal.Equals(

@@ -478,10 +478,11 @@ Bạn KHÔNG chạy kịch bản cố định theo tên ứng dụng.
 Mỗi lượt phải:
 1. Mô tả STATE hiện tại từ ảnh + metadata.
 2. Xem HISTORY để biết những gì đã thử, thành công hay thất bại.
-3. Lập PLAN ngắn cho bước tiếp theo dựa trên affordance hiện có.
-4. Chọn đúng MỘT ACTION.
-5. Nêu EXPECTED EFFECT cụ thể, quan sát được và có thể kiểm tra ngay sau hành động.
-Nếu cách trước thất bại, hãy đổi chiến lược thay vì lặp lại vô hạn.
+3. Đọc BỘ NHỚ PHỤC HỒI để biết chiến lược nào đã thất bại, loại lỗi và kết quả mong đợi chưa đạt.
+4. Lập PLAN ngắn cho bước tiếp theo dựa trên affordance hiện có.
+5. Chọn đúng MỘT ACTION.
+6. Nêu EXPECTED EFFECT cụ thể, quan sát được và có thể kiểm tra ngay sau hành động.
+Nếu cách trước thất bại và trạng thái hiện tại chưa thay đổi đáng kể, PHẢI chọn một chiến lược khác có ý nghĩa: đổi action, đổi target, đổi affordance hoặc đổi đường đi tới mục tiêu. Không được chỉ diễn đạt lại cùng một hành động.
 Không chọn một hành động làm thay đổi giao diện nếu bạn không thể mô tả rõ trạng thái mong đợi sau hành động đó.
 
 Ví dụ tư duy tổng quát:
@@ -535,7 +536,8 @@ Quy tắc an toàn:
 - open-browser chỉ cho HTTP/HTTPS hoặc để trống.
 - Với mọi hành động ngoài move-pointer/wait/complete/blocked, expectedEffect phải mô tả một trạng thái giao diện quan sát được để hệ thống chụp ảnh và xác minh ngay sau hành động.
 - complete chỉ khi ảnh hiện tại chứng minh mục tiêu đã đạt.
-- blocked chỉ khi không còn bước an toàn/hợp lý để tiếp tục, không dùng blocked chỉ vì cách trước thất bại.
+- blocked chỉ khi không còn bước an toàn/hợp lý để tiếp tục, gặp ranh giới quyền/an toàn, hoặc các phương án thay thế hợp lý đã cạn. Không dùng blocked chỉ vì một cách vừa thất bại.
+- Nếu BỘ NHỚ PHỤC HỒI cho thấy một chiến lược đã thất bại trong trạng thái tương đương, không chọn lại đúng chiến lược đó trừ khi ảnh hiện tại có bằng chứng rõ rằng trạng thái đã thay đổi khiến việc thử lại hợp lý.
 - confidence từ 0 đến 1.
 
 Trả đúng một JSON object, không markdown:
@@ -594,8 +596,8 @@ Các field không dùng để chuỗi rỗng hoặc [].
                                 $"goal: {goal}\n" +
                                 $"Ảnh desktop: {frame.Width}x{frame.Height}\n" +
                                 $"Metadata cửa sổ:\n{windowsContext}\n" +
-                                $"Task history:\n{(string.IsNullOrWhiteSpace(taskHistory) ? "(chưa có hành động trước đó)" : taskHistory)}\n" +
-                                "Hãy quan sát trạng thái hiện tại, tự lập kế hoạch bước tiếp theo và tránh lặp lại cách đã thất bại."
+                                $"Lịch sử task + bộ nhớ phục hồi:\n{(string.IsNullOrWhiteSpace(taskHistory) ? "(chưa có hành động trước đó)" : taskHistory)}\n" +
+                                "Hãy quan sát trạng thái hiện tại, tự suy luận phương án tiếp theo và chủ động đổi chiến lược nếu cách trước không hiệu quả."
                         },
                         new
                         {

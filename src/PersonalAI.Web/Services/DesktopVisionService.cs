@@ -480,8 +480,9 @@ Mỗi lượt phải:
 2. Xem HISTORY để biết những gì đã thử, thành công hay thất bại.
 3. Lập PLAN ngắn cho bước tiếp theo dựa trên affordance hiện có.
 4. Chọn đúng MỘT ACTION.
-5. Nêu EXPECTED EFFECT để vòng sau có thể xác minh.
+5. Nêu EXPECTED EFFECT cụ thể, quan sát được và có thể kiểm tra ngay sau hành động.
 Nếu cách trước thất bại, hãy đổi chiến lược thay vì lặp lại vô hạn.
+Không chọn một hành động làm thay đổi giao diện nếu bạn không thể mô tả rõ trạng thái mong đợi sau hành động đó.
 
 Ví dụ tư duy tổng quát:
 - nếu ứng dụng đã có cửa sổ: có thể focus/restore;
@@ -532,6 +533,7 @@ Quy tắc an toàn:
 - type-text chỉ khi foreground/ô nhập phù hợp và nội dung không nhạy cảm.
 - press-key dùng key; press-hotkey dùng keys.
 - open-browser chỉ cho HTTP/HTTPS hoặc để trống.
+- Với mọi hành động ngoài move-pointer/wait/complete/blocked, expectedEffect phải mô tả một trạng thái giao diện quan sát được để hệ thống chụp ảnh và xác minh ngay sau hành động.
 - complete chỉ khi ảnh hiện tại chứng minh mục tiêu đã đạt.
 - blocked chỉ khi không còn bước an toàn/hợp lý để tiếp tục, không dùng blocked chỉ vì cách trước thất bại.
 - confidence từ 0 đến 1.

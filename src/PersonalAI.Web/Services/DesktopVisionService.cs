@@ -191,8 +191,13 @@ confidence từ 0 đến 1.
                         new
                         {
                             text =
-                                $"Hãy xác minh trạng thái này trên ảnh desktop hiện tại: {expectedState}. " +
-                                $"Ảnh có kích thước {frame.Width}x{frame.Height}."
+                                $"Hãy xác minh trạng thái này trên ảnh hiện tại: {expectedState}. " +
+                                $"Ảnh có kích thước {frame.Width}x{frame.Height}. " +
+                                $"Phạm vi chụp: {frame.CaptureScope}. " +
+                                (frame.CaptureScope == "window"
+                                    ? $"Cửa sổ: id={frame.WindowId ?? "?"}; title={frame.WindowTitle ?? "?"}; foreground={frame.WindowWasForeground}. "
+                                    : string.Empty) +
+                                "Chỉ dùng bằng chứng thật sự nhìn thấy trong phạm vi ảnh này."
                         },
                         new
                         {

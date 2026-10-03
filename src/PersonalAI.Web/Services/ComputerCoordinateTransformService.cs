@@ -10,7 +10,8 @@ public interface IComputerCoordinateTransformService
 }
 
 public sealed class ComputerCoordinateTransformService(
-    IComputerUseService computer) : IComputerCoordinateTransformService
+    IComputerUseService computer,
+    IComputerDisplayTopologyService displays) : IComputerCoordinateTransformService
 {
     public ComputerCoordinatePoint ToDesktopPoint(
         ComputerCoordinateRequest request,
@@ -43,7 +44,20 @@ public sealed class ComputerCoordinateTransformService(
 
         ValidateDesktopBounds(point.DesktopX, point.DesktopY, screen);
 
-        return point;
+        var monitor = displays.GetMonitorAtPoint(
+            point.DesktopX,
+            point.DesktopY);
+
+        return monitor is null
+            ? point
+            : point with
+            {
+                MonitorDevice = monitor.DeviceName,
+                DpiX = monitor.DpiX,
+                DpiY = monitor.DpiY,
+                ScaleX = monitor.ScaleX,
+                ScaleY = monitor.ScaleY
+            };
     }
 
     private static ComputerCoordinatePoint FromImagePixel(

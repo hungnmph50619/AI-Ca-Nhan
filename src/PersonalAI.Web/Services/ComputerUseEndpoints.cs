@@ -17,6 +17,8 @@ public static class ComputerUseEndpoints
             sp.GetRequiredService<WindowsAiOperatorConsoleService>());
         services.AddHostedService<WindowsStopHotkeyService>();
         services.AddSingleton<IComputerUseService, WindowsComputerUseService>();
+        services.AddSingleton<IComputerDisplayTopologyService, WindowsComputerDisplayTopologyService>();
+        services.AddSingleton<IComputerCoordinateTransformService, ComputerCoordinateTransformService>();
         services.AddSingleton<IComputerOperatorTaskService, ComputerOperatorTaskService>();
         services.AddSingleton<IDesktopScreenshotService, WindowsDesktopScreenshotService>();
         services.AddSingleton<ILeaguePracticeAutomationService, LeaguePracticeAutomationService>();
@@ -60,6 +62,10 @@ public static class ComputerUseEndpoints
         app.MapGet("/api/computer/operator-progress", (
             ComputerOperatorProgressStore progress) =>
             Results.Ok(progress.Get()));
+
+        app.MapGet("/api/computer/displays", (
+            IComputerDisplayTopologyService displays) =>
+            Results.Ok(displays.GetTopology()));
 
         app.MapGet("/api/computer/operator-console/status", (
             HttpContext context,

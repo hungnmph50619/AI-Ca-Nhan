@@ -29,6 +29,7 @@ public sealed class ComputerOperatorTaskService(
     DesktopVisionService vision,
     ComputerOperatorProgressStore progress,
     ComputerOperatorExecutionControl execution,
+    IComputerCoordinateTransformService coordinates,
     ILogger<ComputerOperatorTaskService> logger)
     : IComputerOperatorTaskService
 {
@@ -376,45 +377,54 @@ public sealed class ComputerOperatorTaskService(
         DesktopScreenshotFrame frame)
     {
         var active = computer.GetActiveWindow();
-        var desktopX = checked(frame.Left + decision.ImageX);
-        var desktopY = checked(frame.Top + decision.ImageY);
-        var endDesktopX = checked(frame.Left + decision.EndImageX);
-        var endDesktopY = checked(frame.Top + decision.EndImageY);
+
+        ComputerCoordinatePoint? point = null;
+        ComputerCoordinatePoint? endPoint = null;
+
+        if (IsPointerAction(decision.Action))
+        {
+            point = coordinates.ToDesktopPoint(
+                BuildCoordinateRequest(decision, useEnd: false),
+                frame);
+
+            if (decision.Action.Equals(
+                    "drag-left",
+                    StringComparison.OrdinalIgnoreCase))
+            {
+                endPoint = coordinates.ToDesktopPoint(
+                    BuildCoordinateRequest(decision, useEnd: true),
+                    frame);
+            }
+        }
 
         return decision.Action switch
         {
             "move-pointer" => computer.SmoothMoveCursor(
-                desktopX,
-                desktopY,
+                RequirePoint(point).DesktopX,
+                RequirePoint(point).DesktopY,
                 420),
             "click-left" => ExecutePointerClick(
                 decision,
-                desktopX,
-                desktopY,
+                RequirePoint(point),
                 static (computerUse, windowId, x, y) =>
                     computerUse.ClickLeft(windowId, x, y)),
             "double-click-left" => ExecutePointerClick(
                 decision,
-                desktopX,
-                desktopY,
+                RequirePoint(point),
                 static (computerUse, windowId, x, y) =>
                     computerUse.DoubleClickLeft(windowId, x, y)),
             "click-right" => ExecutePointerClick(
                 decision,
-                desktopX,
-                desktopY,
+                RequirePoint(point),
                 static (computerUse, windowId, x, y) =>
                     computerUse.ClickRight(windowId, x, y)),
             "scroll" => ExecutePointerScroll(
                 decision,
-                desktopX,
-                desktopY),
+                RequirePoint(point)),
             "drag-left" => ExecutePointerDrag(
                 decision,
-                desktopX,
-                desktopY,
-                endDesktopX,
-                endDesktopY),
+                RequirePoint(point),
+                RequirePoint(endPoint)),
             "focus-window" => computer.FocusWindowByQuery(
                 RequireValue(decision.Query, "query")),
             "minimize" => computer.MinimizeWindow(
@@ -446,10 +456,12 @@ public sealed class ComputerOperatorTaskService(
 
     private ComputerActionResponse ExecutePointerClick(
         DesktopOperatorDecision decision,
-        int desktopX,
-        int desktopY,
+        ComputerCoordinatePoint point,
         Func<IComputerUseService, string, int, int, ComputerActionResponse> click)
     {
+        var desktopX = point.DesktopX;
+        var desktopY = point.DesktopY;
+
         var targetWindow = computer.GetWindowAtPoint(
             desktopX,
             desktopY)
@@ -470,15 +482,17 @@ public sealed class ComputerOperatorTaskService(
         return result with
         {
             Detail =
-                $"{result.Detail} Target={DescribeTarget(decision)} tại ({desktopX}, {desktopY})."
+                $"{result.Detail} Target={DescribeTarget(decision)} tại ({desktopX}, {desktopY}); hệ={point.Space}; nguồn={point.SourceDescription}."
         };
     }
 
     private ComputerActionResponse ExecutePointerScroll(
         DesktopOperatorDecision decision,
-        int desktopX,
-        int desktopY)
+        ComputerCoordinatePoint point)
     {
+        var desktopX = point.DesktopX;
+        var desktopY = point.DesktopY;
+
         var targetWindow = computer.GetWindowAtPoint(
             desktopX,
             desktopY)
@@ -494,11 +508,14 @@ public sealed class ComputerOperatorTaskService(
 
     private ComputerActionResponse ExecutePointerDrag(
         DesktopOperatorDecision decision,
-        int startX,
-        int startY,
-        int endX,
-        int endY)
+        ComputerCoordinatePoint start,
+        ComputerCoordinatePoint end)
     {
+        var startX = start.DesktopX;
+        var startY = start.DesktopY;
+        var endX = end.DesktopX;
+        var endY = end.DesktopY;
+
         var targetWindow = computer.GetWindowAtPoint(
             startX,
             startY)
@@ -513,6 +530,38 @@ public sealed class ComputerOperatorTaskService(
             endY,
             650);
     }
+
+    private static bool IsPointerAction(
+        string action) =>
+        action is
+            "move-pointer" or
+            "click-left" or
+            "double-click-left" or
+            "click-right" or
+            "scroll" or
+            "drag-left";
+
+    private static ComputerCoordinateRequest BuildCoordinateRequest(
+        DesktopOperatorDecision decision,
+        bool useEnd)
+    {
+        var space = string.IsNullOrWhiteSpace(decision.CoordinateSpace)
+            ? ComputerCoordinateSpaces.ImagePixel
+            : decision.CoordinateSpace.Trim().ToLowerInvariant();
+
+        return new(
+            space,
+            useEnd ? decision.EndImageX : decision.ImageX,
+            useEnd ? decision.EndImageY : decision.ImageY,
+            useEnd ? decision.EndNormalizedX : decision.NormalizedX,
+            useEnd ? decision.EndNormalizedY : decision.NormalizedY,
+            decision.CoordinateWindowId);
+    }
+
+    private static ComputerCoordinatePoint RequirePoint(
+        ComputerCoordinatePoint? point) =>
+        point ?? throw new ToolExecutionInputException(
+            "Không có tọa độ đã chuyển đổi cho hành động chuột.");
 
     private static string DescribeTarget(
         DesktopOperatorDecision decision) =>
@@ -547,11 +596,11 @@ public sealed class ComputerOperatorTaskService(
             "click-left" or
             "double-click-left" or
             "click-right" =>
-                $"{decision.Action}:{decision.ImageX},{decision.ImageY}:{Clip(decision.TargetLabel, 80)}",
+                $"{decision.Action}:{CoordinateSignature(decision, false)}:{Clip(decision.TargetLabel, 80)}",
             "scroll" =>
-                $"scroll:{decision.ImageX},{decision.ImageY}:{decision.ScrollDelta}",
+                $"scroll:{CoordinateSignature(decision, false)}:{decision.ScrollDelta}",
             "drag-left" =>
-                $"drag-left:{decision.ImageX},{decision.ImageY}->{decision.EndImageX},{decision.EndImageY}",
+                $"drag-left:{CoordinateSignature(decision, false)}->{CoordinateSignature(decision, true)}",
             "focus-window" => $"focus-window:{Clip(decision.Query, 80)}",
             "type-text" => $"type-text:{Clip(decision.Text, 80)}",
             "press-key" => $"press-key:{Clip(decision.Key, 20)}",
@@ -559,6 +608,33 @@ public sealed class ComputerOperatorTaskService(
             "open-browser" => $"open-browser:{Clip(decision.Url, 120)}",
             _ => decision.Action
         };
+    }
+
+    private static string CoordinateSignature(
+        DesktopOperatorDecision decision,
+        bool useEnd)
+    {
+        var space = string.IsNullOrWhiteSpace(decision.CoordinateSpace)
+            ? ComputerCoordinateSpaces.ImagePixel
+            : decision.CoordinateSpace.Trim().ToLowerInvariant();
+
+        if (space == ComputerCoordinateSpaces.ImagePixel)
+        {
+            return useEnd
+                ? $"{space}:{decision.EndImageX},{decision.EndImageY}"
+                : $"{space}:{decision.ImageX},{decision.ImageY}";
+        }
+
+        var x = useEnd
+            ? decision.EndNormalizedX
+            : decision.NormalizedX;
+        var y = useEnd
+            ? decision.EndNormalizedY
+            : decision.NormalizedY;
+
+        return space == ComputerCoordinateSpaces.WindowNormalized
+            ? $"{space}:{decision.CoordinateWindowId}:{x:0.0000},{y:0.0000}"
+            : $"{space}:{x:0.0000},{y:0.0000}";
     }
 
     private static int IncrementFailure(

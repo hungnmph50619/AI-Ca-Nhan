@@ -3043,10 +3043,9 @@ jobs:
           grep -Fq 'v110.css' src/PersonalAI.Web/wwwroot/index.html
           grep -Fq 'v110.js' src/PersonalAI.Web/wwwroot/index.html
           grep -Fq 'computerUseDialog' src/PersonalAI.Web/wwwroot/v110.js
-          grep -Fq 'verifiedMilestones' src/PersonalAI.Web/Services/ComputerOperatorTaskService.cs
-          grep -Fq 'CurrentSubgoal' src/PersonalAI.Web/Services/ComputerOperatorTaskService.cs
-          grep -Fq 'GoalProgress' src/PersonalAI.Web/Services/ComputerOperatorTaskService.cs
-          ! grep -Eiq 'notepad|calculator|paint|explorer' src/PersonalAI.Web/Services/ComputerOperatorTaskService.cs src/PersonalAI.Web/Services/DesktopVisionService.cs
+          grep -Fq 'ComputerOperatorAcceptanceService' src/PersonalAI.Web/Services/ComputerOperatorAcceptanceService.cs
+          grep -Fq 'CheckImagePixelWithNegativeVirtualOrigin' src/PersonalAI.Web/Services/ComputerOperatorAcceptanceService.cs
+          ! grep -Eiq 'notepad\.exe|calc\.exe|mspaint|explorer\.exe' src/PersonalAI.Web/Services/ComputerOperatorAcceptanceService.cs src/PersonalAI.Web/Services/ComputerGenericAppLaunchTool.cs src/PersonalAI.Web/Services/ComputerOperatorTaskService.cs
           grep -Fq 'VerifyAppliedActionAsync' src/PersonalAI.Web/Services/ComputerOperatorTaskService.cs
           grep -Fq 'CaptureStableVirtualScreenAsync' src/PersonalAI.Web/Services/ComputerOperatorTaskService.cs
           grep -Fq 'vision.VerifyAsync' src/PersonalAI.Web/Services/ComputerOperatorTaskService.cs
@@ -3079,6 +3078,30 @@ jobs:
           grep -Fq 'CurrentSubgoal' src/PersonalAI.Web/Models/DesktopVisionModels.cs
           grep -Fq 'GoalProgress' src/PersonalAI.Web/Models/DesktopVisionModels.cs
           grep -Fq 'VerifiedMilestones' src/PersonalAI.Web/Models/DesktopVisionModels.cs
+          grep -Fq 'IComputerOperatorAcceptanceService' src/PersonalAI.Web/Services/ComputerOperatorAcceptanceService.cs
+          grep -Fq '/api/computer/operator-acceptance' src/PersonalAI.Web/Services/ComputerUseEndpoints.cs
+          grep -Fq 'CheckDpiMetadataWithoutDoubleScaling' src/PersonalAI.Web/Services/ComputerOperatorAcceptanceService.cs
+          grep -Fq 'CheckMovingTargetRecomputesSafePoint' src/PersonalAI.Web/Services/ComputerOperatorAcceptanceService.cs
+          grep -Fq 'CheckExecutionPauseResumeStop' src/PersonalAI.Web/Services/ComputerOperatorAcceptanceService.cs
+          grep -Fq 'CheckGenericAppLaunchDelegation' src/PersonalAI.Web/Services/ComputerOperatorAcceptanceService.cs
+          grep -Fq 'CheckSafeTargetOnNegativeMonitor' src/PersonalAI.Web/Services/ComputerOperatorAcceptanceService.cs
+          grep -Fq 'CheckRecoveryAllowsAlternativeStrategy' src/PersonalAI.Web/Services/ComputerOperatorAcceptanceService.cs
+          grep -Fq 'CheckGenericAppLaunchDoesNotAssumeTaskbar' src/PersonalAI.Web/Services/ComputerOperatorAcceptanceService.cs
+          grep -Fq 'CheckRepeatedStrategyRequiresChange' src/PersonalAI.Web/Services/ComputerOperatorAcceptanceService.cs
+          test -f tests/computer-use/v3.4.9-acceptance-scenarios.json
+          grep -Fq '"id": "app-already-open"' tests/computer-use/v3.4.9-acceptance-scenarios.json
+          grep -Fq '"id": "app-minimized"' tests/computer-use/v3.4.9-acceptance-scenarios.json
+          grep -Fq '"id": "app-not-on-taskbar"' tests/computer-use/v3.4.9-acceptance-scenarios.json
+          grep -Fq '"id": "popup-interruption"' tests/computer-use/v3.4.9-acceptance-scenarios.json
+          grep -Fq '"id": "slow-ui"' tests/computer-use/v3.4.9-acceptance-scenarios.json
+          grep -Fq '"id": "click-offset"' tests/computer-use/v3.4.9-acceptance-scenarios.json
+          grep -Fq '"id": "multi-monitor-negative-origin"' tests/computer-use/v3.4.9-acceptance-scenarios.json
+          grep -Fq '"id": "moving-target"' tests/computer-use/v3.4.9-acceptance-scenarios.json
+          grep -Fq '"id": "pause-resume-stop"' tests/computer-use/v3.4.9-acceptance-scenarios.json
+          grep -Fq '"id": "loop-recovery"' tests/computer-use/v3.4.9-acceptance-scenarios.json
+          grep -Fq '"id": "multi-step-open-and-type"' tests/computer-use/v3.4.9-acceptance-scenarios.json
+          grep -Fq 'totalCount -lt 16' .github/workflows/desktop-control.yml
+          ! grep -Eiq 'notepad|calculator|mspaint|explorer\.exe|notepad\.exe|calc\.exe' src/PersonalAI.Web/Services/ComputerOperatorAcceptanceService.cs
           grep -Fq 'MILESTONE-SYSTEM-VERIFIED' src/PersonalAI.Web/Services/ComputerOperatorTaskService.cs
           grep -Fq 'CURRENT SUBGOAL' src/PersonalAI.Web/Services/DesktopVisionService.cs
           grep -Fq 'verifiedMilestones' src/PersonalAI.Web/Services/DesktopVisionService.cs

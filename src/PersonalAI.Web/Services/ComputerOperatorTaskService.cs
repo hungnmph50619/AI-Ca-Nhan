@@ -196,14 +196,8 @@ public sealed class ComputerOperatorTaskService(
                         decision.Confidence);
                 }
 
-                var loopStrategy =
-                    decision.Action is "complete" or "blocked" or "wait"
-                        ? string.Empty
-                        : BuildActionSignature(decision);
-
                 var loopAssessment = loopGuard.Observe(
-                    decision.State,
-                    loopStrategy);
+                    decision.State);
 
                 progress.Add(
                     "state",
@@ -218,23 +212,18 @@ public sealed class ComputerOperatorTaskService(
 
                     progress.Add(
                         "loop-detected",
-                        $"Phát hiện nguy cơ vòng lặp: {loopAssessment.Detail} Cảnh báo tích lũy: {loopAssessment.Occurrences}.",
+                        $"Phát hiện nguy cơ vòng lặp: {loopAssessment.Detail} Mức cảnh báo {loopAssessment.Occurrences}/3.",
                         "replan",
                         decision.Confidence);
 
-                    if (loopAssessment.RequiresStrategyChange)
+                    if (loopAssessment.Occurrences >= 3)
                     {
-                        taskHistory.Add(
-                            "LOOP-DIRECTIVE: BẮT BUỘC đổi chiến lược. Không lặp lại cùng action/target. Nếu không còn phương án an toàn hợp lý, trả blocked và giải thích.");
+                        progress.Block(
+                            $"Đã phát hiện vòng lặp kéo dài sau nhiều lần lập lại phương án: {loopAssessment.Detail}");
 
-                        progress.Add(
-                            "replan",
-                            "Chiến lược hiện tại đã nằm trong vòng lặp; không thực hiện lại. AI phải quan sát trạng thái hiện tại và chọn chiến lược khác.",
-                            "replan",
-                            decision.Confidence);
-
-                        await Task.Delay(250, linked.Token);
-                        continue;
+                        return Finish(
+                            false,
+                            $"Dừng an toàn vì vòng lặp {loopAssessment.Kind} vẫn tiếp diễn sau nhiều lần replan.");
                     }
                 }
 
@@ -409,13 +398,11 @@ public sealed class ComputerOperatorTaskService(
 
                     if (failures >= 3)
                     {
-                        taskHistory.Add(
-                            "REPLAN-DIRECTIVE: chiến lược này đã bị loại bỏ. Phải chọn chiến lược khác; chỉ trả blocked nếu không còn lựa chọn an toàn hợp lý.");
-                        progress.Add(
-                            "replan",
-                            "Chiến lược bị từ chối nhiều lần và đã được đánh dấu không dùng lại. AI phải đổi cách tiếp cận.",
-                            "replan",
-                            decision.Confidence);
+                        progress.Block(
+                            $"Cùng một chiến lược đã bị từ chối {failures} lần; dừng để tránh lặp vô hạn.");
+                        return Finish(
+                            false,
+                            $"Dừng sau {failures} lần cùng một chiến lược bị từ chối.");
                     }
 
                     await Task.Delay(500, linked.Token);
@@ -449,13 +436,11 @@ public sealed class ComputerOperatorTaskService(
 
                     if (failures >= 3)
                     {
-                        taskHistory.Add(
-                            "REPLAN-DIRECTIVE: chiến lược không hiệu lực đã bị loại bỏ. Phải chọn chiến lược khác; chỉ trả blocked nếu không còn lựa chọn an toàn hợp lý.");
-                        progress.Add(
-                            "replan",
-                            "Chiến lược không tạo thay đổi nhiều lần và đã bị loại bỏ. AI phải đổi cách tiếp cận.",
-                            "replan",
-                            decision.Confidence);
+                        progress.Block(
+                            $"Cùng một chiến lược không hiệu lực {failures} lần; dừng để tránh lặp vô hạn.");
+                        return Finish(
+                            false,
+                            "Dừng để tránh vòng lặp hành động không hiệu lực.");
                     }
 
                     await Task.Delay(500, linked.Token);
@@ -496,13 +481,11 @@ public sealed class ComputerOperatorTaskService(
 
                     if (failures >= 3)
                     {
-                        taskHistory.Add(
-                            "REPLAN-DIRECTIVE: chiến lược không đạt expected effect đã bị loại bỏ. Phải chọn chiến lược khác; chỉ trả blocked nếu không còn lựa chọn an toàn hợp lý.");
-                        progress.Add(
-                            "replan",
-                            "Chiến lược không đạt kết quả mong đợi nhiều lần và đã bị loại bỏ. AI phải đổi cách tiếp cận.",
-                            "replan",
-                            verification.Confidence);
+                        progress.Block(
+                            $"Cùng một chiến lược không đạt kết quả mong đợi {failures} lần; dừng để tránh lặp vô hạn.");
+                        return Finish(
+                            false,
+                            "Dừng sau nhiều lần cùng một chiến lược không đạt kết quả mong đợi.");
                     }
 
                     await Task.Delay(350, linked.Token);
@@ -586,56 +569,58 @@ public sealed class ComputerOperatorTaskService(
         progress.Add(
             "verify",
             decision.Action == "move-pointer"
-                ? "Đang chụp trạng thái mới và kiểm tra vị trí con trỏ sau khi di chuyển."
+                ? "Đang kiểm tra vị trí con trỏ sau khi di chuyển."
                 : $"Đang chụp trạng thái mới để xác minh: {decision.ExpectedEffect}",
             decision.Action,
             decision.Confidence);
 
-        await Task.Delay(
-            decision.Action == "move-pointer" ? 180 : 550,
-            cancellationToken);
+        if (decision.Action == "move-pointer")
+        {
+            var expected = coordinates.ToDesktopPoint(
+                BuildCoordinateRequest(decision, useEnd: false),
+                previousFrame);
+            var actual = computer.GetCursorPosition();
+            var deltaX = Math.Abs(actual.X - expected.DesktopX);
+            var deltaY = Math.Abs(actual.Y - expected.DesktopY);
+            var verified = deltaX <= 3 && deltaY <= 3;
+
+            return new(
+                verified,
+                verified ? 1.0 : 0.0,
+                verified
+                    ? $"Con trỏ đã tới ({actual.X},{actual.Y}), khớp điểm mong đợi ({expected.DesktopX},{expected.DesktopY})."
+                    : $"Con trỏ ở ({actual.X},{actual.Y}), lệch khỏi điểm mong đợi ({expected.DesktopX},{expected.DesktopY}).");
+        }
+
+        await Task.Delay(550, cancellationToken);
         await execution.WaitIfPausedAsync(cancellationToken);
 
-        var after = await screenshots.CaptureStableVirtualScreenAsync(
-            maximumWaitMs: 5000,
+        var after = await CaptureVerificationFrameAsync(
+            decision,
             cancellationToken);
 
         try
         {
+            var scopeDetail = after.CaptureScope == "window"
+                ? $"cửa sổ “{after.WindowTitle ?? "không rõ"}” ({after.WindowId ?? "?"}); foreground={after.WindowWasForeground}"
+                : "toàn desktop ảo";
+
             progress.Add(
                 "observe",
-                $"Đã chụp frame hậu hành động {after.Width}x{after.Height}.",
+                $"Đã chụp frame hậu hành động {after.Width}x{after.Height}, phạm vi: {scopeDetail}.",
                 observation: true);
-
-            if (decision.Action == "move-pointer")
-            {
-                var expected = coordinates.ToDesktopPoint(
-                    BuildCoordinateRequest(decision, useEnd: false),
-                    previousFrame);
-                var actual = computer.GetCursorPosition();
-                var deltaX = Math.Abs(actual.X - expected.DesktopX);
-                var deltaY = Math.Abs(actual.Y - expected.DesktopY);
-                var verified = deltaX <= 3 && deltaY <= 3;
-
-                return new(
-                    verified,
-                    verified ? 1.0 : 0.0,
-                    verified
-                        ? $"Đã chụp lại màn hình; con trỏ ở ({actual.X},{actual.Y}), khớp điểm mong đợi ({expected.DesktopX},{expected.DesktopY})."
-                        : $"Đã chụp lại màn hình; con trỏ ở ({actual.X},{actual.Y}), lệch khỏi điểm mong đợi ({expected.DesktopX},{expected.DesktopY}).");
-            }
 
             var result = await vision.VerifyAsync(
                 after,
                 decision.ExpectedEffect,
                 cancellationToken);
 
-            var verifiedByVision =
+            var verified =
                 result.Satisfied &&
                 result.Confidence >= MinimumConfidence;
 
             return new(
-                verifiedByVision,
+                verified,
                 result.Confidence,
                 result.Reason);
         }
@@ -643,6 +628,76 @@ public sealed class ComputerOperatorTaskService(
         {
             after.Clear();
         }
+    }
+
+    private async Task<DesktopScreenshotFrame> CaptureVerificationFrameAsync(
+        DesktopOperatorDecision decision,
+        CancellationToken cancellationToken)
+    {
+        if (ShouldPreferWindowCapture(decision))
+        {
+            var active = computer.GetActiveWindow();
+            if (active is not null)
+            {
+                try
+                {
+                    return await screenshots.CaptureStableWindowAsync(
+                        active.WindowId,
+                        maximumWaitMs: 5000,
+                        cancellationToken);
+                }
+                catch (ToolExecutionInputException exception)
+                {
+                    progress.Add(
+                        "observe-fallback",
+                        $"Không chụp được cửa sổ “{active.Title}”: {exception.Message}. Chuyển sang chụp toàn desktop.",
+                        "capture-fallback",
+                        decision.Confidence);
+                }
+            }
+        }
+
+        return await screenshots.CaptureStableVirtualScreenAsync(
+            maximumWaitMs: 5000,
+            cancellationToken);
+    }
+
+    private static bool ShouldPreferWindowCapture(
+        DesktopOperatorDecision decision)
+    {
+        if (decision.Action is
+            "minimize" or
+            "open-browser" or
+            "click-left" or
+            "double-click-left" or
+            "click-right")
+            return false;
+
+        if (decision.Action == "press-key" &&
+            decision.Key.Equals(
+                "WIN",
+                StringComparison.OrdinalIgnoreCase))
+            return false;
+
+        if (decision.Action == "press-hotkey" &&
+            decision.Keys.Any(key =>
+                key.Equals(
+                    "WIN",
+                    StringComparison.OrdinalIgnoreCase) ||
+                key.Equals(
+                    "WINDOWS",
+                    StringComparison.OrdinalIgnoreCase)))
+            return false;
+
+        return decision.Action is
+            "focus-window" or
+            "restore" or
+            "maximize" or
+            "type-text" or
+            "press-key" or
+            "press-hotkey" or
+            "scroll" or
+            "drag-left";
     }
 
     private static bool RequiresExpectedEffect(
@@ -920,12 +975,11 @@ public sealed class ComputerOperatorTaskService(
 
         return decision.Action switch
         {
-            "move-pointer" =>
-                $"{decision.Action}:{CoordinateSignature(decision, false)}:{Clip(decision.TargetLabel, 80)}",
+            "move-pointer" or
             "click-left" or
             "double-click-left" or
             "click-right" =>
-                $"{decision.Action}:{CoordinateSignature(decision, false)}:{RegionSignature(decision)}:{Clip(decision.TargetLabel, 80)}",
+                $"{decision.Action}:{CoordinateSignature(decision, false)}:{Clip(decision.TargetLabel, 80)}",
             "scroll" =>
                 $"scroll:{CoordinateSignature(decision, false)}:{decision.ScrollDelta}",
             "drag-left" =>
@@ -937,21 +991,6 @@ public sealed class ComputerOperatorTaskService(
             "open-browser" => $"open-browser:{Clip(decision.Url, 120)}",
             _ => decision.Action
         };
-    }
-
-    private static string RegionSignature(
-        DesktopOperatorDecision decision)
-    {
-        var space = string.IsNullOrWhiteSpace(decision.CoordinateSpace)
-            ? ComputerCoordinateSpaces.ImagePixel
-            : decision.CoordinateSpace.Trim().ToLowerInvariant();
-
-        if (space == ComputerCoordinateSpaces.ImagePixel)
-        {
-            return $"box:{decision.BoxLeft},{decision.BoxTop},{decision.BoxWidth},{decision.BoxHeight}";
-        }
-
-        return $"box:{decision.BoxNormalizedLeft:0.0000},{decision.BoxNormalizedTop:0.0000},{decision.BoxNormalizedWidth:0.0000},{decision.BoxNormalizedHeight:0.0000}";
     }
 
     private static string CoordinateSignature(

@@ -1,0 +1,102 @@
+{
+  "version": "3.4.9",
+  "purpose": "End-to-end Computer Use acceptance scenarios. Application names are test inputs only and must never become core branching logic.",
+  "runnerRequirements": [
+    "Windows interactive desktop",
+    "Desktop Vision configured",
+    "Computer Operator enabled with emergency stop available"
+  ],
+  "globalRules": [
+    "Observe the current screen before choosing an action.",
+    "Do not assume fixed coordinates, taskbar pinning, executable paths, shell commands, or app-specific shortcuts.",
+    "After every applied action, capture a fresh frame and verify the expected effect before continuing.",
+    "On failure, observe the new state and replan instead of replaying a hard-coded fallback.",
+    "Use test application names only as user goals; the core must remain application-agnostic."
+  ],
+  "scenarios": [
+    {
+      "id": "app-already-open",
+      "goal": "Mở Notepad",
+      "setup": "Notepad already has a visible window.",
+      "expected": "Reuse/focus the existing correct window when that is the safest valid strategy; verify foreground."
+    },
+    {
+      "id": "app-minimized",
+      "goal": "Mở Calculator",
+      "setup": "Calculator is running but minimized.",
+      "expected": "Infer a safe way to restore or focus it from the observed desktop; verify it becomes visible and foreground."
+    },
+    {
+      "id": "app-not-on-taskbar",
+      "goal": "Mở Paint",
+      "setup": "Paint is not running and is not pinned to the taskbar.",
+      "expected": "Choose a launch strategy from the actual Windows state without executable-path or fixed-taskbar assumptions."
+    },
+    {
+      "id": "explorer-generic-launch",
+      "goal": "Mở Explorer",
+      "setup": "No Explorer window is visible.",
+      "expected": "Launch through generic observed UI/keyboard interaction and verify the resulting foreground window."
+    },
+    {
+      "id": "popup-interruption",
+      "goal": "Tiếp tục mục tiêu hiện tại",
+      "setup": "An unexpected modal or popup covers the intended target.",
+      "expected": "Recognize the changed state, reason about the popup, handle it only when safe, then replan the original goal."
+    },
+    {
+      "id": "slow-ui",
+      "goal": "Tiếp tục mục tiêu hiện tại",
+      "setup": "The UI responds slowly after an action.",
+      "expected": "Do not spam repeated actions; wait/observe and distinguish delayed progress from a failed strategy."
+    },
+    {
+      "id": "click-offset",
+      "goal": "Kích hoạt mục tiêu đang nhìn thấy",
+      "setup": "The proposed click point is near an unsafe edge of the detected target.",
+      "expected": "Use bounding-box safe targeting, reject unsafe points, then verify the semantic result."
+    },
+    {
+      "id": "dpi-125",
+      "goal": "Kích hoạt mục tiêu trên màn hình DPI 125%",
+      "setup": "Windows display scaling is 125%.",
+      "expected": "Map image/window coordinates to desktop coordinates exactly once; do not double-scale."
+    },
+    {
+      "id": "dpi-150",
+      "goal": "Kích hoạt mục tiêu trên màn hình DPI 150%",
+      "setup": "Windows display scaling is 150%.",
+      "expected": "Map image/window coordinates to desktop coordinates exactly once; do not double-scale."
+    },
+    {
+      "id": "multi-monitor-negative-origin",
+      "goal": "Kích hoạt mục tiêu trên màn hình phụ",
+      "setup": "A monitor is left of the primary monitor, producing negative desktop X coordinates.",
+      "expected": "Preserve virtual-screen origin and click inside the intended monitor/window."
+    },
+    {
+      "id": "moving-target",
+      "goal": "Kích hoạt mục tiêu vừa di chuyển",
+      "setup": "The target changes position between observations.",
+      "expected": "Use the latest observation and bounding box; never reuse a stale click point."
+    },
+    {
+      "id": "pause-resume-stop",
+      "goal": "Thực hiện mục tiêu nhiều bước",
+      "setup": "Pause, resume, and emergency stop are triggered while the operator is active.",
+      "expected": "Pause before further actions, resume from fresh observation, and stop immediately on cancellation."
+    },
+    {
+      "id": "loop-recovery",
+      "goal": "Hoàn thành mục tiêu khi cách đầu tiên thất bại",
+      "setup": "The same strategy fails or desktop states oscillate.",
+      "expected": "Detect repeated strategy/stagnation/oscillation, force strategy change, and stop only when no safe reasonable strategy remains."
+    },
+    {
+      "id": "multi-step-open-and-type",
+      "goal": "Mở Notepad rồi gõ Xin chào",
+      "setup": "Notepad may be open, minimized, absent from taskbar, or not running.",
+      "expected": "Split the goal into subgoals, verify the app is ready before typing, type through generic keyboard actions, then verify the entered content."
+    }
+  ]
+}

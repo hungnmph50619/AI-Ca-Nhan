@@ -61,6 +61,36 @@ public sealed class ComputerOperatorAcceptanceService
             "loop guard phát hiện dao động A-B",
             CheckLoopOscillation);
 
+        RunCheck(
+            checks,
+            "loop guard buộc đổi chiến lược khi lặp cùng action",
+            CheckRepeatedStrategyRequiresChange);
+
+        RunCheck(
+            checks,
+            "DPI 125/150 chỉ là metadata, không scale tọa độ lần hai",
+            CheckDpiMetadataWithoutDoubleScaling);
+
+        RunCheck(
+            checks,
+            "target di chuyển tạo điểm click an toàn mới",
+            CheckMovingTargetRecomputesSafePoint);
+
+        RunCheck(
+            checks,
+            "bounding box không hợp lệ bị từ chối",
+            CheckInvalidBoundingBoxRejected);
+
+        RunCheck(
+            checks,
+            "pause resume stop giữ đúng trạng thái và cancellation",
+            CheckExecutionPauseResumeStop);
+
+        RunCheck(
+            checks,
+            "mở ứng dụng bất kỳ chỉ ủy quyền thành goal tổng quát",
+            CheckGenericAppLaunchDelegation);
+
         var passed = checks.Count(item => item.Passed);
 
         return new(
@@ -280,13 +310,15 @@ public sealed class ComputerOperatorAcceptanceService
         var loop = new ComputerOperatorLoopGuardSession();
         ComputerOperatorLoopAssessment result = new(
             false,
+            false,
             string.Empty,
             string.Empty,
             0);
 
         for (var index = 0; index < 4; index++)
             result = loop.Observe(
-                "Cửa sổ không thay đổi");
+                "Cửa sổ không thay đổi",
+                $"strategy-{index}");
 
         Require(
             result.Detected &&
@@ -298,10 +330,10 @@ public sealed class ComputerOperatorAcceptanceService
     {
         var loop = new ComputerOperatorLoopGuardSession();
 
-        _ = loop.Observe("Trạng thái A");
-        _ = loop.Observe("Trạng thái B");
-        _ = loop.Observe("Trạng thái A");
-        var result = loop.Observe("Trạng thái B");
+        _ = loop.Observe("Trạng thái A", "strategy-a");
+        _ = loop.Observe("Trạng thái B", "strategy-b");
+        _ = loop.Observe("Trạng thái A", "strategy-a");
+        var result = loop.Observe("Trạng thái B", "strategy-b");
 
         Require(
             result.Detected &&
@@ -310,11 +342,257 @@ public sealed class ComputerOperatorAcceptanceService
 
         loop.MarkProgress();
         var afterProgress = loop.Observe(
-            "Trạng thái C");
+            "Trạng thái C",
+            "strategy-c");
 
         Require(
             !afterProgress.Detected,
             "Loop guard không reset sau khi xác nhận có tiến triển.");
+    }
+
+    private static void CheckRepeatedStrategyRequiresChange()
+    {
+        var loop = new ComputerOperatorLoopGuardSession();
+
+        _ = loop.Observe(
+            "Cùng một trạng thái",
+            "click-left:image-pixel:100,100");
+        _ = loop.Observe(
+            "Cùng một trạng thái",
+            "click-left:image-pixel:100,100");
+        var result = loop.Observe(
+            "Cùng một trạng thái",
+            "click-left:image-pixel:100,100");
+
+        Require(
+            result.Detected &&
+            result.Kind == "repeated-strategy" &&
+            result.RequiresStrategyChange,
+            "Loop guard không bắt buộc đổi chiến lược sau khi lặp cùng action/target.");
+    }
+
+    private static void CheckDpiMetadataWithoutDoubleScaling()
+    {
+        var computer = new AcceptanceComputerUseService();
+        var displays = new AcceptanceScaledDisplayTopologyService();
+        var transform = new ComputerCoordinateTransformService(
+            computer,
+            displays);
+
+        var frame = new DesktopScreenshotFrame(
+            Array.Empty<byte>(),
+            -1920,
+            0,
+            3840,
+            1080,
+            DateTimeOffset.UtcNow);
+
+        var leftPoint = transform.ToDesktopPoint(
+            new(
+                ComputerCoordinateSpaces.ImagePixel,
+                100,
+                100,
+                0,
+                0,
+                string.Empty),
+            frame);
+
+        Require(
+            leftPoint.DesktopX == -1820 &&
+            leftPoint.DesktopY == 100,
+            "DPI 125% đã làm scale lại tọa độ pixel trên màn hình trái.");
+
+        Require(
+            leftPoint.DpiX == 120 &&
+            Math.Abs(leftPoint.ScaleX - 1.25) < 0.001,
+            "Không giữ đúng metadata DPI 125%.");
+
+        var primaryPoint = transform.ToDesktopPoint(
+            new(
+                ComputerCoordinateSpaces.ImagePixel,
+                2500,
+                200,
+                0,
+                0,
+                string.Empty),
+            frame);
+
+        Require(
+            primaryPoint.DesktopX == 580 &&
+            primaryPoint.DesktopY == 200,
+            "DPI 150% đã làm scale lại tọa độ pixel trên màn hình chính.");
+
+        Require(
+            primaryPoint.DpiX == 144 &&
+            Math.Abs(primaryPoint.ScaleX - 1.5) < 0.001,
+            "Không giữ đúng metadata DPI 150%.");
+    }
+
+    private static void CheckMovingTargetRecomputesSafePoint()
+    {
+        var transform = new ComputerCoordinateTransformService(
+            new AcceptanceComputerUseService(),
+            new AcceptanceDisplayTopologyService());
+        var targeting = new ComputerSafeTargetingService(
+            transform);
+
+        var frame = new DesktopScreenshotFrame(
+            Array.Empty<byte>(),
+            -1920,
+            0,
+            3840,
+            1080,
+            DateTimeOffset.UtcNow);
+
+        var first = BuildClickDecision(
+            ComputerCoordinateSpaces.ImagePixel,
+            boxLeft: 2100,
+            boxTop: 250,
+            boxWidth: 120,
+            boxHeight: 70);
+
+        var moved = BuildClickDecision(
+            ComputerCoordinateSpaces.ImagePixel,
+            boxLeft: 2350,
+            boxTop: 410,
+            boxWidth: 120,
+            boxHeight: 70);
+
+        var firstTarget = targeting.Resolve(
+            first,
+            frame);
+        var movedTarget = targeting.Resolve(
+            moved,
+            frame);
+
+        Require(
+            firstTarget.Point.DesktopX != movedTarget.Point.DesktopX ||
+            firstTarget.Point.DesktopY != movedTarget.Point.DesktopY,
+            "Target đã di chuyển nhưng safe targeting vẫn tái sử dụng điểm click cũ.");
+
+        var movedImageX = movedTarget.Point.DesktopX - frame.Left;
+        var movedImageY = movedTarget.Point.DesktopY - frame.Top;
+
+        Require(
+            movedImageX > moved.BoxLeft &&
+            movedImageX < moved.BoxLeft + moved.BoxWidth &&
+            movedImageY > moved.BoxTop &&
+            movedImageY < moved.BoxTop + moved.BoxHeight,
+            "Điểm click mới không nằm trong bounding box mới của target.");
+    }
+
+    private static void CheckInvalidBoundingBoxRejected()
+    {
+        var transform = new ComputerCoordinateTransformService(
+            new AcceptanceComputerUseService(),
+            new AcceptanceDisplayTopologyService());
+        var targeting = new ComputerSafeTargetingService(
+            transform);
+
+        var frame = new DesktopScreenshotFrame(
+            Array.Empty<byte>(),
+            -1920,
+            0,
+            3840,
+            1080,
+            DateTimeOffset.UtcNow);
+
+        var invalid = BuildClickDecision(
+            ComputerCoordinateSpaces.ImagePixel,
+            boxLeft: 100,
+            boxTop: 100,
+            boxWidth: 0,
+            boxHeight: 0);
+
+        var rejected = false;
+        try
+        {
+            _ = targeting.Resolve(
+                invalid,
+                frame);
+        }
+        catch (ToolExecutionInputException)
+        {
+            rejected = true;
+        }
+
+        Require(
+            rejected,
+            "Safe targeting vẫn chấp nhận click khi bounding box không hợp lệ.");
+    }
+
+    private static void CheckExecutionPauseResumeStop()
+    {
+        using var execution = new ComputerOperatorExecutionControl();
+
+        var token = execution.Begin(
+            "acceptance-test");
+
+        Require(
+            execution.Running &&
+            !execution.Paused &&
+            execution.Pausable,
+            "Execution control không vào trạng thái running đúng.");
+
+        Require(
+            execution.Pause() &&
+            execution.Paused,
+            "Pause không chuyển task sang paused.");
+
+        Require(
+            execution.Resume() &&
+            !execution.Paused &&
+            execution.Running,
+            "Resume không khôi phục task đang chạy.");
+
+        Require(
+            execution.Stop(),
+            "Stop không dừng task đang chạy.");
+
+        Require(
+            token.IsCancellationRequested &&
+            !execution.Running &&
+            !execution.Paused &&
+            !execution.Pausable,
+            "Stop không hủy token hoặc không xóa trạng thái điều khiển.");
+    }
+
+    private static void CheckGenericAppLaunchDelegation()
+    {
+        var fake = new AcceptanceOperatorTaskService();
+        var tool = new ComputerGenericAppLaunchTool(
+            fake);
+
+        using var document = System.Text.Json.JsonDocument.Parse(
+            """{"application":"Ứng dụng thử nghiệm Ω"}""");
+
+        var result = tool.ExecuteAsync(
+                document.RootElement)
+            .GetAwaiter()
+            .GetResult();
+
+        Require(
+            fake.CallCount == 1,
+            "computer.app.launch không ủy quyền đúng một lần cho Computer Operator.");
+
+        Require(
+            fake.LastGoal.Contains(
+                "Ứng dụng thử nghiệm Ω",
+                StringComparison.Ordinal) &&
+            fake.LastGoal.Contains(
+                "tự quan sát",
+                StringComparison.OrdinalIgnoreCase),
+            "computer.app.launch không chuyển tên ứng dụng bất kỳ thành goal quan sát tổng quát.");
+
+        Require(
+            !fake.LastGoal.Contains(
+                ".exe",
+                StringComparison.OrdinalIgnoreCase),
+            "Goal mở ứng dụng chứa đường dẫn/executable hard-code.");
+
+        Require(
+            result.ValueKind == System.Text.Json.JsonValueKind.Object,
+            "computer.app.launch không trả kết quả dạng object.");
     }
 
     private static DesktopOperatorDecision BuildClickDecision(
@@ -437,6 +715,104 @@ public sealed class ComputerOperatorAcceptanceService
                 96,
                 1,
                 1);
+    }
+
+    private sealed class AcceptanceScaledDisplayTopologyService
+        : IComputerDisplayTopologyService
+    {
+        public ComputerDisplayTopologyResponse GetTopology() =>
+            new(
+                2,
+                [
+                    BuildMonitor(
+                        "LEFT-125",
+                        -1920,
+                        0,
+                        1920,
+                        1080,
+                        120,
+                        1.25),
+                    BuildMonitor(
+                        "PRIMARY-150",
+                        0,
+                        0,
+                        1920,
+                        1080,
+                        144,
+                        1.5,
+                        primary: true)
+                ]);
+
+        public ComputerMonitorInfo? GetMonitorAtPoint(
+            int x,
+            int y) =>
+            x < 0
+                ? BuildMonitor(
+                    "LEFT-125",
+                    -1920,
+                    0,
+                    1920,
+                    1080,
+                    120,
+                    1.25)
+                : BuildMonitor(
+                    "PRIMARY-150",
+                    0,
+                    0,
+                    1920,
+                    1080,
+                    144,
+                    1.5,
+                    primary: true);
+
+        private static ComputerMonitorInfo BuildMonitor(
+            string name,
+            int left,
+            int top,
+            int width,
+            int height,
+            uint dpi,
+            double scale,
+            bool primary = false) =>
+            new(
+                name,
+                primary,
+                left,
+                top,
+                width,
+                height,
+                left,
+                top,
+                width,
+                height,
+                dpi,
+                dpi,
+                scale,
+                scale);
+    }
+
+    private sealed class AcceptanceOperatorTaskService
+        : IComputerOperatorTaskService
+    {
+        public int CallCount { get; private set; }
+        public string LastGoal { get; private set; } = string.Empty;
+
+        public Task<ComputerOperatorTaskResult> RunAsync(
+            string goal,
+            CancellationToken cancellationToken = default)
+        {
+            CallCount++;
+            LastGoal = goal;
+
+            return Task.FromResult(
+                new ComputerOperatorTaskResult(
+                    goal,
+                    true,
+                    "acceptance",
+                    Array.Empty<ComputerOperatorTaskStep>(),
+                    "acceptance",
+                    "acceptance"));
+        }
     }
 
     private sealed class AcceptanceComputerUseService

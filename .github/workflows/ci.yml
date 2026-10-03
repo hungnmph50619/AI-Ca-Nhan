@@ -3084,6 +3084,9 @@ jobs:
           grep -Fq 'CheckMovingTargetRecomputesSafePoint' src/PersonalAI.Web/Services/ComputerOperatorAcceptanceService.cs
           grep -Fq 'CheckExecutionPauseResumeStop' src/PersonalAI.Web/Services/ComputerOperatorAcceptanceService.cs
           grep -Fq 'CheckGenericAppLaunchDelegation' src/PersonalAI.Web/Services/ComputerOperatorAcceptanceService.cs
+          grep -Fq 'CheckSafeTargetOnNegativeMonitor' src/PersonalAI.Web/Services/ComputerOperatorAcceptanceService.cs
+          grep -Fq 'CheckRecoveryAllowsAlternativeStrategy' src/PersonalAI.Web/Services/ComputerOperatorAcceptanceService.cs
+          grep -Fq 'CheckGenericAppLaunchDoesNotAssumeTaskbar' src/PersonalAI.Web/Services/ComputerOperatorAcceptanceService.cs
           grep -Fq 'CheckRepeatedStrategyRequiresChange' src/PersonalAI.Web/Services/ComputerOperatorAcceptanceService.cs
           test -f tests/computer-use/v3.4.9-acceptance-scenarios.json
           grep -Fq '"id": "app-already-open"' tests/computer-use/v3.4.9-acceptance-scenarios.json

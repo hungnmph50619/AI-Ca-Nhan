@@ -62,6 +62,16 @@ jobs:
             }
             if (-not $ready) { throw "Ứng dụng không khởi động trong thời gian chờ." }
 
+            $acceptance = Invoke-RestMethod "$base/api/computer/operator-acceptance"
+            if ($acceptance.passed -ne $true) {
+              $failedChecks = @($acceptance.checks | Where-Object { $_.passed -ne $true } | ForEach-Object { "$($_.name): $($_.detail)" })
+              throw "Computer Operator acceptance suite thất bại: $($failedChecks -join '; ')"
+            }
+            if ($acceptance.totalCount -lt 13 -or $acceptance.passedCount -ne $acceptance.totalCount) {
+              throw "Computer Operator acceptance suite không chạy đủ 13 kiểm tra bắt buộc."
+            }
+            Write-Host "Đạt Computer Operator acceptance suite: $($acceptance.passedCount)/$($acceptance.totalCount)."
+
             $appStatus = Invoke-RestMethod "$base/api/status"
             $releaseSource = Get-Content "src/PersonalAI.Web/Models/SystemModels.cs" -Raw
             if ($releaseSource -notmatch 'public const string Version = "([^"]+)"') {

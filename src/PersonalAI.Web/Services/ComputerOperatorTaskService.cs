@@ -79,6 +79,7 @@ public sealed class ComputerOperatorTaskService(
         var steps = new List<ComputerOperatorTaskStep>();
         var taskHistory = new List<string>();
         var recovery = new ComputerOperatorRecoverySession();
+        var loopGuard = new ComputerOperatorLoopGuardSession();
         var lowConfidenceCount = 0;
 
         try
@@ -149,11 +150,36 @@ public sealed class ComputerOperatorTaskService(
                     frame.Clear();
                 }
 
+                var loopAssessment = loopGuard.Observe(
+                    decision.State);
+
                 progress.Add(
                     "state",
                     string.IsNullOrWhiteSpace(decision.State)
                         ? "AI đã cập nhật trạng thái desktop."
                         : $"STATE: {decision.State}");
+
+                if (loopAssessment.Detected)
+                {
+                    taskHistory.Add(
+                        $"LOOP-WARNING {loopAssessment.Kind}: {loopAssessment.Detail}");
+
+                    progress.Add(
+                        "loop-detected",
+                        $"Phát hiện nguy cơ vòng lặp: {loopAssessment.Detail} Mức cảnh báo {loopAssessment.Occurrences}/3.",
+                        "replan",
+                        decision.Confidence);
+
+                    if (loopAssessment.Occurrences >= 3)
+                    {
+                        progress.Block(
+                            $"Đã phát hiện vòng lặp kéo dài sau nhiều lần lập lại phương án: {loopAssessment.Detail}");
+
+                        return Finish(
+                            false,
+                            $"Dừng an toàn vì vòng lặp {loopAssessment.Kind} vẫn tiếp diễn sau nhiều lần replan.");
+                    }
+                }
 
                 progress.Add(
                     "plan",
@@ -422,6 +448,8 @@ public sealed class ComputerOperatorTaskService(
 
                 taskHistory.Add(
                     $"STEP {index}: VERIFIED {actionSignature} — {verification.Detail}; EXPECTED: {decision.ExpectedEffect}");
+
+                loopGuard.MarkProgress();
 
                 progress.Add(
                     "verify-result",

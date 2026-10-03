@@ -12,7 +12,11 @@ public sealed record DesktopScreenshotFrame(
     string? WindowTitle = null,
     bool WindowWasForeground = false,
     string CaptureBackend = "copy-from-screen",
-    string? CaptureFallbackReason = null)
+    string? CaptureFallbackReason = null,
+    string? MonitorDevice = null,
+    bool MonitorWasPrimary = false,
+    uint MonitorDpiX = 96,
+    uint MonitorDpiY = 96)
 {
     public void Clear()
     {

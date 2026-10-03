@@ -21,6 +21,14 @@ public interface IDesktopScreenshotService
         int maximumWaitMs = 5000,
         CancellationToken cancellationToken = default);
 
+    DesktopScreenshotFrame CaptureMonitor(
+        string deviceName);
+
+    Task<DesktopScreenshotFrame> CaptureStableMonitorAsync(
+        string deviceName,
+        int maximumWaitMs = 5000,
+        CancellationToken cancellationToken = default);
+
     DesktopScreenshotFrame CaptureRegion(
         int left,
         int top,
@@ -30,7 +38,8 @@ public interface IDesktopScreenshotService
 
 public sealed class WindowsDesktopScreenshotService(
     WindowsAiOperatorConsoleService operatorConsole,
-    IComputerUseService computer)
+    IComputerUseService computer,
+    IComputerDisplayTopologyService displays)
     : IDesktopScreenshotService
 {
     public DesktopScreenshotFrame CaptureVirtualScreen()
@@ -90,6 +99,167 @@ public sealed class WindowsDesktopScreenshotService(
             previous?.Frame.Clear();
             throw;
         }
+    }
+
+    public DesktopScreenshotFrame CaptureMonitor(
+        string deviceName)
+    {
+        EnsureAvailable();
+
+        var monitor = ResolveMonitor(
+            deviceName);
+        return CaptureMonitorFrame(
+            monitor);
+    }
+
+    public async Task<DesktopScreenshotFrame> CaptureStableMonitorAsync(
+        string deviceName,
+        int maximumWaitMs = 5000,
+        CancellationToken cancellationToken = default)
+    {
+        EnsureAvailable();
+
+        var timeout = Math.Clamp(
+            maximumWaitMs,
+            800,
+            10_000);
+        var started = Environment.TickCount64;
+        CaptureSample? previous = null;
+
+        try
+        {
+            while (Environment.TickCount64 - started < timeout)
+            {
+                cancellationToken.ThrowIfCancellationRequested();
+
+                var monitor = ResolveMonitor(
+                    deviceName);
+                var current = CaptureMonitorSample(
+                    monitor);
+
+                if (previous is not null)
+                {
+                    var sameGeometry =
+                        previous.Frame.Left == current.Frame.Left &&
+                        previous.Frame.Top == current.Frame.Top &&
+                        previous.Frame.Width == current.Frame.Width &&
+                        previous.Frame.Height == current.Frame.Height;
+
+                    var difference = sameGeometry
+                        ? MeanSignatureDifference(
+                            previous.Signature,
+                            current.Signature)
+                        : double.MaxValue;
+
+                    if (difference <= 7.5)
+                    {
+                        previous.Frame.Clear();
+                        return current.Frame;
+                    }
+
+                    previous.Frame.Clear();
+                }
+
+                previous = current;
+                await Task.Delay(
+                    450,
+                    cancellationToken);
+            }
+
+            if (previous is not null)
+                return previous.Frame;
+
+            return CaptureMonitor(deviceName);
+        }
+        catch
+        {
+            previous?.Frame.Clear();
+            throw;
+        }
+    }
+
+    private CaptureSample CaptureMonitorSample(
+        ComputerMonitorInfo monitor)
+    {
+        using var bitmap = CaptureBitmap(
+            monitor.Left,
+            monitor.Top,
+            monitor.Width,
+            monitor.Height);
+        MaskOperatorConsole(
+            bitmap,
+            monitor.Left,
+            monitor.Top);
+
+        var signature = ComputeSignature(bitmap);
+        var frame = EncodeMonitorFrame(
+            bitmap,
+            monitor);
+
+        return new(
+            frame,
+            signature);
+    }
+
+    private DesktopScreenshotFrame CaptureMonitorFrame(
+        ComputerMonitorInfo monitor)
+    {
+        ValidateRegion(
+            monitor.Width,
+            monitor.Height);
+
+        using var bitmap = CaptureBitmap(
+            monitor.Left,
+            monitor.Top,
+            monitor.Width,
+            monitor.Height);
+        MaskOperatorConsole(
+            bitmap,
+            monitor.Left,
+            monitor.Top);
+
+        return EncodeMonitorFrame(
+            bitmap,
+            monitor);
+    }
+
+    private static DesktopScreenshotFrame EncodeMonitorFrame(
+        Bitmap bitmap,
+        ComputerMonitorInfo monitor)
+    {
+        var frame = EncodeFrame(
+            bitmap,
+            monitor.Left,
+            monitor.Top,
+            monitor.Width,
+            monitor.Height);
+
+        return frame with
+        {
+            CaptureScope = "monitor",
+            CaptureBackend = "copy-from-screen",
+            MonitorDevice = monitor.DeviceName,
+            MonitorWasPrimary = monitor.Primary,
+            MonitorDpiX = monitor.DpiX,
+            MonitorDpiY = monitor.DpiY
+        };
+    }
+
+    private ComputerMonitorInfo ResolveMonitor(
+        string deviceName)
+    {
+        var normalized = (deviceName ?? string.Empty).Trim();
+        if (normalized.Length == 0)
+            throw new ToolExecutionInputException(
+                "Thiếu tên màn hình cần chụp.");
+
+        var topology = displays.GetTopology();
+        return topology.Monitors.FirstOrDefault(
+                   monitor => monitor.DeviceName.Equals(
+                       normalized,
+                       StringComparison.OrdinalIgnoreCase))
+               ?? throw new ToolExecutionInputException(
+                   $"Không tìm thấy màn hình “{normalized}”.");
     }
 
     public DesktopScreenshotFrame CaptureWindow(
@@ -379,7 +549,7 @@ public sealed class WindowsDesktopScreenshotService(
         return maximum >= 12 || mean >= 8;
     }
 
-    private static DesktopScreenshotFrame EncodeWindowFrame(
+    private DesktopScreenshotFrame EncodeWindowFrame(
         Bitmap bitmap,
         ComputerWindowInfo window,
         int left,
@@ -394,6 +564,16 @@ public sealed class WindowsDesktopScreenshotService(
             bitmap.Width,
             bitmap.Height);
 
+        var centerX = window.Left + Math.Max(
+            0,
+            window.Width / 2);
+        var centerY = window.Top + Math.Max(
+            0,
+            window.Height / 2);
+        var monitor = displays.GetMonitorAtPoint(
+            centerX,
+            centerY);
+
         return frame with
         {
             CaptureScope = "window",
@@ -401,7 +581,11 @@ public sealed class WindowsDesktopScreenshotService(
             WindowTitle = window.Title,
             WindowWasForeground = window.IsForeground,
             CaptureBackend = backend,
-            CaptureFallbackReason = fallbackReason
+            CaptureFallbackReason = fallbackReason,
+            MonitorDevice = monitor?.DeviceName,
+            MonitorWasPrimary = monitor?.Primary ?? false,
+            MonitorDpiX = monitor?.DpiX ?? 96,
+            MonitorDpiY = monitor?.DpiY ?? 96
         };
     }
 

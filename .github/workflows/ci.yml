@@ -3066,6 +3066,12 @@ jobs:
           grep -Fq 'visibility.Assess(window)' src/PersonalAI.Web/Services/DesktopScreenshotService.cs
           grep -Fq 'WindowVisibleRatio = visibilityAssessment.VisibleRatio' src/PersonalAI.Web/Services/DesktopScreenshotService.cs
           grep -Fq 'likelyOccluded=' src/PersonalAI.Web/Services/DesktopVisionService.cs
+          grep -Fq 'IDesktopTemporalSceneService' src/PersonalAI.Web/Services/DesktopTemporalSceneService.cs
+          grep -Fq 'MinimumIoU = 0.20' src/PersonalAI.Web/Services/DesktopTemporalSceneService.cs
+          grep -Fq 'MovementThresholdPixels = 12' src/PersonalAI.Web/Services/DesktopTemporalSceneService.cs
+          grep -Fq 'temporalScenes.Analyze' src/PersonalAI.Web/Services/ComputerOperatorTaskService.cs
+          grep -Fq '"temporal-scene"' src/PersonalAI.Web/Services/ComputerOperatorTaskService.cs
+          grep -Fq 'TEMPORAL SCENE:' src/PersonalAI.Web/Services/DesktopVisionService.cs
           grep -Fq '"frame-difference"' src/PersonalAI.Web/Services/ComputerOperatorTaskService.cs
           grep -Fq 'changedRatio=' src/PersonalAI.Web/Services/DesktopVisionService.cs
           grep -Fq 'RequiresExpectedEffect' src/PersonalAI.Web/Services/ComputerOperatorTaskService.cs

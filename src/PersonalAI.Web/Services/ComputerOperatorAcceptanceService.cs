@@ -310,6 +310,7 @@ public sealed class ComputerOperatorAcceptanceService
         var loop = new ComputerOperatorLoopGuardSession();
         ComputerOperatorLoopAssessment result = new(
             false,
+            false,
             string.Empty,
             string.Empty,
             0);

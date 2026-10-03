@@ -342,9 +342,9 @@ public sealed class ComputerOperatorAcceptanceService
             "click-left:image-pixel:100,100",
             "click-left",
             ComputerOperatorFailureKinds.VerificationFailed,
-            "Start Menu chưa mở",
+            "Trạng thái mục tiêu chưa xuất hiện",
             "Click không tạo trạng thái mong đợi.",
-            "Start Menu xuất hiện",
+            "Trạng thái mục tiêu xuất hiện",
             0.92);
 
         Require(
@@ -353,7 +353,7 @@ public sealed class ComputerOperatorAcceptanceService
 
         var avoid = recovery.ShouldAvoidRepeatedStrategy(
             "click-left:image-pixel:100,100",
-            "Start Menu chưa mở",
+            "Trạng thái mục tiêu chưa xuất hiện",
             out var reason);
 
         Require(

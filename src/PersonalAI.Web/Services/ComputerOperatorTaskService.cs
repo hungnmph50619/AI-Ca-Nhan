@@ -31,6 +31,7 @@ public sealed class ComputerOperatorTaskService(
     ComputerOperatorExecutionControl execution,
     IComputerCoordinateTransformService coordinates,
     IComputerSafeTargetingService targeting,
+    IComputerDisplayTopologyService displays,
     ILogger<ComputerOperatorTaskService> logger)
     : IComputerOperatorTaskService
 {
@@ -1030,19 +1031,34 @@ public sealed class ComputerOperatorTaskService(
     {
         var active = computer.GetActiveWindow();
         var windows = computer.GetWindows(30).Windows;
+        var topology = displays.GetTopology();
 
         var lines = new List<string>
         {
             active is null
                 ? "Foreground: không xác định"
                 : $"Foreground: id={active.WindowId}; title={active.Title}; process={active.ProcessName ?? "?"}; rect={active.Left},{active.Top},{active.Width},{active.Height}",
-            "Cửa sổ đang hiển thị:"
+            $"Desktop có {topology.Count} màn hình:",
         };
+
+        foreach (var monitor in topology.Monitors)
+        {
+            lines.Add(
+                $"- monitor={monitor.DeviceName}; primary={monitor.Primary}; rect={monitor.Left},{monitor.Top},{monitor.Width},{monitor.Height}; work={monitor.WorkLeft},{monitor.WorkTop},{monitor.WorkWidth},{monitor.WorkHeight}; dpi={monitor.DpiX}x{monitor.DpiY}; scale={monitor.ScaleX:0.00}x{monitor.ScaleY:0.00}");
+        }
+
+        lines.Add("Cửa sổ đang hiển thị:");
 
         foreach (var window in windows)
         {
+            var centerX = window.Left + Math.Max(0, window.Width / 2);
+            var centerY = window.Top + Math.Max(0, window.Height / 2);
+            var monitor = displays.GetMonitorAtPoint(
+                centerX,
+                centerY);
+
             lines.Add(
-                $"- id={window.WindowId}; title={window.Title}; process={window.ProcessName ?? "?"}; foreground={window.IsForeground}; rect={window.Left},{window.Top},{window.Width},{window.Height}");
+                $"- id={window.WindowId}; title={window.Title}; process={window.ProcessName ?? "?"}; foreground={window.IsForeground}; rect={window.Left},{window.Top},{window.Width},{window.Height}; monitor={monitor?.DeviceName ?? "không rõ"}");
         }
 
         return string.Join("\n", lines);

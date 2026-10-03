@@ -101,6 +101,19 @@ jobs:
             }
 
             if (-not $status.supported) { throw "Windows chưa được nhận diện." }
+
+            $dpi = Invoke-RestMethod "$base/api/computer/dpi-calibration"
+            if ($dpi.awareness.windows -ne $true) {
+              throw "DPI calibration không nhận diện Windows."
+            }
+            if ($dpi.awareness.initializationAttempted -ne $true) {
+              throw "Ứng dụng chưa khởi tạo DPI awareness trước khi chạy web host."
+            }
+            if ($status.interactiveSession -and $dpi.awareness.perMonitorAware -ne $true) {
+              throw "Phiên Windows tương tác chưa được xác nhận Per-Monitor DPI Aware."
+            }
+            Write-Host "DPI awareness=$($dpi.awareness.awareness) v2=$($dpi.awareness.perMonitorAwareV2) topologyValid=$($dpi.topologyValid)"
+
             if ($status.desktopActionsPaused -ne $true) { throw "Điều khiển không khóa khi khởi động." }
             # Lệnh nhập mẫu không được gửi khi đang tạm dừng; CI không gõ ký tự thật.
             $keyboardBody = @{ windowId = "0x0"; text = "thu nghiem" } | ConvertTo-Json

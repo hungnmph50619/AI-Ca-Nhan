@@ -11,6 +11,7 @@ on:
   pull_request:
     paths:
       - 'src/PersonalAI.Web/Services/ComputerUse*'
+      - 'src/PersonalAI.Web/Services/ComputerOperator*'
       - 'src/PersonalAI.Web/Services/ComputerClickLeftTool.cs'
       - 'src/PersonalAI.Web/Services/ComputerOpenDefaultBrowserTool.cs'
       - 'src/PersonalAI.Web/Services/DesktopScreenshotService.cs'

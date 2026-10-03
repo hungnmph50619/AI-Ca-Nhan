@@ -191,8 +191,13 @@ confidence từ 0 đến 1.
                         new
                         {
                             text =
-                                $"Hãy xác minh trạng thái này trên ảnh desktop hiện tại: {expectedState}. " +
-                                $"Ảnh có kích thước {frame.Width}x{frame.Height}."
+                                $"Hãy xác minh trạng thái này trên ảnh hiện tại: {expectedState}. " +
+                                $"Ảnh có kích thước {frame.Width}x{frame.Height}. " +
+                                $"Phạm vi chụp: {frame.CaptureScope}. " +
+                                (frame.CaptureScope == "window"
+                                    ? $"Cửa sổ: id={frame.WindowId ?? "?"}; title={frame.WindowTitle ?? "?"}; foreground={frame.WindowWasForeground}. "
+                                    : string.Empty) +
+                                "Chỉ dùng bằng chứng thật sự nhìn thấy trong phạm vi ảnh này."
                         },
                         new
                         {
@@ -489,9 +494,13 @@ Nếu cách trước thất bại và trạng thái hiện tại chưa thay đ�
 Không chọn một hành động làm thay đổi giao diện nếu bạn không thể mô tả rõ trạng thái mong đợi sau hành động đó.
 
 Ví dụ tư duy tổng quát:
-- nếu ứng dụng đã có cửa sổ: có thể focus/restore;
-- nếu mục tiêu chưa có cửa sổ: có thể dùng affordance hệ thống đang khả dụng như Start/Search bằng phím hoặc UI;
-- nếu UI đang chuyển trạng thái: wait rồi quan sát lại;
+- nếu mục tiêu là đưa một ứng dụng lên foreground, trước hết xác định xem ứng dụng đó đã có cửa sổ phù hợp hay chưa;
+- nếu đã có cửa sổ phù hợp: có thể focus/restore rồi xác minh đúng ứng dụng đang ở foreground;
+- nếu chưa có cửa sổ phù hợp: quan sát các affordance Windows đang thực sự có trên màn hình rồi tự chọn cách tiếp cận, ví dụ taskbar, Start/Search hoặc bàn phím;
+- không giả định ứng dụng được ghim taskbar, không giả định icon ở vị trí cố định, không giả định đường dẫn thực thi;
+- nếu một cách mở không tạo kết quả mong đợi, dùng history/recovery để chọn chiến lược khác thay vì lặp lại;
+- nếu UI đang tải/chuyển trạng thái: wait rồi quan sát lại;
+- chỉ complete mục tiêu mở ứng dụng khi ảnh và metadata hiện tại cho thấy đúng ứng dụng đã mở và đang hiển thị ở foreground;
 - không giả định một chuỗi app-specific đã được hard-code.
 
 Mỗi lượt chỉ chọn MỘT action trong:

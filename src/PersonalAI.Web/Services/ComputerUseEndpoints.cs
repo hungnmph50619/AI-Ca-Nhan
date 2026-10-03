@@ -20,6 +20,7 @@ public static class ComputerUseEndpoints
         services.AddSingleton<IComputerDisplayTopologyService, WindowsComputerDisplayTopologyService>();
         services.AddSingleton<IComputerCoordinateTransformService, ComputerCoordinateTransformService>();
         services.AddSingleton<IComputerSafeTargetingService, ComputerSafeTargetingService>();
+        services.AddSingleton<IComputerOperatorAcceptanceService, ComputerOperatorAcceptanceService>();
         services.AddSingleton<IComputerOperatorTaskService, ComputerOperatorTaskService>();
         services.AddSingleton<IDesktopScreenshotService, WindowsDesktopScreenshotService>();
         services.AddSingleton<ILeaguePracticeAutomationService, LeaguePracticeAutomationService>();
@@ -64,6 +65,21 @@ public static class ComputerUseEndpoints
         app.MapGet("/api/computer/operator-progress", (
             ComputerOperatorProgressStore progress) =>
             Results.Ok(progress.Get()));
+
+        app.MapGet("/api/computer/operator-acceptance", (
+            HttpContext context,
+            IComputerOperatorAcceptanceService acceptance) =>
+        {
+            if (!IsLocalRequest(context))
+                return Results.StatusCode(StatusCodes.Status403Forbidden);
+
+            var result = acceptance.Run();
+            return result.Passed
+                ? Results.Ok(result)
+                : Results.Json(
+                    result,
+                    statusCode: StatusCodes.Status500InternalServerError);
+        });
 
         app.MapGet("/api/computer/displays", (
             IComputerDisplayTopologyService displays) =>

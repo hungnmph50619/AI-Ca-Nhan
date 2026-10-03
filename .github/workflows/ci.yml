@@ -3011,7 +3011,7 @@ jobs:
           grep -Fq 'ParallelToolCalls: false' src/PersonalAI.Web/Services/SystemCoreService.cs
           grep -Fq 'v100.css' src/PersonalAI.Web/wwwroot/index.html
           grep -Fq 'v100.js' src/PersonalAI.Web/wwwroot/index.html
-          grep -Fq 'LÕI ỔN ĐỊNH · HỢP ĐỒNG API 1' src/PersonalAI.Web/wwwroot/v100.js
+          grep -Fq 'coreHealthTitle' src/PersonalAI.Web/wwwroot/v100.js
           grep -Fq 'Controlled Computer Use' docs/releases/v1.1.0.md
           grep -Fq 'public const string Computer = "COMPUTER"' src/PersonalAI.Web/Models/ToolModels.cs
           grep -Fq 'DesktopActionsPaused: session.Paused' src/PersonalAI.Web/Services/ComputerUseService.cs
@@ -3090,7 +3090,7 @@ jobs:
           grep -Fq 'MaximumResponseBytes = 1 * 1024 * 1024' src/PersonalAI.Web/Services/BrowserAgentService.cs
           grep -Fq 'v120.css' src/PersonalAI.Web/wwwroot/index.html
           grep -Fq 'v120.js' src/PersonalAI.Web/wwwroot/index.html
-          grep -Fq 'KHẢ NĂNG ĐƯỢC KIỂM SOÁT · HTTP/HTML' src/PersonalAI.Web/wwwroot/v120.js
+          grep -Fq 'browserAgentTitle' src/PersonalAI.Web/wwwroot/v120.js
           ! grep -Fq 'HttpMethod.Post' src/PersonalAI.Web/Services/BrowserAgentService.cs
           ! grep -Fq 'UseCookies = true' src/PersonalAI.Web/Services/BrowserAgentService.cs
           ! grep -Fq 'CookieContainer' src/PersonalAI.Web/Services/BrowserAgentService.cs
@@ -3117,7 +3117,7 @@ jobs:
 
           grep -Fq 'v130.css' src/PersonalAI.Web/wwwroot/index.html
           grep -Fq 'v130.js' src/PersonalAI.Web/wwwroot/index.html
-          grep -Fq 'KHẢ NĂNG ĐƯỢC KIỂM SOÁT · THÔNG TIN XÁC THỰC ĐƯỢC MÃ HÓA' src/PersonalAI.Web/wwwroot/v130.js
+          grep -Fq 'connectorTitle' src/PersonalAI.Web/wwwroot/v130.js
           ! grep -Fq 'HttpMethod.Post' src/PersonalAI.Web/Services/ConnectorService.cs
           ! grep -Fq 'HttpMethod.Put' src/PersonalAI.Web/Services/ConnectorService.cs
           ! grep -Fq 'HttpMethod.Patch' src/PersonalAI.Web/Services/ConnectorService.cs
@@ -3158,7 +3158,7 @@ jobs:
           grep -Fq -- '--ignore-submodules=all' src/PersonalAI.Web/Services/DevelopmentAgentService.cs
           grep -Fq 'v140.css' src/PersonalAI.Web/wwwroot/index.html
           grep -Fq 'v140.js' src/PersonalAI.Web/wwwroot/index.html
-          grep -Fq 'KHẢ NĂNG CÓ KIỂM SOÁT · KHÔNG CHẠY LỆNH TÙY Ý' src/PersonalAI.Web/wwwroot/v140.js
+          grep -Fq 'developmentAgentTitle' src/PersonalAI.Web/wwwroot/v140.js
           grep -Fq 'DEVELOPMENT: "PHÁT TRIỂN PHẦN MỀM"' src/PersonalAI.Web/wwwroot/v080.js
           grep -Fq 'DEVELOPMENT: "PHÁT TRIỂN PHẦN MỀM"' src/PersonalAI.Web/wwwroot/v090.js
           ! grep -Fq 'UseShellExecute = true' src/PersonalAI.Web/Services/DevelopmentAgentService.cs

@@ -106,3 +106,22 @@ public sealed record DesktopVisionVerification(
     bool Satisfied,
     double Confidence,
     string Reason);
+
+public sealed record DesktopFrameDifference(
+    bool Comparable,
+    double ChangedRatio,
+    int ChangedPixelSamples,
+    int TotalPixelSamples,
+    int BoxLeft,
+    int BoxTop,
+    int BoxWidth,
+    int BoxHeight,
+    double MeanChannelDelta,
+    string Reason)
+{
+    public bool HasMeaningfulChange =>
+        Comparable &&
+        ChangedPixelSamples > 0 &&
+        BoxWidth > 0 &&
+        BoxHeight > 0;
+}

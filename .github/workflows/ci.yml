@@ -3042,6 +3042,12 @@ jobs:
           grep -Fq 'v110.css' src/PersonalAI.Web/wwwroot/index.html
           grep -Fq 'v110.js' src/PersonalAI.Web/wwwroot/index.html
           grep -Fq 'computerUseDialog' src/PersonalAI.Web/wwwroot/v110.js
+          grep -Fq 'VerifyAppliedActionAsync' src/PersonalAI.Web/Services/ComputerOperatorTaskService.cs
+          grep -Fq 'CaptureStableVirtualScreenAsync' src/PersonalAI.Web/Services/ComputerOperatorTaskService.cs
+          grep -Fq 'vision.VerifyAsync' src/PersonalAI.Web/Services/ComputerOperatorTaskService.cs
+          grep -Fq 'RequiresExpectedEffect' src/PersonalAI.Web/Services/ComputerOperatorTaskService.cs
+          grep -Fq 'VERIFY-FAILED' src/PersonalAI.Web/Services/ComputerOperatorTaskService.cs
+          grep -Fq 'STEP {index}: VERIFIED' src/PersonalAI.Web/Services/ComputerOperatorTaskService.cs
           ! grep -Fq '"computer.mouse.click"' src/PersonalAI.Web/Services/ComputerUseTools.cs
           ! grep -Fq '"computer.keyboard' src/PersonalAI.Web/Services/ComputerUseTools.cs
           grep -Fq 'control.RunAllowed(() => ClickLeftCore' src/PersonalAI.Web/Services/ComputerUseService.cs

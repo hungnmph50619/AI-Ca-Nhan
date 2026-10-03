@@ -3200,7 +3200,7 @@ jobs:
           grep -Fq 'LifeContextContentEncrypted: true' src/PersonalAI.Web/Services/SystemCoreService.cs
           grep -Fq 'v160.css' src/PersonalAI.Web/wwwroot/index.html
           grep -Fq 'v160.js' src/PersonalAI.Web/wwwroot/index.html
-          grep -Fq 'CONSENT · RETENTION · WORKSPACE' src/PersonalAI.Web/wwwroot/v160.js
+          grep -Fq 'lifeContextTitle' src/PersonalAI.Web/wwwroot/v160.js
           grep -Fq 'selectedLifeContext' src/PersonalAI.Web/wwwroot/app.js
           grep -Fq 'lifeContextCharacters' src/PersonalAI.Web/wwwroot/app.js
           ! grep -Fq 'android.permission.ACCESS_FINE_LOCATION' android/PersonalAI.Companion/app/src/main/AndroidManifest.xml
@@ -3223,7 +3223,7 @@ jobs:
           grep -Fq 'MaximumCriteria = 8' src/PersonalAI.Web/Services/DecisionEngineService.cs
           grep -Fq 'v170.css' src/PersonalAI.Web/wwwroot/index.html
           grep -Fq 'v170.js' src/PersonalAI.Web/wwwroot/index.html
-          grep -Fq 'EVIDENCE · TRADE-OFF · USER DECIDES' src/PersonalAI.Web/wwwroot/v170.js
+          grep -Fq 'decisionEngineTitle' src/PersonalAI.Web/wwwroot/v170.js
           ! grep -Fq 'IToolOrchestrationService' src/PersonalAI.Web/Services/DecisionEngineService.cs
           ! grep -Fq 'IPersonalAiTool' src/PersonalAI.Web/Services/DecisionEngineService.cs
           ! grep -Fq 'IPersonalAiTool' src/PersonalAI.Web/Services/DecisionEngineEndpoints.cs
@@ -3255,7 +3255,7 @@ jobs:
           grep -Fq 'AutomaticMultiStepExecution: false' src/PersonalAI.Web/Services/SystemCoreService.cs
           grep -Fq 'v180.css' src/PersonalAI.Web/wwwroot/index.html
           grep -Fq 'v180.js' src/PersonalAI.Web/wwwroot/index.html
-          grep -Fq 'SCHEDULE · ONE STEP · NO AUTO-CONFIRM' src/PersonalAI.Web/wwwroot/v180.js
+          grep -Fq 'automationTitle' src/PersonalAI.Web/wwwroot/v180.js
           grep -Fq 'automation: "Automation"' src/PersonalAI.Web/wwwroot/v100.js
           grep -Fq 'automation: "Automation"' src/PersonalAI.Web/wwwroot/v096.js
           ! grep -Fq '/api/decisions' src/PersonalAI.Web/Services/AutomationService.cs

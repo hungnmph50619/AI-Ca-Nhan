@@ -3043,10 +3043,10 @@ jobs:
           grep -Fq 'v110.css' src/PersonalAI.Web/wwwroot/index.html
           grep -Fq 'v110.js' src/PersonalAI.Web/wwwroot/index.html
           grep -Fq 'computerUseDialog' src/PersonalAI.Web/wwwroot/v110.js
-          grep -Fq 'Bạn KHÔNG chạy kịch bản cố định theo tên ứng dụng.' src/PersonalAI.Web/Services/DesktopVisionService.cs
-          grep -Fq 'computer.app.launch' src/PersonalAI.Web/Services/ComputerGenericAppLaunchTool.cs
-          grep -Fq 'tự quan sát' src/PersonalAI.Web/Services/ComputerGenericAppLaunchTool.cs
-          ! grep -Eiq 'notepad\.exe|calc\.exe|mspaint|explorer\.exe' src/PersonalAI.Web/Services/ComputerGenericAppLaunchTool.cs src/PersonalAI.Web/Services/ComputerOperatorTaskService.cs src/PersonalAI.Web/Services/DesktopVisionService.cs
+          grep -Fq 'verifiedMilestones' src/PersonalAI.Web/Services/ComputerOperatorTaskService.cs
+          grep -Fq 'CurrentSubgoal' src/PersonalAI.Web/Services/ComputerOperatorTaskService.cs
+          grep -Fq 'GoalProgress' src/PersonalAI.Web/Services/ComputerOperatorTaskService.cs
+          ! grep -Eiq 'notepad|calculator|paint|explorer' src/PersonalAI.Web/Services/ComputerOperatorTaskService.cs src/PersonalAI.Web/Services/DesktopVisionService.cs
           grep -Fq 'VerifyAppliedActionAsync' src/PersonalAI.Web/Services/ComputerOperatorTaskService.cs
           grep -Fq 'CaptureStableVirtualScreenAsync' src/PersonalAI.Web/Services/ComputerOperatorTaskService.cs
           grep -Fq 'vision.VerifyAsync' src/PersonalAI.Web/Services/ComputerOperatorTaskService.cs
@@ -3076,6 +3076,13 @@ jobs:
           ! grep -Fq 'Process.Start' src/PersonalAI.Web/Services/ComputerGenericAppLaunchTool.cs
           ! grep -Fq 'UseShellExecute' src/PersonalAI.Web/Services/ComputerGenericAppLaunchTool.cs
           ! grep -Eiq 'notepad|calculator|mspaint|paint|explorer\.exe|notepad\.exe|calc\.exe' src/PersonalAI.Web/Services/ComputerGenericAppLaunchTool.cs
+          grep -Fq 'CurrentSubgoal' src/PersonalAI.Web/Models/DesktopVisionModels.cs
+          grep -Fq 'GoalProgress' src/PersonalAI.Web/Models/DesktopVisionModels.cs
+          grep -Fq 'VerifiedMilestones' src/PersonalAI.Web/Models/DesktopVisionModels.cs
+          grep -Fq 'MILESTONE-SYSTEM-VERIFIED' src/PersonalAI.Web/Services/ComputerOperatorTaskService.cs
+          grep -Fq 'CURRENT SUBGOAL' src/PersonalAI.Web/Services/DesktopVisionService.cs
+          grep -Fq 'verifiedMilestones' src/PersonalAI.Web/Services/DesktopVisionService.cs
+          ! grep -Eiq 'notepad|calculator|mspaint|paint|explorer\.exe|notepad\.exe|calc\.exe' src/PersonalAI.Web/Services/ComputerOperatorTaskService.cs src/PersonalAI.Web/Services/DesktopVisionService.cs
           ! grep -Fq '"computer.mouse.click"' src/PersonalAI.Web/Services/ComputerUseTools.cs
           ! grep -Fq '"computer.keyboard' src/PersonalAI.Web/Services/ComputerUseTools.cs
           grep -Fq 'control.RunAllowed(() => ClickLeftCore' src/PersonalAI.Web/Services/ComputerUseService.cs

@@ -35,7 +35,9 @@ public sealed record ComputerCoordinatePoint(
     uint DpiX = 96,
     uint DpiY = 96,
     double ScaleX = 1.0,
-    double ScaleY = 1.0);
+    double ScaleY = 1.0,
+    bool DpiCalibrationVerified = false,
+    string? DpiCalibrationDetail = null);
 
 
 public sealed record ComputerMonitorInfo(

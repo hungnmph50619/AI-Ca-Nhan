@@ -51,6 +51,18 @@ public sealed record LeaguePracticeAutomationResult(
     DateTimeOffset CompletedAtUtc);
 
 
+public sealed record DesktopSceneElement(
+    string Id,
+    string Role,
+    string Label,
+    string ParentId,
+    int BoxLeft,
+    int BoxTop,
+    int BoxWidth,
+    int BoxHeight,
+    double Confidence,
+    IReadOnlyList<string> Relations);
+
 public sealed record DesktopOperatorDecision(
     string State,
     string Plan,
@@ -85,7 +97,9 @@ public sealed record DesktopOperatorDecision(
     int ScrollDelta,
     string ExpectedEffect,
     double Confidence,
-    string Reason);
+    string Reason,
+    IReadOnlyList<DesktopSceneElement>? SceneElements = null,
+    string TargetElementId = "");
 
 
 public sealed record DesktopVisionVerification(

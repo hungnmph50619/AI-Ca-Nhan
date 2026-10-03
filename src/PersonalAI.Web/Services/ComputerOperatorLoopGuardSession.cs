@@ -2,129 +2,200 @@ namespace PersonalAI.Web.Services;
 
 public sealed record ComputerOperatorLoopAssessment(
     bool Detected,
+    bool RequiresStrategyChange,
     string Kind,
     string Detail,
     int Occurrences);
 
 public sealed class ComputerOperatorLoopGuardSession
 {
-    private const int MaximumStates = 16;
-    private readonly List<string> states = [];
+    private const int MaximumObservations = 16;
+
+    private sealed record Observation(
+        string State,
+        string Strategy);
+
+    private readonly List<Observation> observations = [];
     private int warningCount;
 
     public ComputerOperatorLoopAssessment Observe(
-        string state)
+        string state,
+        string strategy)
     {
-        var normalized = NormalizeState(state);
-        if (normalized.Length == 0)
-            return new(false, string.Empty, string.Empty, 0);
+        var normalizedState = Normalize(state, 320);
+        var normalizedStrategy = Normalize(strategy, 260);
 
-        states.Add(normalized);
-        if (states.Count > MaximumStates)
-            states.RemoveRange(
+        if (normalizedState.Length == 0 &&
+            normalizedStrategy.Length == 0)
+            return None();
+
+        observations.Add(
+            new Observation(
+                normalizedState,
+                normalizedStrategy));
+
+        if (observations.Count > MaximumObservations)
+            observations.RemoveRange(
                 0,
-                states.Count - MaximumStates);
+                observations.Count - MaximumObservations);
+
+        var repeatedStrategy = DetectRepeatedStrategy();
+        if (repeatedStrategy.Detected)
+            return WithWarning(repeatedStrategy);
 
         var stagnation = DetectStagnation();
         if (stagnation.Detected)
-        {
-            warningCount++;
-            return stagnation with
-            {
-                Occurrences = warningCount
-            };
-        }
+            return WithWarning(stagnation);
 
         var oscillation = DetectOscillation();
         if (oscillation.Detected)
-        {
-            warningCount++;
-            return oscillation with
-            {
-                Occurrences = warningCount
-            };
-        }
+            return WithWarning(oscillation);
 
         warningCount = Math.Max(
             0,
             warningCount - 1);
 
-        return new(
-            false,
-            string.Empty,
-            string.Empty,
-            0);
+        return None();
     }
 
     public void MarkProgress()
     {
         warningCount = 0;
 
-        // Giữ lại trạng thái gần nhất để vẫn có ngữ cảnh nhưng xóa chuỗi cũ,
-        // tránh coi tiến triển mới là continuation của vòng lặp cũ.
-        if (states.Count > 1)
+        if (observations.Count > 1)
         {
-            var last = states[^1];
-            states.Clear();
-            states.Add(last);
+            var last = observations[^1];
+            observations.Clear();
+            observations.Add(last);
         }
+    }
+
+    private ComputerOperatorLoopAssessment DetectRepeatedStrategy()
+    {
+        if (observations.Count < 3)
+            return None();
+
+        var recent = observations.TakeLast(3).ToArray();
+        var strategy = recent[0].Strategy;
+
+        if (strategy.Length == 0 ||
+            recent.Any(item =>
+                !item.Strategy.Equals(
+                    strategy,
+                    StringComparison.OrdinalIgnoreCase)))
+            return None();
+
+        return new(
+            true,
+            true,
+            "repeated-strategy",
+            "AI đang lặp cùng một chiến lược hành động. Phải chọn một chiến lược khác từ trạng thái hiện tại; nếu không còn lựa chọn an toàn hợp lý thì trả blocked.",
+            3);
     }
 
     private ComputerOperatorLoopAssessment DetectStagnation()
     {
-        if (states.Count < 4)
-            return new(false, string.Empty, string.Empty, 0);
+        if (observations.Count < 4)
+            return None();
 
-        var recent = states.TakeLast(4).ToArray();
-        var same = recent.Count(item =>
-            item.Equals(
-                recent[0],
-                StringComparison.OrdinalIgnoreCase));
+        var recent = observations.TakeLast(4).ToArray();
+        var state = recent[0].State;
 
-        if (same < 4)
-            return new(false, string.Empty, string.Empty, 0);
+        if (state.Length == 0 ||
+            recent.Any(item =>
+                !item.State.Equals(
+                    state,
+                    StringComparison.OrdinalIgnoreCase)))
+            return None();
+
+        var currentStrategy = recent[^1].Strategy;
+        var strategySeenBefore =
+            currentStrategy.Length > 0 &&
+            recent
+                .Take(recent.Length - 1)
+                .Any(item =>
+                    item.Strategy.Equals(
+                        currentStrategy,
+                        StringComparison.OrdinalIgnoreCase));
 
         return new(
             true,
+            strategySeenBefore,
             "stagnation",
-            "Trạng thái desktop gần như không thay đổi qua 4 vòng suy luận liên tiếp.",
-            same);
+            strategySeenBefore
+                ? "Desktop gần như không đổi và chiến lược hiện tại đã được thử trong trạng thái này. Phải đổi chiến lược."
+                : "Desktop gần như không đổi, nhưng chiến lược hiện tại là phương án mới; có thể thử rồi phải xác minh kết quả.",
+            4);
     }
 
     private ComputerOperatorLoopAssessment DetectOscillation()
     {
-        if (states.Count < 4)
-            return new(false, string.Empty, string.Empty, 0);
+        if (observations.Count < 4)
+            return None();
 
-        var recent = states.TakeLast(4).ToArray();
-        var a = recent[0];
-        var b = recent[1];
+        var recent = observations.TakeLast(4).ToArray();
+        var a = recent[0].State;
+        var b = recent[1].State;
 
-        if (a.Equals(
+        if (a.Length == 0 ||
+            b.Length == 0 ||
+            a.Equals(
                 b,
                 StringComparison.OrdinalIgnoreCase))
-            return new(false, string.Empty, string.Empty, 0);
+            return None();
 
         var oscillates =
-            recent[2].Equals(
+            recent[2].State.Equals(
                 a,
                 StringComparison.OrdinalIgnoreCase) &&
-            recent[3].Equals(
+            recent[3].State.Equals(
                 b,
                 StringComparison.OrdinalIgnoreCase);
 
         if (!oscillates)
-            return new(false, string.Empty, string.Empty, 0);
+            return None();
+
+        var currentStrategy = recent[^1].Strategy;
+        var strategySeenBefore =
+            currentStrategy.Length > 0 &&
+            recent
+                .Take(recent.Length - 1)
+                .Any(item =>
+                    item.Strategy.Equals(
+                        currentStrategy,
+                        StringComparison.OrdinalIgnoreCase));
 
         return new(
             true,
+            strategySeenBefore,
             "oscillation",
-            "Trạng thái đang dao động qua lại giữa hai tình huống A ↔ B.",
+            strategySeenBefore
+                ? "Desktop đang dao động A ↔ B và chiến lược hiện tại đã xuất hiện trong chuỗi. Phải chọn cách tiếp cận khác."
+                : "Desktop đang dao động A ↔ B; chiến lược mới được phép thử một lần rồi phải xác minh.",
             2);
     }
 
-    private static string NormalizeState(
-        string value)
+    private ComputerOperatorLoopAssessment WithWarning(
+        ComputerOperatorLoopAssessment assessment)
+    {
+        warningCount++;
+        return assessment with
+        {
+            Occurrences = warningCount
+        };
+    }
+
+    private static ComputerOperatorLoopAssessment None() =>
+        new(
+            false,
+            false,
+            string.Empty,
+            string.Empty,
+            0);
+
+    private static string Normalize(
+        string value,
+        int maximum)
     {
         var normalized = string.Join(
             " ",
@@ -135,8 +206,8 @@ public sealed class ComputerOperatorLoopGuardSession
                     [' ', '\t', '\r', '\n', '.', ',', ';', ':'],
                     StringSplitOptions.RemoveEmptyEntries));
 
-        return normalized.Length <= 320
+        return normalized.Length <= maximum
             ? normalized
-            : normalized[..320];
+            : normalized[..maximum];
     }
 }

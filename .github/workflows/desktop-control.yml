@@ -58,6 +58,16 @@ jobs:
             }
             if (-not $ready) { throw "Ứng dụng không khởi động trong thời gian chờ." }
 
+            $acceptance = Invoke-RestMethod "$base/api/computer/operator-acceptance"
+            if ($acceptance.passed -ne $true) {
+              $failedChecks = @($acceptance.checks | Where-Object { $_.passed -ne $true } | ForEach-Object { "$($_.name): $($_.detail)" })
+              throw "Computer Operator acceptance suite thất bại: $($failedChecks -join '; ')"
+            }
+            if ($acceptance.totalCount -lt 7 -or $acceptance.passedCount -ne $acceptance.totalCount) {
+              throw "Computer Operator acceptance suite không chạy đủ số kiểm tra bắt buộc."
+            }
+            Write-Host "Đạt acceptance suite: $($acceptance.passedCount)/$($acceptance.totalCount)."
+
             $appStatus = Invoke-RestMethod "$base/api/status"
             if ($appStatus.version -notmatch '^\d+\.\d+\.\d+
 

@@ -3043,6 +3043,14 @@ jobs:
           grep -Fq 'v110.css' src/PersonalAI.Web/wwwroot/index.html
           grep -Fq 'v110.js' src/PersonalAI.Web/wwwroot/index.html
           grep -Fq 'computerUseDialog' src/PersonalAI.Web/wwwroot/v110.js
+          grep -Fq 'CaptureWindow(' src/PersonalAI.Web/Services/DesktopScreenshotService.cs
+          grep -Fq 'CaptureStableWindowAsync(' src/PersonalAI.Web/Services/DesktopScreenshotService.cs
+          grep -Fq 'CaptureScope = "window"' src/PersonalAI.Web/Services/DesktopScreenshotService.cs
+          grep -Fq 'WindowWasForeground = window.IsForeground' src/PersonalAI.Web/Services/DesktopScreenshotService.cs
+          grep -Fq 'CaptureVerificationFrameAsync' src/PersonalAI.Web/Services/ComputerOperatorTaskService.cs
+          grep -Fq 'ShouldPreferWindowCapture' src/PersonalAI.Web/Services/ComputerOperatorTaskService.cs
+          grep -Fq 'observe-fallback' src/PersonalAI.Web/Services/ComputerOperatorTaskService.cs
+          grep -Fq 'frame.CaptureScope == "window"' src/PersonalAI.Web/Services/DesktopVisionService.cs
           grep -Fq 'ComputerOperatorAcceptanceService' src/PersonalAI.Web/Services/ComputerOperatorAcceptanceService.cs
           grep -Fq 'CheckImagePixelWithNegativeVirtualOrigin' src/PersonalAI.Web/Services/ComputerOperatorAcceptanceService.cs
           ! grep -Eiq 'notepad\.exe|calc\.exe|mspaint|explorer\.exe' src/PersonalAI.Web/Services/ComputerOperatorAcceptanceService.cs src/PersonalAI.Web/Services/ComputerGenericAppLaunchTool.cs src/PersonalAI.Web/Services/ComputerOperatorTaskService.cs

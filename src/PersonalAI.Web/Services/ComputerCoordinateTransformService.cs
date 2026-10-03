@@ -47,10 +47,19 @@ public sealed class ComputerCoordinateTransformService(
         var monitor = displays.GetMonitorAtPoint(
             point.DesktopX,
             point.DesktopY);
+        var dpi = WindowsDpiAwareness.GetStatus();
+
+        var enriched = point with
+        {
+            DpiCalibrationVerified =
+                dpi.PerMonitorAwareV2 &&
+                dpi.PhysicalPixelCoordinatesExpected,
+            DpiCalibrationDetail = dpi.Detail
+        };
 
         return monitor is null
-            ? point
-            : point with
+            ? enriched
+            : enriched with
             {
                 MonitorDevice = monitor.DeviceName,
                 DpiX = monitor.DpiX,

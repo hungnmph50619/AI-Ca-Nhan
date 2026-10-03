@@ -17,6 +17,7 @@ public static class ComputerUseEndpoints
             sp.GetRequiredService<WindowsAiOperatorConsoleService>());
         services.AddHostedService<WindowsStopHotkeyService>();
         services.AddSingleton<IComputerUseService, WindowsComputerUseService>();
+        services.AddSingleton<IComputerCoordinateTransformService, ComputerCoordinateTransformService>();
         services.AddSingleton<IComputerOperatorTaskService, ComputerOperatorTaskService>();
         services.AddSingleton<IDesktopScreenshotService, WindowsDesktopScreenshotService>();
         services.AddSingleton<ILeaguePracticeAutomationService, LeaguePracticeAutomationService>();

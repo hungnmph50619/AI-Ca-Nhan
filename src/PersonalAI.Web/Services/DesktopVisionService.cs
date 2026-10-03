@@ -198,6 +198,9 @@ confidence từ 0 đến 1.
                                 (frame.CaptureScope == "window"
                                     ? $"Cửa sổ: id={frame.WindowId ?? "?"}; title={frame.WindowTitle ?? "?"}; foreground={frame.WindowWasForeground}. "
                                     : string.Empty) +
+                                (!string.IsNullOrWhiteSpace(frame.MonitorDevice)
+                                    ? $"Monitor: {frame.MonitorDevice}; primary={frame.MonitorWasPrimary}; dpi={frame.MonitorDpiX}x{frame.MonitorDpiY}. "
+                                    : string.Empty) +
                                 (string.IsNullOrWhiteSpace(frame.CaptureFallbackReason)
                                     ? string.Empty
                                     : $"Backend đã fallback: {frame.CaptureFallbackReason}. ") +
@@ -616,6 +619,9 @@ Các field không dùng để chuỗi rỗng hoặc [].
                                 $"Ảnh hiện tại: {frame.Width}x{frame.Height}; scope={frame.CaptureScope}; backend={frame.CaptureBackend}\n" +
                                 (frame.CaptureScope == "window"
                                     ? $"Cửa sổ đang được chụp: id={frame.WindowId ?? "?"}; title={frame.WindowTitle ?? "?"}; foreground={frame.WindowWasForeground}\n"
+                                    : string.Empty) +
+                                (!string.IsNullOrWhiteSpace(frame.MonitorDevice)
+                                    ? $"Monitor của frame: {frame.MonitorDevice}; primary={frame.MonitorWasPrimary}; dpi={frame.MonitorDpiX}x{frame.MonitorDpiY}\n"
                                     : string.Empty) +
                                 (string.IsNullOrWhiteSpace(frame.CaptureFallbackReason)
                                     ? string.Empty

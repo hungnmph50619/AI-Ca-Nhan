@@ -549,7 +549,7 @@ public sealed class WindowsDesktopScreenshotService(
         return maximum >= 12 || mean >= 8;
     }
 
-    private static DesktopScreenshotFrame EncodeWindowFrame(
+    private DesktopScreenshotFrame EncodeWindowFrame(
         Bitmap bitmap,
         ComputerWindowInfo window,
         int left,
@@ -564,6 +564,16 @@ public sealed class WindowsDesktopScreenshotService(
             bitmap.Width,
             bitmap.Height);
 
+        var centerX = window.Left + Math.Max(
+            0,
+            window.Width / 2);
+        var centerY = window.Top + Math.Max(
+            0,
+            window.Height / 2);
+        var monitor = displays.GetMonitorAtPoint(
+            centerX,
+            centerY);
+
         return frame with
         {
             CaptureScope = "window",
@@ -571,7 +581,11 @@ public sealed class WindowsDesktopScreenshotService(
             WindowTitle = window.Title,
             WindowWasForeground = window.IsForeground,
             CaptureBackend = backend,
-            CaptureFallbackReason = fallbackReason
+            CaptureFallbackReason = fallbackReason,
+            MonitorDevice = monitor?.DeviceName,
+            MonitorWasPrimary = monitor?.Primary ?? false,
+            MonitorDpiX = monitor?.DpiX ?? 96,
+            MonitorDpiY = monitor?.DpiY ?? 96
         };
     }
 

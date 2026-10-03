@@ -19,6 +19,7 @@ on:
       - 'src/PersonalAI.Web/Services/ComputerClickLeftTool.cs'
       - 'src/PersonalAI.Web/Services/ComputerOpenDefaultBrowserTool.cs'
       - 'src/PersonalAI.Web/Services/DesktopScreenshotService.cs'
+      - 'src/PersonalAI.Web/Services/DesktopFrameDifferenceService.cs'
       - 'src/PersonalAI.Web/Services/DesktopVisionService.cs'
       - 'src/PersonalAI.Web/Services/LeaguePracticeAutomationService.cs'
       - 'src/PersonalAI.Web/Services/LeaguePracticeOpenTool.cs'

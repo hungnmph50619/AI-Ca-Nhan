@@ -3058,6 +3058,11 @@ jobs:
           grep -Fq 'VerifyAppliedActionAsync' src/PersonalAI.Web/Services/ComputerOperatorTaskService.cs
           grep -Fq 'CaptureStableVirtualScreenAsync' src/PersonalAI.Web/Services/ComputerOperatorTaskService.cs
           grep -Fq 'vision.VerifyAsync' src/PersonalAI.Web/Services/ComputerOperatorTaskService.cs
+          grep -Fq 'IDesktopFrameDifferenceService' src/PersonalAI.Web/Services/DesktopFrameDifferenceService.cs
+          grep -Fq 'ChannelDeltaThreshold = 24' src/PersonalAI.Web/Services/DesktopFrameDifferenceService.cs
+          grep -Fq 'frameDifferences.Compare' src/PersonalAI.Web/Services/ComputerOperatorTaskService.cs
+          grep -Fq '"frame-difference"' src/PersonalAI.Web/Services/ComputerOperatorTaskService.cs
+          grep -Fq 'changedRatio=' src/PersonalAI.Web/Services/DesktopVisionService.cs
           grep -Fq 'RequiresExpectedEffect' src/PersonalAI.Web/Services/ComputerOperatorTaskService.cs
           grep -Fq 'VERIFY-FAILED' src/PersonalAI.Web/Services/ComputerOperatorTaskService.cs
           grep -Fq 'STEP {index}: VERIFIED' src/PersonalAI.Web/Services/ComputerOperatorTaskService.cs

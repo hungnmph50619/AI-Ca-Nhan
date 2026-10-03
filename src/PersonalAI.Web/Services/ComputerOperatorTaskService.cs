@@ -872,12 +872,10 @@ public sealed class ComputerOperatorTaskService(
 
         if (space == ComputerCoordinateSpaces.ImagePixel)
         {
-            return
-                $"box:{decision.BoxLeft},{decision.BoxTop},{decision.BoxWidth},{decision.BoxHeight}";
+            return $"box:{decision.BoxLeft},{decision.BoxTop},{decision.BoxWidth},{decision.BoxHeight}";
         }
 
-        return
-            $"box:{decision.BoxNormalizedLeft:0.0000},{decision.BoxNormalizedTop:0.0000},{decision.BoxNormalizedWidth:0.0000},{decision.BoxNormalizedHeight:0.0000}";
+        return $"box:{decision.BoxNormalizedLeft:0.0000},{decision.BoxNormalizedTop:0.0000},{decision.BoxNormalizedWidth:0.0000},{decision.BoxNormalizedHeight:0.0000}";
     }
 
     private static string CoordinateSignature(

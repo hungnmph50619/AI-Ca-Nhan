@@ -622,7 +622,7 @@ Các field không dùng để chuỗi rỗng hoặc [].
             },
             generationConfig = new
             {
-                maxOutputTokens = 420,
+                maxOutputTokens = 560,
                 temperature = 0.0,
                 responseMimeType = "application/json"
             }

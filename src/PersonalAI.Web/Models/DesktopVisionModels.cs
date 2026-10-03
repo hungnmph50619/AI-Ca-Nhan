@@ -44,6 +44,9 @@ public sealed record LeaguePracticeAutomationResult(
 public sealed record DesktopOperatorDecision(
     string State,
     string Plan,
+    string CurrentSubgoal,
+    double GoalProgress,
+    IReadOnlyList<string> VerifiedMilestones,
     string Action,
     string Query,
     string Text,

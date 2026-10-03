@@ -3061,6 +3061,11 @@ jobs:
           grep -Fq 'IDesktopFrameDifferenceService' src/PersonalAI.Web/Services/DesktopFrameDifferenceService.cs
           grep -Fq 'ChannelDeltaThreshold = 24' src/PersonalAI.Web/Services/DesktopFrameDifferenceService.cs
           grep -Fq 'frameDifferences.Compare' src/PersonalAI.Web/Services/ComputerOperatorTaskService.cs
+          grep -Fq 'IComputerWindowVisibilityService' src/PersonalAI.Web/Services/ComputerWindowVisibilityService.cs
+          grep -Fq 'OcclusionThreshold = 0.75' src/PersonalAI.Web/Services/ComputerWindowVisibilityService.cs
+          grep -Fq 'visibility.Assess(window)' src/PersonalAI.Web/Services/DesktopScreenshotService.cs
+          grep -Fq 'WindowVisibleRatio = visibilityAssessment.VisibleRatio' src/PersonalAI.Web/Services/DesktopScreenshotService.cs
+          grep -Fq 'likelyOccluded=' src/PersonalAI.Web/Services/DesktopVisionService.cs
           grep -Fq '"frame-difference"' src/PersonalAI.Web/Services/ComputerOperatorTaskService.cs
           grep -Fq 'changedRatio=' src/PersonalAI.Web/Services/DesktopVisionService.cs
           grep -Fq 'RequiresExpectedEffect' src/PersonalAI.Web/Services/ComputerOperatorTaskService.cs

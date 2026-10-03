@@ -30,6 +30,7 @@ public sealed class ComputerOperatorTaskService(
     ComputerOperatorProgressStore progress,
     ComputerOperatorExecutionControl execution,
     IComputerCoordinateTransformService coordinates,
+    IComputerDisplayTopologyService displays,
     IComputerSafeTargetingService targeting,
     ILogger<ComputerOperatorTaskService> logger)
     : IComputerOperatorTaskService
@@ -596,19 +597,14 @@ public sealed class ComputerOperatorTaskService(
             cancellationToken);
         await execution.WaitIfPausedAsync(cancellationToken);
 
-        var after = await CaptureVerificationFrameAsync(
-            decision,
+        var after = await CapturePostActionFrameAsync(
             cancellationToken);
 
         try
         {
-            var scopeDetail = after.CaptureScope == "window"
-                ? $"cửa sổ “{after.WindowTitle ?? "không rõ"}” ({after.WindowId ?? "?"}); foreground={after.WindowWasForeground}"
-                : "toàn desktop ảo";
-
             progress.Add(
                 "observe",
-                $"Đã chụp frame hậu hành động {after.Width}x{after.Height}, phạm vi: {scopeDetail}.",
+                $"Đã chụp frame hậu hành động {after.Width}x{after.Height}; scope={after.CaptureScope}; window={after.WindowId ?? "-"}; foreground={after.WindowWasForeground}.",
                 observation: true);
 
             if (decision.Action == "move-pointer")
@@ -649,74 +645,60 @@ public sealed class ComputerOperatorTaskService(
         }
     }
 
-    private async Task<DesktopScreenshotFrame> CaptureVerificationFrameAsync(
-        DesktopOperatorDecision decision,
+    private async Task<DesktopScreenshotFrame> CapturePostActionFrameAsync(
         CancellationToken cancellationToken)
     {
-        if (ShouldPreferWindowCapture(decision))
+        var active = computer.GetActiveWindow();
+
+        if (active is not null &&
+            active.Width >= 64 &&
+            active.Height >= 64)
         {
-            var active = computer.GetActiveWindow();
-            if (active is not null)
+            try
             {
-                try
-                {
-                    return await screenshots.CaptureStableWindowAsync(
-                        active.WindowId,
-                        maximumWaitMs: 5000,
-                        cancellationToken);
-                }
-                catch (ToolExecutionInputException exception)
-                {
-                    progress.Add(
-                        "observe-fallback",
-                        $"Không chụp được cửa sổ “{active.Title}”: {exception.Message}. Chuyển sang chụp toàn desktop.",
-                        "capture-fallback",
-                        decision.Confidence);
-                }
+                return await screenshots.CaptureStableWindowAsync(
+                    active.WindowId,
+                    maximumWaitMs: 5000,
+                    cancellationToken);
             }
+            catch (Exception exception) when (
+                exception is ToolExecutionInputException or
+                InvalidOperationException)
+            {
+                logger.LogDebug(
+                    exception,
+                    "Không chụp ổn định được foreground window {WindowId}; thử monitor theo con trỏ.",
+                    active.WindowId);
+            }
+        }
+
+        try
+        {
+            var cursor = computer.GetCursorPosition();
+            var monitor = displays.GetMonitorAtPoint(
+                cursor.X,
+                cursor.Y);
+
+            if (monitor is not null)
+            {
+                return await screenshots.CaptureStableMonitorAsync(
+                    monitor.DeviceName,
+                    maximumWaitMs: 5000,
+                    cancellationToken);
+            }
+        }
+        catch (Exception exception) when (
+            exception is ToolExecutionInputException or
+            InvalidOperationException)
+        {
+            logger.LogDebug(
+                exception,
+                "Không chụp ổn định được monitor theo con trỏ; fallback về virtual desktop.");
         }
 
         return await screenshots.CaptureStableVirtualScreenAsync(
             maximumWaitMs: 5000,
             cancellationToken);
-    }
-
-    private static bool ShouldPreferWindowCapture(
-        DesktopOperatorDecision decision)
-    {
-        if (decision.Action is
-            "minimize" or
-            "open-browser" or
-            "click-left" or
-            "double-click-left" or
-            "click-right")
-            return false;
-
-        if (decision.Action == "press-key" &&
-            decision.Key.Equals(
-                "WIN",
-                StringComparison.OrdinalIgnoreCase))
-            return false;
-
-        if (decision.Action == "press-hotkey" &&
-            decision.Keys.Any(key =>
-                key.Equals(
-                    "WIN",
-                    StringComparison.OrdinalIgnoreCase) ||
-                key.Equals(
-                    "WINDOWS",
-                    StringComparison.OrdinalIgnoreCase)))
-            return false;
-
-        return decision.Action is
-            "focus-window" or
-            "restore" or
-            "maximize" or
-            "type-text" or
-            "press-key" or
-            "press-hotkey" or
-            "scroll" or
-            "drag-left";
     }
 
     private static bool RequiresExpectedEffect(
@@ -994,12 +976,11 @@ public sealed class ComputerOperatorTaskService(
 
         return decision.Action switch
         {
-            "move-pointer" =>
-                $"{decision.Action}:{CoordinateSignature(decision, false)}:{Clip(decision.TargetLabel, 80)}",
+            "move-pointer" or
             "click-left" or
             "double-click-left" or
             "click-right" =>
-                $"{decision.Action}:{CoordinateSignature(decision, false)}:{RegionSignature(decision)}:{Clip(decision.TargetLabel, 80)}",
+                $"{decision.Action}:{CoordinateSignature(decision, false)}:{Clip(decision.TargetLabel, 80)}",
             "scroll" =>
                 $"scroll:{CoordinateSignature(decision, false)}:{decision.ScrollDelta}",
             "drag-left" =>
@@ -1011,21 +992,6 @@ public sealed class ComputerOperatorTaskService(
             "open-browser" => $"open-browser:{Clip(decision.Url, 120)}",
             _ => decision.Action
         };
-    }
-
-    private static string RegionSignature(
-        DesktopOperatorDecision decision)
-    {
-        var space = string.IsNullOrWhiteSpace(decision.CoordinateSpace)
-            ? ComputerCoordinateSpaces.ImagePixel
-            : decision.CoordinateSpace.Trim().ToLowerInvariant();
-
-        if (space == ComputerCoordinateSpaces.ImagePixel)
-        {
-            return $"box:{decision.BoxLeft},{decision.BoxTop},{decision.BoxWidth},{decision.BoxHeight}";
-        }
-
-        return $"box:{decision.BoxNormalizedLeft:0.0000},{decision.BoxNormalizedTop:0.0000},{decision.BoxNormalizedWidth:0.0000},{decision.BoxNormalizedHeight:0.0000}";
     }
 
     private static string CoordinateSignature(

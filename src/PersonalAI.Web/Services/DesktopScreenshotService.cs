@@ -204,13 +204,16 @@ public sealed class WindowsDesktopScreenshotService(
     private WindowCaptureBitmap CaptureWindowBitmap(
         ComputerWindowInfo window)
     {
-        string? fallbackReason = null;
+        string? printWindowReason = null;
+        Bitmap? printWindowBitmap = null;
+        var canUseFullWindowCapture =
+            CanUseFullWindowCapture(window);
 
-        if (CanUseFullWindowCapture(window) &&
+        if (canUseFullWindowCapture &&
             TryCaptureWithPrintWindow(
                 window,
-                out var printWindowBitmap,
-                out var printWindowReason))
+                out printWindowBitmap,
+                out printWindowReason))
         {
             return new(
                 printWindowBitmap!,
@@ -220,7 +223,7 @@ public sealed class WindowsDesktopScreenshotService(
                 null);
         }
 
-        fallbackReason = CanUseFullWindowCapture(window)
+        var fallbackReason = canUseFullWindowCapture
             ? "PrintWindow không trả frame hữu dụng."
             : "Cửa sổ nằm một phần ngoài desktop ảo; dùng vùng nhìn thấy.";
 

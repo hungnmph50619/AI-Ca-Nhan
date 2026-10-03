@@ -3048,6 +3048,15 @@ jobs:
           grep -Fq 'RequiresExpectedEffect' src/PersonalAI.Web/Services/ComputerOperatorTaskService.cs
           grep -Fq 'VERIFY-FAILED' src/PersonalAI.Web/Services/ComputerOperatorTaskService.cs
           grep -Fq 'STEP {index}: VERIFIED' src/PersonalAI.Web/Services/ComputerOperatorTaskService.cs
+          grep -Fq 'IComputerSafeTargetingService' src/PersonalAI.Web/Services/ComputerSafeTargetingService.cs
+          grep -Fq 'Hành động click cần bounding box hợp lệ' src/PersonalAI.Web/Services/ComputerSafeTargetingService.cs
+          grep -Fq 'targeting.Resolve(' src/PersonalAI.Web/Services/ComputerOperatorTaskService.cs
+          grep -Fq 'RegionSignature(decision)' src/PersonalAI.Web/Services/ComputerOperatorTaskService.cs
+          grep -Fq 'BuildSafeCenterRequest(' src/PersonalAI.Web/Services/ComputerSafeTargetingService.cs
+          grep -Fq 'var verification = await VerifyAppliedActionAsync' src/PersonalAI.Web/Services/ComputerOperatorTaskService.cs
+          grep -Fq 'var after = await screenshots.CaptureStableVirtualScreenAsync' src/PersonalAI.Web/Services/ComputerOperatorTaskService.cs
+          grep -Fq 'result = await vision.VerifyAsync' src/PersonalAI.Web/Services/ComputerOperatorTaskService.cs
+          ! grep -Eiq 'notepad|calculator|paint|explorer' src/PersonalAI.Web/Services/ComputerOperatorTaskService.cs src/PersonalAI.Web/Services/ComputerSafeTargetingService.cs src/PersonalAI.Web/Services/DesktopVisionService.cs
           ! grep -Fq '"computer.mouse.click"' src/PersonalAI.Web/Services/ComputerUseTools.cs
           ! grep -Fq '"computer.keyboard' src/PersonalAI.Web/Services/ComputerUseTools.cs
           grep -Fq 'control.RunAllowed(() => ClickLeftCore' src/PersonalAI.Web/Services/ComputerUseService.cs

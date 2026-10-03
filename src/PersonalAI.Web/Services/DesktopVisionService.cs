@@ -194,9 +194,13 @@ confidence từ 0 đến 1.
                                 $"Hãy xác minh trạng thái này trên ảnh hiện tại: {expectedState}. " +
                                 $"Ảnh có kích thước {frame.Width}x{frame.Height}. " +
                                 $"Phạm vi chụp: {frame.CaptureScope}. " +
+                                $"Backend chụp: {frame.CaptureBackend}. " +
                                 (frame.CaptureScope == "window"
                                     ? $"Cửa sổ: id={frame.WindowId ?? "?"}; title={frame.WindowTitle ?? "?"}; foreground={frame.WindowWasForeground}. "
                                     : string.Empty) +
+                                (string.IsNullOrWhiteSpace(frame.CaptureFallbackReason)
+                                    ? string.Empty
+                                    : $"Backend đã fallback: {frame.CaptureFallbackReason}. ") +
                                 "Chỉ dùng bằng chứng thật sự nhìn thấy trong phạm vi ảnh này."
                         },
                         new

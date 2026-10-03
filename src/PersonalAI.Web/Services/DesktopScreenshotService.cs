@@ -1,5 +1,6 @@
 using System.Drawing;
 using System.Drawing.Imaging;
+using System.Runtime.InteropServices;
 using PersonalAI.Web.Models;
 
 namespace PersonalAI.Web.Services;
@@ -97,32 +98,7 @@ public sealed class WindowsDesktopScreenshotService(
         EnsureAvailable();
 
         var window = ResolveWindow(windowId);
-        var region = GetVisibleWindowRegion(window);
-
-        using var bitmap = CaptureBitmap(
-            region.Left,
-            region.Top,
-            region.Width,
-            region.Height);
-        MaskOperatorConsole(
-            bitmap,
-            region.Left,
-            region.Top);
-
-        var frame = EncodeFrame(
-            bitmap,
-            region.Left,
-            region.Top,
-            region.Width,
-            region.Height);
-
-        return frame with
-        {
-            CaptureScope = "window",
-            WindowId = window.WindowId,
-            WindowTitle = window.Title,
-            WindowWasForeground = window.IsForeground
-        };
+        return CaptureWindowFrame(window);
     }
 
     public async Task<DesktopScreenshotFrame> CaptureStableWindowAsync(
@@ -193,36 +169,275 @@ public sealed class WindowsDesktopScreenshotService(
         string windowId)
     {
         var window = ResolveWindow(windowId);
-        var region = GetVisibleWindowRegion(window);
+        var result = CaptureWindowBitmap(window);
 
-        using var bitmap = CaptureBitmap(
-            region.Left,
-            region.Top,
-            region.Width,
-            region.Height);
-        MaskOperatorConsole(
-            bitmap,
-            region.Left,
-            region.Top);
-
+        using var bitmap = result.Bitmap;
         var signature = ComputeSignature(bitmap);
-        var frame = EncodeFrame(
+        var frame = EncodeWindowFrame(
             bitmap,
-            region.Left,
-            region.Top,
-            region.Width,
-            region.Height) with
-        {
-            CaptureScope = "window",
-            WindowId = window.WindowId,
-            WindowTitle = window.Title,
-            WindowWasForeground = window.IsForeground
-        };
+            window,
+            result.Left,
+            result.Top,
+            result.Backend,
+            result.FallbackReason);
 
         return new(
             frame,
             signature);
     }
+
+    private DesktopScreenshotFrame CaptureWindowFrame(
+        ComputerWindowInfo window)
+    {
+        var result = CaptureWindowBitmap(window);
+        using var bitmap = result.Bitmap;
+
+        return EncodeWindowFrame(
+            bitmap,
+            window,
+            result.Left,
+            result.Top,
+            result.Backend,
+            result.FallbackReason);
+    }
+
+    private WindowCaptureBitmap CaptureWindowBitmap(
+        ComputerWindowInfo window)
+    {
+        string? printWindowReason = null;
+        Bitmap? printWindowBitmap = null;
+        var canUseFullWindowCapture =
+            CanUseFullWindowCapture(window);
+
+        if (canUseFullWindowCapture &&
+            TryCaptureWithPrintWindow(
+                window,
+                out printWindowBitmap,
+                out printWindowReason))
+        {
+            return new(
+                printWindowBitmap!,
+                window.Left,
+                window.Top,
+                "print-window",
+                null);
+        }
+
+        var fallbackReason = canUseFullWindowCapture
+            ? "PrintWindow không trả frame hữu dụng."
+            : "Cửa sổ nằm một phần ngoài desktop ảo; dùng vùng nhìn thấy.";
+
+        var region = GetVisibleWindowRegion(window);
+        var screenBitmap = CaptureBitmap(
+            region.Left,
+            region.Top,
+            region.Width,
+            region.Height);
+        MaskOperatorConsole(
+            screenBitmap,
+            region.Left,
+            region.Top);
+
+        return new(
+            screenBitmap,
+            region.Left,
+            region.Top,
+            "copy-from-screen",
+            string.IsNullOrWhiteSpace(printWindowReason)
+                ? fallbackReason
+                : $"{fallbackReason} {printWindowReason}");
+    }
+
+    private bool CanUseFullWindowCapture(
+        ComputerWindowInfo window)
+    {
+        var screen = computer.GetScreenInfo();
+        var virtualRight = checked(
+            screen.VirtualLeft + screen.VirtualWidth);
+        var virtualBottom = checked(
+            screen.VirtualTop + screen.VirtualHeight);
+
+        return window.Width >= 64 &&
+               window.Height >= 64 &&
+               window.Width <= 12000 &&
+               window.Height <= 8000 &&
+               window.Left >= screen.VirtualLeft &&
+               window.Top >= screen.VirtualTop &&
+               window.Left + window.Width <= virtualRight &&
+               window.Top + window.Height <= virtualBottom;
+    }
+
+    private static bool TryCaptureWithPrintWindow(
+        ComputerWindowInfo window,
+        out Bitmap? bitmap,
+        out string? reason)
+    {
+        bitmap = null;
+        reason = null;
+
+        if (!TryParseWindowHandle(
+                window.WindowId,
+                out var handle))
+        {
+            reason = "WindowId không chuyển được thành HWND.";
+            return false;
+        }
+
+        var candidate = new Bitmap(
+            window.Width,
+            window.Height,
+            PixelFormat.Format24bppRgb);
+
+        try
+        {
+            using var graphics = Graphics.FromImage(candidate);
+            var hdc = graphics.GetHdc();
+
+            bool captured;
+            try
+            {
+                captured = PrintWindow(
+                    handle,
+                    hdc,
+                    PwRenderFullContent);
+            }
+            finally
+            {
+                graphics.ReleaseHdc(hdc);
+            }
+
+            if (!captured)
+            {
+                candidate.Dispose();
+                reason = "PrintWindow trả false.";
+                return false;
+            }
+
+            if (!HasUsefulContent(candidate))
+            {
+                candidate.Dispose();
+                reason = "PrintWindow trả frame gần như rỗng.";
+                return false;
+            }
+
+            bitmap = candidate;
+            return true;
+        }
+        catch (Exception exception) when (
+            exception is
+                System.ComponentModel.Win32Exception or
+                ArgumentException or
+                ExternalException)
+        {
+            candidate.Dispose();
+            reason = $"PrintWindow lỗi: {exception.GetType().Name}.";
+            return false;
+        }
+    }
+
+    private static bool HasUsefulContent(
+        Bitmap bitmap)
+    {
+        const int columns = 12;
+        const int rows = 8;
+        long total = 0;
+        var maximum = 0;
+
+        for (var row = 0; row < rows; row++)
+        {
+            for (var column = 0; column < columns; column++)
+            {
+                var x = Math.Clamp(
+                    (int)Math.Round(
+                        (column + 0.5) * bitmap.Width / columns),
+                    0,
+                    bitmap.Width - 1);
+                var y = Math.Clamp(
+                    (int)Math.Round(
+                        (row + 0.5) * bitmap.Height / rows),
+                    0,
+                    bitmap.Height - 1);
+
+                var pixel = bitmap.GetPixel(x, y);
+                var luminance =
+                    (pixel.R * 299 +
+                     pixel.G * 587 +
+                     pixel.B * 114) / 1000;
+
+                total += luminance;
+                maximum = Math.Max(
+                    maximum,
+                    luminance);
+            }
+        }
+
+        var sampleCount = columns * rows;
+        var mean = total / (double)sampleCount;
+
+        // PrintWindow thường trả bitmap toàn đen khi app/GPU surface
+        // không hỗ trợ backend này. Những frame đó phải fallback.
+        return maximum >= 12 || mean >= 8;
+    }
+
+    private static DesktopScreenshotFrame EncodeWindowFrame(
+        Bitmap bitmap,
+        ComputerWindowInfo window,
+        int left,
+        int top,
+        string backend,
+        string? fallbackReason)
+    {
+        var frame = EncodeFrame(
+            bitmap,
+            left,
+            top,
+            bitmap.Width,
+            bitmap.Height);
+
+        return frame with
+        {
+            CaptureScope = "window",
+            WindowId = window.WindowId,
+            WindowTitle = window.Title,
+            WindowWasForeground = window.IsForeground,
+            CaptureBackend = backend,
+            CaptureFallbackReason = fallbackReason
+        };
+    }
+
+    private static bool TryParseWindowHandle(
+        string windowId,
+        out IntPtr handle)
+    {
+        var value = (windowId ?? string.Empty).Trim();
+        if (value.StartsWith(
+                "0x",
+                StringComparison.OrdinalIgnoreCase))
+            value = value[2..];
+
+        if (value.Length == 0 ||
+            !ulong.TryParse(
+                value,
+                System.Globalization.NumberStyles.AllowHexSpecifier,
+                System.Globalization.CultureInfo.InvariantCulture,
+                out var raw) ||
+            raw == 0)
+        {
+            handle = IntPtr.Zero;
+            return false;
+        }
+
+        handle = new IntPtr(
+            unchecked((long)raw));
+        return true;
+    }
+
+    private sealed record WindowCaptureBitmap(
+        Bitmap Bitmap,
+        int Left,
+        int Top,
+        string Backend,
+        string? FallbackReason);
 
     private ComputerWindowInfo ResolveWindow(
         string windowId)
@@ -380,7 +595,10 @@ public sealed class WindowsDesktopScreenshotService(
             left,
             top,
             width,
-            height);
+            height) with
+        {
+            CaptureBackend = "copy-from-screen"
+        };
     }
 
     private void MaskOperatorConsole(
@@ -498,6 +716,15 @@ public sealed class WindowsDesktopScreenshotService(
                 "Chụp màn hình desktop chỉ khả dụng trong phiên Windows đang tương tác.");
     }
 
-    [System.Runtime.InteropServices.DllImport("user32.dll")]
+    private const uint PwRenderFullContent = 0x00000002;
+
+    [DllImport("user32.dll")]
+    [return: MarshalAs(UnmanagedType.Bool)]
+    private static extern bool PrintWindow(
+        IntPtr hWnd,
+        IntPtr hdcBlt,
+        uint flags);
+
+    [DllImport("user32.dll")]
     private static extern int GetSystemMetrics(int index);
 }

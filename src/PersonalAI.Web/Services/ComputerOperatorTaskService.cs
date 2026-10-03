@@ -604,10 +604,15 @@ public sealed class ComputerOperatorTaskService(
             var scopeDetail = after.CaptureScope == "window"
                 ? $"cửa sổ “{after.WindowTitle ?? "không rõ"}” ({after.WindowId ?? "?"}); foreground={after.WindowWasForeground}"
                 : "toàn desktop ảo";
+            var backendDetail =
+                $"backend={after.CaptureBackend}" +
+                (string.IsNullOrWhiteSpace(after.CaptureFallbackReason)
+                    ? string.Empty
+                    : $"; fallback={after.CaptureFallbackReason}");
 
             progress.Add(
                 "observe",
-                $"Đã chụp frame hậu hành động {after.Width}x{after.Height}, phạm vi: {scopeDetail}.",
+                $"Đã chụp frame hậu hành động {after.Width}x{after.Height}, phạm vi: {scopeDetail}; {backendDetail}.",
                 observation: true);
 
             var result = await vision.VerifyAsync(

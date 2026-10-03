@@ -479,9 +479,12 @@ Mỗi lượt phải:
 1. Mô tả STATE hiện tại từ ảnh + metadata.
 2. Xem HISTORY để biết những gì đã thử, thành công hay thất bại.
 3. Đọc BỘ NHỚ PHỤC HỒI để biết chiến lược nào đã thất bại, loại lỗi và kết quả mong đợi chưa đạt.
-4. Lập PLAN ngắn cho bước tiếp theo dựa trên affordance hiện có.
-5. Chọn đúng MỘT ACTION.
-6. Nêu EXPECTED EFFECT cụ thể, quan sát được và có thể kiểm tra ngay sau hành động.
+4. Với mục tiêu nhiều bước, xác định CURRENT SUBGOAL là mục tiêu con hợp lý nhất ở thời điểm hiện tại; được phép thay đổi subgoal khi trạng thái thực tế khác dự kiến.
+5. Ước lượng GOAL PROGRESS từ 0 đến 1 dựa trên bằng chứng hiện tại; đây chỉ là chỉ báo tiến độ, không phải quyền tự tuyên bố hoàn thành.
+6. VERIFIED MILESTONES chỉ được liệt kê những mốc đã có bằng chứng trên ảnh hiện tại hoặc đã được lịch sử xác minh.
+7. Lập PLAN ngắn cho bước tiếp theo dựa trên affordance hiện có.
+8. Chọn đúng MỘT ACTION.
+9. Nêu EXPECTED EFFECT cụ thể, quan sát được và có thể kiểm tra ngay sau hành động.
 Nếu cách trước thất bại và trạng thái hiện tại chưa thay đổi đáng kể, PHẢI chọn một chiến lược khác có ý nghĩa: đổi action, đổi target, đổi affordance hoặc đổi đường đi tới mục tiêu. Không được chỉ diễn đạt lại cùng một hành động.
 Không chọn một hành động làm thay đổi giao diện nếu bạn không thể mô tả rõ trạng thái mong đợi sau hành động đó.
 
@@ -548,6 +551,9 @@ Trả đúng một JSON object, không markdown:
 {
   "state":"...",
   "plan":"...",
+  "currentSubgoal":"...",
+  "goalProgress":0.35,
+  "verifiedMilestones":[],
   "action":"focus-window",
   "query":"",
   "text":"",
@@ -679,6 +685,11 @@ Các field không dùng để chuỗi rỗng hoặc [].
             decision.Confidence is < 0 or > 1 ||
             decision.State.Length > 220 ||
             decision.Plan.Length > 500 ||
+            decision.CurrentSubgoal.Length > 500 ||
+            !double.IsFinite(decision.GoalProgress) ||
+            decision.GoalProgress is < 0 or > 1 ||
+            decision.VerifiedMilestones.Count > 16 ||
+            decision.VerifiedMilestones.Any(item => item.Length > 260) ||
             decision.Query.Length > 120 ||
             decision.Text.Length > 1000 ||
             decision.Key.Length > 20 ||
@@ -1044,9 +1055,24 @@ Các field không dùng để chuỗi rỗng hoặc [].
                     .ToArray()
                 : Array.Empty<string>();
 
+        var verifiedMilestones =
+            root.TryGetProperty("verifiedMilestones", out var milestonesElement)
+            && milestonesElement.ValueKind == JsonValueKind.Array
+                ? milestonesElement.EnumerateArray()
+                    .Where(item => item.ValueKind == JsonValueKind.String)
+                    .Select(item => item.GetString()?.Trim() ?? string.Empty)
+                    .Where(item => item.Length > 0)
+                    .Distinct(StringComparer.OrdinalIgnoreCase)
+                    .Take(16)
+                    .ToArray()
+                : Array.Empty<string>();
+
         return new DesktopOperatorDecision(
             ReadString(root, "state"),
             ReadString(root, "plan"),
+            ReadString(root, "currentSubgoal"),
+            ReadDouble(root, "goalProgress"),
+            verifiedMilestones,
             ReadString(root, "action"),
             ReadString(root, "query"),
             ReadString(root, "text"),

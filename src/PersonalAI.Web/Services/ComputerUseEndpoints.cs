@@ -24,6 +24,7 @@ public static class ComputerUseEndpoints
         services.AddSingleton<IComputerOperatorAcceptanceService, ComputerOperatorAcceptanceService>();
         services.AddSingleton<IComputerOperatorTaskService, ComputerOperatorTaskService>();
         services.AddSingleton<IDesktopScreenshotService, WindowsDesktopScreenshotService>();
+        services.AddSingleton<IDesktopFrameDifferenceService, DesktopFrameDifferenceService>();
         services.AddSingleton<ILeaguePracticeAutomationService, LeaguePracticeAutomationService>();
         services.AddSingleton<IPersonalAiTool, ComputerScreenInfoTool>();
         services.AddSingleton<IPersonalAiTool, ComputerCursorPositionTool>();

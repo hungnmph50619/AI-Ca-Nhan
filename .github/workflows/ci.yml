@@ -3042,6 +3042,11 @@ jobs:
           grep -Fq 'v110.css' src/PersonalAI.Web/wwwroot/index.html
           grep -Fq 'v110.js' src/PersonalAI.Web/wwwroot/index.html
           grep -Fq 'computerUseDialog' src/PersonalAI.Web/wwwroot/v110.js
+          grep -Fq 'IComputerSafeTargetingService' src/PersonalAI.Web/Services/ComputerSafeTargetingService.cs
+          grep -Fq 'Hành động click cần bounding box hợp lệ' src/PersonalAI.Web/Services/ComputerSafeTargetingService.cs
+          grep -Fq 'targeting.Resolve(' src/PersonalAI.Web/Services/ComputerOperatorTaskService.cs
+          grep -Fq 'RegionSignature(decision)' src/PersonalAI.Web/Services/ComputerOperatorTaskService.cs
+          ! grep -Eiq 'notepad|calculator|paint|explorer' src/PersonalAI.Web/Services/ComputerOperatorTaskService.cs src/PersonalAI.Web/Services/ComputerSafeTargetingService.cs
           ! grep -Fq '"computer.mouse.click"' src/PersonalAI.Web/Services/ComputerUseTools.cs
           ! grep -Fq '"computer.keyboard' src/PersonalAI.Web/Services/ComputerUseTools.cs
           grep -Fq 'control.RunAllowed(() => ClickLeftCore' src/PersonalAI.Web/Services/ComputerUseService.cs

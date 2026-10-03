@@ -586,30 +586,14 @@ public sealed class ComputerOperatorTaskService(
         progress.Add(
             "verify",
             decision.Action == "move-pointer"
-                ? "Đang kiểm tra vị trí con trỏ sau khi di chuyển."
+                ? "Đang chụp trạng thái mới và kiểm tra vị trí con trỏ sau khi di chuyển."
                 : $"Đang chụp trạng thái mới để xác minh: {decision.ExpectedEffect}",
             decision.Action,
             decision.Confidence);
 
-        if (decision.Action == "move-pointer")
-        {
-            var expected = coordinates.ToDesktopPoint(
-                BuildCoordinateRequest(decision, useEnd: false),
-                previousFrame);
-            var actual = computer.GetCursorPosition();
-            var deltaX = Math.Abs(actual.X - expected.DesktopX);
-            var deltaY = Math.Abs(actual.Y - expected.DesktopY);
-            var verified = deltaX <= 3 && deltaY <= 3;
-
-            return new(
-                verified,
-                verified ? 1.0 : 0.0,
-                verified
-                    ? $"Con trỏ đã tới ({actual.X},{actual.Y}), khớp điểm mong đợi ({expected.DesktopX},{expected.DesktopY})."
-                    : $"Con trỏ ở ({actual.X},{actual.Y}), lệch khỏi điểm mong đợi ({expected.DesktopX},{expected.DesktopY}).");
-        }
-
-        await Task.Delay(550, cancellationToken);
+        await Task.Delay(
+            decision.Action == "move-pointer" ? 180 : 550,
+            cancellationToken);
         await execution.WaitIfPausedAsync(cancellationToken);
 
         var after = await screenshots.CaptureStableVirtualScreenAsync(
@@ -623,17 +607,35 @@ public sealed class ComputerOperatorTaskService(
                 $"Đã chụp frame hậu hành động {after.Width}x{after.Height}.",
                 observation: true);
 
+            if (decision.Action == "move-pointer")
+            {
+                var expected = coordinates.ToDesktopPoint(
+                    BuildCoordinateRequest(decision, useEnd: false),
+                    previousFrame);
+                var actual = computer.GetCursorPosition();
+                var deltaX = Math.Abs(actual.X - expected.DesktopX);
+                var deltaY = Math.Abs(actual.Y - expected.DesktopY);
+                var verified = deltaX <= 3 && deltaY <= 3;
+
+                return new(
+                    verified,
+                    verified ? 1.0 : 0.0,
+                    verified
+                        ? $"Đã chụp lại màn hình; con trỏ ở ({actual.X},{actual.Y}), khớp điểm mong đợi ({expected.DesktopX},{expected.DesktopY})."
+                        : $"Đã chụp lại màn hình; con trỏ ở ({actual.X},{actual.Y}), lệch khỏi điểm mong đợi ({expected.DesktopX},{expected.DesktopY}).");
+            }
+
             var result = await vision.VerifyAsync(
                 after,
                 decision.ExpectedEffect,
                 cancellationToken);
 
-            var verified =
+            var verifiedByVision =
                 result.Satisfied &&
                 result.Confidence >= MinimumConfidence;
 
             return new(
-                verified,
+                verifiedByVision,
                 result.Confidence,
                 result.Reason);
         }

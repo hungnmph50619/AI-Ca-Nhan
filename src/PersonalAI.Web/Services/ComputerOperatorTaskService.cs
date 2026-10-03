@@ -617,11 +617,12 @@ public sealed class ComputerOperatorTaskService(
 
         return decision.Action switch
         {
-            "move-pointer" or
+            "move-pointer" =>
+                $"{decision.Action}:{CoordinateSignature(decision, false)}:{Clip(decision.TargetLabel, 80)}",
             "click-left" or
             "double-click-left" or
             "click-right" =>
-                $"{decision.Action}:{CoordinateSignature(decision, false)}:{Clip(decision.TargetLabel, 80)}",
+                $"{decision.Action}:{CoordinateSignature(decision, false)}:{RegionSignature(decision)}:{Clip(decision.TargetLabel, 80)}",
             "scroll" =>
                 $"scroll:{CoordinateSignature(decision, false)}:{decision.ScrollDelta}",
             "drag-left" =>
@@ -633,6 +634,23 @@ public sealed class ComputerOperatorTaskService(
             "open-browser" => $"open-browser:{Clip(decision.Url, 120)}",
             _ => decision.Action
         };
+    }
+
+    private static string RegionSignature(
+        DesktopOperatorDecision decision)
+    {
+        var space = string.IsNullOrWhiteSpace(decision.CoordinateSpace)
+            ? ComputerCoordinateSpaces.ImagePixel
+            : decision.CoordinateSpace.Trim().ToLowerInvariant();
+
+        if (space == ComputerCoordinateSpaces.ImagePixel)
+        {
+            return
+                $"box:{decision.BoxLeft},{decision.BoxTop},{decision.BoxWidth},{decision.BoxHeight}";
+        }
+
+        return
+            $"box:{decision.BoxNormalizedLeft:0.0000},{decision.BoxNormalizedTop:0.0000},{decision.BoxNormalizedWidth:0.0000},{decision.BoxNormalizedHeight:0.0000}";
     }
 
     private static string CoordinateSignature(

@@ -199,7 +199,7 @@ confidence từ 0 đến 1.
                                     ? $"Cửa sổ: id={frame.WindowId ?? "?"}; title={frame.WindowTitle ?? "?"}; foreground={frame.WindowWasForeground}. "
                                     : string.Empty) +
                                 (!string.IsNullOrWhiteSpace(frame.MonitorDevice)
-                                    ? $"Màn hình: {frame.MonitorDevice}; primary={frame.MonitorWasPrimary}; dpi={frame.MonitorDpiX}x{frame.MonitorDpiY}. "
+                                    ? $"Monitor: {frame.MonitorDevice}; primary={frame.MonitorWasPrimary}; dpi={frame.MonitorDpiX}x{frame.MonitorDpiY}. "
                                     : string.Empty) +
                                 (string.IsNullOrWhiteSpace(frame.CaptureFallbackReason)
                                     ? string.Empty
@@ -616,7 +616,16 @@ Các field không dùng để chuỗi rỗng hoặc [].
                         {
                             text =
                                 $"goal: {goal}\n" +
-                                $"Ảnh desktop: {frame.Width}x{frame.Height}\n" +
+                                $"Ảnh hiện tại: {frame.Width}x{frame.Height}; scope={frame.CaptureScope}; backend={frame.CaptureBackend}\n" +
+                                (frame.CaptureScope == "window"
+                                    ? $"Cửa sổ đang được chụp: id={frame.WindowId ?? "?"}; title={frame.WindowTitle ?? "?"}; foreground={frame.WindowWasForeground}\n"
+                                    : string.Empty) +
+                                (!string.IsNullOrWhiteSpace(frame.MonitorDevice)
+                                    ? $"Monitor của frame: {frame.MonitorDevice}; primary={frame.MonitorWasPrimary}; dpi={frame.MonitorDpiX}x{frame.MonitorDpiY}\n"
+                                    : string.Empty) +
+                                (string.IsNullOrWhiteSpace(frame.CaptureFallbackReason)
+                                    ? string.Empty
+                                    : $"Capture fallback: {frame.CaptureFallbackReason}\n") +
                                 $"Metadata cửa sổ:\n{windowsContext}\n" +
                                 $"Lịch sử task + bộ nhớ phục hồi:\n{(string.IsNullOrWhiteSpace(taskHistory) ? "(chưa có hành động trước đó)" : taskHistory)}\n" +
                                 "Hãy quan sát trạng thái hiện tại, tự suy luận phương án tiếp theo và chủ động đổi chiến lược nếu cách trước không hiệu quả."

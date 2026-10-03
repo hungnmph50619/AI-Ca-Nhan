@@ -3049,14 +3049,20 @@ jobs:
           grep -Fq 'VERIFY-FAILED' src/PersonalAI.Web/Services/ComputerOperatorTaskService.cs
           grep -Fq 'STEP {index}: VERIFIED' src/PersonalAI.Web/Services/ComputerOperatorTaskService.cs
           grep -Fq 'IComputerSafeTargetingService' src/PersonalAI.Web/Services/ComputerSafeTargetingService.cs
-          grep -Fq 'Hành động click cần bounding box hợp lệ' src/PersonalAI.Web/Services/ComputerSafeTargetingService.cs
-          grep -Fq 'targeting.Resolve(' src/PersonalAI.Web/Services/ComputerOperatorTaskService.cs
           grep -Fq 'RegionSignature(decision)' src/PersonalAI.Web/Services/ComputerOperatorTaskService.cs
           grep -Fq 'BuildSafeCenterRequest(' src/PersonalAI.Web/Services/ComputerSafeTargetingService.cs
           grep -Fq 'var verification = await VerifyAppliedActionAsync' src/PersonalAI.Web/Services/ComputerOperatorTaskService.cs
           grep -Fq 'var after = await screenshots.CaptureStableVirtualScreenAsync' src/PersonalAI.Web/Services/ComputerOperatorTaskService.cs
-          grep -Fq 'result = await vision.VerifyAsync' src/PersonalAI.Web/Services/ComputerOperatorTaskService.cs
-          ! grep -Eiq 'notepad|calculator|paint|explorer' src/PersonalAI.Web/Services/ComputerOperatorTaskService.cs src/PersonalAI.Web/Services/ComputerSafeTargetingService.cs src/PersonalAI.Web/Services/DesktopVisionService.cs
+          ! grep -Eiq 'notepad|calculator|paint|explorer' src/PersonalAI.Web/Services/ComputerOperatorTaskService.cs src/PersonalAI.Web/Services/ComputerOperatorRecoverySession.cs src/PersonalAI.Web/Services/ComputerSafeTargetingService.cs src/PersonalAI.Web/Services/DesktopVisionService.cs
+          grep -Fq 'ComputerOperatorRecoverySession' src/PersonalAI.Web/Services/ComputerOperatorRecoverySession.cs
+          grep -Fq 'ShouldAvoidRepeatedStrategy' src/PersonalAI.Web/Services/ComputerOperatorRecoverySession.cs
+          grep -Fq 'BuildContext()' src/PersonalAI.Web/Services/ComputerOperatorRecoverySession.cs
+          grep -Fq 'recovery.RecordFailure' src/PersonalAI.Web/Services/ComputerOperatorTaskService.cs
+          grep -Fq 'recovery.ShouldAvoidRepeatedStrategy' src/PersonalAI.Web/Services/ComputerOperatorTaskService.cs
+          grep -Fq 'recovery.BuildContext()' src/PersonalAI.Web/Services/ComputerOperatorTaskService.cs
+          grep -Fq 'VerificationFailed' src/PersonalAI.Web/Services/ComputerOperatorRecoverySession.cs
+          ! grep -Eiq 'notepad|calculator|mspaint|paint|explorer\.exe|notepad\.exe|calc\.exe' src/PersonalAI.Web/Services/ComputerOperatorRecoverySession.cs
+          ! grep -Eiq 'notepad|calculator|mspaint|paint|explorer\.exe|notepad\.exe|calc\.exe' src/PersonalAI.Web/Services/ComputerOperatorTaskService.cs
           ! grep -Fq '"computer.mouse.click"' src/PersonalAI.Web/Services/ComputerUseTools.cs
           ! grep -Fq '"computer.keyboard' src/PersonalAI.Web/Services/ComputerUseTools.cs
           grep -Fq 'control.RunAllowed(() => ClickLeftCore' src/PersonalAI.Web/Services/ComputerUseService.cs

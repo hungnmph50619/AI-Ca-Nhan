@@ -473,11 +473,26 @@ confidence từ 0 đến 1.
         };
     }
 
+    public Task<DesktopOperatorDecision> DecideComputerOperatorActionAsync(
+        DesktopScreenshotFrame frame,
+        string goal,
+        string windowsContext,
+        string taskHistory,
+        CancellationToken cancellationToken) =>
+        DecideComputerOperatorActionAsync(
+            frame,
+            goal,
+            windowsContext,
+            taskHistory,
+            string.Empty,
+            cancellationToken);
+
     public async Task<DesktopOperatorDecision> DecideComputerOperatorActionAsync(
         DesktopScreenshotFrame frame,
         string goal,
         string windowsContext,
         string taskHistory,
+        string temporalSceneContext,
         CancellationToken cancellationToken)
     {
         if (!Ready)
@@ -495,6 +510,10 @@ confidence từ 0 đến 1.
         if (taskHistory.Length > 6000)
             taskHistory = taskHistory[^6000..];
 
+        temporalSceneContext ??= string.Empty;
+        if (temporalSceneContext.Length > 4000)
+            temporalSceneContext = temporalSceneContext[^4000..];
+
         var key = settings.GetApiKey("Gemini");
         var model = Uri.EscapeDataString(Model);
         const string system = """
@@ -511,10 +530,11 @@ Mỗi lượt phải:
 5. Ước lượng GOAL PROGRESS từ 0 đến 1 dựa trên bằng chứng hiện tại; đây chỉ là chỉ báo tiến độ, không phải quyền tự tuyên bố hoàn thành.
 6. VERIFIED MILESTONES chỉ được liệt kê những mốc đã có bằng chứng trên ảnh hiện tại hoặc đã được lịch sử xác minh.
 7. Dựng SCENE ELEMENTS cho các phần tử giao diện quan trọng đang thật sự nhìn thấy: cửa sổ, thanh công cụ, nút, ô nhập liệu, menu, tab, danh sách, taskbar, icon hoặc vùng nội dung. Mỗi phần tử có id ổn định trong lượt này, role, label, parentId, bounding box pixel và các quan hệ ngắn.
-8. Lập PLAN ngắn cho bước tiếp theo dựa trên affordance và quan hệ trong scene graph.
-9. Chọn đúng MỘT ACTION.
-10. Nếu action dùng chuột lên một phần tử UI, targetElementId PHẢI trỏ tới đúng phần tử trong sceneElements.
-11. Nêu EXPECTED EFFECT cụ thể, quan sát được và có thể kiểm tra ngay sau hành động.
+8. Đọc TEMPORAL SCENE nếu có để biết phần tử nào ổn định, di chuyển, xuất hiện mới hoặc biến mất so với lượt trước. Không click dựa trên vị trí cũ của phần tử đã di chuyển.
+9. Lập PLAN ngắn cho bước tiếp theo dựa trên affordance, quan hệ scene graph và temporal scene.
+10. Chọn đúng MỘT ACTION.
+11. Nếu action dùng chuột lên một phần tử UI, targetElementId PHẢI trỏ tới đúng phần tử trong sceneElements hiện tại.
+12. Nêu EXPECTED EFFECT cụ thể, quan sát được và có thể kiểm tra ngay sau hành động.
 Nếu cách trước thất bại và trạng thái hiện tại chưa thay đổi đáng kể, PHẢI chọn một chiến lược khác có ý nghĩa: đổi action, đổi target, đổi affordance hoặc đổi đường đi tới mục tiêu. Không được chỉ diễn đạt lại cùng một hành động.
 Không chọn một hành động làm thay đổi giao diện nếu bạn không thể mô tả rõ trạng thái mong đợi sau hành động đó.
 
@@ -664,6 +684,7 @@ Các field không dùng để chuỗi rỗng hoặc [].
                                     ? string.Empty
                                     : $"Capture fallback: {frame.CaptureFallbackReason}\n") +
                                 $"Metadata cửa sổ:\n{windowsContext}\n" +
+                                $"TEMPORAL SCENE:\n{(string.IsNullOrWhiteSpace(temporalSceneContext) ? "(chưa có scene trước để đối chiếu)" : temporalSceneContext)}\n" +
                                 $"Lịch sử task + bộ nhớ phục hồi:\n{(string.IsNullOrWhiteSpace(taskHistory) ? "(chưa có hành động trước đó)" : taskHistory)}\n" +
                                 "Hãy quan sát trạng thái hiện tại, tự suy luận phương án tiếp theo và chủ động đổi chiến lược nếu cách trước không hiệu quả."
                         },

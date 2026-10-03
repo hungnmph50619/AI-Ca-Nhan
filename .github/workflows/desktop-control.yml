@@ -8,6 +8,7 @@ on:
       - feature/desktop-session-limits
       - feature/desktop-windows-stop-hotkey
       - feature/desktop-notepad-keyboard-preview
+      - 'experiment/computer-operator-**'
   pull_request:
     paths:
       - 'src/PersonalAI.Web/Services/ComputerUse*'

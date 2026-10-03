@@ -259,6 +259,8 @@ public sealed class WindowsDesktopScreenshotService(
 
         return window.Width >= 64 &&
                window.Height >= 64 &&
+               window.Width <= 12000 &&
+               window.Height <= 8000 &&
                window.Left >= screen.VirtualLeft &&
                window.Top >= screen.VirtualTop &&
                window.Left + window.Width <= virtualRight &&

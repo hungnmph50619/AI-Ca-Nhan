@@ -1586,7 +1586,7 @@ jobs:
 
           tools=$(curl -fsS http://127.0.0.1:5077/api/tools)
           echo "$tools" | jq -e '(.frameworkVersion | test("^[0-9]+\\.[0-9]+\\.[0-9]+$")) and (.permissionTypes | sort) == (["BROWSER","COMPUTER","CONNECTOR","DELETE","DEVELOPMENT","EXTERNAL","READ","SENSITIVE","WRITE"] | sort)' >/dev/null
-          echo "$tools" | jq -e '(.tools | length) == 49
+          echo "$tools" | jq -e '(.tools | length) == 50
             and any(.tools[]; .name == "local.clock" and .localOnly == true and .requiredPermissions == ["READ"])
             and any(.tools[]; .name == "local.text_stats" and .timeoutMs == 2000)
             and any(.tools[]; .name == "memory.search")
@@ -1618,6 +1618,7 @@ jobs:
           and any(.tools[]; .name == "computer.window.restore" and .requiresConfirmation == true)
           and any(.tools[]; .name == "computer.window.focus-by-query" and .requiresConfirmation == true)
           and any(.tools[]; .name == "computer.operator.run-task" and .requiresConfirmation == true and .timeoutMs == 100000)
+          and any(.tools[]; .name == "computer.app.launch" and .requiredPermissions == ["WRITE","EXTERNAL","COMPUTER","SENSITIVE"] and .requiresConfirmation == true and .timeoutMs == 100000)
           and any(.tools[]; .name == "computer.vision.locate" and .requiresConfirmation == true and .timeoutMs == 30000)
           and any(.tools[]; .name == "computer.vision.click-target" and .requiresConfirmation == true and .timeoutMs == 45000)
           and any(.tools[]; .name == "computer.keyboard.type-text" and .requiresConfirmation == true)
@@ -3011,7 +3012,7 @@ jobs:
           grep -Fq 'ParallelToolCalls: false' src/PersonalAI.Web/Services/SystemCoreService.cs
           grep -Fq 'v100.css' src/PersonalAI.Web/wwwroot/index.html
           grep -Fq 'v100.js' src/PersonalAI.Web/wwwroot/index.html
-          grep -Fq 'LÕI ỔN ĐỊNH · HỢP ĐỒNG API 1' src/PersonalAI.Web/wwwroot/v100.js
+          grep -Fq 'coreHealthTitle' src/PersonalAI.Web/wwwroot/v100.js
           grep -Fq 'Controlled Computer Use' docs/releases/v1.1.0.md
           grep -Fq 'public const string Computer = "COMPUTER"' src/PersonalAI.Web/Models/ToolModels.cs
           grep -Fq 'DesktopActionsPaused: session.Paused' src/PersonalAI.Web/Services/ComputerUseService.cs
@@ -3042,6 +3043,79 @@ jobs:
           grep -Fq 'v110.css' src/PersonalAI.Web/wwwroot/index.html
           grep -Fq 'v110.js' src/PersonalAI.Web/wwwroot/index.html
           grep -Fq 'computerUseDialog' src/PersonalAI.Web/wwwroot/v110.js
+          grep -Fq 'VerifyAppliedActionAsync' src/PersonalAI.Web/Services/ComputerOperatorTaskService.cs
+          grep -Fq 'CaptureStableVirtualScreenAsync' src/PersonalAI.Web/Services/ComputerOperatorTaskService.cs
+          grep -Fq 'CaptureWindow(' src/PersonalAI.Web/Services/DesktopScreenshotService.cs
+          grep -Fq 'CaptureStableWindowAsync(' src/PersonalAI.Web/Services/DesktopScreenshotService.cs
+          grep -Fq 'CaptureScope = "window"' src/PersonalAI.Web/Services/DesktopScreenshotService.cs
+          grep -Fq 'WindowWasForeground = window.IsForeground' src/PersonalAI.Web/Services/DesktopScreenshotService.cs
+          grep -Fq 'CapturePostActionFrameAsync' src/PersonalAI.Web/Services/ComputerOperatorTaskService.cs
+          grep -Fq 'TryCaptureWithPrintWindow' src/PersonalAI.Web/Services/DesktopScreenshotService.cs
+          grep -Fq 'PrintWindow(' src/PersonalAI.Web/Services/DesktopScreenshotService.cs
+          grep -Fq 'HasUsefulContent' src/PersonalAI.Web/Services/DesktopScreenshotService.cs
+          grep -Fq 'CaptureBackend = backend' src/PersonalAI.Web/Services/DesktopScreenshotService.cs
+          grep -Fq 'CaptureFallbackReason = fallbackReason' src/PersonalAI.Web/Services/DesktopScreenshotService.cs
+          grep -Fq 'frame.CaptureBackend' src/PersonalAI.Web/Services/DesktopVisionService.cs
+          grep -Fq 'frame.CaptureFallbackReason' src/PersonalAI.Web/Services/DesktopVisionService.cs
+          grep -Fq 'screenshots.CaptureStableWindowAsync' src/PersonalAI.Web/Services/ComputerOperatorTaskService.cs
+          grep -Fq 'frame.CaptureScope' src/PersonalAI.Web/Services/DesktopVisionService.cs
+          grep -Fq 'frame.WindowWasForeground' src/PersonalAI.Web/Services/DesktopVisionService.cs
+          ! grep -Eiq 'notepad|calculator|mspaint|paint|explorer\.exe|notepad\.exe|calc\.exe' src/PersonalAI.Web/Services/DesktopScreenshotService.cs
+          grep -Fq 'vision.VerifyAsync' src/PersonalAI.Web/Services/ComputerOperatorTaskService.cs
+          grep -Fq 'RequiresExpectedEffect' src/PersonalAI.Web/Services/ComputerOperatorTaskService.cs
+          grep -Fq 'VERIFY-FAILED' src/PersonalAI.Web/Services/ComputerOperatorTaskService.cs
+          grep -Fq 'STEP {index}: VERIFIED' src/PersonalAI.Web/Services/ComputerOperatorTaskService.cs
+          grep -Fq 'ComputerOperatorRecoverySession' src/PersonalAI.Web/Services/ComputerOperatorRecoverySession.cs
+          grep -Fq 'ShouldAvoidRepeatedStrategy' src/PersonalAI.Web/Services/ComputerOperatorRecoverySession.cs
+          grep -Fq 'BuildContext()' src/PersonalAI.Web/Services/ComputerOperatorRecoverySession.cs
+          grep -Fq 'recovery.RecordFailure' src/PersonalAI.Web/Services/ComputerOperatorTaskService.cs
+          grep -Fq 'recovery.ShouldAvoidRepeatedStrategy' src/PersonalAI.Web/Services/ComputerOperatorTaskService.cs
+          grep -Fq 'VerificationFailed' src/PersonalAI.Web/Services/ComputerOperatorRecoverySession.cs
+          ! grep -Eiq 'notepad|calculator|mspaint|paint|explorer\.exe|notepad\.exe|calc\.exe' src/PersonalAI.Web/Services/ComputerOperatorRecoverySession.cs
+          ! grep -Eiq 'notepad|calculator|mspaint|paint|explorer\.exe|notepad\.exe|calc\.exe' src/PersonalAI.Web/Services/ComputerOperatorTaskService.cs
+          grep -Fq 'ComputerOperatorLoopGuardSession' src/PersonalAI.Web/Services/ComputerOperatorLoopGuardSession.cs
+          grep -Fq 'repeated-strategy' src/PersonalAI.Web/Services/ComputerOperatorLoopGuardSession.cs
+          grep -Fq 'stagnation' src/PersonalAI.Web/Services/ComputerOperatorLoopGuardSession.cs
+          grep -Fq 'oscillation' src/PersonalAI.Web/Services/ComputerOperatorLoopGuardSession.cs
+          grep -Fq 'RequiresStrategyChange' src/PersonalAI.Web/Services/ComputerOperatorLoopGuardSession.cs
+          grep -Fq 'LOOP-DIRECTIVE: BẮT BUỘC đổi chiến lược' src/PersonalAI.Web/Services/ComputerOperatorTaskService.cs
+          ! grep -Fq 'loopAssessment.Occurrences >= 3' src/PersonalAI.Web/Services/ComputerOperatorTaskService.cs
+          ! grep -Eiq 'notepad|calculator|mspaint|paint|explorer\.exe|notepad\.exe|calc\.exe' src/PersonalAI.Web/Services/ComputerOperatorLoopGuardSession.cs
+          grep -Fq 'ComputerGenericAppLaunchTool' src/PersonalAI.Web/Services/ComputerGenericAppLaunchTool.cs
+          grep -Fq '"computer.app.launch"' src/PersonalAI.Web/Services/ComputerGenericAppLaunchTool.cs
+          grep -Fq 'taskService.RunAsync' src/PersonalAI.Web/Services/ComputerGenericAppLaunchTool.cs
+          grep -Fq 'ComputerGenericAppLaunchTool' src/PersonalAI.Web/Services/ComputerUseEndpoints.cs
+          ! grep -Fq 'Process.Start' src/PersonalAI.Web/Services/ComputerGenericAppLaunchTool.cs
+          ! grep -Fq 'UseShellExecute' src/PersonalAI.Web/Services/ComputerGenericAppLaunchTool.cs
+          ! grep -Eiq 'notepad|calculator|mspaint|paint|explorer\.exe|notepad\.exe|calc\.exe' src/PersonalAI.Web/Services/ComputerGenericAppLaunchTool.cs
+          grep -Fq 'CurrentSubgoal' src/PersonalAI.Web/Models/DesktopVisionModels.cs
+          grep -Fq 'GoalProgress' src/PersonalAI.Web/Models/DesktopVisionModels.cs
+          grep -Fq 'VerifiedMilestones' src/PersonalAI.Web/Models/DesktopVisionModels.cs
+          grep -Fq 'IComputerOperatorAcceptanceService' src/PersonalAI.Web/Services/ComputerOperatorAcceptanceService.cs
+          grep -Fq '/api/computer/operator-acceptance' src/PersonalAI.Web/Services/ComputerUseEndpoints.cs
+          grep -Fq 'CheckDpiMetadataWithoutDoubleScaling' src/PersonalAI.Web/Services/ComputerOperatorAcceptanceService.cs
+          grep -Fq 'CheckMovingTargetRecomputesSafePoint' src/PersonalAI.Web/Services/ComputerOperatorAcceptanceService.cs
+          grep -Fq 'CheckExecutionPauseResumeStop' src/PersonalAI.Web/Services/ComputerOperatorAcceptanceService.cs
+          grep -Fq 'CheckGenericAppLaunchDelegation' src/PersonalAI.Web/Services/ComputerOperatorAcceptanceService.cs
+          grep -Fq 'CheckRepeatedStrategyRequiresChange' src/PersonalAI.Web/Services/ComputerOperatorAcceptanceService.cs
+          test -f tests/computer-use/v3.4.9-acceptance-scenarios.json
+          grep -Fq '"id": "app-already-open"' tests/computer-use/v3.4.9-acceptance-scenarios.json
+          grep -Fq '"id": "app-minimized"' tests/computer-use/v3.4.9-acceptance-scenarios.json
+          grep -Fq '"id": "app-not-on-taskbar"' tests/computer-use/v3.4.9-acceptance-scenarios.json
+          grep -Fq '"id": "popup-interruption"' tests/computer-use/v3.4.9-acceptance-scenarios.json
+          grep -Fq '"id": "slow-ui"' tests/computer-use/v3.4.9-acceptance-scenarios.json
+          grep -Fq '"id": "click-offset"' tests/computer-use/v3.4.9-acceptance-scenarios.json
+          grep -Fq '"id": "multi-monitor-negative-origin"' tests/computer-use/v3.4.9-acceptance-scenarios.json
+          grep -Fq '"id": "moving-target"' tests/computer-use/v3.4.9-acceptance-scenarios.json
+          grep -Fq '"id": "pause-resume-stop"' tests/computer-use/v3.4.9-acceptance-scenarios.json
+          grep -Fq '"id": "loop-recovery"' tests/computer-use/v3.4.9-acceptance-scenarios.json
+          grep -Fq '"id": "multi-step-open-and-type"' tests/computer-use/v3.4.9-acceptance-scenarios.json
+          grep -Fq 'totalCount -lt 13' .github/workflows/desktop-control.yml
+          ! grep -Eiq 'notepad|calculator|mspaint|explorer\.exe|notepad\.exe|calc\.exe' src/PersonalAI.Web/Services/ComputerOperatorAcceptanceService.cs
+          grep -Fq 'MILESTONE-SYSTEM-VERIFIED' src/PersonalAI.Web/Services/ComputerOperatorTaskService.cs
+          grep -Fq 'CURRENT SUBGOAL' src/PersonalAI.Web/Services/DesktopVisionService.cs
+          grep -Fq 'verifiedMilestones' src/PersonalAI.Web/Services/DesktopVisionService.cs
+          ! grep -Eiq 'notepad|calculator|mspaint|paint|explorer\.exe|notepad\.exe|calc\.exe' src/PersonalAI.Web/Services/ComputerOperatorTaskService.cs src/PersonalAI.Web/Services/DesktopVisionService.cs
           ! grep -Fq '"computer.mouse.click"' src/PersonalAI.Web/Services/ComputerUseTools.cs
           ! grep -Fq '"computer.keyboard' src/PersonalAI.Web/Services/ComputerUseTools.cs
           grep -Fq 'control.RunAllowed(() => ClickLeftCore' src/PersonalAI.Web/Services/ComputerUseService.cs
@@ -3076,7 +3150,7 @@ jobs:
           grep -Fq 'MaximumResponseBytes = 1 * 1024 * 1024' src/PersonalAI.Web/Services/BrowserAgentService.cs
           grep -Fq 'v120.css' src/PersonalAI.Web/wwwroot/index.html
           grep -Fq 'v120.js' src/PersonalAI.Web/wwwroot/index.html
-          grep -Fq 'KHẢ NĂNG ĐƯỢC KIỂM SOÁT · HTTP/HTML' src/PersonalAI.Web/wwwroot/v120.js
+          grep -Fq 'browserAgentTitle' src/PersonalAI.Web/wwwroot/v120.js
           ! grep -Fq 'HttpMethod.Post' src/PersonalAI.Web/Services/BrowserAgentService.cs
           ! grep -Fq 'UseCookies = true' src/PersonalAI.Web/Services/BrowserAgentService.cs
           ! grep -Fq 'CookieContainer' src/PersonalAI.Web/Services/BrowserAgentService.cs
@@ -3103,7 +3177,7 @@ jobs:
 
           grep -Fq 'v130.css' src/PersonalAI.Web/wwwroot/index.html
           grep -Fq 'v130.js' src/PersonalAI.Web/wwwroot/index.html
-          grep -Fq 'KHẢ NĂNG ĐƯỢC KIỂM SOÁT · THÔNG TIN XÁC THỰC ĐƯỢC MÃ HÓA' src/PersonalAI.Web/wwwroot/v130.js
+          grep -Fq 'connectorTitle' src/PersonalAI.Web/wwwroot/v130.js
           ! grep -Fq 'HttpMethod.Post' src/PersonalAI.Web/Services/ConnectorService.cs
           ! grep -Fq 'HttpMethod.Put' src/PersonalAI.Web/Services/ConnectorService.cs
           ! grep -Fq 'HttpMethod.Patch' src/PersonalAI.Web/Services/ConnectorService.cs
@@ -3144,7 +3218,7 @@ jobs:
           grep -Fq -- '--ignore-submodules=all' src/PersonalAI.Web/Services/DevelopmentAgentService.cs
           grep -Fq 'v140.css' src/PersonalAI.Web/wwwroot/index.html
           grep -Fq 'v140.js' src/PersonalAI.Web/wwwroot/index.html
-          grep -Fq 'KHẢ NĂNG CÓ KIỂM SOÁT · KHÔNG CHẠY LỆNH TÙY Ý' src/PersonalAI.Web/wwwroot/v140.js
+          grep -Fq 'developmentAgentTitle' src/PersonalAI.Web/wwwroot/v140.js
           grep -Fq 'DEVELOPMENT: "PHÁT TRIỂN PHẦN MỀM"' src/PersonalAI.Web/wwwroot/v080.js
           grep -Fq 'DEVELOPMENT: "PHÁT TRIỂN PHẦN MỀM"' src/PersonalAI.Web/wwwroot/v090.js
           ! grep -Fq 'UseShellExecute = true' src/PersonalAI.Web/Services/DevelopmentAgentService.cs
@@ -3200,7 +3274,7 @@ jobs:
           grep -Fq 'LifeContextContentEncrypted: true' src/PersonalAI.Web/Services/SystemCoreService.cs
           grep -Fq 'v160.css' src/PersonalAI.Web/wwwroot/index.html
           grep -Fq 'v160.js' src/PersonalAI.Web/wwwroot/index.html
-          grep -Fq 'CONSENT · RETENTION · WORKSPACE' src/PersonalAI.Web/wwwroot/v160.js
+          grep -Fq 'lifeContextTitle' src/PersonalAI.Web/wwwroot/v160.js
           grep -Fq 'selectedLifeContext' src/PersonalAI.Web/wwwroot/app.js
           grep -Fq 'lifeContextCharacters' src/PersonalAI.Web/wwwroot/app.js
           ! grep -Fq 'android.permission.ACCESS_FINE_LOCATION' android/PersonalAI.Companion/app/src/main/AndroidManifest.xml
@@ -3223,7 +3297,7 @@ jobs:
           grep -Fq 'MaximumCriteria = 8' src/PersonalAI.Web/Services/DecisionEngineService.cs
           grep -Fq 'v170.css' src/PersonalAI.Web/wwwroot/index.html
           grep -Fq 'v170.js' src/PersonalAI.Web/wwwroot/index.html
-          grep -Fq 'EVIDENCE · TRADE-OFF · USER DECIDES' src/PersonalAI.Web/wwwroot/v170.js
+          grep -Fq 'decisionEngineTitle' src/PersonalAI.Web/wwwroot/v170.js
           ! grep -Fq 'IToolOrchestrationService' src/PersonalAI.Web/Services/DecisionEngineService.cs
           ! grep -Fq 'IPersonalAiTool' src/PersonalAI.Web/Services/DecisionEngineService.cs
           ! grep -Fq 'IPersonalAiTool' src/PersonalAI.Web/Services/DecisionEngineEndpoints.cs
@@ -3255,7 +3329,7 @@ jobs:
           grep -Fq 'AutomaticMultiStepExecution: false' src/PersonalAI.Web/Services/SystemCoreService.cs
           grep -Fq 'v180.css' src/PersonalAI.Web/wwwroot/index.html
           grep -Fq 'v180.js' src/PersonalAI.Web/wwwroot/index.html
-          grep -Fq 'SCHEDULE · ONE STEP · NO AUTO-CONFIRM' src/PersonalAI.Web/wwwroot/v180.js
+          grep -Fq 'automationTitle' src/PersonalAI.Web/wwwroot/v180.js
           grep -Fq 'automation: "Automation"' src/PersonalAI.Web/wwwroot/v100.js
           grep -Fq 'automation: "Automation"' src/PersonalAI.Web/wwwroot/v096.js
           ! grep -Fq '/api/decisions' src/PersonalAI.Web/Services/AutomationService.cs

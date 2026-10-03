@@ -3056,6 +3056,14 @@ jobs:
           grep -Fq 'VerificationFailed' src/PersonalAI.Web/Services/ComputerOperatorRecoverySession.cs
           ! grep -Eiq 'notepad|calculator|mspaint|paint|explorer\.exe|notepad\.exe|calc\.exe' src/PersonalAI.Web/Services/ComputerOperatorRecoverySession.cs
           ! grep -Eiq 'notepad|calculator|mspaint|paint|explorer\.exe|notepad\.exe|calc\.exe' src/PersonalAI.Web/Services/ComputerOperatorTaskService.cs
+          grep -Fq 'ComputerOperatorLoopGuardSession' src/PersonalAI.Web/Services/ComputerOperatorLoopGuardSession.cs
+          grep -Fq 'repeated-strategy' src/PersonalAI.Web/Services/ComputerOperatorLoopGuardSession.cs
+          grep -Fq 'stagnation' src/PersonalAI.Web/Services/ComputerOperatorLoopGuardSession.cs
+          grep -Fq 'oscillation' src/PersonalAI.Web/Services/ComputerOperatorLoopGuardSession.cs
+          grep -Fq 'RequiresStrategyChange' src/PersonalAI.Web/Services/ComputerOperatorLoopGuardSession.cs
+          grep -Fq 'LOOP-DIRECTIVE: BẮT BUỘC đổi chiến lược' src/PersonalAI.Web/Services/ComputerOperatorTaskService.cs
+          ! grep -Fq 'loopAssessment.Occurrences >= 3' src/PersonalAI.Web/Services/ComputerOperatorTaskService.cs
+          ! grep -Eiq 'notepad|calculator|mspaint|paint|explorer\.exe|notepad\.exe|calc\.exe' src/PersonalAI.Web/Services/ComputerOperatorLoopGuardSession.cs
           ! grep -Fq '"computer.mouse.click"' src/PersonalAI.Web/Services/ComputerUseTools.cs
           ! grep -Fq '"computer.keyboard' src/PersonalAI.Web/Services/ComputerUseTools.cs
           grep -Fq 'control.RunAllowed(() => ClickLeftCore' src/PersonalAI.Web/Services/ComputerUseService.cs

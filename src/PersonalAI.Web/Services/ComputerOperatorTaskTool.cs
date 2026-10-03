@@ -24,8 +24,8 @@ public sealed class ComputerOperatorTaskTool(
 
     public ToolDefinition Definition { get; } = new(
         "computer.operator.run-task",
-        "Thực hiện tác vụ Windows theo mục tiêu bằng vòng lặp tự suy luận TRẠNG THÁI → PHƯƠNG ÁN → HÀNH ĐỘNG → KIỂM TRA → PHỤC HỒI → LẬP LẠI PHƯƠNG ÁN. Có thể tự mở ứng dụng bất kỳ bằng cách quan sát desktop và lựa chọn affordance Windows hiện có, không giả định app được ghim taskbar và không hard-code đường dẫn hoặc script riêng theo tên ứng dụng. Hệ thống ghi nhớ chiến lược thất bại, phát hiện vòng lặp, dùng bounding box/điểm click an toàn và xác minh mọi hành động. Tối đa 12 bước, 90 giây, Ctrl+Shift+F12 để dừng. Không shell, không xóa dữ liệu, không connector, không mật khẩu/OTP/token/bí mật.",
-        "3.4.7",
+        "Thực hiện tác vụ Windows nhiều bước bằng vòng lặp tự suy luận TRẠNG THÁI → MỤC TIÊU CON → PHƯƠNG ÁN → HÀNH ĐỘNG → KIỂM TRA → PHỤC HỒI → LẬP LẠI PHƯƠNG ÁN. AI theo dõi tiến độ tổng thể và các mốc đã xác minh, được phép đổi mục tiêu con khi giao diện thực tế khác dự kiến; không khóa kế hoạch từ đầu. Vẫn hỗ trợ mở ứng dụng tổng quát, bounding box/điểm click an toàn, xác minh mọi hành động, ghi nhớ thất bại và phát hiện vòng lặp. Tối đa 12 bước, 90 giây, Ctrl+Shift+F12 để dừng. Không shell, không xóa dữ liệu, không connector, không mật khẩu/OTP/token/bí mật.",
+        "3.4.8",
         [
             ToolPermissions.Write,
             ToolPermissions.External,

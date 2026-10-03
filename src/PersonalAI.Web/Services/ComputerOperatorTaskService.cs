@@ -32,6 +32,7 @@ public sealed class ComputerOperatorTaskService(
     IComputerCoordinateTransformService coordinates,
     IComputerDisplayTopologyService displays,
     IComputerSafeTargetingService targeting,
+    IDesktopFrameDifferenceService frameDifferences,
     ILogger<ComputerOperatorTaskService> logger)
     : IComputerOperatorTaskService
 {
@@ -377,6 +378,24 @@ public sealed class ComputerOperatorTaskService(
                     decision.Action,
                     decision.Confidence);
 
+                DesktopScreenshotFrame? verificationBaseline = null;
+                try
+                {
+                    verificationBaseline = await CapturePostActionFrameAsync(linked.Token);
+                    progress.Add(
+                        "frame-baseline",
+                        $"Đã chụp baseline trước hành động {verificationBaseline.Width}x{verificationBaseline.Height}; scope={verificationBaseline.CaptureScope}.",
+                        observation: true);
+                }
+                catch (Exception exception) when (
+                    exception is ToolExecutionInputException or
+                    InvalidOperationException)
+                {
+                    logger.LogDebug(
+                        exception,
+                        "Không chụp được baseline frame difference; tiếp tục xác minh bằng ảnh hậu hành động.");
+                }
+
                 ComputerActionResponse action;
                 try
                 {
@@ -385,6 +404,7 @@ public sealed class ComputerOperatorTaskService(
                 }
                 catch (ToolExecutionInputException exception)
                 {
+                    verificationBaseline?.Clear();
                     logger.LogWarning(
                         "Computer Operator step {Step} rejected: {Reason}",
                         index,
@@ -430,6 +450,7 @@ public sealed class ComputerOperatorTaskService(
 
                 if (!action.Applied)
                 {
+                    verificationBaseline?.Clear();
                     var failures = recovery.RecordFailure(
                         actionSignature,
                         decision.Action,
@@ -470,10 +491,19 @@ public sealed class ComputerOperatorTaskService(
                     decision.Confidence,
                     actionTaken: true);
 
-                var verification = await VerifyAppliedActionAsync(
-                    decision,
-                    frame,
-                    linked.Token);
+                ActionVerificationResult verification;
+                try
+                {
+                    verification = await VerifyAppliedActionAsync(
+                        decision,
+                        frame,
+                        verificationBaseline,
+                        linked.Token);
+                }
+                finally
+                {
+                    verificationBaseline?.Clear();
+                }
 
                 if (!verification.Verified)
                 {
@@ -582,6 +612,7 @@ public sealed class ComputerOperatorTaskService(
     private async Task<ActionVerificationResult> VerifyAppliedActionAsync(
         DesktopOperatorDecision decision,
         DesktopScreenshotFrame previousFrame,
+        DesktopScreenshotFrame? verificationBaseline,
         CancellationToken cancellationToken)
     {
         progress.Add(
@@ -625,9 +656,26 @@ public sealed class ComputerOperatorTaskService(
                         : $"Đã chụp lại màn hình; con trỏ ở ({actual.X},{actual.Y}), lệch khỏi điểm mong đợi ({expected.DesktopX},{expected.DesktopY}).");
             }
 
+            var frameDifference = verificationBaseline is null
+                ? null
+                : frameDifferences.Compare(
+                    verificationBaseline,
+                    after);
+
+            if (frameDifference is not null)
+            {
+                progress.Add(
+                    "frame-difference",
+                    frameDifference.Comparable
+                        ? $"Frame difference: {frameDifference.ChangedRatio * 100:0.00}% mẫu thay đổi; vùng=({frameDifference.BoxLeft},{frameDifference.BoxTop},{frameDifference.BoxWidth},{frameDifference.BoxHeight}); meanDelta={frameDifference.MeanChannelDelta:0.0}."
+                        : $"Frame difference không khả dụng: {frameDifference.Reason}",
+                    observation: true);
+            }
+
             var result = await vision.VerifyAsync(
                 after,
                 decision.ExpectedEffect,
+                frameDifference,
                 cancellationToken);
 
             var verifiedByVision =

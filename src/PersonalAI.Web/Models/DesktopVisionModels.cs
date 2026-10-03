@@ -16,7 +16,9 @@ public sealed record DesktopScreenshotFrame(
     string? MonitorDevice = null,
     bool MonitorWasPrimary = false,
     uint MonitorDpiX = 96,
-    uint MonitorDpiY = 96)
+    uint MonitorDpiY = 96,
+    double WindowVisibleRatio = 1.0,
+    bool WindowLikelyOccluded = false)
 {
     public void Clear()
     {

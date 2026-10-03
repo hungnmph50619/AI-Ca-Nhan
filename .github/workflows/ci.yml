@@ -3200,7 +3200,9 @@ jobs:
           grep -Fq 'LifeContextContentEncrypted: true' src/PersonalAI.Web/Services/SystemCoreService.cs
           grep -Fq 'v160.css' src/PersonalAI.Web/wwwroot/index.html
           grep -Fq 'v160.js' src/PersonalAI.Web/wwwroot/index.html
-          grep -Fq 'CONSENT · RETENTION · WORKSPACE' src/PersonalAI.Web/wwwroot/v160.js
+          grep -Fq 'lifeSourceRetention' src/PersonalAI.Web/wwwroot/v160.js
+          grep -Fq 'lifeSourceConsent' src/PersonalAI.Web/wwwroot/v160.js
+          grep -Fq 'Không gian ' src/PersonalAI.Web/wwwroot/v160.js
           grep -Fq 'selectedLifeContext' src/PersonalAI.Web/wwwroot/app.js
           grep -Fq 'lifeContextCharacters' src/PersonalAI.Web/wwwroot/app.js
           ! grep -Fq 'android.permission.ACCESS_FINE_LOCATION' android/PersonalAI.Companion/app/src/main/AndroidManifest.xml

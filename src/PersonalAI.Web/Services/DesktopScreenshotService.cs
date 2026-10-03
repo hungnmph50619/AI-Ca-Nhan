@@ -39,7 +39,8 @@ public interface IDesktopScreenshotService
 public sealed class WindowsDesktopScreenshotService(
     WindowsAiOperatorConsoleService operatorConsole,
     IComputerUseService computer,
-    IComputerDisplayTopologyService displays)
+    IComputerDisplayTopologyService displays,
+    IComputerWindowVisibilityService visibility)
     : IDesktopScreenshotService
 {
     public DesktopScreenshotFrame CaptureVirtualScreen()
@@ -573,6 +574,7 @@ public sealed class WindowsDesktopScreenshotService(
         var monitor = displays.GetMonitorAtPoint(
             centerX,
             centerY);
+        var visibilityAssessment = visibility.Assess(window);
 
         return frame with
         {
@@ -585,7 +587,9 @@ public sealed class WindowsDesktopScreenshotService(
             MonitorDevice = monitor?.DeviceName,
             MonitorWasPrimary = monitor?.Primary ?? false,
             MonitorDpiX = monitor?.DpiX ?? 96,
-            MonitorDpiY = monitor?.DpiY ?? 96
+            MonitorDpiY = monitor?.DpiY ?? 96,
+            WindowVisibleRatio = visibilityAssessment.VisibleRatio,
+            WindowLikelyOccluded = visibilityAssessment.LikelyOccluded
         };
     }
 

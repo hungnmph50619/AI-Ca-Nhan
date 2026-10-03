@@ -198,6 +198,9 @@ confidence từ 0 đến 1.
                                 (frame.CaptureScope == "window"
                                     ? $"Cửa sổ: id={frame.WindowId ?? "?"}; title={frame.WindowTitle ?? "?"}; foreground={frame.WindowWasForeground}. "
                                     : string.Empty) +
+                                (!string.IsNullOrWhiteSpace(frame.MonitorDevice)
+                                    ? $"Màn hình: {frame.MonitorDevice}; primary={frame.MonitorWasPrimary}; dpi={frame.MonitorDpiX}x{frame.MonitorDpiY}. "
+                                    : string.Empty) +
                                 (string.IsNullOrWhiteSpace(frame.CaptureFallbackReason)
                                     ? string.Empty
                                     : $"Backend đã fallback: {frame.CaptureFallbackReason}. ") +

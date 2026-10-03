@@ -80,6 +80,10 @@ public sealed class ComputerOperatorTaskService(
         var taskHistory = new List<string>();
         var recovery = new ComputerOperatorRecoverySession();
         var loopGuard = new ComputerOperatorLoopGuardSession();
+        var verifiedMilestones = new HashSet<string>(
+            StringComparer.OrdinalIgnoreCase);
+        var currentSubgoal = string.Empty;
+        var latestGoalProgress = 0.0;
         var lowConfidenceCount = 0;
 
         try
@@ -142,12 +146,54 @@ public sealed class ComputerOperatorTaskService(
                         windowsContext,
                         BuildHistoryContext(
                             taskHistory,
-                            recovery),
+                            recovery,
+                            verifiedMilestones,
+                            currentSubgoal,
+                            latestGoalProgress),
                         linked.Token);
                 }
                 finally
                 {
                     frame.Clear();
+                }
+
+                if (!string.IsNullOrWhiteSpace(decision.CurrentSubgoal) &&
+                    !decision.CurrentSubgoal.Equals(
+                        currentSubgoal,
+                        StringComparison.OrdinalIgnoreCase))
+                {
+                    currentSubgoal = decision.CurrentSubgoal.Trim();
+                    taskHistory.Add(
+                        $"SUBGOAL: {currentSubgoal}");
+                    progress.Add(
+                        "subgoal",
+                        $"MỤC TIÊU CON: {currentSubgoal}",
+                        "plan",
+                        decision.Confidence);
+                }
+
+                latestGoalProgress = decision.GoalProgress;
+
+                progress.Add(
+                    "goal-progress",
+                    $"TIẾN ĐỘ MỤC TIÊU: khoảng {latestGoalProgress * 100:0}%.",
+                    "plan",
+                    decision.Confidence);
+
+                foreach (var milestone in decision.VerifiedMilestones)
+                {
+                    var normalizedMilestone = milestone.Trim();
+                    if (normalizedMilestone.Length == 0 ||
+                        !verifiedMilestones.Add(normalizedMilestone))
+                        continue;
+
+                    taskHistory.Add(
+                        $"MILESTONE-OBSERVED: {normalizedMilestone}");
+                    progress.Add(
+                        "milestone",
+                        $"MỐC ĐÃ XÁC MINH: {normalizedMilestone}",
+                        "verified",
+                        decision.Confidence);
                 }
 
                 var loopAssessment = loopGuard.Observe(
@@ -448,6 +494,18 @@ public sealed class ComputerOperatorTaskService(
 
                 taskHistory.Add(
                     $"STEP {index}: VERIFIED {actionSignature} — {verification.Detail}; EXPECTED: {decision.ExpectedEffect}");
+
+                if (!string.IsNullOrWhiteSpace(decision.ExpectedEffect) &&
+                    verifiedMilestones.Add(decision.ExpectedEffect.Trim()))
+                {
+                    taskHistory.Add(
+                        $"MILESTONE-SYSTEM-VERIFIED: {decision.ExpectedEffect.Trim()}");
+                    progress.Add(
+                        "milestone",
+                        $"MỐC HỆ THỐNG ĐÃ XÁC MINH: {decision.ExpectedEffect.Trim()}",
+                        "verified",
+                        verification.Confidence);
+                }
 
                 loopGuard.MarkProgress();
 
@@ -799,7 +857,10 @@ public sealed class ComputerOperatorTaskService(
 
     private static string BuildHistoryContext(
         IReadOnlyList<string> history,
-        ComputerOperatorRecoverySession recovery)
+        ComputerOperatorRecoverySession recovery,
+        IReadOnlyCollection<string> verifiedMilestones,
+        string currentSubgoal,
+        double goalProgress)
     {
         var historyText = history.Count == 0
             ? "(chưa có hành động trước đó)"
@@ -807,8 +868,23 @@ public sealed class ComputerOperatorTaskService(
                 "\n",
                 history.TakeLast(14));
 
+        var milestonesText = verifiedMilestones.Count == 0
+            ? "(chưa có mốc đã xác minh)"
+            : string.Join(
+                "\n",
+                verifiedMilestones
+                    .TakeLast(10)
+                    .Select(item => $"- {item}"));
+
         return
             historyText +
+            "\n\nMỤC TIÊU CON TRƯỚC ĐÓ: " +
+            (string.IsNullOrWhiteSpace(currentSubgoal)
+                ? "(chưa xác định)"
+                : currentSubgoal) +
+            $"\nTIẾN ĐỘ BÁO CÁO TRƯỚC ĐÓ: {goalProgress * 100:0}%\n" +
+            "CÁC MỐC ĐÃ XÁC MINH:\n" +
+            milestonesText +
             "\n\n" +
             recovery.BuildContext();
     }

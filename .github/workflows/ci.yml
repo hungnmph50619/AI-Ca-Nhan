@@ -3046,6 +3046,10 @@ jobs:
           grep -Fq 'Hành động click cần bounding box hợp lệ' src/PersonalAI.Web/Services/ComputerSafeTargetingService.cs
           grep -Fq 'targeting.Resolve(' src/PersonalAI.Web/Services/ComputerOperatorTaskService.cs
           grep -Fq 'RegionSignature(decision)' src/PersonalAI.Web/Services/ComputerOperatorTaskService.cs
+          grep -Fq 'private static string RegionSignature(' src/PersonalAI.Web/Services/ComputerOperatorTaskService.cs
+          grep -Fq 'BuildSafeCenterRequest(' src/PersonalAI.Web/Services/ComputerSafeTargetingService.cs
+          grep -Fq 'decision.BoxNormalizedWidth * 0.18' src/PersonalAI.Web/Services/ComputerSafeTargetingService.cs
+          grep -Fq 'decision.BoxWidth * 0.18' src/PersonalAI.Web/Services/ComputerSafeTargetingService.cs
           ! grep -Eiq 'notepad|calculator|paint|explorer' src/PersonalAI.Web/Services/ComputerOperatorTaskService.cs src/PersonalAI.Web/Services/ComputerSafeTargetingService.cs
           ! grep -Fq '"computer.mouse.click"' src/PersonalAI.Web/Services/ComputerUseTools.cs
           ! grep -Fq '"computer.keyboard' src/PersonalAI.Web/Services/ComputerUseTools.cs

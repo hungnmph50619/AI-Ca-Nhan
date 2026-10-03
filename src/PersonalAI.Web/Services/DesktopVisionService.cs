@@ -494,9 +494,11 @@ Mỗi lượt phải:
 4. Với mục tiêu nhiều bước, xác định CURRENT SUBGOAL là mục tiêu con hợp lý nhất ở thời điểm hiện tại; được phép thay đổi subgoal khi trạng thái thực tế khác dự kiến.
 5. Ước lượng GOAL PROGRESS từ 0 đến 1 dựa trên bằng chứng hiện tại; đây chỉ là chỉ báo tiến độ, không phải quyền tự tuyên bố hoàn thành.
 6. VERIFIED MILESTONES chỉ được liệt kê những mốc đã có bằng chứng trên ảnh hiện tại hoặc đã được lịch sử xác minh.
-7. Lập PLAN ngắn cho bước tiếp theo dựa trên affordance hiện có.
-8. Chọn đúng MỘT ACTION.
-9. Nêu EXPECTED EFFECT cụ thể, quan sát được và có thể kiểm tra ngay sau hành động.
+7. Dựng SCENE ELEMENTS cho các phần tử giao diện quan trọng đang thật sự nhìn thấy: cửa sổ, thanh công cụ, nút, ô nhập liệu, menu, tab, danh sách, taskbar, icon hoặc vùng nội dung. Mỗi phần tử có id ổn định trong lượt này, role, label, parentId, bounding box pixel và các quan hệ ngắn.
+8. Lập PLAN ngắn cho bước tiếp theo dựa trên affordance và quan hệ trong scene graph.
+9. Chọn đúng MỘT ACTION.
+10. Nếu action dùng chuột lên một phần tử UI, targetElementId PHẢI trỏ tới đúng phần tử trong sceneElements.
+11. Nêu EXPECTED EFFECT cụ thể, quan sát được và có thể kiểm tra ngay sau hành động.
 Nếu cách trước thất bại và trạng thái hiện tại chưa thay đổi đáng kể, PHẢI chọn một chiến lược khác có ý nghĩa: đổi action, đổi target, đổi affordance hoặc đổi đường đi tới mục tiêu. Không được chỉ diễn đạt lại cùng một hành động.
 Không chọn một hành động làm thay đổi giao diện nếu bạn không thể mô tả rõ trạng thái mong đợi sau hành động đó.
 
@@ -534,6 +536,10 @@ Quy tắc an toàn:
 - Không shell, không xóa dữ liệu, không connector.
 - Không nhập mật khẩu, OTP, API key, token, private key hoặc bí mật.
 - Với hành động chuột, chỉ chọn phần tử đang nhìn thấy rõ trên ảnh hiện tại.
+- sceneElements chỉ mô tả phần tử thật sự nhìn thấy. Không tạo phần tử giả, bị che hoàn toàn hoặc ngoài ảnh.
+- Bounding box của sceneElements luôn dùng pixel tương đối theo ảnh hiện tại, bất kể action cuối cùng dùng hệ tọa độ nào.
+- parentId phải rỗng hoặc trỏ tới một id khác trong sceneElements; không tạo vòng cha-con.
+- relations chỉ chứa mô tả ngắn như "inside:window-1", "below:toolbar-1", "overlaps:panel-2", "foreground".
 - Với hành động chuột, chọn một hệ tọa độ phù hợp:
   * image-pixel: dùng x,y theo pixel trong ảnh.
   * image-normalized: dùng normalizedX,normalizedY trong khoảng 0..1.
@@ -566,6 +572,21 @@ Trả đúng một JSON object, không markdown:
   "currentSubgoal":"...",
   "goalProgress":0.35,
   "verifiedMilestones":[],
+  "sceneElements":[
+    {
+      "id":"element-1",
+      "role":"button",
+      "label":"...",
+      "parentId":"",
+      "boxLeft":0,
+      "boxTop":0,
+      "boxWidth":0,
+      "boxHeight":0,
+      "confidence":0.95,
+      "relations":[]
+    }
+  ],
+  "targetElementId":"",
   "action":"focus-window",
   "query":"",
   "text":"",
@@ -634,7 +655,7 @@ Các field không dùng để chuỗi rỗng hoặc [].
             },
             generationConfig = new
             {
-                maxOutputTokens = 560,
+                maxOutputTokens = 1200,
                 temperature = 0.0,
                 responseMimeType = "application/json"
             }
@@ -711,9 +732,15 @@ Các field không dùng để chuỗi rỗng hoặc [].
             decision.CoordinateWindowId.Length > 40 ||
             decision.ExpectedEffect.Length > 500 ||
             decision.Reason.Length > 600 ||
-            decision.Keys.Count > 4)
+            decision.Keys.Count > 4 ||
+            (decision.SceneElements?.Count ?? 0) > 30 ||
+            decision.TargetElementId.Length > 80)
             throw new InvalidOperationException(
                 "Desktop Vision trả quyết định Computer Operator không hợp lệ.");
+
+        ValidateSceneGraph(
+            decision.SceneElements ?? Array.Empty<DesktopSceneElement>(),
+            frame);
 
         var pointerActions = new HashSet<string>(
             [
@@ -822,9 +849,158 @@ Các field không dùng để chuỗi rỗng hoặc [].
             }
         }
 
+        decision = BindTargetToSceneElement(
+            decision,
+            frame);
+
         return decision with
         {
             Action = decision.Action.Trim().ToLowerInvariant()
+        };
+    }
+
+    private static IReadOnlyList<DesktopSceneElement> ParseSceneElements(
+        JsonElement root)
+    {
+        if (!root.TryGetProperty("sceneElements", out var elements) ||
+            elements.ValueKind != JsonValueKind.Array)
+            return Array.Empty<DesktopSceneElement>();
+
+        var result = new List<DesktopSceneElement>();
+        foreach (var item in elements.EnumerateArray().Take(30))
+        {
+            if (item.ValueKind != JsonValueKind.Object)
+                continue;
+
+            var relations = item.TryGetProperty("relations", out var relationElement) &&
+                            relationElement.ValueKind == JsonValueKind.Array
+                ? relationElement.EnumerateArray()
+                    .Where(value => value.ValueKind == JsonValueKind.String)
+                    .Select(value => value.GetString()?.Trim() ?? string.Empty)
+                    .Where(value => value.Length > 0)
+                    .Take(8)
+                    .ToArray()
+                : Array.Empty<string>();
+
+            result.Add(new DesktopSceneElement(
+                ReadString(item, "id").Trim(),
+                ReadString(item, "role").Trim(),
+                ReadString(item, "label").Trim(),
+                ReadString(item, "parentId").Trim(),
+                ReadInt(item, "boxLeft", "left"),
+                ReadInt(item, "boxTop", "top"),
+                ReadInt(item, "boxWidth", "width"),
+                ReadInt(item, "boxHeight", "height"),
+                ReadDouble(item, "confidence"),
+                relations));
+        }
+
+        return result;
+    }
+
+    private static void ValidateSceneGraph(
+        IReadOnlyList<DesktopSceneElement> elements,
+        DesktopScreenshotFrame frame)
+    {
+        var ids = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+
+        foreach (var element in elements)
+        {
+            if (element.Id.Length is < 1 or > 80 ||
+                element.Role.Length > 60 ||
+                element.Label.Length > 180 ||
+                element.ParentId.Length > 80 ||
+                !double.IsFinite(element.Confidence) ||
+                element.Confidence is < 0 or > 1 ||
+                element.Relations.Count > 8 ||
+                element.Relations.Any(relation => relation.Length > 120) ||
+                element.BoxLeft < 0 ||
+                element.BoxTop < 0 ||
+                element.BoxWidth <= 0 ||
+                element.BoxHeight <= 0 ||
+                element.BoxLeft + element.BoxWidth > frame.Width ||
+                element.BoxTop + element.BoxHeight > frame.Height)
+                throw new InvalidOperationException(
+                    "Desktop Vision trả scene graph không hợp lệ.");
+
+            if (!ids.Add(element.Id))
+                throw new InvalidOperationException(
+                    "Desktop Vision trả scene graph có id phần tử bị trùng.");
+        }
+
+        foreach (var element in elements)
+        {
+            if (!string.IsNullOrWhiteSpace(element.ParentId) &&
+                !ids.Contains(element.ParentId))
+                throw new InvalidOperationException(
+                    "Desktop Vision trả parentId không tồn tại trong scene graph.");
+
+            if (element.ParentId.Equals(
+                    element.Id,
+                    StringComparison.OrdinalIgnoreCase))
+                throw new InvalidOperationException(
+                    "Desktop Vision trả phần tử tự làm cha của chính nó.");
+        }
+    }
+
+    private static DesktopOperatorDecision BindTargetToSceneElement(
+        DesktopOperatorDecision decision,
+        DesktopScreenshotFrame frame)
+    {
+        var pointerAction = decision.Action is
+            "move-pointer" or
+            "click-left" or
+            "double-click-left" or
+            "click-right" or
+            "scroll" or
+            "drag-left";
+
+        if (!pointerAction)
+            return decision;
+
+        var elements =
+            decision.SceneElements ?? Array.Empty<DesktopSceneElement>();
+
+        if (string.IsNullOrWhiteSpace(decision.TargetElementId))
+            throw new InvalidOperationException(
+                "Desktop Vision thiếu targetElementId cho hành động chuột.");
+
+        var target = elements.FirstOrDefault(element =>
+            element.Id.Equals(
+                decision.TargetElementId,
+                StringComparison.OrdinalIgnoreCase));
+
+        if (target is null)
+            throw new InvalidOperationException(
+                "Desktop Vision trả targetElementId không tồn tại trong scene graph.");
+
+        var centerX = target.BoxLeft + target.BoxWidth / 2;
+        var centerY = target.BoxTop + target.BoxHeight / 2;
+
+        if (centerX < 0 ||
+            centerX >= frame.Width ||
+            centerY < 0 ||
+            centerY >= frame.Height)
+            throw new InvalidOperationException(
+                "Phần tử mục tiêu trong scene graph nằm ngoài ảnh.");
+
+        return decision with
+        {
+            TargetLabel = string.IsNullOrWhiteSpace(target.Label)
+                ? decision.TargetLabel
+                : target.Label,
+            CoordinateSpace = ComputerCoordinateSpaces.ImagePixel,
+            CoordinateWindowId = string.Empty,
+            ImageX = centerX,
+            ImageY = centerY,
+            BoxLeft = target.BoxLeft,
+            BoxTop = target.BoxTop,
+            BoxWidth = target.BoxWidth,
+            BoxHeight = target.BoxHeight,
+            BoxNormalizedLeft = 0,
+            BoxNormalizedTop = 0,
+            BoxNormalizedWidth = 0,
+            BoxNormalizedHeight = 0
         };
     }
 
@@ -1079,6 +1255,9 @@ Các field không dùng để chuỗi rỗng hoặc [].
                     .ToArray()
                 : Array.Empty<string>();
 
+        var sceneElements = ParseSceneElements(root);
+        var targetElementId = ReadString(root, "targetElementId").Trim();
+
         return new DesktopOperatorDecision(
             ReadString(root, "state"),
             ReadString(root, "plan"),
@@ -1113,7 +1292,9 @@ Các field không dùng để chuỗi rỗng hoặc [].
             ReadInt(root, "scrollDelta", "delta"),
             ReadString(root, "expectedEffect"),
             ReadDouble(root, "confidence"),
-            ReadString(root, "reason"));
+            ReadString(root, "reason"),
+            sceneElements,
+            targetElementId);
     }
 
     private static LeagueVisualDecision ParseLeagueDecision(

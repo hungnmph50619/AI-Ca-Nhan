@@ -3064,6 +3064,13 @@ jobs:
           grep -Fq 'LOOP-DIRECTIVE: BẮT BUỘC đổi chiến lược' src/PersonalAI.Web/Services/ComputerOperatorTaskService.cs
           ! grep -Fq 'loopAssessment.Occurrences >= 3' src/PersonalAI.Web/Services/ComputerOperatorTaskService.cs
           ! grep -Eiq 'notepad|calculator|mspaint|paint|explorer\.exe|notepad\.exe|calc\.exe' src/PersonalAI.Web/Services/ComputerOperatorLoopGuardSession.cs
+          grep -Fq 'ComputerGenericAppLaunchTool' src/PersonalAI.Web/Services/ComputerGenericAppLaunchTool.cs
+          grep -Fq '"computer.app.launch"' src/PersonalAI.Web/Services/ComputerGenericAppLaunchTool.cs
+          grep -Fq 'taskService.RunAsync' src/PersonalAI.Web/Services/ComputerGenericAppLaunchTool.cs
+          grep -Fq 'ComputerGenericAppLaunchTool' src/PersonalAI.Web/Services/ComputerUseEndpoints.cs
+          ! grep -Fq 'Process.Start' src/PersonalAI.Web/Services/ComputerGenericAppLaunchTool.cs
+          ! grep -Fq 'UseShellExecute' src/PersonalAI.Web/Services/ComputerGenericAppLaunchTool.cs
+          ! grep -Eiq 'notepad|calculator|mspaint|paint|explorer\.exe|notepad\.exe|calc\.exe' src/PersonalAI.Web/Services/ComputerGenericAppLaunchTool.cs
           ! grep -Fq '"computer.mouse.click"' src/PersonalAI.Web/Services/ComputerUseTools.cs
           ! grep -Fq '"computer.keyboard' src/PersonalAI.Web/Services/ComputerUseTools.cs
           grep -Fq 'control.RunAllowed(() => ClickLeftCore' src/PersonalAI.Web/Services/ComputerUseService.cs

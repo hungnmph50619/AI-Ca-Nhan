@@ -232,6 +232,22 @@ public sealed class ComputerOperatorTaskService(
 
                 lowConfidenceCount = 0;
 
+                if (RequiresExpectedEffect(decision.Action) &&
+                    string.IsNullOrWhiteSpace(decision.ExpectedEffect))
+                {
+                    taskHistory.Add(
+                        $"STEP {index}: REJECTED {decision.Action} — thiếu EXPECTED EFFECT để xác minh.");
+
+                    progress.Add(
+                        "recovery",
+                        "AI chưa nêu kết quả mong đợi có thể kiểm tra cho hành động này; không thực hiện và sẽ lập lại phương án.",
+                        decision.Action,
+                        decision.Confidence);
+
+                    await Task.Delay(300, linked.Token);
+                    continue;
+                }
+
                 var actionSignature = BuildActionSignature(decision);
 
                 progress.Add(
@@ -312,11 +328,6 @@ public sealed class ComputerOperatorTaskService(
                     continue;
                 }
 
-                failedActionCounts.Remove(actionSignature);
-
-                taskHistory.Add(
-                    $"STEP {index}: APPLIED {actionSignature} — {action.Detail}; EXPECTED: {decision.ExpectedEffect}");
-
                 progress.Add(
                     "acted",
                     action.Detail,
@@ -324,13 +335,49 @@ public sealed class ComputerOperatorTaskService(
                     decision.Confidence,
                     actionTaken: true);
 
-                progress.Add(
-                    "verify",
-                    string.IsNullOrWhiteSpace(decision.ExpectedEffect)
-                        ? "Đang chờ giao diện phản hồi; vòng tiếp theo sẽ quan sát trạng thái mới."
-                        : $"VERIFY NEXT: {decision.ExpectedEffect}");
+                var verification = await VerifyAppliedActionAsync(
+                    decision,
+                    frame,
+                    linked.Token);
 
-                await Task.Delay(700, linked.Token);
+                if (!verification.Verified)
+                {
+                    var failures = IncrementFailure(
+                        failedActionCounts,
+                        actionSignature);
+
+                    taskHistory.Add(
+                        $"STEP {index}: VERIFY-FAILED {actionSignature} — {verification.Detail}; EXPECTED: {decision.ExpectedEffect}");
+
+                    progress.Add(
+                        "recovery",
+                        $"Xác minh sau hành động thất bại ({failures} lần): {verification.Detail}. AI sẽ quan sát lại và lập phương án khác.",
+                        decision.Action,
+                        verification.Confidence);
+
+                    if (failures >= 3)
+                    {
+                        progress.Block(
+                            $"Loop guard: hành động {decision.Action} không đạt kết quả mong đợi sau {failures} lần.");
+                        return Finish(
+                            false,
+                            "Dừng để tránh vòng lặp sau nhiều lần hành động không đạt kết quả mong đợi.");
+                    }
+
+                    await Task.Delay(350, linked.Token);
+                    continue;
+                }
+
+                failedActionCounts.Remove(actionSignature);
+
+                taskHistory.Add(
+                    $"STEP {index}: VERIFIED {actionSignature} — {verification.Detail}; EXPECTED: {decision.ExpectedEffect}");
+
+                progress.Add(
+                    "verify-result",
+                    verification.Detail,
+                    "verified",
+                    verification.Confidence);
             }
 
             progress.Block(
@@ -372,6 +419,86 @@ public sealed class ComputerOperatorTaskService(
                 "Gemini",
                 vision.Model);
     }
+
+    private sealed record ActionVerificationResult(
+        bool Verified,
+        double Confidence,
+        string Detail);
+
+    private async Task<ActionVerificationResult> VerifyAppliedActionAsync(
+        DesktopOperatorDecision decision,
+        DesktopScreenshotFrame previousFrame,
+        CancellationToken cancellationToken)
+    {
+        progress.Add(
+            "verify",
+            decision.Action == "move-pointer"
+                ? "Đang chụp trạng thái mới và kiểm tra vị trí con trỏ sau khi di chuyển."
+                : $"Đang chụp trạng thái mới để xác minh: {decision.ExpectedEffect}",
+            decision.Action,
+            decision.Confidence);
+
+        await Task.Delay(
+            decision.Action == "move-pointer" ? 180 : 550,
+            cancellationToken);
+        await execution.WaitIfPausedAsync(cancellationToken);
+
+        var after = await screenshots.CaptureStableVirtualScreenAsync(
+            maximumWaitMs: 5000,
+            cancellationToken);
+
+        try
+        {
+            progress.Add(
+                "observe",
+                $"Đã chụp frame hậu hành động {after.Width}x{after.Height}.",
+                observation: true);
+
+            if (decision.Action == "move-pointer")
+            {
+                var expected = coordinates.ToDesktopPoint(
+                    BuildCoordinateRequest(decision, useEnd: false),
+                    previousFrame);
+                var actual = computer.GetCursorPosition();
+                var deltaX = Math.Abs(actual.X - expected.DesktopX);
+                var deltaY = Math.Abs(actual.Y - expected.DesktopY);
+                var verified = deltaX <= 3 && deltaY <= 3;
+
+                return new(
+                    verified,
+                    verified ? 1.0 : 0.0,
+                    verified
+                        ? $"Đã chụp lại màn hình; con trỏ ở ({actual.X},{actual.Y}), khớp điểm mong đợi ({expected.DesktopX},{expected.DesktopY})."
+                        : $"Đã chụp lại màn hình; con trỏ ở ({actual.X},{actual.Y}), lệch khỏi điểm mong đợi ({expected.DesktopX},{expected.DesktopY}).");
+            }
+
+            var result = await vision.VerifyAsync(
+                after,
+                decision.ExpectedEffect,
+                cancellationToken);
+
+            var verifiedByVision =
+                result.Satisfied &&
+                result.Confidence >= MinimumConfidence;
+
+            return new(
+                verifiedByVision,
+                result.Confidence,
+                result.Reason);
+        }
+        finally
+        {
+            after.Clear();
+        }
+    }
+
+    private static bool RequiresExpectedEffect(
+        string action) =>
+        action is not
+            "wait" and not
+            "complete" and not
+            "blocked" and not
+            "move-pointer";
 
     private ComputerActionResponse ExecuteDecision(
         DesktopOperatorDecision decision,

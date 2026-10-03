@@ -242,7 +242,7 @@ public sealed class ComputerOperatorTaskService(
                 try
                 {
                     await execution.WaitIfPausedAsync(linked.Token);
-                    action = ExecuteDecision(decision);
+                    action = ExecuteDecision(decision, frame);
                 }
                 catch (ToolExecutionInputException exception)
                 {
@@ -372,12 +372,49 @@ public sealed class ComputerOperatorTaskService(
     }
 
     private ComputerActionResponse ExecuteDecision(
-        DesktopOperatorDecision decision)
+        DesktopOperatorDecision decision,
+        DesktopScreenshotFrame frame)
     {
         var active = computer.GetActiveWindow();
+        var desktopX = checked(frame.Left + decision.ImageX);
+        var desktopY = checked(frame.Top + decision.ImageY);
+        var endDesktopX = checked(frame.Left + decision.EndImageX);
+        var endDesktopY = checked(frame.Top + decision.EndImageY);
 
         return decision.Action switch
         {
+            "move-pointer" => computer.SmoothMoveCursor(
+                desktopX,
+                desktopY,
+                420),
+            "click-left" => ExecutePointerClick(
+                decision,
+                desktopX,
+                desktopY,
+                static (computerUse, windowId, x, y) =>
+                    computerUse.ClickLeft(windowId, x, y)),
+            "double-click-left" => ExecutePointerClick(
+                decision,
+                desktopX,
+                desktopY,
+                static (computerUse, windowId, x, y) =>
+                    computerUse.DoubleClickLeft(windowId, x, y)),
+            "click-right" => ExecutePointerClick(
+                decision,
+                desktopX,
+                desktopY,
+                static (computerUse, windowId, x, y) =>
+                    computerUse.ClickRight(windowId, x, y)),
+            "scroll" => ExecutePointerScroll(
+                decision,
+                desktopX,
+                desktopY),
+            "drag-left" => ExecutePointerDrag(
+                decision,
+                desktopX,
+                desktopY,
+                endDesktopX,
+                endDesktopY),
             "focus-window" => computer.FocusWindowByQuery(
                 RequireValue(decision.Query, "query")),
             "minimize" => computer.MinimizeWindow(
@@ -407,6 +444,82 @@ public sealed class ComputerOperatorTaskService(
         };
     }
 
+    private ComputerActionResponse ExecutePointerClick(
+        DesktopOperatorDecision decision,
+        int desktopX,
+        int desktopY,
+        Func<IComputerUseService, string, int, int, ComputerActionResponse> click)
+    {
+        var targetWindow = computer.GetWindowAtPoint(
+            desktopX,
+            desktopY)
+            ?? throw new ToolExecutionInputException(
+                $"Không xác định được cửa sổ tại tọa độ ({desktopX}, {desktopY}).");
+
+        _ = computer.SmoothMoveCursor(
+            desktopX,
+            desktopY,
+            420);
+
+        var result = click(
+            computer,
+            targetWindow.WindowId,
+            desktopX,
+            desktopY);
+
+        return result with
+        {
+            Detail =
+                $"{result.Detail} Target={DescribeTarget(decision)} tại ({desktopX}, {desktopY})."
+        };
+    }
+
+    private ComputerActionResponse ExecutePointerScroll(
+        DesktopOperatorDecision decision,
+        int desktopX,
+        int desktopY)
+    {
+        var targetWindow = computer.GetWindowAtPoint(
+            desktopX,
+            desktopY)
+            ?? throw new ToolExecutionInputException(
+                $"Không xác định được cửa sổ tại tọa độ cuộn ({desktopX}, {desktopY}).");
+
+        return computer.Scroll(
+            targetWindow.WindowId,
+            desktopX,
+            desktopY,
+            decision.ScrollDelta);
+    }
+
+    private ComputerActionResponse ExecutePointerDrag(
+        DesktopOperatorDecision decision,
+        int startX,
+        int startY,
+        int endX,
+        int endY)
+    {
+        var targetWindow = computer.GetWindowAtPoint(
+            startX,
+            startY)
+            ?? throw new ToolExecutionInputException(
+                $"Không xác định được cửa sổ tại điểm bắt đầu kéo ({startX}, {startY}).");
+
+        return computer.DragLeft(
+            targetWindow.WindowId,
+            startX,
+            startY,
+            endX,
+            endY,
+            650);
+    }
+
+    private static string DescribeTarget(
+        DesktopOperatorDecision decision) =>
+        string.IsNullOrWhiteSpace(decision.TargetLabel)
+            ? "phần tử nhìn thấy"
+            : decision.TargetLabel.Trim();
+
     private static string BuildHistoryContext(
         IReadOnlyList<string> history)
     {
@@ -430,6 +543,15 @@ public sealed class ComputerOperatorTaskService(
 
         return decision.Action switch
         {
+            "move-pointer" or
+            "click-left" or
+            "double-click-left" or
+            "click-right" =>
+                $"{decision.Action}:{decision.ImageX},{decision.ImageY}:{Clip(decision.TargetLabel, 80)}",
+            "scroll" =>
+                $"scroll:{decision.ImageX},{decision.ImageY}:{decision.ScrollDelta}",
+            "drag-left" =>
+                $"drag-left:{decision.ImageX},{decision.ImageY}->{decision.EndImageX},{decision.EndImageY}",
             "focus-window" => $"focus-window:{Clip(decision.Query, 80)}",
             "type-text" => $"type-text:{Clip(decision.Text, 80)}",
             "press-key" => $"press-key:{Clip(decision.Key, 20)}",

@@ -3075,6 +3075,15 @@ jobs:
           grep -Fq 'CurrentSubgoal' src/PersonalAI.Web/Models/DesktopVisionModels.cs
           grep -Fq 'GoalProgress' src/PersonalAI.Web/Models/DesktopVisionModels.cs
           grep -Fq 'VerifiedMilestones' src/PersonalAI.Web/Models/DesktopVisionModels.cs
+          grep -Fq 'IComputerOperatorAcceptanceService' src/PersonalAI.Web/Services/ComputerOperatorAcceptanceService.cs
+          grep -Fq '/api/computer/operator-acceptance' src/PersonalAI.Web/Services/ComputerUseEndpoints.cs
+          grep -Fq 'CheckDpiMetadataWithoutDoubleScaling' src/PersonalAI.Web/Services/ComputerOperatorAcceptanceService.cs
+          grep -Fq 'CheckMovingTargetRecomputesSafePoint' src/PersonalAI.Web/Services/ComputerOperatorAcceptanceService.cs
+          grep -Fq 'CheckExecutionPauseResumeStop' src/PersonalAI.Web/Services/ComputerOperatorAcceptanceService.cs
+          grep -Fq 'CheckGenericAppLaunchDelegation' src/PersonalAI.Web/Services/ComputerOperatorAcceptanceService.cs
+          grep -Fq 'CheckRepeatedStrategyRequiresChange' src/PersonalAI.Web/Services/ComputerOperatorAcceptanceService.cs
+          grep -Fq 'totalCount -lt 13' .github/workflows/desktop-control.yml
+          ! grep -Eiq 'notepad|calculator|mspaint|explorer\.exe|notepad\.exe|calc\.exe' src/PersonalAI.Web/Services/ComputerOperatorAcceptanceService.cs
           grep -Fq 'MILESTONE-SYSTEM-VERIFIED' src/PersonalAI.Web/Services/ComputerOperatorTaskService.cs
           grep -Fq 'CURRENT SUBGOAL' src/PersonalAI.Web/Services/DesktopVisionService.cs
           grep -Fq 'verifiedMilestones' src/PersonalAI.Web/Services/DesktopVisionService.cs

@@ -30,6 +30,7 @@ public sealed class ComputerOperatorTaskService(
     ComputerOperatorProgressStore progress,
     ComputerOperatorExecutionControl execution,
     IComputerCoordinateTransformService coordinates,
+    IComputerSafeTargetingService targeting,
     ILogger<ComputerOperatorTaskService> logger)
     : IComputerOperatorTaskService
 {
@@ -380,21 +381,29 @@ public sealed class ComputerOperatorTaskService(
 
         ComputerCoordinatePoint? point = null;
         ComputerCoordinatePoint? endPoint = null;
+        ComputerSafeTargetPoint? safeTarget = null;
 
-        if (IsPointerAction(decision.Action))
+        if (IsClickAction(decision.Action))
+        {
+            safeTarget = targeting.Resolve(
+                decision,
+                frame);
+            point = safeTarget.Point;
+        }
+        else if (IsPointerAction(decision.Action))
         {
             point = coordinates.ToDesktopPoint(
                 BuildCoordinateRequest(decision, useEnd: false),
                 frame);
+        }
 
-            if (decision.Action.Equals(
-                    "drag-left",
-                    StringComparison.OrdinalIgnoreCase))
-            {
-                endPoint = coordinates.ToDesktopPoint(
-                    BuildCoordinateRequest(decision, useEnd: true),
-                    frame);
-            }
+        if (decision.Action.Equals(
+                "drag-left",
+                StringComparison.OrdinalIgnoreCase))
+        {
+            endPoint = coordinates.ToDesktopPoint(
+                BuildCoordinateRequest(decision, useEnd: true),
+                frame);
         }
 
         return decision.Action switch
@@ -406,16 +415,19 @@ public sealed class ComputerOperatorTaskService(
             "click-left" => ExecutePointerClick(
                 decision,
                 RequirePoint(point),
+                RequireSafeTarget(safeTarget),
                 static (computerUse, windowId, x, y) =>
                     computerUse.ClickLeft(windowId, x, y)),
             "double-click-left" => ExecutePointerClick(
                 decision,
                 RequirePoint(point),
+                RequireSafeTarget(safeTarget),
                 static (computerUse, windowId, x, y) =>
                     computerUse.DoubleClickLeft(windowId, x, y)),
             "click-right" => ExecutePointerClick(
                 decision,
                 RequirePoint(point),
+                RequireSafeTarget(safeTarget),
                 static (computerUse, windowId, x, y) =>
                     computerUse.ClickRight(windowId, x, y)),
             "scroll" => ExecutePointerScroll(
@@ -457,6 +469,7 @@ public sealed class ComputerOperatorTaskService(
     private ComputerActionResponse ExecutePointerClick(
         DesktopOperatorDecision decision,
         ComputerCoordinatePoint point,
+        ComputerSafeTargetPoint safeTarget,
         Func<IComputerUseService, string, int, int, ComputerActionResponse> click)
     {
         var desktopX = point.DesktopX;
@@ -482,7 +495,7 @@ public sealed class ComputerOperatorTaskService(
         return result with
         {
             Detail =
-                $"{result.Detail} Target={DescribeTarget(decision)} tại ({desktopX}, {desktopY}); hệ={point.Space}; nguồn={point.SourceDescription}."
+                $"{result.Detail} Target={DescribeTarget(decision)} tại ({desktopX}, {desktopY}); hệ={point.Space}; nguồn={point.SourceDescription}; {safeTarget.Detail}"
         };
     }
 
@@ -531,6 +544,13 @@ public sealed class ComputerOperatorTaskService(
             650);
     }
 
+    private static bool IsClickAction(
+        string action) =>
+        action is
+            "click-left" or
+            "double-click-left" or
+            "click-right";
+
     private static bool IsPointerAction(
         string action) =>
         action is
@@ -562,6 +582,11 @@ public sealed class ComputerOperatorTaskService(
         ComputerCoordinatePoint? point) =>
         point ?? throw new ToolExecutionInputException(
             "Không có tọa độ đã chuyển đổi cho hành động chuột.");
+
+    private static ComputerSafeTargetPoint RequireSafeTarget(
+        ComputerSafeTargetPoint? target) =>
+        target ?? throw new ToolExecutionInputException(
+            "Không có vùng mục tiêu an toàn cho hành động click.");
 
     private static string DescribeTarget(
         DesktopOperatorDecision decision) =>

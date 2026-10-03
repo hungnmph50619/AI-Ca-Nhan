@@ -78,8 +78,7 @@ public sealed class ComputerOperatorTaskService(
 
         var steps = new List<ComputerOperatorTaskStep>();
         var taskHistory = new List<string>();
-        var failedActionCounts = new Dictionary<string, int>(
-            StringComparer.OrdinalIgnoreCase);
+        var recovery = new ComputerOperatorRecoverySession();
         var lowConfidenceCount = 0;
 
         try
@@ -140,7 +139,9 @@ public sealed class ComputerOperatorTaskService(
                         frame,
                         normalizedGoal,
                         windowsContext,
-                        BuildHistoryContext(taskHistory),
+                        BuildHistoryContext(
+                            taskHistory,
+                            recovery),
                         linked.Token);
                 }
                 finally
@@ -217,6 +218,15 @@ public sealed class ComputerOperatorTaskService(
                     taskHistory.Add(
                         $"STEP {index}: LOW-CONFIDENCE {decision.Action} ({decision.Confidence:0.00}) — {decision.Reason}");
 
+                    recovery.RecordFailure(
+                        BuildActionSignature(decision),
+                        decision.Action,
+                        ComputerOperatorFailureKinds.LowConfidence,
+                        decision.State,
+                        decision.Reason,
+                        decision.ExpectedEffect,
+                        decision.Confidence);
+
                     if (lowConfidenceCount >= 3)
                     {
                         progress.Block(
@@ -238,6 +248,15 @@ public sealed class ComputerOperatorTaskService(
                     taskHistory.Add(
                         $"STEP {index}: REJECTED {decision.Action} — thiếu EXPECTED EFFECT để xác minh.");
 
+                    recovery.RecordFailure(
+                        BuildActionSignature(decision),
+                        decision.Action,
+                        ComputerOperatorFailureKinds.MissingExpectedEffect,
+                        decision.State,
+                        "Thiếu kết quả mong đợi để xác minh hành động.",
+                        decision.ExpectedEffect,
+                        decision.Confidence);
+
                     progress.Add(
                         "recovery",
                         "AI chưa nêu kết quả mong đợi có thể kiểm tra cho hành động này; không thực hiện và sẽ lập lại phương án.",
@@ -249,6 +268,24 @@ public sealed class ComputerOperatorTaskService(
                 }
 
                 var actionSignature = BuildActionSignature(decision);
+
+                if (recovery.ShouldAvoidRepeatedStrategy(
+                        actionSignature,
+                        decision.State,
+                        out var avoidReason))
+                {
+                    taskHistory.Add(
+                        $"STEP {index}: RECOVERY-SKIP {actionSignature} — {avoidReason}");
+
+                    progress.Add(
+                        "replan",
+                        $"Không lặp lại chiến lược vừa thất bại: {avoidReason}",
+                        decision.Action,
+                        decision.Confidence);
+
+                    await Task.Delay(250, linked.Token);
+                    continue;
+                }
 
                 progress.Add(
                     "act",
@@ -269,26 +306,31 @@ public sealed class ComputerOperatorTaskService(
                         index,
                         exception.Message);
 
-                    var failures = IncrementFailure(
-                        failedActionCounts,
-                        actionSignature);
+                    var failures = recovery.RecordFailure(
+                        actionSignature,
+                        decision.Action,
+                        ComputerOperatorFailureKinds.ActionRejected,
+                        decision.State,
+                        exception.Message,
+                        decision.ExpectedEffect,
+                        decision.Confidence);
 
                     taskHistory.Add(
                         $"STEP {index}: FAILED {actionSignature} — {exception.Message}");
 
                     progress.Add(
                         "recovery",
-                        $"Hành động thất bại ({failures} lần): {exception.Message}. AI sẽ quan sát lại và tự lập kế hoạch khác.",
+                        $"Hành động bị từ chối ({failures} lần với chiến lược này): {exception.Message}. AI sẽ quan sát lại và lập phương án khác.",
                         decision.Action,
                         decision.Confidence);
 
                     if (failures >= 3)
                     {
                         progress.Block(
-                            $"Loop guard: cùng một hành động thất bại {failures} lần.");
+                            $"Cùng một chiến lược đã bị từ chối {failures} lần; dừng để tránh lặp vô hạn.");
                         return Finish(
                             false,
-                            $"Dừng để tránh lặp vô hạn sau {failures} lần thất bại cùng hành động.");
+                            $"Dừng sau {failures} lần cùng một chiến lược bị từ chối.");
                     }
 
                     await Task.Delay(500, linked.Token);
@@ -302,23 +344,28 @@ public sealed class ComputerOperatorTaskService(
 
                 if (!action.Applied)
                 {
-                    var failures = IncrementFailure(
-                        failedActionCounts,
-                        actionSignature);
+                    var failures = recovery.RecordFailure(
+                        actionSignature,
+                        decision.Action,
+                        ComputerOperatorFailureKinds.NotApplied,
+                        decision.State,
+                        action.Detail,
+                        decision.ExpectedEffect,
+                        decision.Confidence);
 
                     taskHistory.Add(
                         $"STEP {index}: NOT-APPLIED {actionSignature} — {action.Detail}");
 
                     progress.Add(
                         "recovery",
-                        $"Hành động chưa tạo thay đổi ({failures} lần): {action.Detail}. Sẽ quan sát lại và REPLAN.",
+                        $"Hành động chưa tạo thay đổi ({failures} lần với chiến lược này): {action.Detail}. Sẽ quan sát lại và lập phương án khác.",
                         decision.Action,
                         decision.Confidence);
 
                     if (failures >= 3)
                     {
                         progress.Block(
-                            $"Loop guard: hành động {decision.Action} không hiệu lực {failures} lần.");
+                            $"Cùng một chiến lược không hiệu lực {failures} lần; dừng để tránh lặp vô hạn.");
                         return Finish(
                             false,
                             "Dừng để tránh vòng lặp hành động không hiệu lực.");
@@ -342,33 +389,36 @@ public sealed class ComputerOperatorTaskService(
 
                 if (!verification.Verified)
                 {
-                    var failures = IncrementFailure(
-                        failedActionCounts,
-                        actionSignature);
+                    var failures = recovery.RecordFailure(
+                        actionSignature,
+                        decision.Action,
+                        ComputerOperatorFailureKinds.VerificationFailed,
+                        decision.State,
+                        verification.Detail,
+                        decision.ExpectedEffect,
+                        verification.Confidence);
 
                     taskHistory.Add(
                         $"STEP {index}: VERIFY-FAILED {actionSignature} — {verification.Detail}; EXPECTED: {decision.ExpectedEffect}");
 
                     progress.Add(
                         "recovery",
-                        $"Xác minh sau hành động thất bại ({failures} lần): {verification.Detail}. AI sẽ quan sát lại và lập phương án khác.",
+                        $"Kết quả thực tế không khớp mong đợi ({failures} lần với chiến lược này): {verification.Detail}. AI sẽ quan sát lại và đổi phương án.",
                         decision.Action,
                         verification.Confidence);
 
                     if (failures >= 3)
                     {
                         progress.Block(
-                            $"Loop guard: hành động {decision.Action} không đạt kết quả mong đợi sau {failures} lần.");
+                            $"Cùng một chiến lược không đạt kết quả mong đợi {failures} lần; dừng để tránh lặp vô hạn.");
                         return Finish(
                             false,
-                            "Dừng để tránh vòng lặp sau nhiều lần hành động không đạt kết quả mong đợi.");
+                            "Dừng sau nhiều lần cùng một chiến lược không đạt kết quả mong đợi.");
                     }
 
                     await Task.Delay(350, linked.Token);
                     continue;
                 }
-
-                failedActionCounts.Remove(actionSignature);
 
                 taskHistory.Add(
                     $"STEP {index}: VERIFIED {actionSignature} — {verification.Detail}; EXPECTED: {decision.ExpectedEffect}");
@@ -722,14 +772,19 @@ public sealed class ComputerOperatorTaskService(
             : decision.TargetLabel.Trim();
 
     private static string BuildHistoryContext(
-        IReadOnlyList<string> history)
+        IReadOnlyList<string> history,
+        ComputerOperatorRecoverySession recovery)
     {
-        if (history.Count == 0)
-            return string.Empty;
+        var historyText = history.Count == 0
+            ? "(chưa có hành động trước đó)"
+            : string.Join(
+                "\n",
+                history.TakeLast(14));
 
-        return string.Join(
-            "\n",
-            history.TakeLast(16));
+        return
+            historyText +
+            "\n\n" +
+            recovery.BuildContext();
     }
 
     private static string BuildActionSignature(
@@ -744,12 +799,11 @@ public sealed class ComputerOperatorTaskService(
 
         return decision.Action switch
         {
-            "move-pointer" =>
-                $"{decision.Action}:{CoordinateSignature(decision, false)}:{Clip(decision.TargetLabel, 80)}",
+            "move-pointer" or
             "click-left" or
             "double-click-left" or
             "click-right" =>
-                $"{decision.Action}:{CoordinateSignature(decision, false)}:{RegionSignature(decision)}:{Clip(decision.TargetLabel, 80)}",
+                $"{decision.Action}:{CoordinateSignature(decision, false)}:{Clip(decision.TargetLabel, 80)}",
             "scroll" =>
                 $"scroll:{CoordinateSignature(decision, false)}:{decision.ScrollDelta}",
             "drag-left" =>
@@ -761,23 +815,6 @@ public sealed class ComputerOperatorTaskService(
             "open-browser" => $"open-browser:{Clip(decision.Url, 120)}",
             _ => decision.Action
         };
-    }
-
-    private static string RegionSignature(
-        DesktopOperatorDecision decision)
-    {
-        var space = string.IsNullOrWhiteSpace(decision.CoordinateSpace)
-            ? ComputerCoordinateSpaces.ImagePixel
-            : decision.CoordinateSpace.Trim().ToLowerInvariant();
-
-        if (space == ComputerCoordinateSpaces.ImagePixel)
-        {
-            return
-                $"box:{decision.BoxLeft},{decision.BoxTop},{decision.BoxWidth},{decision.BoxHeight}";
-        }
-
-        return
-            $"box:{decision.BoxNormalizedLeft:0.0000},{decision.BoxNormalizedTop:0.0000},{decision.BoxNormalizedWidth:0.0000},{decision.BoxNormalizedHeight:0.0000}";
     }
 
     private static string CoordinateSignature(
@@ -807,15 +844,6 @@ public sealed class ComputerOperatorTaskService(
             : $"{space}:{x:0.0000},{y:0.0000}";
     }
 
-    private static int IncrementFailure(
-        IDictionary<string, int> failures,
-        string signature)
-    {
-        failures.TryGetValue(signature, out var count);
-        count++;
-        failures[signature] = count;
-        return count;
-    }
 
     private string BuildObservation()
     {

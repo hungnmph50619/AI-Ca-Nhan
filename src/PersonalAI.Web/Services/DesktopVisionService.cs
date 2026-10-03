@@ -490,6 +490,12 @@ Ví dụ tư duy tổng quát:
 - không giả định một chuỗi app-specific đã được hard-code.
 
 Mỗi lượt chỉ chọn MỘT action trong:
+move-pointer
+click-left
+double-click-left
+click-right
+scroll
+drag-left
 focus-window
 minimize
 maximize
@@ -506,7 +512,11 @@ Quy tắc an toàn:
 - Dựa trên desktop hiện tại và history; không suy đoán phần tử bị che.
 - Không shell, không xóa dữ liệu, không connector.
 - Không nhập mật khẩu, OTP, API key, token, private key hoặc bí mật.
-- Không click chuột theo tọa độ trong phiên bản này.
+- Với hành động chuột, chỉ chọn phần tử đang nhìn thấy rõ trên ảnh hiện tại.
+- x,y là tọa độ pixel tương đối so với góc trên-trái của ảnh desktop hiện tại.
+- drag-left dùng x,y làm điểm bắt đầu và endX,endY làm điểm kết thúc.
+- scroll dùng x,y là vị trí cuộn và scrollDelta là lượng cuộn; âm là cuộn xuống, dương là cuộn lên.
+- Với action không dùng chuột, x=y=endX=endY=scrollDelta=0.
 - focus-window dùng query là cửa sổ/process cần chuyển tới.
 - minimize/maximize/restore áp dụng cho foreground hiện tại.
 - type-text chỉ khi foreground/ô nhập phù hợp và nội dung không nhạy cảm.
@@ -526,6 +536,12 @@ Trả đúng một JSON object, không markdown:
   "key":"",
   "keys":[],
   "url":"",
+  "targetLabel":"",
+  "x":0,
+  "y":0,
+  "endX":0,
+  "endY":0,
+  "scrollDelta":0,
   "expectedEffect":"...",
   "confidence":0.95,
   "reason":"..."
@@ -614,6 +630,12 @@ Các field không dùng để chuỗi rỗng hoặc [].
                 "press-key",
                 "press-hotkey",
                 "open-browser",
+                "move-pointer",
+                "click-left",
+                "double-click-left",
+                "click-right",
+                "scroll",
+                "drag-left",
                 "wait",
                 "complete",
                 "blocked"
@@ -629,11 +651,47 @@ Các field không dùng để chuỗi rỗng hoặc [].
             decision.Text.Length > 1000 ||
             decision.Key.Length > 20 ||
             decision.Url.Length > 2048 ||
+            decision.TargetLabel.Length > 160 ||
             decision.ExpectedEffect.Length > 500 ||
             decision.Reason.Length > 600 ||
             decision.Keys.Count > 4)
             throw new InvalidOperationException(
                 "Desktop Vision trả quyết định Computer Operator không hợp lệ.");
+
+        var pointerActions = new HashSet<string>(
+            [
+                "move-pointer",
+                "click-left",
+                "double-click-left",
+                "click-right",
+                "scroll",
+                "drag-left"
+            ],
+            StringComparer.OrdinalIgnoreCase);
+
+        if (pointerActions.Contains(decision.Action))
+        {
+            if (decision.ImageX < 0 ||
+                decision.ImageX >= frame.Width ||
+                decision.ImageY < 0 ||
+                decision.ImageY >= frame.Height)
+                throw new InvalidOperationException(
+                    "Desktop Vision trả tọa độ chuột ngoài ảnh.");
+
+            if (decision.Action.Equals("drag-left", StringComparison.OrdinalIgnoreCase) &&
+                (decision.EndImageX < 0 ||
+                 decision.EndImageX >= frame.Width ||
+                 decision.EndImageY < 0 ||
+                 decision.EndImageY >= frame.Height))
+                throw new InvalidOperationException(
+                    "Desktop Vision trả tọa độ kéo thả ngoài ảnh.");
+
+            if (decision.Action.Equals("scroll", StringComparison.OrdinalIgnoreCase) &&
+                (decision.ScrollDelta == 0 ||
+                 Math.Abs(decision.ScrollDelta) > 2400))
+                throw new InvalidOperationException(
+                    "Desktop Vision trả lượng cuộn không hợp lệ.");
+        }
 
         return decision with
         {
@@ -889,6 +947,12 @@ Các field không dùng để chuỗi rỗng hoặc [].
             ReadString(root, "key"),
             keys,
             ReadString(root, "url"),
+            ReadString(root, "targetLabel"),
+            ReadInt(root, "x", "imageX"),
+            ReadInt(root, "y", "imageY"),
+            ReadInt(root, "endX", "endImageX"),
+            ReadInt(root, "endY", "endImageY"),
+            ReadInt(root, "scrollDelta", "delta"),
             ReadString(root, "expectedEffect"),
             ReadDouble(root, "confidence"),
             ReadString(root, "reason"));

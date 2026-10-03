@@ -30,6 +30,7 @@ public sealed class ComputerOperatorTaskService(
     ComputerOperatorProgressStore progress,
     ComputerOperatorExecutionControl execution,
     IComputerCoordinateTransformService coordinates,
+    IComputerDisplayTopologyService displays,
     IComputerSafeTargetingService targeting,
     ILogger<ComputerOperatorTaskService> logger)
     : IComputerOperatorTaskService
@@ -666,9 +667,33 @@ public sealed class ComputerOperatorTaskService(
             {
                 logger.LogDebug(
                     exception,
-                    "Không chụp ổn định được foreground window {WindowId}; fallback về virtual desktop.",
+                    "Không chụp ổn định được foreground window {WindowId}; thử monitor theo con trỏ.",
                     active.WindowId);
             }
+        }
+
+        try
+        {
+            var cursor = computer.GetCursorPosition();
+            var monitor = displays.GetMonitorAtPoint(
+                cursor.X,
+                cursor.Y);
+
+            if (monitor is not null)
+            {
+                return await screenshots.CaptureStableMonitorAsync(
+                    monitor.DeviceName,
+                    maximumWaitMs: 5000,
+                    cancellationToken);
+            }
+        }
+        catch (Exception exception) when (
+            exception is ToolExecutionInputException or
+            InvalidOperationException)
+        {
+            logger.LogDebug(
+                exception,
+                "Không chụp ổn định được monitor theo con trỏ; fallback về virtual desktop.");
         }
 
         return await screenshots.CaptureStableVirtualScreenAsync(

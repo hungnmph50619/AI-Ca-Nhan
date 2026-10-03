@@ -3071,6 +3071,13 @@ jobs:
           ! grep -Fq 'Process.Start' src/PersonalAI.Web/Services/ComputerGenericAppLaunchTool.cs
           ! grep -Fq 'UseShellExecute' src/PersonalAI.Web/Services/ComputerGenericAppLaunchTool.cs
           ! grep -Eiq 'notepad|calculator|mspaint|paint|explorer\.exe|notepad\.exe|calc\.exe' src/PersonalAI.Web/Services/ComputerGenericAppLaunchTool.cs
+          grep -Fq 'CurrentSubgoal' src/PersonalAI.Web/Models/DesktopVisionModels.cs
+          grep -Fq 'GoalProgress' src/PersonalAI.Web/Models/DesktopVisionModels.cs
+          grep -Fq 'VerifiedMilestones' src/PersonalAI.Web/Models/DesktopVisionModels.cs
+          grep -Fq 'MILESTONE-SYSTEM-VERIFIED' src/PersonalAI.Web/Services/ComputerOperatorTaskService.cs
+          grep -Fq 'CURRENT SUBGOAL' src/PersonalAI.Web/Services/DesktopVisionService.cs
+          grep -Fq 'verifiedMilestones' src/PersonalAI.Web/Services/DesktopVisionService.cs
+          ! grep -Eiq 'notepad|calculator|mspaint|paint|explorer\.exe|notepad\.exe|calc\.exe' src/PersonalAI.Web/Services/ComputerOperatorTaskService.cs src/PersonalAI.Web/Services/DesktopVisionService.cs
           ! grep -Fq '"computer.mouse.click"' src/PersonalAI.Web/Services/ComputerUseTools.cs
           ! grep -Fq '"computer.keyboard' src/PersonalAI.Web/Services/ComputerUseTools.cs
           grep -Fq 'control.RunAllowed(() => ClickLeftCore' src/PersonalAI.Web/Services/ComputerUseService.cs

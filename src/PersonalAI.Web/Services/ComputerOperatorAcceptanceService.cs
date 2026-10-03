@@ -48,8 +48,18 @@ public sealed class ComputerOperatorAcceptanceService
 
         RunCheck(
             checks,
+            "safe click trên màn hình có tọa độ âm",
+            CheckSafeTargetOnNegativeMonitor);
+
+        RunCheck(
+            checks,
             "bộ nhớ recovery chặn lặp chiến lược thất bại",
             CheckRecoveryMemory);
+
+        RunCheck(
+            checks,
+            "recovery cho phép chiến lược thay thế sau thất bại",
+            CheckRecoveryAllowsAlternativeStrategy);
 
         RunCheck(
             checks,
@@ -90,6 +100,11 @@ public sealed class ComputerOperatorAcceptanceService
             checks,
             "mở ứng dụng bất kỳ chỉ ủy quyền thành goal tổng quát",
             CheckGenericAppLaunchDelegation);
+
+        RunCheck(
+            checks,
+            "mở ứng dụng không giả định taskbar hay executable",
+            CheckGenericAppLaunchDoesNotAssumeTaskbar);
 
         var passed = checks.Count(item => item.Passed);
 
@@ -277,6 +292,48 @@ public sealed class ComputerOperatorAcceptanceService
             "Điểm click chuẩn hóa không nằm trong cửa sổ đích.");
     }
 
+    private static void CheckSafeTargetOnNegativeMonitor()
+    {
+        var transform = new ComputerCoordinateTransformService(
+            new AcceptanceComputerUseService(),
+            new AcceptanceDisplayTopologyService());
+        var targeting = new ComputerSafeTargetingService(
+            transform);
+
+        var frame = new DesktopScreenshotFrame(
+            Array.Empty<byte>(),
+            -1920,
+            0,
+            3840,
+            1080,
+            DateTimeOffset.UtcNow);
+
+        var decision = BuildClickDecision(
+            ComputerCoordinateSpaces.ImagePixel,
+            boxLeft: 120,
+            boxTop: 160,
+            boxWidth: 140,
+            boxHeight: 80);
+
+        var target = targeting.Resolve(
+            decision,
+            frame);
+
+        Require(
+            target.Point.DesktopX < 0,
+            "Safe targeting trên màn hình trái không giữ được tọa độ desktop âm.");
+
+        var imageX = target.Point.DesktopX - frame.Left;
+        var imageY = target.Point.DesktopY - frame.Top;
+
+        Require(
+            imageX > decision.BoxLeft &&
+            imageX < decision.BoxLeft + decision.BoxWidth &&
+            imageY > decision.BoxTop &&
+            imageY < decision.BoxTop + decision.BoxHeight,
+            "Safe targeting trên màn hình âm tạo điểm click ngoài bounding box.");
+    }
+
     private static void CheckRecoveryMemory()
     {
         var recovery = new ComputerOperatorRecoverySession();
@@ -303,6 +360,29 @@ public sealed class ComputerOperatorAcceptanceService
             avoid &&
             !string.IsNullOrWhiteSpace(reason),
             "Recovery không chặn chiến lược vừa thất bại trong trạng thái tương đương.");
+    }
+
+    private static void CheckRecoveryAllowsAlternativeStrategy()
+    {
+        var recovery = new ComputerOperatorRecoverySession();
+
+        _ = recovery.RecordFailure(
+            "click-left:image-pixel:100,100",
+            "click-left",
+            ComputerOperatorFailureKinds.VerificationFailed,
+            "Giao diện chưa đổi",
+            "Không đạt kết quả mong đợi.",
+            "Trạng thái mục tiêu xuất hiện",
+            0.9);
+
+        var shouldAvoidDifferent = recovery.ShouldAvoidRepeatedStrategy(
+            "press-hotkey:meta+k",
+            "Giao diện chưa đổi",
+            out _);
+
+        Require(
+            !shouldAvoidDifferent,
+            "Recovery chặn cả chiến lược thay thế dù chỉ chiến lược cũ thất bại.");
     }
 
     private static void CheckLoopStagnation()
@@ -593,6 +673,39 @@ public sealed class ComputerOperatorAcceptanceService
         Require(
             result.ValueKind == System.Text.Json.JsonValueKind.Object,
             "computer.app.launch không trả kết quả dạng object.");
+    }
+
+    private static void CheckGenericAppLaunchDoesNotAssumeTaskbar()
+    {
+        var fake = new AcceptanceOperatorTaskService();
+        var tool = new ComputerGenericAppLaunchTool(
+            fake);
+
+        using var document = System.Text.Json.JsonDocument.Parse(
+            """{"application":"Ứng dụng bất kỳ Δ"}""");
+
+        _ = tool.ExecuteAsync(
+                document.RootElement)
+            .GetAwaiter()
+            .GetResult();
+
+        Require(
+            fake.LastGoal.Contains(
+                "không giả định ứng dụng được ghim trên taskbar",
+                StringComparison.OrdinalIgnoreCase),
+            "Goal mở ứng dụng vẫn giả định ứng dụng có trên taskbar.");
+
+        Require(
+            fake.LastGoal.Contains(
+                "Nếu ứng dụng đã có cửa sổ",
+                StringComparison.OrdinalIgnoreCase),
+            "Goal mở ứng dụng không xét trường hợp ứng dụng đã mở sẵn.");
+
+        Require(
+            !fake.LastGoal.Contains(
+                ".exe",
+                StringComparison.OrdinalIgnoreCase),
+            "Goal mở ứng dụng chứa executable hard-code.");
     }
 
     private static DesktopOperatorDecision BuildClickDecision(

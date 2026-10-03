@@ -596,15 +596,19 @@ public sealed class ComputerOperatorTaskService(
             cancellationToken);
         await execution.WaitIfPausedAsync(cancellationToken);
 
-        var after = await screenshots.CaptureStableVirtualScreenAsync(
-            maximumWaitMs: 5000,
+        var after = await CaptureVerificationFrameAsync(
+            decision,
             cancellationToken);
 
         try
         {
+            var scopeDetail = after.CaptureScope == "window"
+                ? $"cửa sổ “{after.WindowTitle ?? "không rõ"}” ({after.WindowId ?? "?"}); foreground={after.WindowWasForeground}"
+                : "toàn desktop ảo";
+
             progress.Add(
                 "observe",
-                $"Đã chụp frame hậu hành động {after.Width}x{after.Height}.",
+                $"Đã chụp frame hậu hành động {after.Width}x{after.Height}, phạm vi: {scopeDetail}.",
                 observation: true);
 
             if (decision.Action == "move-pointer")
@@ -643,6 +647,76 @@ public sealed class ComputerOperatorTaskService(
         {
             after.Clear();
         }
+    }
+
+    private async Task<DesktopScreenshotFrame> CaptureVerificationFrameAsync(
+        DesktopOperatorDecision decision,
+        CancellationToken cancellationToken)
+    {
+        if (ShouldPreferWindowCapture(decision))
+        {
+            var active = computer.GetActiveWindow();
+            if (active is not null)
+            {
+                try
+                {
+                    return await screenshots.CaptureStableWindowAsync(
+                        active.WindowId,
+                        maximumWaitMs: 5000,
+                        cancellationToken);
+                }
+                catch (ToolExecutionInputException exception)
+                {
+                    progress.Add(
+                        "observe-fallback",
+                        $"Không chụp được cửa sổ “{active.Title}”: {exception.Message}. Chuyển sang chụp toàn desktop.",
+                        "capture-fallback",
+                        decision.Confidence);
+                }
+            }
+        }
+
+        return await screenshots.CaptureStableVirtualScreenAsync(
+            maximumWaitMs: 5000,
+            cancellationToken);
+    }
+
+    private static bool ShouldPreferWindowCapture(
+        DesktopOperatorDecision decision)
+    {
+        if (decision.Action is
+            "minimize" or
+            "open-browser" or
+            "click-left" or
+            "double-click-left" or
+            "click-right")
+            return false;
+
+        if (decision.Action == "press-key" &&
+            decision.Key.Equals(
+                "WIN",
+                StringComparison.OrdinalIgnoreCase))
+            return false;
+
+        if (decision.Action == "press-hotkey" &&
+            decision.Keys.Any(key =>
+                key.Equals(
+                    "WIN",
+                    StringComparison.OrdinalIgnoreCase) ||
+                key.Equals(
+                    "WINDOWS",
+                    StringComparison.OrdinalIgnoreCase)))
+            return false;
+
+        return decision.Action is
+            "focus-window" or
+            "restore" or
+            "maximize" or
+            "type-text" or
+            "press-key" or
+            "press-hotkey" or
+            "scroll" or
+            "drag-left";
     }
 
     private static bool RequiresExpectedEffect(

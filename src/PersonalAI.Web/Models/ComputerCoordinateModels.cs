@@ -57,3 +57,21 @@ public sealed record ComputerMonitorInfo(
 public sealed record ComputerDisplayTopologyResponse(
     int Count,
     IReadOnlyList<ComputerMonitorInfo> Monitors);
+
+
+public sealed record ComputerTargetRegion(
+    string Space,
+    string WindowId,
+    int Left,
+    int Top,
+    int Width,
+    int Height,
+    double NormalizedLeft,
+    double NormalizedTop,
+    double NormalizedWidth,
+    double NormalizedHeight);
+
+public sealed record ComputerSafeTargetPoint(
+    ComputerCoordinatePoint Point,
+    bool UsedBoundingBox,
+    string Detail);

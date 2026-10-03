@@ -521,7 +521,12 @@ Quy tắc an toàn:
 - Ưu tiên tọa độ chuẩn hóa khi phần tử nằm trong một vùng/cửa sổ ổn định; dùng pixel ảnh khi cần bám chính xác vào phần tử đang nhìn thấy.
 - drag-left dùng cùng hệ tọa độ cho điểm đầu và điểm cuối; điểm cuối dùng endX,endY hoặc endNormalizedX,endNormalizedY tương ứng.
 - scroll dùng x,y là vị trí cuộn và scrollDelta là lượng cuộn; âm là cuộn xuống, dương là cuộn lên.
-- Với action không dùng chuột, x=y=endX=endY=scrollDelta=0.
+- Với click-left, double-click-left và click-right: nếu nhìn thấy rõ mục tiêu, PHẢI trả cả vùng bounding box của mục tiêu trong cùng hệ tọa độ với điểm.
+  * image-pixel: boxLeft,boxTop,boxWidth,boxHeight là pixel trong ảnh.
+  * các hệ normalized: boxNormalizedLeft,boxNormalizedTop,boxNormalizedWidth,boxNormalizedHeight trong khoảng 0..1.
+- Điểm x,y/normalizedX,normalizedY có thể là tâm ước lượng, nhưng hệ thống sẽ ưu tiên tự chọn điểm click an toàn từ bounding box.
+- Không mở rộng bounding box sang phần tử lân cận; box phải ôm đúng phần tử mục tiêu.
+- Với action không dùng chuột, x=y=endX=endY=scrollDelta=0 và các trường box bằng 0.
 - focus-window dùng query là cửa sổ/process cần chuyển tới.
 - minimize/maximize/restore áp dụng cho foreground hiện tại.
 - type-text chỉ khi foreground/ô nhập phù hợp và nội dung không nhạy cảm.
@@ -552,6 +557,14 @@ Trả đúng một JSON object, không markdown:
   "normalizedY":0.0,
   "endNormalizedX":0.0,
   "endNormalizedY":0.0,
+  "boxLeft":0,
+  "boxTop":0,
+  "boxWidth":0,
+  "boxHeight":0,
+  "boxNormalizedLeft":0.0,
+  "boxNormalizedTop":0.0,
+  "boxNormalizedWidth":0.0,
+  "boxNormalizedHeight":0.0,
   "scrollDelta":0,
   "expectedEffect":"...",
   "confidence":0.95,
@@ -737,6 +750,45 @@ Các field không dùng để chuỗi rỗng hoặc [].
                  Math.Abs(decision.ScrollDelta) > 2400))
                 throw new InvalidOperationException(
                     "Desktop Vision trả lượng cuộn không hợp lệ.");
+
+            var clickAction =
+                decision.Action.Equals("click-left", StringComparison.OrdinalIgnoreCase) ||
+                decision.Action.Equals("double-click-left", StringComparison.OrdinalIgnoreCase) ||
+                decision.Action.Equals("click-right", StringComparison.OrdinalIgnoreCase);
+
+            if (clickAction && space == ComputerCoordinateSpaces.ImagePixel)
+            {
+                var hasBox =
+                    decision.BoxLeft >= 0 &&
+                    decision.BoxTop >= 0 &&
+                    decision.BoxWidth > 1 &&
+                    decision.BoxHeight > 1 &&
+                    decision.BoxLeft + decision.BoxWidth <= frame.Width &&
+                    decision.BoxTop + decision.BoxHeight <= frame.Height;
+
+                if (!hasBox)
+                    throw new InvalidOperationException(
+                        "Desktop Vision thiếu bounding box pixel hợp lệ cho hành động click.");
+            }
+
+            if (clickAction && space != ComputerCoordinateSpaces.ImagePixel)
+            {
+                var hasNormalizedBox =
+                    double.IsFinite(decision.BoxNormalizedLeft) &&
+                    double.IsFinite(decision.BoxNormalizedTop) &&
+                    double.IsFinite(decision.BoxNormalizedWidth) &&
+                    double.IsFinite(decision.BoxNormalizedHeight) &&
+                    decision.BoxNormalizedLeft >= 0 &&
+                    decision.BoxNormalizedTop >= 0 &&
+                    decision.BoxNormalizedWidth > 0 &&
+                    decision.BoxNormalizedHeight > 0 &&
+                    decision.BoxNormalizedLeft + decision.BoxNormalizedWidth <= 1.000001 &&
+                    decision.BoxNormalizedTop + decision.BoxNormalizedHeight <= 1.000001;
+
+                if (!hasNormalizedBox)
+                    throw new InvalidOperationException(
+                        "Desktop Vision thiếu bounding box chuẩn hóa hợp lệ cho hành động click.");
+            }
         }
 
         return decision with
@@ -1004,6 +1056,14 @@ Các field không dùng để chuỗi rỗng hoặc [].
             ReadDouble(root, "normalizedY"),
             ReadDouble(root, "endNormalizedX"),
             ReadDouble(root, "endNormalizedY"),
+            ReadInt(root, "boxLeft", "left"),
+            ReadInt(root, "boxTop", "top"),
+            ReadInt(root, "boxWidth", "width"),
+            ReadInt(root, "boxHeight", "height"),
+            ReadDouble(root, "boxNormalizedLeft"),
+            ReadDouble(root, "boxNormalizedTop"),
+            ReadDouble(root, "boxNormalizedWidth"),
+            ReadDouble(root, "boxNormalizedHeight"),
             ReadInt(root, "scrollDelta", "delta"),
             ReadString(root, "expectedEffect"),
             ReadDouble(root, "confidence"),

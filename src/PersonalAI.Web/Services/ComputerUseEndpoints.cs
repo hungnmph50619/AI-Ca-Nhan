@@ -19,6 +19,7 @@ public static class ComputerUseEndpoints
         services.AddSingleton<IComputerUseService, WindowsComputerUseService>();
         services.AddSingleton<IComputerDisplayTopologyService, WindowsComputerDisplayTopologyService>();
         services.AddSingleton<IComputerCoordinateTransformService, ComputerCoordinateTransformService>();
+        services.AddSingleton<IComputerSafeTargetingService, ComputerSafeTargetingService>();
         services.AddSingleton<IComputerOperatorTaskService, ComputerOperatorTaskService>();
         services.AddSingleton<IDesktopScreenshotService, WindowsDesktopScreenshotService>();
         services.AddSingleton<ILeaguePracticeAutomationService, LeaguePracticeAutomationService>();

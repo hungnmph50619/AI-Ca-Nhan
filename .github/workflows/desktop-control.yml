@@ -59,7 +59,14 @@ jobs:
             if (-not $ready) { throw "Ứng dụng không khởi động trong thời gian chờ." }
 
             $appStatus = Invoke-RestMethod "$base/api/status"
-            if ($appStatus.version -ne "3.3.1") { throw "Ứng dụng không công bố version 3.3.1." }
+            $releaseSource = Get-Content "src/PersonalAI.Web/Models/SystemModels.cs" -Raw
+            if ($releaseSource -notmatch 'public const string Version = "([^"]+)"') {
+              throw "Không đọc được version mong đợi từ SystemModels.cs."
+            }
+            $expectedVersion = $Matches[1]
+            if ($appStatus.version -ne $expectedVersion) {
+              throw "Version runtime $($appStatus.version) khác source $expectedVersion."
+            }
 
             $operatorInitial = Invoke-RestMethod "$base/api/computer/operator-progress"
             if ($operatorInitial.active -ne $false -or $operatorInitial.status -ne "idle") {

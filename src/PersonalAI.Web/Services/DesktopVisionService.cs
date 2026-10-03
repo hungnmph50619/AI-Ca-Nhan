@@ -194,9 +194,13 @@ confidence từ 0 đến 1.
                                 $"Hãy xác minh trạng thái này trên ảnh hiện tại: {expectedState}. " +
                                 $"Ảnh có kích thước {frame.Width}x{frame.Height}. " +
                                 $"Phạm vi chụp: {frame.CaptureScope}. " +
+                                $"Backend chụp: {frame.CaptureBackend}. " +
                                 (frame.CaptureScope == "window"
                                     ? $"Cửa sổ: id={frame.WindowId ?? "?"}; title={frame.WindowTitle ?? "?"}; foreground={frame.WindowWasForeground}. "
                                     : string.Empty) +
+                                (string.IsNullOrWhiteSpace(frame.CaptureFallbackReason)
+                                    ? string.Empty
+                                    : $"Backend đã fallback: {frame.CaptureFallbackReason}. ") +
                                 "Chỉ dùng bằng chứng thật sự nhìn thấy trong phạm vi ảnh này."
                         },
                         new
@@ -494,9 +498,13 @@ Nếu cách trước thất bại và trạng thái hiện tại chưa thay đ�
 Không chọn một hành động làm thay đổi giao diện nếu bạn không thể mô tả rõ trạng thái mong đợi sau hành động đó.
 
 Ví dụ tư duy tổng quát:
-- nếu ứng dụng đã có cửa sổ: có thể focus/restore;
-- nếu mục tiêu chưa có cửa sổ: có thể dùng affordance hệ thống đang khả dụng như Start/Search bằng phím hoặc UI;
-- nếu UI đang chuyển trạng thái: wait rồi quan sát lại;
+- nếu mục tiêu là đưa một ứng dụng lên foreground, trước hết xác định xem ứng dụng đó đã có cửa sổ phù hợp hay chưa;
+- nếu đã có cửa sổ phù hợp: có thể focus/restore rồi xác minh đúng ứng dụng đang ở foreground;
+- nếu chưa có cửa sổ phù hợp: quan sát các affordance Windows đang thực sự có trên màn hình rồi tự chọn cách tiếp cận, ví dụ taskbar, Start/Search hoặc bàn phím;
+- không giả định ứng dụng được ghim taskbar, không giả định icon ở vị trí cố định, không giả định đường dẫn thực thi;
+- nếu một cách mở không tạo kết quả mong đợi, dùng history/recovery để chọn chiến lược khác thay vì lặp lại;
+- nếu UI đang tải/chuyển trạng thái: wait rồi quan sát lại;
+- chỉ complete mục tiêu mở ứng dụng khi ảnh và metadata hiện tại cho thấy đúng ứng dụng đã mở và đang hiển thị ở foreground;
 - không giả định một chuỗi app-specific đã được hard-code.
 
 Mỗi lượt chỉ chọn MỘT action trong:
@@ -605,7 +613,13 @@ Các field không dùng để chuỗi rỗng hoặc [].
                         {
                             text =
                                 $"goal: {goal}\n" +
-                                $"Ảnh desktop: {frame.Width}x{frame.Height}\n" +
+                                $"Ảnh hiện tại: {frame.Width}x{frame.Height}; scope={frame.CaptureScope}; backend={frame.CaptureBackend}\n" +
+                                (frame.CaptureScope == "window"
+                                    ? $"Cửa sổ đang được chụp: id={frame.WindowId ?? "?"}; title={frame.WindowTitle ?? "?"}; foreground={frame.WindowWasForeground}\n"
+                                    : string.Empty) +
+                                (string.IsNullOrWhiteSpace(frame.CaptureFallbackReason)
+                                    ? string.Empty
+                                    : $"Capture fallback: {frame.CaptureFallbackReason}\n") +
                                 $"Metadata cửa sổ:\n{windowsContext}\n" +
                                 $"Lịch sử task + bộ nhớ phục hồi:\n{(string.IsNullOrWhiteSpace(taskHistory) ? "(chưa có hành động trước đó)" : taskHistory)}\n" +
                                 "Hãy quan sát trạng thái hiện tại, tự suy luận phương án tiếp theo và chủ động đổi chiến lược nếu cách trước không hiệu quả."

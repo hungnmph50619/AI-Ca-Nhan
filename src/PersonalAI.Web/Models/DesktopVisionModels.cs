@@ -10,7 +10,9 @@ public sealed record DesktopScreenshotFrame(
     string CaptureScope = "virtual-desktop",
     string? WindowId = null,
     string? WindowTitle = null,
-    bool WindowWasForeground = false)
+    bool WindowWasForeground = false,
+    string CaptureBackend = "copy-from-screen",
+    string? CaptureFallbackReason = null)
 {
     public void Clear()
     {

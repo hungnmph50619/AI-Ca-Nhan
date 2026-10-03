@@ -148,9 +148,16 @@ confidence phải từ 0 đến 1.
     }
 
 
+    public Task<DesktopVisionVerification> VerifyAsync(
+        DesktopScreenshotFrame frame,
+        string expectedState,
+        CancellationToken cancellationToken) =>
+        VerifyAsync(frame, expectedState, null, cancellationToken);
+
     public async Task<DesktopVisionVerification> VerifyAsync(
         DesktopScreenshotFrame frame,
         string expectedState,
+        DesktopFrameDifference? frameDifference,
         CancellationToken cancellationToken)
     {
         if (!Ready)
@@ -204,7 +211,15 @@ confidence từ 0 đến 1.
                                 (string.IsNullOrWhiteSpace(frame.CaptureFallbackReason)
                                     ? string.Empty
                                     : $"Backend đã fallback: {frame.CaptureFallbackReason}. ") +
-                                "Chỉ dùng bằng chứng thật sự nhìn thấy trong phạm vi ảnh này."
+                                (frameDifference is null
+                                    ? string.Empty
+                                    : frameDifference.Comparable
+                                        ? $"So sánh frame: changedRatio={frameDifference.ChangedRatio:0.0000}; " +
+                                          $"changedSamples={frameDifference.ChangedPixelSamples}/{frameDifference.TotalPixelSamples}; " +
+                                          $"changedBox=({frameDifference.BoxLeft},{frameDifference.BoxTop},{frameDifference.BoxWidth},{frameDifference.BoxHeight}); " +
+                                          $"meanDelta={frameDifference.MeanChannelDelta:0.0}. "
+                                        : $"So sánh frame không khả dụng: {frameDifference.Reason}. ") +
+                                "Dữ liệu frame difference chỉ là tín hiệu hỗ trợ; luôn đối chiếu với bằng chứng thật sự nhìn thấy trong ảnh hiện tại."
                         },
                         new
                         {

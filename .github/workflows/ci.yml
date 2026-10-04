@@ -3094,6 +3094,9 @@ jobs:
           grep -Fq 'EsMultiline' src/PersonalAI.Web/Services/WindowsAiOperatorConsoleService.cs
           grep -Fq 'EmGetFirstVisibleLine' src/PersonalAI.Web/Services/WindowsAiOperatorConsoleService.cs
           grep -Fq 'TakeLast(160)' src/PersonalAI.Web/Services/WindowsAiOperatorConsoleService.cs
+          grep -Fq 'NormalizeSceneGraphRelations' src/PersonalAI.Web/Services/DesktopVisionService.cs
+          grep -Fq 'ParentId = parentId' src/PersonalAI.Web/Services/DesktopVisionService.cs
+          grep -Fq 'ids.Contains(parentId)' src/PersonalAI.Web/Services/DesktopVisionService.cs
           ! grep -Fq 'action = ExecuteDecision(decision, frame);' src/PersonalAI.Web/Services/ComputerOperatorTaskService.cs
           grep -Fq '"frame-difference"' src/PersonalAI.Web/Services/ComputerOperatorTaskService.cs
           grep -Fq 'changedRatio=' src/PersonalAI.Web/Services/DesktopVisionService.cs

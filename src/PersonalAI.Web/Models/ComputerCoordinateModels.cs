@@ -37,8 +37,30 @@ public sealed record ComputerCoordinatePoint(
     double ScaleX = 1.0,
     double ScaleY = 1.0,
     bool DpiCalibrationVerified = false,
-    string? DpiCalibrationDetail = null);
+    string? DpiCalibrationDetail = null,
+    double CanonicalX = 0.0,
+    double CanonicalY = 0.0,
+    double MonitorNormalizedX = 0.0,
+    double MonitorNormalizedY = 0.0);
 
+
+public sealed record ComputerCanonicalInteractionPoint(
+    double X,
+    double Y,
+    int PhysicalX,
+    int PhysicalY,
+    string SourceSpace,
+    string SourceDescription,
+    string? WindowId,
+    string? MonitorDevice,
+    double MonitorX,
+    double MonitorY,
+    uint DpiX,
+    uint DpiY,
+    double ScaleX,
+    double ScaleY,
+    bool DpiCalibrationVerified,
+    string? DpiCalibrationDetail);
 
 public sealed record ComputerMonitorInfo(
     string DeviceName,

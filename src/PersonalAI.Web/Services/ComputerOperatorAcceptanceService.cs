@@ -308,6 +308,16 @@ public sealed class ComputerOperatorAcceptanceService
 
         RunCheck(
             checks,
+            "cost latency router ưu tiên route rẻ nhanh khi confidence ngang nhau",
+            CheckUniversalRouterPrefersLowerCostRoute);
+
+        RunCheck(
+            checks,
+            "universal router nhận URL có ký tự s sau scheme",
+            CheckUniversalRouterUrlRegexRegression);
+
+        RunCheck(
+            checks,
             "pause resume stop giữ đúng trạng thái và cancellation",
             CheckExecutionPauseResumeStop);
 
@@ -2244,6 +2254,71 @@ public sealed class ComputerOperatorAcceptanceService
             route.SelectedChannel is null &&
             route.NeedsFurtherRouting,
             "Universal Router vẫn tự đoán channel cho goal mơ hồ.");
+    }
+
+    private static void CheckUniversalRouterPrefersLowerCostRoute()
+    {
+        var registry = new ExecutionAgentRegistry(
+            new IExecutionAgent[]
+            {
+                new AcceptanceExecutionAgent(
+                    "execution.browser.acceptance",
+                    ExecutionAgentChannels.Browser),
+                new AcceptanceExecutionAgent(
+                    "execution.computer.acceptance",
+                    ExecutionAgentChannels.Computer)
+            });
+
+        var router = new UniversalTaskRouter(
+            registry,
+            new ExecutionGateway(registry));
+
+        var route = router.Preview(
+            new UniversalTaskRouteRequest(
+                "website web trang web browser desktop màn hình chuột ứng dụng"));
+
+        var browser = route.Candidates.Single(candidate =>
+            candidate.Channel == ExecutionAgentChannels.Browser);
+        var computer = route.Candidates.Single(candidate =>
+            candidate.Channel == ExecutionAgentChannels.Computer);
+
+        Require(
+            Math.Abs(browser.Confidence - computer.Confidence) < 0.001 &&
+            browser.UtilityScore > computer.UtilityScore &&
+            route.SelectedChannel == ExecutionAgentChannels.Browser,
+            $"Cost/latency router không ưu tiên browser rẻ hơn: browser={browser.UtilityScore:0.00}; computer={computer.UtilityScore:0.00}; {route.Reason}");
+    }
+
+    private static void CheckUniversalRouterUrlRegexRegression()
+    {
+        var registry = new ExecutionAgentRegistry(
+            new IExecutionAgent[]
+            {
+                new AcceptanceExecutionAgent(
+                    "execution.browser.acceptance",
+                    ExecutionAgentChannels.Browser),
+                new AcceptanceExecutionAgent(
+                    "execution.computer.acceptance",
+                    ExecutionAgentChannels.Computer)
+            });
+
+        var router = new UniversalTaskRouter(
+            registry,
+            new ExecutionGateway(registry));
+
+        var route = router.Preview(
+            new UniversalTaskRouteRequest(
+                "Đọc https://site.example/path và tóm tắt trang"));
+
+        var browser = route.Candidates.Single(candidate =>
+            candidate.Channel == ExecutionAgentChannels.Browser);
+
+        Require(
+            browser.Reason.Contains(
+                "explicit-url",
+                StringComparison.OrdinalIgnoreCase) &&
+            route.SelectedChannel == ExecutionAgentChannels.Browser,
+            $"URL regex regression: {browser.Reason}; {route.Reason}");
     }
 
     private static void CheckExecutionPauseResumeStop()

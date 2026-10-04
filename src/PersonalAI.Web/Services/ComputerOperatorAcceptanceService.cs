@@ -193,6 +193,16 @@ public sealed class ComputerOperatorAcceptanceService
 
         RunCheck(
             checks,
+            "execution agent chỉ nhận channel computer",
+            CheckExecutionAgentChannelBoundary);
+
+        RunCheck(
+            checks,
+            "execution agent registry bọc Computer Operator đúng contract",
+            CheckExecutionAgentRegistry);
+
+        RunCheck(
+            checks,
             "pause resume stop giữ đúng trạng thái và cancellation",
             CheckExecutionPauseResumeStop);
 
@@ -1488,6 +1498,70 @@ public sealed class ComputerOperatorAcceptanceService
         Require(
             !result.Detected,
             "Anti-loop không reset outcome fingerprint sau progress.");
+    }
+
+    private static void CheckExecutionAgentChannelBoundary()
+    {
+        var agent = new ComputerOperatorExecutionAgent(
+            new AcceptanceOperatorTaskService());
+
+        var accepted = agent.CanHandle(
+            new ExecutionAgentRequest(
+                "Mở ứng dụng thử nghiệm",
+                ExecutionAgentChannels.Computer),
+            out var acceptedConfidence,
+            out _);
+
+        var rejected = agent.CanHandle(
+            new ExecutionAgentRequest(
+                "Mở trang web",
+                ExecutionAgentChannels.Browser),
+            out var rejectedConfidence,
+            out _);
+
+        Require(
+            accepted &&
+            acceptedConfidence >= 0.9 &&
+            !rejected &&
+            rejectedConfidence == 0,
+            "Computer Operator execution agent không giữ đúng channel boundary.");
+    }
+
+    private static void CheckExecutionAgentRegistry()
+    {
+        var fakeTask = new AcceptanceOperatorTaskService();
+        IExecutionAgent agent =
+            new ComputerOperatorExecutionAgent(fakeTask);
+        var registry = new ExecutionAgentRegistry(
+            new[] { agent });
+
+        Require(
+            registry.TryGet(
+                ComputerOperatorExecutionAgent.AgentId,
+                out var resolved) &&
+            resolved is not null,
+            "Execution Agent Registry không resolve được Computer Operator.");
+
+        Require(
+            registry.FindByChannel(
+                ExecutionAgentChannels.Computer).Count == 1 &&
+            registry.FindByChannel(
+                ExecutionAgentChannels.Browser).Count == 0,
+            "Execution Agent Registry route sai channel.");
+
+        var result = resolved!.ExecuteAsync(
+                new ExecutionAgentRequest(
+                    "Mở ứng dụng thử nghiệm",
+                    ExecutionAgentChannels.Computer))
+            .GetAwaiter()
+            .GetResult();
+
+        Require(
+            fakeTask.CallCount == 1 &&
+            result.AgentId == ComputerOperatorExecutionAgent.AgentId &&
+            result.Status == AgentExecutionStatuses.Succeeded &&
+            result.Verified,
+            "Execution agent không bọc đúng Computer Operator task result.");
     }
 
     private static void CheckExecutionPauseResumeStop()

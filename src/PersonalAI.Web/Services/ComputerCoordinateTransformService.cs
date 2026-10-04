@@ -4,6 +4,10 @@ namespace PersonalAI.Web.Services;
 
 public interface IComputerCoordinateTransformService
 {
+    ComputerCanonicalInteractionPoint ToCanonicalPoint(
+        ComputerCoordinateRequest request,
+        DesktopScreenshotFrame frame);
+
     ComputerCoordinatePoint ToDesktopPoint(
         ComputerCoordinateRequest request,
         DesktopScreenshotFrame frame);
@@ -14,6 +18,30 @@ public sealed class ComputerCoordinateTransformService(
     IComputerDisplayTopologyService displays) : IComputerCoordinateTransformService
 {
     public ComputerCoordinatePoint ToDesktopPoint(
+        ComputerCoordinateRequest request,
+        DesktopScreenshotFrame frame)
+    {
+        var canonical = ToCanonicalPoint(request, frame);
+
+        return new ComputerCoordinatePoint(
+            canonical.PhysicalX,
+            canonical.PhysicalY,
+            canonical.SourceSpace,
+            canonical.SourceDescription,
+            canonical.MonitorDevice,
+            canonical.DpiX,
+            canonical.DpiY,
+            canonical.ScaleX,
+            canonical.ScaleY,
+            canonical.DpiCalibrationVerified,
+            canonical.DpiCalibrationDetail,
+            canonical.X,
+            canonical.Y,
+            canonical.MonitorX,
+            canonical.MonitorY);
+    }
+
+    public ComputerCanonicalInteractionPoint ToCanonicalPoint(
         ComputerCoordinateRequest request,
         DesktopScreenshotFrame frame)
     {
@@ -49,24 +77,51 @@ public sealed class ComputerCoordinateTransformService(
             point.DesktopY);
         var dpi = WindowsDpiAwareness.GetStatus();
 
-        var enriched = point with
-        {
-            DpiCalibrationVerified =
-                dpi.PerMonitorAwareV2 &&
-                dpi.PhysicalPixelCoordinatesExpected,
-            DpiCalibrationDetail = dpi.Detail
-        };
+        var dpiVerified =
+            dpi.PerMonitorAwareV2 &&
+            dpi.PhysicalPixelCoordinatesExpected;
 
-        return monitor is null
-            ? enriched
-            : enriched with
-            {
-                MonitorDevice = monitor.DeviceName,
-                DpiX = monitor.DpiX,
-                DpiY = monitor.DpiY,
-                ScaleX = monitor.ScaleX,
-                ScaleY = monitor.ScaleY
-            };
+        var canonicalX = NormalizeDesktopCoordinate(
+            point.DesktopX,
+            screen.VirtualLeft,
+            screen.VirtualWidth);
+        var canonicalY = NormalizeDesktopCoordinate(
+            point.DesktopY,
+            screen.VirtualTop,
+            screen.VirtualHeight);
+
+        var monitorX = monitor is null
+            ? 0.0
+            : NormalizeDesktopCoordinate(
+                point.DesktopX,
+                monitor.Left,
+                monitor.Width);
+        var monitorY = monitor is null
+            ? 0.0
+            : NormalizeDesktopCoordinate(
+                point.DesktopY,
+                monitor.Top,
+                monitor.Height);
+
+        return new ComputerCanonicalInteractionPoint(
+            canonicalX,
+            canonicalY,
+            point.DesktopX,
+            point.DesktopY,
+            point.Space,
+            point.SourceDescription,
+            string.IsNullOrWhiteSpace(request.WindowId)
+                ? null
+                : request.WindowId.Trim(),
+            monitor?.DeviceName,
+            monitorX,
+            monitorY,
+            monitor?.DpiX ?? 96,
+            monitor?.DpiY ?? 96,
+            monitor?.ScaleX ?? 1.0,
+            monitor?.ScaleY ?? 1.0,
+            dpiVerified,
+            dpi.Detail);
     }
 
     private static ComputerCoordinatePoint FromImagePixel(

@@ -952,6 +952,46 @@ Các field không dùng để chuỗi rỗng hoặc [].
         return result;
     }
 
+    private static IReadOnlyList<DesktopSceneElement> NormalizeSceneGraphRelations(
+        IReadOnlyList<DesktopSceneElement> elements)
+    {
+        if (elements.Count == 0)
+            return elements;
+
+        var ids = elements
+            .Select(element => element.Id)
+            .Where(id => !string.IsNullOrWhiteSpace(id))
+            .ToHashSet(StringComparer.OrdinalIgnoreCase);
+
+        return elements
+            .Select(element =>
+            {
+                var parentId = element.ParentId;
+
+                if (!string.IsNullOrWhiteSpace(parentId) &&
+                    (!ids.Contains(parentId) ||
+                     parentId.Equals(
+                         element.Id,
+                         StringComparison.OrdinalIgnoreCase)))
+                {
+                    parentId = string.Empty;
+                }
+
+                var relations = element.Relations
+                    .Where(relation => !string.IsNullOrWhiteSpace(relation))
+                    .Distinct(StringComparer.OrdinalIgnoreCase)
+                    .Take(8)
+                    .ToArray();
+
+                return element with
+                {
+                    ParentId = parentId,
+                    Relations = relations
+                };
+            })
+            .ToArray();
+    }
+
     private static void ValidateSceneGraph(
         IReadOnlyList<DesktopSceneElement> elements,
         DesktopScreenshotFrame frame)

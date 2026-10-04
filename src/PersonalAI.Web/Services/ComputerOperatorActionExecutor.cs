@@ -161,7 +161,7 @@ public sealed class ComputerOperatorActionExecutor(
         return result with
         {
             Detail =
-                $"{result.Detail} Target={DescribeTarget(decision)} tại ({point.DesktopX}, {point.DesktopY}); hệ={point.Space}; nguồn={point.SourceDescription}; {safeTarget.Detail}"
+                $"{result.Detail} Target={DescribeTarget(decision)} tại ({point.DesktopX}, {point.DesktopY}); canonical=({point.CanonicalX:0.0000},{point.CanonicalY:0.0000}); monitor=({point.MonitorNormalizedX:0.0000},{point.MonitorNormalizedY:0.0000}); hệ={point.Space}; nguồn={point.SourceDescription}; {safeTarget.Detail}"
         };
     }
 

@@ -3083,6 +3083,11 @@ jobs:
           grep -Fq 'computer.operator.run-task' src/PersonalAI.Web/Services/ToolOrchestrationService.cs
           grep -Fq 'foreground' src/PersonalAI.Web/Services/ToolOrchestrationService.cs
           grep -Fq 'looksLikeSingleAppLaunch' src/PersonalAI.Web/Services/ToolOrchestrationService.cs
+          grep -Fq 'ComputerCanonicalInteractionPoint' src/PersonalAI.Web/Models/ComputerCoordinateModels.cs
+          grep -Fq 'ToCanonicalPoint' src/PersonalAI.Web/Services/ComputerCoordinateTransformService.cs
+          grep -Fq 'NormalizeDesktopCoordinate' src/PersonalAI.Web/Services/ComputerCoordinateTransformService.cs
+          grep -Fq 'CanonicalX' src/PersonalAI.Web/Services/ComputerOperatorActionExecutor.cs
+          grep -Fq 'CheckCanonicalInteractionSpace' src/PersonalAI.Web/Services/ComputerOperatorAcceptanceService.cs
           ! grep -Fq 'action = ExecuteDecision(decision, frame);' src/PersonalAI.Web/Services/ComputerOperatorTaskService.cs
           grep -Fq '"frame-difference"' src/PersonalAI.Web/Services/ComputerOperatorTaskService.cs
           grep -Fq 'changedRatio=' src/PersonalAI.Web/Services/DesktopVisionService.cs

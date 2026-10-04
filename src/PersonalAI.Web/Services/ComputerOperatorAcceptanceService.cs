@@ -388,6 +388,26 @@ public sealed class ComputerOperatorAcceptanceService
 
         RunCheck(
             checks,
+            "evidence adapter chuyển browser verified thành universal evidence",
+            CheckVerificationEvidenceAdapterBrowser);
+
+        RunCheck(
+            checks,
+            "evidence adapter chuyển coding gate fail thành evidence fail",
+            CheckVerificationEvidenceAdapterCodingFailure);
+
+        RunCheck(
+            checks,
+            "evidence adapter giữ desktop local failure",
+            CheckVerificationEvidenceAdapterDesktopFailure);
+
+        RunCheck(
+            checks,
+            "evidence adapter không bịa evidence khi desktop cần Gemini",
+            CheckVerificationEvidenceAdapterDesktopSemanticFallback);
+
+        RunCheck(
+            checks,
             "pause resume stop giữ đúng trạng thái và cancellation",
             CheckExecutionPauseResumeStop);
 
@@ -3049,6 +3069,98 @@ public sealed class ComputerOperatorAcceptanceService
             result.RequiresExternalAi &&
             result.RequiresReadback,
             $"Evidence Router không chọn Computer Operator verifier: {result.Reason}");
+    }
+
+    private static void CheckVerificationEvidenceAdapterBrowser()
+    {
+        var adapters =
+            new UniversalVerificationEvidenceAdapters();
+
+        var evidence = adapters.FromBrowser(
+            new BrowserExecutionBackendResult(
+                Success: true,
+                Summary: "Đã đọc lại trang đích.",
+                Evidence: ["url-match"],
+                ChangedExternalState: true,
+                Verified: true,
+                Engine: "acceptance-browser"));
+
+        Require(
+            evidence is not null &&
+            evidence.Passed &&
+            evidence.Confidence >= 0.90 &&
+            evidence.Source ==
+                "browser:acceptance-browser",
+            "Browser verified không được chuyển thành universal evidence đúng.");
+    }
+
+    private static void CheckVerificationEvidenceAdapterCodingFailure()
+    {
+        var adapters =
+            new UniversalVerificationEvidenceAdapters();
+
+        var evidence = adapters.FromCoding(
+            new CodingVerificationReport(
+                Passed: false,
+                [
+                    new CodingVerificationStep(
+                        "restore",
+                        true,
+                        "ok"),
+                    new CodingVerificationStep(
+                        "build",
+                        false,
+                        "failed")
+                ],
+                "Build thất bại."));
+
+        Require(
+            !evidence.Passed &&
+            evidence.Confidence >= 0.90 &&
+            evidence.Source ==
+                "coding-verification-gate" &&
+            evidence.Summary.Contains(
+                "1/2",
+                StringComparison.Ordinal),
+            "Coding verification failure không được giữ nguyên khi adapter hóa.");
+    }
+
+    private static void CheckVerificationEvidenceAdapterDesktopFailure()
+    {
+        var adapters =
+            new UniversalVerificationEvidenceAdapters();
+
+        var evidence = adapters.FromDesktop(
+            new DesktopVerificationRoutingResult(
+                DesktopVerificationRoute.LocalFailed,
+                0.96,
+                "Không thấy UI thay đổi."));
+
+        Require(
+            evidence is not null &&
+            !evidence.Passed &&
+            Math.Abs(
+                evidence.Confidence -
+                0.96) < 0.001 &&
+            evidence.Source ==
+                "desktop-local-verifier",
+            "Desktop local failure bị mất khi adapter hóa.");
+    }
+
+    private static void CheckVerificationEvidenceAdapterDesktopSemanticFallback()
+    {
+        var adapters =
+            new UniversalVerificationEvidenceAdapters();
+
+        var evidence = adapters.FromDesktop(
+            new DesktopVerificationRoutingResult(
+                DesktopVerificationRoute.GeminiRequired,
+                0,
+                "Cần hiểu semantic."));
+
+        Require(
+            evidence is null,
+            "Adapter đã bịa universal evidence dù Desktop Verification Router yêu cầu Gemini.");
     }
 
     private static void CheckExecutionPauseResumeStop()

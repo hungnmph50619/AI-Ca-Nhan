@@ -3163,7 +3163,18 @@ jobs:
           grep -Fq '"id": "pause-resume-stop"' tests/computer-use/v3.4.9-acceptance-scenarios.json
           grep -Fq '"id": "loop-recovery"' tests/computer-use/v3.4.9-acceptance-scenarios.json
           grep -Fq '"id": "multi-step-open-and-type"' tests/computer-use/v3.4.9-acceptance-scenarios.json
-          grep -Fq 'totalCount -lt 75' .github/workflows/desktop-control.yml
+          grep -Fq 'totalCount -lt 79' .github/workflows/desktop-control.yml
+          # v4.0.8 — Verification Evidence Adapters
+          grep -Fq 'IUniversalVerificationEvidenceAdapters' src/PersonalAI.Web/Services/UniversalVerificationEvidenceAdapters.cs
+          grep -Fq 'FromBrowser(' src/PersonalAI.Web/Services/UniversalVerificationEvidenceAdapters.cs
+          grep -Fq 'FromCoding(' src/PersonalAI.Web/Services/UniversalVerificationEvidenceAdapters.cs
+          grep -Fq 'FromDesktop(' src/PersonalAI.Web/Services/UniversalVerificationEvidenceAdapters.cs
+          grep -Fq 'FromAgent(' src/PersonalAI.Web/Services/UniversalVerificationEvidenceAdapters.cs
+          grep -Fq 'AddSingleton<IUniversalVerificationEvidenceAdapters, UniversalVerificationEvidenceAdapters>()' src/PersonalAI.Web/Services/UniversalTaskRouterEndpoints.cs
+          grep -Fq 'CheckVerificationEvidenceAdapterBrowser' src/PersonalAI.Web/Services/ComputerOperatorAcceptanceService.cs
+          grep -Fq 'CheckVerificationEvidenceAdapterCodingFailure' src/PersonalAI.Web/Services/ComputerOperatorAcceptanceService.cs
+          grep -Fq 'CheckVerificationEvidenceAdapterDesktopFailure' src/PersonalAI.Web/Services/ComputerOperatorAcceptanceService.cs
+          grep -Fq 'CheckVerificationEvidenceAdapterDesktopSemanticFallback' src/PersonalAI.Web/Services/ComputerOperatorAcceptanceService.cs
           ! grep -Eiq 'notepad|calculator|mspaint|explorer\.exe|notepad\.exe|calc\.exe' src/PersonalAI.Web/Services/ComputerOperatorAcceptanceService.cs
           grep -Fq 'MỐC-HỆ-THỐNG-ĐÃ-XÁC-MINH' src/PersonalAI.Web/Services/ComputerOperatorTaskService.cs
           grep -Fq 'CURRENT SUBGOAL' src/PersonalAI.Web/Services/DesktopVisionService.cs

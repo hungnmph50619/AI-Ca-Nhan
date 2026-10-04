@@ -30,7 +30,7 @@ public sealed class InternalHttpBrowserExecutionBackend(
     : IBrowserExecutionBackend
 {
     private static readonly Regex UrlRegex = new(
-        @"https?://[^s]+",
+        @"https?://[^\s]+",
         RegexOptions.IgnoreCase |
         RegexOptions.CultureInvariant |
         RegexOptions.Compiled);

@@ -233,6 +233,16 @@ public sealed class ComputerOperatorAcceptanceService
 
         RunCheck(
             checks,
+            "browser execution agent giữ đúng browser channel",
+            CheckBrowserExecutionAgentChannelBoundary);
+
+        RunCheck(
+            checks,
+            "browser execution agent bọc backend đúng contract",
+            CheckBrowserExecutionAgentBackendContract);
+
+        RunCheck(
+            checks,
             "pause resume stop giữ đúng trạng thái và cancellation",
             CheckExecutionPauseResumeStop);
 
@@ -1757,6 +1767,55 @@ public sealed class ComputerOperatorAcceptanceService
             "Capability router không đưa Computer Operator vào khi đã explicit allow high-risk + verification.");
     }
 
+    private static void CheckBrowserExecutionAgentChannelBoundary()
+    {
+        var agent = new BrowserExecutionAgent(
+            new AcceptanceBrowserExecutionBackend());
+
+        var accepted = agent.CanHandle(
+            new ExecutionAgentRequest(
+                "Mở https://example.com",
+                ExecutionAgentChannels.Browser),
+            out var acceptedConfidence,
+            out _);
+
+        var rejected = agent.CanHandle(
+            new ExecutionAgentRequest(
+                "Mở https://example.com",
+                ExecutionAgentChannels.Computer),
+            out var rejectedConfidence,
+            out _);
+
+        Require(
+            accepted &&
+            acceptedConfidence >= 0.9 &&
+            !rejected &&
+            rejectedConfidence == 0,
+            "Browser execution agent không giữ đúng channel boundary.");
+    }
+
+    private static void CheckBrowserExecutionAgentBackendContract()
+    {
+        var backend = new AcceptanceBrowserExecutionBackend();
+        var agent = new BrowserExecutionAgent(backend);
+
+        var result = agent.ExecuteAsync(
+                new ExecutionAgentRequest(
+                    "Mở https://example.com",
+                    ExecutionAgentChannels.Browser))
+            .GetAwaiter()
+            .GetResult();
+
+        Require(
+            backend.CallCount == 1 &&
+            result.AgentId == BrowserExecutionAgent.AgentId &&
+            result.Status == AgentExecutionStatuses.Succeeded &&
+            result.Verified &&
+            result.Provider == "browser" &&
+            result.Model == "acceptance-browser",
+            "Browser execution agent không bọc backend đúng contract.");
+    }
+
     private static void CheckExecutionPauseResumeStop()
     {
         using var execution = new ComputerOperatorExecutionControl();
@@ -2058,6 +2117,51 @@ public sealed class ComputerOperatorAcceptanceService
                 dpi,
                 scale,
                 scale);
+    }
+
+    private sealed class AcceptanceBrowserExecutionBackend
+        : IBrowserExecutionBackend
+    {
+        public int CallCount { get; private set; }
+
+        public string Engine => "acceptance-browser";
+
+        public bool CanHandle(
+            ExecutionAgentRequest request,
+            out double confidence,
+            out string reason)
+        {
+            var accepted =
+                request.Channel.Equals(
+                    ExecutionAgentChannels.Browser,
+                    StringComparison.OrdinalIgnoreCase) &&
+                (request.Goal ?? string.Empty).Contains(
+                    "http",
+                    StringComparison.OrdinalIgnoreCase);
+
+            confidence = accepted ? 0.99 : 0;
+            reason = accepted
+                ? "acceptance"
+                : "rejected";
+            return accepted;
+        }
+
+        public Task<BrowserExecutionBackendResult> ExecuteAsync(
+            ExecutionAgentRequest request,
+            CancellationToken cancellationToken = default)
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            CallCount++;
+
+            return Task.FromResult(
+                new BrowserExecutionBackendResult(
+                    true,
+                    "acceptance browser result",
+                    ["verified"],
+                    ChangedExternalState: true,
+                    Verified: true,
+                    Engine));
+        }
     }
 
     private sealed class AcceptanceCapabilityTool

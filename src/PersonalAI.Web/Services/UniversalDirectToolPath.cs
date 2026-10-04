@@ -16,7 +16,8 @@ public static class UniversalExecutionModes
 
 public sealed record UniversalExecutionPrepareRequest(
     string Goal,
-    string? PreferredChannel = null);
+    string? PreferredChannel = null,
+    string? ReplanContext = null);
 
 public sealed record UniversalExecutionPrepareResult(
     string Mode,
@@ -95,7 +96,9 @@ public sealed class UniversalDirectToolPath(
             await argumentPlanner.PlanAsync(
                 new ToolArgumentPlanRequest(
                     selectedCandidate.PreferredToolName,
-                    route.Goal),
+                    BuildPlannerGoal(
+                        route.Goal,
+                        request.ReplanContext)),
                 cancellationToken);
 
         if (!plan.Proposed ||
@@ -128,5 +131,29 @@ public sealed class UniversalDirectToolPath(
             proposal,
             FallbackChannel: route.SelectedChannel,
             "Đã tạo proposal hai pha; tool chưa được thực thi.");
+    }
+
+    private static string BuildPlannerGoal(
+        string goal,
+        string? replanContext)
+    {
+        var context =
+            (replanContext ?? string.Empty)
+                .Trim();
+
+        if (context.Length == 0)
+            return goal;
+
+        if (context.Length > 1_200)
+            context = context[..1_200];
+
+        return $"""
+{goal}
+
+Ngữ cảnh từ lần thử trước:
+{context}
+
+Hãy lập arguments mới dựa trên lỗi/kết quả trước đó. Không lặp nguyên phương án cũ nếu context cho thấy nó không đạt mục tiêu.
+""";
     }
 }

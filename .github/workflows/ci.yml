@@ -3089,7 +3089,7 @@ jobs:
           grep -Fq 'CanonicalX' src/PersonalAI.Web/Services/ComputerOperatorActionExecutor.cs
           grep -Fq 'CheckCanonicalInteractionSpace' src/PersonalAI.Web/Services/ComputerOperatorAcceptanceService.cs
           grep -Fq 'blockedReplanCount' src/PersonalAI.Web/Services/ComputerOperatorTaskService.cs
-          grep -Fq 'BLOCKED-REPLAN-DIRECTIVE' src/PersonalAI.Web/Services/ComputerOperatorTaskService.cs
+          grep -Fq 'CHỈ DẪN THỬ LẠI KHI BỊ CHẶN' src/PersonalAI.Web/Services/ComputerOperatorTaskService.cs
           grep -Fq 'VỀ CUỐI ↓' src/PersonalAI.Web/Services/WindowsAiOperatorConsoleService.cs
           grep -Fq 'EsMultiline' src/PersonalAI.Web/Services/WindowsAiOperatorConsoleService.cs
           grep -Fq 'EmGetFirstVisibleLine' src/PersonalAI.Web/Services/WindowsAiOperatorConsoleService.cs
@@ -3114,7 +3114,7 @@ jobs:
           grep -Fq 'changedRatio=' src/PersonalAI.Web/Services/DesktopVisionService.cs
           grep -Fq 'RequiresExpectedEffect' src/PersonalAI.Web/Services/ComputerOperatorTaskService.cs
           grep -Fq 'VERIFY-FAILED' src/PersonalAI.Web/Services/ComputerOperatorTaskService.cs
-          grep -Fq 'STEP {index}: VERIFIED' src/PersonalAI.Web/Services/ComputerOperatorTaskService.cs
+          grep -Fq 'BƯỚC {index}: VERIFIED' src/PersonalAI.Web/Services/ComputerOperatorTaskService.cs
           grep -Fq 'ComputerOperatorRecoverySession' src/PersonalAI.Web/Services/ComputerOperatorRecoverySession.cs
           grep -Fq 'ShouldAvoidRepeatedStrategy' src/PersonalAI.Web/Services/ComputerOperatorRecoverySession.cs
           grep -Fq 'BuildContext()' src/PersonalAI.Web/Services/ComputerOperatorRecoverySession.cs
@@ -3128,7 +3128,7 @@ jobs:
           grep -Fq 'stagnation' src/PersonalAI.Web/Services/ComputerOperatorLoopGuardSession.cs
           grep -Fq 'oscillation' src/PersonalAI.Web/Services/ComputerOperatorLoopGuardSession.cs
           grep -Fq 'RequiresStrategyChange' src/PersonalAI.Web/Services/ComputerOperatorLoopGuardSession.cs
-          grep -Fq 'LOOP-DIRECTIVE: BẮT BUỘC đổi chiến lược' src/PersonalAI.Web/Services/ComputerOperatorTaskService.cs
+          grep -Fq 'CHỈ DẪN THOÁT VÒNG LẶP: BẮT BUỘC đổi chiến lược' src/PersonalAI.Web/Services/ComputerOperatorTaskService.cs
           ! grep -Fq 'loopAssessment.Occurrences >= 3' src/PersonalAI.Web/Services/ComputerOperatorTaskService.cs
           ! grep -Eiq 'notepad|calculator|mspaint|paint|explorer\.exe|notepad\.exe|calc\.exe' src/PersonalAI.Web/Services/ComputerOperatorLoopGuardSession.cs
           grep -Fq 'ComputerGenericAppLaunchTool' src/PersonalAI.Web/Services/ComputerGenericAppLaunchTool.cs

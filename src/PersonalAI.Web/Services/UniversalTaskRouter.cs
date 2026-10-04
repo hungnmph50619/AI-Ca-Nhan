@@ -22,6 +22,8 @@ public sealed record UniversalTaskRouteCandidate(
     int RelativeCost,
     int RelativeLatency,
     int AvailableAgents,
+    int DirectToolCount,
+    string? PreferredToolName,
     string Reason);
 
 public sealed record UniversalTaskRoutePreview(
@@ -47,7 +49,8 @@ public interface IUniversalTaskRouter
 
 public sealed class UniversalTaskRouter(
     IExecutionAgentRegistry executionAgents,
-    IExecutionGateway gateway)
+    IExecutionGateway gateway,
+    IToolCapabilityRegistry? toolCapabilities = null)
     : IUniversalTaskRouter
 {
     private const double MinimumSelectionConfidence = 0.66;
@@ -56,6 +59,7 @@ public sealed class UniversalTaskRouter(
     private const double LatencyPenaltyWeight = 0.020;
     private const double MediumRiskPenalty = 0.015;
     private const double HighRiskPenalty = 0.040;
+    private const double DirectToolUtilityBonus = 0.080;
 
     private static readonly Regex UrlRegex = new(
         @"https?://[^\s]+",
@@ -331,6 +335,18 @@ public sealed class UniversalTaskRouter(
             executionAgents.FindByChannel(
                 channel).Count;
 
+        var directTools = FindDirectTools(
+            channel);
+
+        var preferredTool =
+            directTools.FirstOrDefault();
+
+        if (preferredTool is not null)
+        {
+            reasons.Add(
+                $"direct-tool:{preferredTool.Name}");
+        }
+
         var (risk, cost, latency) =
             channel switch
             {
@@ -357,7 +373,10 @@ public sealed class UniversalTaskRouter(
             confidence -
             (cost * CostPenaltyWeight) -
             (latency * LatencyPenaltyWeight) -
-            RiskPenalty(risk),
+            RiskPenalty(risk) +
+            (preferredTool is null
+                ? 0
+                : DirectToolUtilityBonus),
             0,
             0.99);
 
@@ -372,10 +391,48 @@ public sealed class UniversalTaskRouter(
             cost,
             latency,
             available,
+            directTools.Count,
+            preferredTool?.Name,
             reasons.Count == 0
                 ? "no-strong-signal"
                 : string.Join(",", reasons));
     }
+
+    private IReadOnlyList<UnifiedToolCapability> FindDirectTools(
+        string channel)
+    {
+        if (toolCapabilities is null)
+            return Array.Empty<UnifiedToolCapability>();
+
+        return toolCapabilities
+            .FindByCapability(channel)
+            .Where(tool =>
+                !IsUmbrellaAgentTool(tool.Name))
+            .Where(tool =>
+                !tool.RiskLevel.Equals(
+                    ToolRiskLevels.High,
+                    StringComparison.OrdinalIgnoreCase))
+            .OrderBy(tool =>
+                tool.RiskLevel.Equals(
+                    ToolRiskLevels.Low,
+                    StringComparison.OrdinalIgnoreCase)
+                    ? 0
+                    : 1)
+            .ThenBy(tool =>
+                tool.RequiresConfirmation)
+            .ThenByDescending(tool =>
+                tool.SupportsVerification)
+            .ThenBy(tool =>
+                tool.Name,
+                StringComparer.OrdinalIgnoreCase)
+            .ToArray();
+    }
+
+    private static bool IsUmbrellaAgentTool(
+        string name) =>
+        name.Equals(
+            "computer.operator.run-task",
+            StringComparison.OrdinalIgnoreCase);
 
     private static double RiskPenalty(
         string risk) =>

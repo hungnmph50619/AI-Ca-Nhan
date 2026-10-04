@@ -14,6 +14,8 @@ public static class UniversalTaskRouterEndpoints
         services.AddSingleton<IUniversalVerificationEvidenceRouter, UniversalVerificationEvidenceRouter>();
         services.AddSingleton<IUniversalVerificationEvidenceAdapters, UniversalVerificationEvidenceAdapters>();
         services.AddSingleton<IUniversalVerificationPipeline, UniversalVerificationPipeline>();
+        services.AddScoped<IUniversalClosedLoopStepRunner, UniversalClosedLoopLiveStepRunner>();
+        services.AddScoped<IUniversalClosedLoopOrchestrator, UniversalClosedLoopOrchestrator>();
         return services;
     }
 
@@ -117,6 +119,25 @@ public static class UniversalTaskRouterEndpoints
             IUniversalVerificationPipeline pipeline) =>
             Results.Ok(
                 pipeline.Verify(request)));
+
+        app.MapPost("/api/universal-router/closed-loop", async (
+            UniversalClosedLoopRequest request,
+            IUniversalClosedLoopOrchestrator orchestrator,
+            CancellationToken cancellationToken) =>
+        {
+            try
+            {
+                return Results.Ok(
+                    await orchestrator.RunAsync(
+                        request,
+                        cancellationToken));
+            }
+            catch (AgentValidationException exception)
+            {
+                return Results.BadRequest(
+                    new ApiError(exception.Message));
+            }
+        });
 
         app.MapPost("/api/universal-router/evaluate-tool-outcome", (
             UniversalFallbackEvaluateRequest request,

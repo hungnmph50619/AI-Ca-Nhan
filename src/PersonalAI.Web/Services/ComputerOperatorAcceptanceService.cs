@@ -443,6 +443,21 @@ public sealed class ComputerOperatorAcceptanceService
 
         RunCheck(
             checks,
+            "closed loop live bridge không vượt tool confirmation",
+            CheckClosedLoopLiveBridgeStopsAtToolConfirmation);
+
+        RunCheck(
+            checks,
+            "closed loop live bridge chạy safe direct tool rồi chờ verification",
+            CheckClosedLoopLiveBridgeExecutesSafeToolThenVerifies);
+
+        RunCheck(
+            checks,
+            "closed loop live bridge giữ agent fallback ở confirmation boundary",
+            CheckClosedLoopLiveBridgeStopsAtAgentFallback);
+
+        RunCheck(
+            checks,
             "pause resume stop giữ đúng trạng thái và cancellation",
             CheckExecutionPauseResumeStop);
 
@@ -3550,6 +3565,215 @@ public sealed class ComputerOperatorAcceptanceService
             "Closed loop không tôn trọng max iterations.");
     }
 
+    private static void CheckClosedLoopLiveBridgeStopsAtToolConfirmation()
+    {
+        var route =
+            BuildAcceptanceRoute(
+                ExecutionAgentChannels.Browser);
+
+        using var arguments =
+            System.Text.Json.JsonDocument.Parse(
+                """{"query":"acceptance"}""");
+
+        var proposal =
+            new ToolCallProposal(
+                Guid.NewGuid(),
+                "browser.acceptance.write",
+                arguments.RootElement.Clone(),
+                "acceptance",
+                "acceptance",
+                [ToolPermissions.Write],
+                RequiresConfirmation: true,
+                DateTimeOffset.UtcNow.AddMinutes(5));
+
+        var directPath =
+            new AcceptanceDirectToolPath(
+                new UniversalExecutionPrepareResult(
+                    UniversalExecutionModes.DirectToolProposal,
+                    route,
+                    ToolPlan: null,
+                    proposal,
+                    FallbackChannel:
+                        ExecutionAgentChannels.Browser,
+                    "acceptance"));
+
+        var orchestration =
+            new AcceptanceLiveToolOrchestrationService(
+                execution: null);
+
+        var verification =
+            new AcceptanceVerificationPipeline(
+                result: null);
+
+        var runner =
+            new UniversalClosedLoopLiveStepRunner(
+                directPath,
+                orchestration,
+                verification);
+
+        var result = runner.RunAsync(
+                new UniversalClosedLoopStepRequest(
+                    "Ghi dữ liệu",
+                    1))
+            .GetAwaiter()
+            .GetResult();
+
+        Require(
+            result.RequiresConfirmation &&
+            !result.Executed &&
+            orchestration.ExecuteCount == 0 &&
+            verification.CallCount == 0,
+            "Live bridge đã vượt tool confirmation boundary.");
+    }
+
+    private static void CheckClosedLoopLiveBridgeExecutesSafeToolThenVerifies()
+    {
+        var route =
+            BuildAcceptanceRoute(
+                ExecutionAgentChannels.Browser);
+
+        using var arguments =
+            System.Text.Json.JsonDocument.Parse(
+                """{"query":"acceptance"}""");
+
+        var proposal =
+            new ToolCallProposal(
+                Guid.NewGuid(),
+                "browser.acceptance.read",
+                arguments.RootElement.Clone(),
+                "acceptance",
+                "acceptance",
+                [ToolPermissions.Read],
+                RequiresConfirmation: false,
+                DateTimeOffset.UtcNow.AddMinutes(5));
+
+        var execution =
+            BuildAcceptanceToolExecution(
+                ToolExecutionStatuses.Succeeded,
+                success: true,
+                error: null) with
+            {
+                ToolName = "browser.acceptance.read"
+            };
+
+        var executionResponse =
+            new ToolProposalExecutionResponse(
+                proposal,
+                execution,
+                "acceptance",
+                CanAiSynthesize: false);
+
+        var verificationResult =
+            new UniversalVerificationPipelineResult(
+                new UniversalVerificationEvidenceRoute(
+                    UniversalVerificationStrategies.BrowserReadback,
+                    ExecutionAgentChannels.Browser,
+                    CanVerifyAutomatically: true,
+                    RequiresExternalAi: false,
+                    RequiresReadback: true,
+                    "browser-readback",
+                    "acceptance"),
+                Evidence: null,
+                new UniversalOutcomeVerificationResult(
+                    UniversalOutcomeStatuses.NeedsVerification,
+                    ExecutionSucceeded: true,
+                    GoalAchieved: false,
+                    IndependentlyVerified: false,
+                    Confidence: 0,
+                    Source: "browser-readback",
+                    "missing evidence"),
+                new UniversalFallbackDecision(
+                    UniversalFallbackActions.VerifyOutcome,
+                    AllowAgentFallback: false,
+                    FallbackChannel: null,
+                    "verify required"));
+
+        var directPath =
+            new AcceptanceDirectToolPath(
+                new UniversalExecutionPrepareResult(
+                    UniversalExecutionModes.DirectToolProposal,
+                    route,
+                    ToolPlan: null,
+                    proposal,
+                    FallbackChannel:
+                        ExecutionAgentChannels.Browser,
+                    "acceptance"));
+
+        var orchestration =
+            new AcceptanceLiveToolOrchestrationService(
+                executionResponse);
+
+        var verification =
+            new AcceptanceVerificationPipeline(
+                verificationResult);
+
+        var runner =
+            new UniversalClosedLoopLiveStepRunner(
+                directPath,
+                orchestration,
+                verification);
+
+        var result = runner.RunAsync(
+                new UniversalClosedLoopStepRequest(
+                    "Đọc trang",
+                    1))
+            .GetAwaiter()
+            .GetResult();
+
+        Require(
+            result.Executed &&
+            result.NeedsVerification &&
+            !result.GoalAchieved &&
+            orchestration.ExecuteCount == 1 &&
+            verification.CallCount == 1,
+            "Live bridge không chạy safe tool hoặc không dừng chờ verification.");
+    }
+
+    private static void CheckClosedLoopLiveBridgeStopsAtAgentFallback()
+    {
+        var directPath =
+            new AcceptanceDirectToolPath(
+                new UniversalExecutionPrepareResult(
+                    UniversalExecutionModes.ExecutionAgentFallback,
+                    BuildAcceptanceRoute(
+                        ExecutionAgentChannels.Computer),
+                    ToolPlan: null,
+                    ToolProposal: null,
+                    FallbackChannel:
+                        ExecutionAgentChannels.Computer,
+                    "acceptance"));
+
+        var orchestration =
+            new AcceptanceLiveToolOrchestrationService(
+                execution: null);
+
+        var verification =
+            new AcceptanceVerificationPipeline(
+                result: null);
+
+        var runner =
+            new UniversalClosedLoopLiveStepRunner(
+                directPath,
+                orchestration,
+                verification);
+
+        var result = runner.RunAsync(
+                new UniversalClosedLoopStepRequest(
+                    "Mở ứng dụng desktop",
+                    1))
+            .GetAwaiter()
+            .GetResult();
+
+        Require(
+            result.RequiresConfirmation &&
+            !result.Executed &&
+            result.ActionKey ==
+                "agent:computer" &&
+            orchestration.ExecuteCount == 0 &&
+            verification.CallCount == 0,
+            "Live bridge đã tự chạy execution agent fallback.");
+    }
+
     private static void CheckExecutionPauseResumeStop()
     {
         using var execution = new ComputerOperatorExecutionControl();
@@ -3851,6 +4075,103 @@ public sealed class ComputerOperatorAcceptanceService
                 dpi,
                 scale,
                 scale);
+    }
+
+    private sealed class AcceptanceDirectToolPath
+        : IUniversalDirectToolPath
+    {
+        private readonly UniversalExecutionPrepareResult result;
+
+        public int CallCount { get; private set; }
+
+        public AcceptanceDirectToolPath(
+            UniversalExecutionPrepareResult result)
+        {
+            this.result = result;
+        }
+
+        public Task<UniversalExecutionPrepareResult> PrepareAsync(
+            UniversalExecutionPrepareRequest request,
+            CancellationToken cancellationToken = default)
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            CallCount++;
+
+            return Task.FromResult(
+                result);
+        }
+    }
+
+    private sealed class AcceptanceLiveToolOrchestrationService
+        : IToolOrchestrationService
+    {
+        private readonly ToolProposalExecutionResponse? execution;
+
+        public int ExecuteCount { get; private set; }
+
+        public AcceptanceLiveToolOrchestrationService(
+            ToolProposalExecutionResponse? execution)
+        {
+            this.execution = execution;
+        }
+
+        public Task<ToolCallProposal?> ProposeAsync(
+            IReadOnlyList<ChatMessage> messages,
+            CancellationToken cancellationToken = default) =>
+            Task.FromResult<ToolCallProposal?>(null);
+
+        public ToolCallProposal Prepare(
+            ToolProposalDraft draft) =>
+            throw new InvalidOperationException(
+                "Acceptance live bridge không gọi Prepare.");
+
+        public Task<ToolProposalExecutionResponse?> ExecuteAsync(
+            Guid proposalId,
+            bool confirmed,
+            CancellationToken cancellationToken = default)
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            ExecuteCount++;
+
+            return Task.FromResult(
+                execution);
+        }
+
+        public Task<ToolResultSynthesisResponse?> SynthesizeAsync(
+            Guid invocationId,
+            bool confirmedExternal,
+            CancellationToken cancellationToken = default) =>
+            Task.FromResult<ToolResultSynthesisResponse?>(null);
+
+        public Task<ToolNativeContinuationResponse?> ContinueNativeAsync(
+            Guid invocationId,
+            bool confirmedExternal,
+            CancellationToken cancellationToken = default) =>
+            Task.FromResult<ToolNativeContinuationResponse?>(null);
+    }
+
+    private sealed class AcceptanceVerificationPipeline
+        : IUniversalVerificationPipeline
+    {
+        private readonly UniversalVerificationPipelineResult? result;
+
+        public int CallCount { get; private set; }
+
+        public AcceptanceVerificationPipeline(
+            UniversalVerificationPipelineResult? result)
+        {
+            this.result = result;
+        }
+
+        public UniversalVerificationPipelineResult Verify(
+            UniversalVerificationPipelineRequest request)
+        {
+            CallCount++;
+
+            return result ??
+                throw new InvalidOperationException(
+                    "Acceptance verification pipeline không được gọi.");
+        }
     }
 
     private sealed class AcceptanceClosedLoopStepRunner

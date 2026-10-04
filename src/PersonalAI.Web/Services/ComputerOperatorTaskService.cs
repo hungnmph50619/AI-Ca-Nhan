@@ -49,6 +49,8 @@ public sealed class ComputerOperatorTaskService(
         new AdaptiveGeminiCallPolicy();
     private static readonly IDesktopDynamicTargetTracker TargetTracker =
         new DesktopDynamicTargetTracker();
+    private static readonly IComputerOperatorConfidenceEngine ConfidenceEngine =
+        new ComputerOperatorConfidenceEngine();
 
     private static readonly string[] SecretTerms =
     [
@@ -404,49 +406,7 @@ public sealed class ComputerOperatorTaskService(
                     continue;
                 }
 
-                if (decision.Confidence < MinimumConfidence)
-                {
-                    lowConfidenceCount++;
-                    progress.Add(
-                        "analyze-retry",
-                        $"Độ tin cậy {decision.Confidence:0.00} thấp hơn {MinimumConfidence:0.00}; sẽ quan sát lại ({lowConfidenceCount}/3).",
-                        decision.Action,
-                        decision.Confidence);
-
-                    taskHistory.Add(
-                        $"STEP {index}: LOW-CONFIDENCE {decision.Action} ({decision.Confidence:0.00}) — {decision.Reason}");
-
-                    recovery.RecordFailure(
-                        BuildActionSignature(decision),
-                        decision.Action,
-                        ComputerOperatorFailureKinds.LowConfidence,
-                        decision.State,
-                        decision.Reason,
-                        decision.ExpectedEffect,
-                        decision.Confidence);
-
-                    if (lowConfidenceCount >= 3)
-                    {
-                        _ = actionState.MoveTo(
-                            ComputerOperatorActionState.Blocked,
-                            "Vision không đủ chắc chắn sau 3 lần quan sát.");
-
-                        progress.Block(
-                            "Vision không đủ chắc chắn sau 3 lần quan sát.");
-                        return Finish(
-                            false,
-                            "Vision không đủ chắc chắn sau 3 lần quan sát.");
-                    }
-
-                    _ = actionState.MoveTo(
-                        ComputerOperatorActionState.Replan,
-                        "Độ tin cậy thấp; cần quan sát lại.");
-
-                    await Task.Delay(700, linked.Token);
-                    continue;
-                }
-
-                lowConfidenceCount = 0;
+                DesktopTargetTrackingResult? trackingResult = null;
 
                 var targetState = actionState.MoveTo(
                     ComputerOperatorActionState.Target,
@@ -475,6 +435,7 @@ public sealed class ComputerOperatorTaskService(
                         frame,
                         plannedWindow,
                         currentWindow);
+                    trackingResult = tracking;
 
                     progress.Add(
                         "target-tracking",
@@ -536,6 +497,66 @@ public sealed class ComputerOperatorTaskService(
                     await Task.Delay(300, linked.Token);
                     continue;
                 }
+
+                var confidenceAssessment =
+                    ConfidenceEngine.AssessBeforeExecution(
+                        decision,
+                        currentScene,
+                        trackingResult);
+
+                progress.Add(
+                    "confidence",
+                    $"Confidence Engine: {confidenceAssessment.Reason}",
+                    confidenceAssessment.Decision.ToString().ToLowerInvariant(),
+                    confidenceAssessment.OverallConfidence);
+
+                if (confidenceAssessment.Decision !=
+                    ComputerOperatorConfidenceDecision.Execute)
+                {
+                    lowConfidenceCount++;
+
+                    taskHistory.Add(
+                        $"CONFIDENCE-REPLAN: {confidenceAssessment.Reason}");
+
+                    recovery.RecordFailure(
+                        BuildActionSignature(decision),
+                        decision.Action,
+                        ComputerOperatorFailureKinds.LowConfidence,
+                        decision.State,
+                        confidenceAssessment.Reason,
+                        decision.ExpectedEffect,
+                        confidenceAssessment.OverallConfidence);
+
+                    if (lowConfidenceCount >= 3)
+                    {
+                        _ = actionState.MoveTo(
+                            ComputerOperatorActionState.Blocked,
+                            "Confidence Engine không đủ chắc chắn sau 3 lần quan sát.");
+
+                        progress.Block(
+                            "Confidence Engine không đủ chắc chắn để thực thi sau 3 lần quan sát.");
+                        return Finish(
+                            false,
+                            "Đã dừng an toàn vì scene/target/action vẫn không đủ chắc chắn.");
+                    }
+
+                    _ = actionState.MoveTo(
+                        ComputerOperatorActionState.Replan,
+                        confidenceAssessment.Decision ==
+                            ComputerOperatorConfidenceDecision.GeminiFallback
+                            ? "Confidence trung gian; yêu cầu Gemini quan sát lại với ngữ cảnh mới."
+                            : "Confidence thấp; cần re-observe trước khi execute.");
+
+                    await Task.Delay(
+                        confidenceAssessment.Decision ==
+                            ComputerOperatorConfidenceDecision.GeminiFallback
+                            ? 350
+                            : 650,
+                        linked.Token);
+                    continue;
+                }
+
+                lowConfidenceCount = 0;
 
                 var actionSignature = BuildActionSignature(decision);
 

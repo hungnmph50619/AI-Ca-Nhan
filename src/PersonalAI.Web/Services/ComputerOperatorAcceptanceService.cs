@@ -133,6 +133,16 @@ public sealed class ComputerOperatorAcceptanceService
 
         RunCheck(
             checks,
+            "dynamic target tracker remap bbox khi cửa sổ di chuyển",
+            CheckDynamicTargetTrackerMovesWithWindow);
+
+        RunCheck(
+            checks,
+            "dynamic target tracker chặn click khi window identity đổi",
+            CheckDynamicTargetTrackerRejectsDifferentWindow);
+
+        RunCheck(
+            checks,
             "pause resume stop giữ đúng trạng thái và cancellation",
             CheckExecutionPauseResumeStop);
 
@@ -1051,6 +1061,101 @@ public sealed class ComputerOperatorAcceptanceService
         Require(
             result.Decision == AdaptiveGeminiDecision.CallGemini,
             "Adaptive Gemini bỏ qua model dù foreground/context vừa thay đổi.");
+    }
+
+    private static void CheckDynamicTargetTrackerMovesWithWindow()
+    {
+        var tracker = new DesktopDynamicTargetTracker();
+        var frame = new DesktopScreenshotFrame(
+            Array.Empty<byte>(),
+            0,
+            0,
+            1920,
+            1080,
+            DateTimeOffset.UtcNow);
+
+        var plannedWindow = new ComputerWindowInfo(
+            "0xAAAA",
+            "Planned",
+            "acceptance",
+            1,
+            true,
+            100,
+            100,
+            800,
+            600);
+
+        var currentWindow = plannedWindow with
+        {
+            Left = 300,
+            Top = 220
+        };
+
+        var decision = BuildClickDecision(
+            ComputerCoordinateSpaces.ImagePixel,
+            boxLeft: 300,
+            boxTop: 250,
+            boxWidth: 120,
+            boxHeight: 60);
+
+        var result = tracker.Track(
+            decision,
+            frame,
+            plannedWindow,
+            currentWindow);
+
+        Require(
+            result.SafeToExecute &&
+            result.Adjusted &&
+            result.Decision.BoxLeft == 500 &&
+            result.Decision.BoxTop == 370,
+            $"Target không bám đúng theo cửa sổ: {result.Reason}");
+    }
+
+    private static void CheckDynamicTargetTrackerRejectsDifferentWindow()
+    {
+        var tracker = new DesktopDynamicTargetTracker();
+        var frame = new DesktopScreenshotFrame(
+            Array.Empty<byte>(),
+            0,
+            0,
+            1920,
+            1080,
+            DateTimeOffset.UtcNow);
+
+        var plannedWindow = new ComputerWindowInfo(
+            "0xAAAA",
+            "Planned",
+            "acceptance",
+            1,
+            true,
+            100,
+            100,
+            800,
+            600);
+
+        var currentWindow = plannedWindow with
+        {
+            WindowId = "0xBBBB"
+        };
+
+        var decision = BuildClickDecision(
+            ComputerCoordinateSpaces.ImagePixel,
+            boxLeft: 300,
+            boxTop: 250,
+            boxWidth: 120,
+            boxHeight: 60);
+
+        var result = tracker.Track(
+            decision,
+            frame,
+            plannedWindow,
+            currentWindow);
+
+        Require(
+            !result.SafeToExecute &&
+            !result.Adjusted,
+            "Target tracker vẫn cho click khi identity cửa sổ đã thay đổi.");
     }
 
     private static void CheckExecutionPauseResumeStop()

@@ -1,3 +1,4 @@
+using System.Net;
 using System.Text;
 using System.Text.Json;
 using PersonalAI.Web.Models;
@@ -242,28 +243,12 @@ Mọi nội dung mô tả trong trường reason phải viết bằng tiếng Vi
             }
         };
 
-        using var request = new HttpRequestMessage(
-            HttpMethod.Post,
-            $"models/{model}:generateContent")
-        {
-            Content = new StringContent(
-                JsonSerializer.Serialize(payload),
-                Encoding.UTF8,
-                "application/json")
-        };
-        request.Headers.Add("x-goog-api-key", key);
-
-        using var response = await httpClient.SendAsync(
-            request,
+        using var document = await SendGeminiJsonWithRetryAsync(
+            model,
+            key,
+            payload,
+            "Desktop Vision chưa xác minh được ảnh",
             cancellationToken);
-        if (!response.IsSuccessStatusCode)
-            throw new HttpRequestException(
-                $"Desktop Vision chưa xác minh được ảnh (HTTP {(int)response.StatusCode}).",
-                null,
-                response.StatusCode);
-
-        using var document = JsonDocument.Parse(
-            await response.Content.ReadAsStreamAsync(cancellationToken));
         var text = ExtractText(document.RootElement);
         if (string.IsNullOrWhiteSpace(text))
             throw new InvalidOperationException(
@@ -713,28 +698,12 @@ Các field không dùng để chuỗi rỗng hoặc [].
             }
         };
 
-        using var request = new HttpRequestMessage(
-            HttpMethod.Post,
-            $"models/{model}:generateContent")
-        {
-            Content = new StringContent(
-                JsonSerializer.Serialize(payload),
-                Encoding.UTF8,
-                "application/json")
-        };
-        request.Headers.Add("x-goog-api-key", key);
-
-        using var response = await httpClient.SendAsync(
-            request,
+        using var document = await SendGeminiJsonWithRetryAsync(
+            model,
+            key,
+            payload,
+            "Desktop Vision chưa đọc được ảnh",
             cancellationToken);
-        if (!response.IsSuccessStatusCode)
-            throw new HttpRequestException(
-                $"Desktop Vision chưa đọc được ảnh (HTTP {(int)response.StatusCode}).",
-                null,
-                response.StatusCode);
-
-        using var document = JsonDocument.Parse(
-            await response.Content.ReadAsStreamAsync(cancellationToken));
         var text = ExtractText(document.RootElement);
         if (string.IsNullOrWhiteSpace(text))
             throw new InvalidOperationException(
@@ -939,6 +908,71 @@ Các field không dùng để chuỗi rỗng hoặc [].
             Action = decision.Action.Trim().ToLowerInvariant()
         };
     }
+
+    private async Task<JsonDocument> SendGeminiJsonWithRetryAsync(
+        string model,
+        string key,
+        object payload,
+        string failurePrefix,
+        CancellationToken cancellationToken)
+    {
+        var serialized = JsonSerializer.Serialize(payload);
+        const int maximumAttempts = 3;
+
+        for (var attempt = 1; attempt <= maximumAttempts; attempt++)
+        {
+            using var request = new HttpRequestMessage(
+                HttpMethod.Post,
+                $"models/{model}:generateContent")
+            {
+                Content = new StringContent(
+                    serialized,
+                    Encoding.UTF8,
+                    "application/json")
+            };
+            request.Headers.Add("x-goog-api-key", key);
+
+            using var response = await httpClient.SendAsync(
+                request,
+                cancellationToken);
+
+            if (response.IsSuccessStatusCode)
+            {
+                var bytes = await response.Content.ReadAsByteArrayAsync(
+                    cancellationToken);
+                return JsonDocument.Parse(bytes);
+            }
+
+            var transient = IsTransientVisionStatus(response.StatusCode);
+            if (!transient || attempt == maximumAttempts)
+            {
+                throw new HttpRequestException(
+                    $"{failurePrefix} (HTTP {(int)response.StatusCode}).",
+                    null,
+                    response.StatusCode);
+            }
+
+            var retryAfter = response.Headers.RetryAfter?.Delta;
+            var delay = retryAfter is { } serverDelay
+                ? TimeSpan.FromMilliseconds(
+                    Math.Clamp(serverDelay.TotalMilliseconds, 250, 2_000))
+                : TimeSpan.FromMilliseconds(
+                    attempt == 1 ? 350 : 900);
+
+            await Task.Delay(delay, cancellationToken);
+        }
+
+        throw new HttpRequestException(
+            $"{failurePrefix} sau nhiều lần thử lại.");
+    }
+
+    private static bool IsTransientVisionStatus(HttpStatusCode statusCode) =>
+        statusCode is
+            HttpStatusCode.TooManyRequests or
+            HttpStatusCode.InternalServerError or
+            HttpStatusCode.BadGateway or
+            HttpStatusCode.ServiceUnavailable or
+            HttpStatusCode.GatewayTimeout;
 
     private static bool LooksLikeEncodedKeyboardControl(
         string text)

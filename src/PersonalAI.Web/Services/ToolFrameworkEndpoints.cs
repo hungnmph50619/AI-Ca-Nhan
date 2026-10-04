@@ -43,6 +43,7 @@ public static class ToolFrameworkEndpoints
         services.AddSingleton<IToolExecutionService, ToolExecutionService>();
         services.AddSingleton<IToolActivityStore, SqliteToolActivityStore>();
         services.AddScoped<IToolResultSynthesisService, ToolResultSynthesisService>();
+        services.AddScoped<IToolArgumentPlanner, ToolArgumentPlanner>();
         services.AddScoped<IToolOrchestrationService, ToolOrchestrationService>();
         return services;
     }
@@ -90,6 +91,45 @@ public static class ToolFrameworkEndpoints
             {
                 return Results.BadRequest(
                     new ApiError(exception.Message));
+            }
+        });
+
+        app.MapPost("/api/tools/plan-arguments", async (
+            ToolArgumentPlanRequest request,
+            IToolArgumentPlanner planner,
+            CancellationToken cancellationToken) =>
+        {
+            try
+            {
+                return Results.Ok(
+                    await planner.PlanAsync(
+                        request,
+                        cancellationToken));
+            }
+            catch (ToolProposalValidationException exception)
+            {
+                return Results.BadRequest(
+                    new ApiError(exception.Message));
+            }
+            catch (InvalidOperationException exception)
+            {
+                return Results.Json(
+                    new ApiError(exception.Message),
+                    statusCode: StatusCodes.Status503ServiceUnavailable);
+            }
+            catch (HttpRequestException exception)
+            {
+                return Results.Json(
+                    new ApiError(exception.Message),
+                    statusCode: StatusCodes.Status502BadGateway);
+            }
+            catch (TaskCanceledException) when (
+                !cancellationToken.IsCancellationRequested)
+            {
+                return Results.Json(
+                    new ApiError(
+                        "AI lập tham số cho tool mất quá nhiều thời gian. Hãy thử lại."),
+                    statusCode: StatusCodes.Status504GatewayTimeout);
             }
         });
 

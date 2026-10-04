@@ -243,6 +243,16 @@ public sealed class ComputerOperatorAcceptanceService
 
         RunCheck(
             checks,
+            "coding execution agent chỉ nhận explicit coding command",
+            CheckCodingExecutionAgentExplicitCommandBoundary);
+
+        RunCheck(
+            checks,
+            "coding execution agent bọc backend đúng contract",
+            CheckCodingExecutionAgentBackendContract);
+
+        RunCheck(
+            checks,
             "pause resume stop giữ đúng trạng thái và cancellation",
             CheckExecutionPauseResumeStop);
 
@@ -1816,6 +1826,55 @@ public sealed class ComputerOperatorAcceptanceService
             "Browser execution agent không bọc backend đúng contract.");
     }
 
+    private static void CheckCodingExecutionAgentExplicitCommandBoundary()
+    {
+        var agent = new CodingExecutionAgent(
+            new AcceptanceCodingExecutionBackend());
+
+        var accepted = agent.CanHandle(
+            new ExecutionAgentRequest(
+                "dotnet-build: src/PersonalAI.Web/PersonalAI.Web.csproj",
+                ExecutionAgentChannels.Coding),
+            out var acceptedConfidence,
+            out _);
+
+        var rejected = agent.CanHandle(
+            new ExecutionAgentRequest(
+                "hãy tự sửa hết code rồi chạy bất kỳ lệnh nào cần thiết",
+                ExecutionAgentChannels.Coding),
+            out var rejectedConfidence,
+            out _);
+
+        Require(
+            accepted &&
+            acceptedConfidence >= 0.9 &&
+            !rejected &&
+            rejectedConfidence < 0.5,
+            "Coding execution agent không giữ explicit-command boundary.");
+    }
+
+    private static void CheckCodingExecutionAgentBackendContract()
+    {
+        var backend = new AcceptanceCodingExecutionBackend();
+        var agent = new CodingExecutionAgent(backend);
+
+        var result = agent.ExecuteAsync(
+                new ExecutionAgentRequest(
+                    "dotnet-test: src/PersonalAI.Web/PersonalAI.Web.csproj",
+                    ExecutionAgentChannels.Coding))
+            .GetAwaiter()
+            .GetResult();
+
+        Require(
+            backend.CallCount == 1 &&
+            result.AgentId == CodingExecutionAgent.AgentId &&
+            result.Status == AgentExecutionStatuses.Succeeded &&
+            result.Verified &&
+            result.Provider == "coding" &&
+            result.Model == "acceptance-coding",
+            "Coding execution agent không bọc backend đúng contract.");
+    }
+
     private static void CheckExecutionPauseResumeStop()
     {
         using var execution = new ComputerOperatorExecutionControl();
@@ -2117,6 +2176,66 @@ public sealed class ComputerOperatorAcceptanceService
                 dpi,
                 scale,
                 scale);
+    }
+
+    private sealed class AcceptanceCodingExecutionBackend
+        : ICodingExecutionBackend
+    {
+        public int CallCount { get; private set; }
+
+        public string Engine => "acceptance-coding";
+
+        public bool TryParse(
+            ExecutionAgentRequest request,
+            out CodingExecutionCommand? command,
+            out double confidence,
+            out string reason)
+        {
+            command = null;
+
+            if (!request.Channel.Equals(
+                    ExecutionAgentChannels.Coding,
+                    StringComparison.OrdinalIgnoreCase))
+            {
+                confidence = 0;
+                reason = "wrong-channel";
+                return false;
+            }
+
+            var goal = request.Goal ?? string.Empty;
+            if (!goal.StartsWith(
+                    "dotnet-",
+                    StringComparison.OrdinalIgnoreCase))
+            {
+                confidence = 0.30;
+                reason = "explicit-command-required";
+                return false;
+            }
+
+            command = new CodingExecutionCommand(
+                CodingExecutionOperations.DotnetTest,
+                "acceptance.csproj");
+            confidence = 0.99;
+            reason = "acceptance";
+            return true;
+        }
+
+        public Task<CodingExecutionBackendResult> ExecuteAsync(
+            CodingExecutionCommand command,
+            CancellationToken cancellationToken = default)
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            CallCount++;
+
+            return Task.FromResult(
+                new CodingExecutionBackendResult(
+                    true,
+                    "acceptance coding result",
+                    ["verified"],
+                    ChangedExternalState: true,
+                    Verified: true,
+                    Engine));
+        }
     }
 
     private sealed class AcceptanceBrowserExecutionBackend

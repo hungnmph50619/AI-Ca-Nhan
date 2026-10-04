@@ -17,7 +17,10 @@ public sealed class UniversalClosedLoopLiveStepRunner(
         var prepared =
             await directToolPath.PrepareAsync(
                 new UniversalExecutionPrepareRequest(
-                    request.Goal),
+                    request.Goal,
+                    PreferredChannel: null,
+                    ReplanContext:
+                        request.PreviousSummary),
                 cancellationToken);
 
         if (prepared.Mode.Equals(
@@ -190,7 +193,7 @@ public sealed class UniversalClosedLoopLiveStepRunner(
                 RequiresConfirmation: false,
                 NeedsVerification: false,
                 ReplanRequired: true,
-                CanContinue: false,
+                CanContinue: true,
                 verification.Decision.Reason);
         }
 

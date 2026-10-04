@@ -348,6 +348,16 @@ public sealed class ComputerOperatorAcceptanceService
 
         RunCheck(
             checks,
+            "fallback policy không lách permission denial sang agent",
+            CheckUniversalFallbackPolicyBlocksDeniedBypass);
+
+        RunCheck(
+            checks,
+            "fallback policy chỉ cho agent fallback sau lỗi kỹ thuật",
+            CheckUniversalFallbackPolicyAllowsTechnicalFallback);
+
+        RunCheck(
+            checks,
             "pause resume stop giữ đúng trạng thái và cancellation",
             CheckExecutionPauseResumeStop);
 
@@ -2635,6 +2645,93 @@ public sealed class ComputerOperatorAcceptanceService
             orchestration.ExecuteCount == 0,
             "Direct Tool Path tự chạy fallback hoặc gọi planner khi không có direct tool.");
     }
+
+    private static void CheckUniversalFallbackPolicyBlocksDeniedBypass()
+    {
+        var policy = new UniversalFallbackPolicy();
+        var route = BuildAcceptanceRoute(
+            ExecutionAgentChannels.Computer);
+
+        var execution = BuildAcceptanceToolExecution(
+            ToolExecutionStatuses.Denied,
+            success: false,
+            error: "confirmation required");
+
+        var decision = policy.Evaluate(
+            route,
+            execution);
+
+        Require(
+            decision.Action ==
+                UniversalFallbackActions.Stop &&
+            !decision.AllowAgentFallback &&
+            decision.FallbackChannel is null,
+            "Fallback policy cho phép lách policy denial sang Computer Operator.");
+    }
+
+    private static void CheckUniversalFallbackPolicyAllowsTechnicalFallback()
+    {
+        var policy = new UniversalFallbackPolicy();
+        var route = BuildAcceptanceRoute(
+            ExecutionAgentChannels.Browser);
+
+        var execution = BuildAcceptanceToolExecution(
+            ToolExecutionStatuses.TimedOut,
+            success: false,
+            error: "timeout");
+
+        var decision = policy.Evaluate(
+            route,
+            execution);
+
+        Require(
+            decision.Action ==
+                UniversalFallbackActions.AgentFallback &&
+            decision.AllowAgentFallback &&
+            decision.FallbackChannel ==
+                ExecutionAgentChannels.Browser,
+            "Fallback policy không đề xuất agent fallback sau timeout kỹ thuật.");
+    }
+
+    private static UniversalTaskRoutePreview BuildAcceptanceRoute(
+        string channel) =>
+        new(
+            "acceptance",
+            [
+                new UniversalTaskRouteCandidate(
+                    channel,
+                    0.90,
+                    0.80,
+                    channel == ExecutionAgentChannels.Computer
+                        ? UniversalRouteRisk.High
+                        : UniversalRouteRisk.Medium,
+                    2,
+                    2,
+                    1,
+                    0,
+                    null,
+                    "acceptance")
+            ],
+            channel,
+            NeedsFurtherRouting: false,
+            "acceptance");
+
+    private static ToolExecutionResponse BuildAcceptanceToolExecution(
+        string status,
+        bool success,
+        string? error) =>
+        new(
+            Guid.NewGuid(),
+            "acceptance.tool",
+            status,
+            success,
+            Output: null,
+            error,
+            DurationMs: 1,
+            DateTimeOffset.UtcNow,
+            DateTimeOffset.UtcNow,
+            [ToolPermissions.Read],
+            [ToolPermissions.Read]);
 
     private static void CheckExecutionPauseResumeStop()
     {

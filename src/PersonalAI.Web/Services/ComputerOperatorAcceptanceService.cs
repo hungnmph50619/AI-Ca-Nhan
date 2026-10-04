@@ -223,6 +223,16 @@ public sealed class ComputerOperatorAcceptanceService
 
         RunCheck(
             checks,
+            "capability router chỉ chọn tool đúng channel",
+            CheckCapabilityRouterKeepsChannelBoundary);
+
+        RunCheck(
+            checks,
+            "capability router chặn high risk mặc định",
+            CheckCapabilityRouterBlocksHighRiskByDefault);
+
+        RunCheck(
+            checks,
             "pause resume stop giữ đúng trạng thái và cancellation",
             CheckExecutionPauseResumeStop);
 
@@ -1677,6 +1687,76 @@ public sealed class ComputerOperatorAcceptanceService
             "Read-only computer tool không giữ low-risk/read capability.");
     }
 
+    private static void CheckCapabilityRouterKeepsChannelBoundary()
+    {
+        IPersonalAiTool screenTool =
+            new ComputerScreenInfoTool(
+                new AcceptanceComputerUseService());
+
+        IPersonalAiTool browserTool =
+            new AcceptanceCapabilityTool(
+                "browser.test.read",
+                [ToolPermissions.Read, ToolPermissions.Browser],
+                requiresConfirmation: false);
+
+        var registry = new ToolCapabilityRegistry(
+            new ToolRegistry(
+                new[] { screenTool, browserTool }));
+
+        var router = new CapabilityToolRouter(registry);
+
+        var result = router.Route(
+            new CapabilityToolRouteRequest(
+                ExecutionAgentChannels.Computer,
+                ["read"],
+                AllowHighRisk: false,
+                RequireVerification: false));
+
+        Require(
+            result.Tools.Count == 1 &&
+            result.Tools[0].Name == "computer.screen.info",
+            "Capability router làm lộ tool ngoài channel computer.");
+    }
+
+    private static void CheckCapabilityRouterBlocksHighRiskByDefault()
+    {
+        IPersonalAiTool safeTool =
+            new ComputerScreenInfoTool(
+                new AcceptanceComputerUseService());
+
+        IPersonalAiTool highRiskTool =
+            new ComputerOperatorTaskTool(
+                new AcceptanceOperatorTaskService());
+
+        var registry = new ToolCapabilityRegistry(
+            new ToolRegistry(
+                new[] { safeTool, highRiskTool }));
+
+        var router = new CapabilityToolRouter(registry);
+
+        var defaultRoute = router.Route(
+            new CapabilityToolRouteRequest(
+                ExecutionAgentChannels.Computer,
+                Array.Empty<string>()));
+
+        Require(
+            defaultRoute.Tools.All(tool =>
+                tool.RiskLevel != ToolRiskLevels.High),
+            "Capability router vẫn đưa high-risk tool vào mặc định.");
+
+        var elevatedRoute = router.Route(
+            new CapabilityToolRouteRequest(
+                ExecutionAgentChannels.Computer,
+                ["side-effect"],
+                AllowHighRisk: true,
+                RequireVerification: true));
+
+        Require(
+            elevatedRoute.Tools.Any(tool =>
+                tool.Name == "computer.operator.run-task"),
+            "Capability router không đưa Computer Operator vào khi đã explicit allow high-risk + verification.");
+    }
+
     private static void CheckExecutionPauseResumeStop()
     {
         using var execution = new ComputerOperatorExecutionControl();
@@ -1978,6 +2058,38 @@ public sealed class ComputerOperatorAcceptanceService
                 dpi,
                 scale,
                 scale);
+    }
+
+    private sealed class AcceptanceCapabilityTool
+        : IPersonalAiTool
+    {
+        public ToolDefinition Definition { get; }
+
+        public AcceptanceCapabilityTool(
+            string name,
+            IReadOnlyList<string> permissions,
+            bool requiresConfirmation)
+        {
+            using var document = System.Text.Json.JsonDocument.Parse(
+                """{"type":"object","properties":{},"additionalProperties":false}""");
+
+            Definition = new ToolDefinition(
+                name,
+                "Acceptance capability tool.",
+                "1.0.0",
+                permissions,
+                1000,
+                document.RootElement.Clone(),
+                LocalOnly: true,
+                RequiresConfirmation: requiresConfirmation);
+        }
+
+        public Task<System.Text.Json.JsonElement> ExecuteAsync(
+            System.Text.Json.JsonElement arguments,
+            CancellationToken cancellationToken = default) =>
+            Task.FromResult(
+                System.Text.Json.JsonSerializer.SerializeToElement(
+                    new { ok = true }));
     }
 
     private sealed class AcceptanceOperatorTaskService

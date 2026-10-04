@@ -3088,6 +3088,12 @@ jobs:
           grep -Fq 'NormalizeDesktopCoordinate' src/PersonalAI.Web/Services/ComputerCoordinateTransformService.cs
           grep -Fq 'CanonicalX' src/PersonalAI.Web/Services/ComputerOperatorActionExecutor.cs
           grep -Fq 'CheckCanonicalInteractionSpace' src/PersonalAI.Web/Services/ComputerOperatorAcceptanceService.cs
+          grep -Fq 'blockedReplanCount' src/PersonalAI.Web/Services/ComputerOperatorTaskService.cs
+          grep -Fq 'BLOCKED-REPLAN-DIRECTIVE' src/PersonalAI.Web/Services/ComputerOperatorTaskService.cs
+          grep -Fq 'VỀ CUỐI ↓' src/PersonalAI.Web/Services/WindowsAiOperatorConsoleService.cs
+          grep -Fq 'EsMultiline' src/PersonalAI.Web/Services/WindowsAiOperatorConsoleService.cs
+          grep -Fq 'EmGetFirstVisibleLine' src/PersonalAI.Web/Services/WindowsAiOperatorConsoleService.cs
+          grep -Fq 'TakeLast(160)' src/PersonalAI.Web/Services/WindowsAiOperatorConsoleService.cs
           ! grep -Fq 'action = ExecuteDecision(decision, frame);' src/PersonalAI.Web/Services/ComputerOperatorTaskService.cs
           grep -Fq '"frame-difference"' src/PersonalAI.Web/Services/ComputerOperatorTaskService.cs
           grep -Fq 'changedRatio=' src/PersonalAI.Web/Services/DesktopVisionService.cs

@@ -47,6 +47,8 @@ public sealed class ComputerOperatorTaskService(
         new DesktopRoiVisionService();
     private static readonly IAdaptiveGeminiCallPolicy GeminiCallPolicy =
         new AdaptiveGeminiCallPolicy();
+    private static readonly IDesktopDynamicTargetTracker TargetTracker =
+        new DesktopDynamicTargetTracker();
 
     private static readonly string[] SecretTerms =
     [
@@ -386,6 +388,48 @@ public sealed class ComputerOperatorTaskService(
                 }
 
                 lowConfidenceCount = 0;
+
+                if (IsClickAction(decision.Action))
+                {
+                    var plannedWindow = ResolveTrackingWindow(
+                        decision,
+                        active,
+                        frame);
+                    var currentWindow = plannedWindow is null
+                        ? null
+                        : computer.GetWindows(50).Windows.FirstOrDefault(
+                            window => window.WindowId.Equals(
+                                plannedWindow.WindowId,
+                                StringComparison.OrdinalIgnoreCase));
+
+                    var tracking = TargetTracker.Track(
+                        decision,
+                        frame,
+                        plannedWindow,
+                        currentWindow);
+
+                    progress.Add(
+                        "target-tracking",
+                        tracking.Reason,
+                        tracking.Adjusted ? "remap" : "track",
+                        tracking.Confidence);
+
+                    if (!tracking.SafeToExecute)
+                    {
+                        taskHistory.Add(
+                            $"TARGET-TRACKING-REPLAN: {tracking.Reason}");
+                        progress.Add(
+                            "replan",
+                            $"Target không còn an toàn để click: {tracking.Reason} Sẽ quan sát lại thay vì dùng tọa độ cũ.",
+                            "replan",
+                            tracking.Confidence);
+
+                        await Task.Delay(200, linked.Token);
+                        continue;
+                    }
+
+                    decision = tracking.Decision;
+                }
 
                 if (RequiresExpectedEffect(decision.Action) &&
                     string.IsNullOrWhiteSpace(decision.ExpectedEffect))
@@ -901,6 +945,46 @@ public sealed class ComputerOperatorTaskService(
         return await screenshots.CaptureStableVirtualScreenAsync(
             maximumWaitMs: 5000,
             cancellationToken);
+    }
+
+    private ComputerWindowInfo? ResolveTrackingWindow(
+        DesktopOperatorDecision decision,
+        ComputerWindowInfo? activeAtPlanning,
+        DesktopScreenshotFrame planningFrame)
+    {
+        if (!string.IsNullOrWhiteSpace(decision.CoordinateWindowId))
+        {
+            return computer.GetWindows(50).Windows.FirstOrDefault(
+                window => window.WindowId.Equals(
+                    decision.CoordinateWindowId.Trim(),
+                    StringComparison.OrdinalIgnoreCase));
+        }
+
+        if (activeAtPlanning is null)
+            return null;
+
+        if (decision.BoxWidth <= 1 ||
+            decision.BoxHeight <= 1)
+            return activeAtPlanning;
+
+        var centerX =
+            planningFrame.Left +
+            decision.BoxLeft +
+            decision.BoxWidth / 2;
+        var centerY =
+            planningFrame.Top +
+            decision.BoxTop +
+            decision.BoxHeight / 2;
+
+        var insideActive =
+            centerX >= activeAtPlanning.Left &&
+            centerX < activeAtPlanning.Left + activeAtPlanning.Width &&
+            centerY >= activeAtPlanning.Top &&
+            centerY < activeAtPlanning.Top + activeAtPlanning.Height;
+
+        return insideActive
+            ? activeAtPlanning
+            : null;
     }
 
     private static bool RequiresExpectedEffect(

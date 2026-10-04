@@ -93,6 +93,7 @@ public sealed class ComputerOperatorTaskService(
         var taskHistory = new List<string>();
         var recovery = new ComputerOperatorRecoverySession();
         var loopGuard = new ComputerOperatorLoopGuardSession();
+        var actionState = new ComputerOperatorActionStateMachine();
         var verifiedMilestones = new HashSet<string>(
             StringComparer.OrdinalIgnoreCase);
         var currentSubgoal = string.Empty;
@@ -114,6 +115,17 @@ public sealed class ComputerOperatorTaskService(
                         "Computer Operator đã dừng vì phiên điều khiển hết hạn, hết ngân sách hoặc bị dừng khẩn cấp.");
 
                 await execution.WaitIfPausedAsync(linked.Token);
+
+                var stateSnapshot = index == 1
+                    ? actionState.StartObservation(
+                        "Bắt đầu quan sát cho bước đầu tiên.")
+                    : actionState.ResetForNextStep(
+                        "Bắt đầu quan sát cho bước tiếp theo.");
+
+                progress.Add(
+                    "action-state",
+                    $"State machine: {stateSnapshot.State} — {stateSnapshot.Detail}",
+                    stateSnapshot.State.ToString().ToLowerInvariant());
 
                 var windowsContext = BuildObservation();
                 var active = computer.GetActiveWindow();
@@ -173,6 +185,15 @@ public sealed class ComputerOperatorTaskService(
                 {
                     frame.Clear();
                 }
+
+                var planState = actionState.MoveTo(
+                    ComputerOperatorActionState.Plan,
+                    $"Đã nhận quyết định {decision.Action} từ planner.");
+
+                progress.Add(
+                    "action-state",
+                    $"State machine: {planState.State} — {planState.Detail}",
+                    planState.State.ToString().ToLowerInvariant());
 
                 var currentScene =
                     decision.SceneElements ?? Array.Empty<DesktopSceneElement>();
@@ -297,6 +318,14 @@ public sealed class ComputerOperatorTaskService(
 
                 if (decision.Action == "complete")
                 {
+                    var successState = actionState.MoveTo(
+                        ComputerOperatorActionState.Success,
+                        "Planner xác nhận mục tiêu đã hoàn thành.");
+
+                    progress.Add(
+                        "action-state",
+                        $"State machine: {successState.State} — {successState.Detail}",
+                        "success");
                     taskHistory.Add(
                         $"BƯỚC {index}: COMPLETE — {decision.Reason}");
                     progress.Complete(
@@ -331,6 +360,15 @@ public sealed class ComputerOperatorTaskService(
 
                     taskHistory.Add(
                         $"STEP {index}: BLOCKED-FINAL — {decision.Reason}");
+                    var blockedState = actionState.MoveTo(
+                        ComputerOperatorActionState.Blocked,
+                        decision.Reason);
+
+                    progress.Add(
+                        "action-state",
+                        $"State machine: {blockedState.State} — {blockedState.Detail}",
+                        "blocked");
+
                     progress.Block(
                         $"Vision đã quan sát/lập lại phương án nhiều lần nhưng vẫn không còn bước an toàn: {decision.Reason}");
                     return Finish(
@@ -389,6 +427,15 @@ public sealed class ComputerOperatorTaskService(
 
                 lowConfidenceCount = 0;
 
+                var targetState = actionState.MoveTo(
+                    ComputerOperatorActionState.Target,
+                    $"Chuẩn bị target cho action {decision.Action}.");
+
+                progress.Add(
+                    "action-state",
+                    $"State machine: {targetState.State} — {targetState.Detail}",
+                    "target");
+
                 if (IsClickAction(decision.Action))
                 {
                     var plannedWindow = ResolveTrackingWindow(
@@ -423,6 +470,15 @@ public sealed class ComputerOperatorTaskService(
                             $"Target không còn an toàn để click: {tracking.Reason} Sẽ quan sát lại thay vì dùng tọa độ cũ.",
                             "replan",
                             tracking.Confidence);
+
+                        var replanState = actionState.MoveTo(
+                            ComputerOperatorActionState.Replan,
+                            tracking.Reason);
+
+                        progress.Add(
+                            "action-state",
+                            $"State machine: {replanState.State} — {replanState.Detail}",
+                            "replan");
 
                         await Task.Delay(200, linked.Token);
                         continue;
@@ -505,6 +561,15 @@ public sealed class ComputerOperatorTaskService(
                 ComputerActionResponse action;
                 try
                 {
+                    var executeState = actionState.MoveTo(
+                        ComputerOperatorActionState.Execute,
+                        $"Thực thi action {decision.Action}.");
+
+                    progress.Add(
+                        "action-state",
+                        $"State machine: {executeState.State} — {executeState.Detail}",
+                        "execute");
+
                     await execution.WaitIfPausedAsync(linked.Token);
                     action = actionExecutor.Execute(decision, frame);
                 }
@@ -527,6 +592,18 @@ public sealed class ComputerOperatorTaskService(
 
                     taskHistory.Add(
                         $"STEP {index}: FAILED {actionSignature} — {exception.Message}");
+
+                    var diagnoseState = actionState.MoveTo(
+                        ComputerOperatorActionState.Diagnose,
+                        exception.Message);
+                    var replanState = actionState.MoveTo(
+                        ComputerOperatorActionState.Replan,
+                        "Hành động bị từ chối; cần lập phương án khác.");
+
+                    progress.Add(
+                        "action-state",
+                        $"State machine: {diagnoseState.State} -> {replanState.State}",
+                        "replan");
 
                     progress.Add(
                         "recovery",
@@ -569,6 +646,18 @@ public sealed class ComputerOperatorTaskService(
                     taskHistory.Add(
                         $"STEP {index}: NOT-APPLIED {actionSignature} — {action.Detail}");
 
+                    var diagnoseState = actionState.MoveTo(
+                        ComputerOperatorActionState.Diagnose,
+                        action.Detail);
+                    var replanState = actionState.MoveTo(
+                        ComputerOperatorActionState.Replan,
+                        "Action không được áp dụng; cần re-plan.");
+
+                    progress.Add(
+                        "action-state",
+                        $"State machine: {diagnoseState.State} -> {replanState.State}",
+                        "replan");
+
                     progress.Add(
                         "recovery",
                         $"Hành động chưa tạo thay đổi ({failures} lần với chiến lược này): {action.Detail}. Sẽ quan sát lại và lập phương án khác.",
@@ -596,6 +685,15 @@ public sealed class ComputerOperatorTaskService(
                     decision.Action,
                     decision.Confidence,
                     actionTaken: true);
+
+                var verifyState = actionState.MoveTo(
+                    ComputerOperatorActionState.Verify,
+                    $"Xác minh kết quả của action {decision.Action}.");
+
+                progress.Add(
+                    "action-state",
+                    $"State machine: {verifyState.State} — {verifyState.Detail}",
+                    "verify");
 
                 ActionVerificationResult verification;
                 try
@@ -625,6 +723,18 @@ public sealed class ComputerOperatorTaskService(
 
                     taskHistory.Add(
                         $"STEP {index}: VERIFY-FAILED {actionSignature} — {verification.Detail}; EXPECTED: {decision.ExpectedEffect}");
+
+                    var diagnoseState = actionState.MoveTo(
+                        ComputerOperatorActionState.Diagnose,
+                        verification.Detail);
+                    var replanState = actionState.MoveTo(
+                        ComputerOperatorActionState.Replan,
+                        "Verification thất bại; cần re-plan.");
+
+                    progress.Add(
+                        "action-state",
+                        $"State machine: {diagnoseState.State} -> {replanState.State}",
+                        "replan");
 
                     progress.Add(
                         "recovery",
@@ -661,6 +771,15 @@ public sealed class ComputerOperatorTaskService(
                         "verified",
                         verification.Confidence);
                 }
+
+                var successState = actionState.MoveTo(
+                    ComputerOperatorActionState.Success,
+                    "Action đã được xác minh thành công.");
+
+                progress.Add(
+                    "action-state",
+                    $"State machine: {successState.State} — {successState.Detail}",
+                    "success");
 
                 loopGuard.MarkProgress();
 

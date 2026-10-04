@@ -273,6 +273,16 @@ public sealed class ComputerOperatorAcceptanceService
 
         RunCheck(
             checks,
+            "integration architecture giữ Computer Operator là core sở hữu",
+            CheckIntegrationArchitectureOwnsComputerOperator);
+
+        RunCheck(
+            checks,
+            "integration architecture giữ external engines thay thế được",
+            CheckIntegrationArchitectureKeepsExternalAdaptersReplaceable);
+
+        RunCheck(
+            checks,
             "pause resume stop giữ đúng trạng thái và cancellation",
             CheckExecutionPauseResumeStop);
 
@@ -2019,6 +2029,45 @@ public sealed class ComputerOperatorAcceptanceService
             development.TestCount == 0 &&
             development.DiffCount == 0,
             "Coding Verification Gate không fail-fast sau build lỗi.");
+    }
+
+    private static void CheckIntegrationArchitectureOwnsComputerOperator()
+    {
+        var architecture =
+            new ExternalIntegrationArchitecture();
+
+        var computer = architecture.Get(
+            "ai-ca-nhan.computer-operator");
+
+        Require(
+            computer is not null &&
+            computer.Strategy == IntegrationStrategies.Own &&
+            !computer.Replaceable &&
+            computer.Contracts.Contains(
+                "IExecutionAgent"),
+            "Integration architecture không giữ Computer Operator là core do AI-Ca-Nhan sở hữu.");
+    }
+
+    private static void CheckIntegrationArchitectureKeepsExternalAdaptersReplaceable()
+    {
+        var architecture =
+            new ExternalIntegrationArchitecture();
+
+        var external = new[]
+        {
+            architecture.Get("microsoft.agent-framework"),
+            architecture.Get("openhands.agent-server"),
+            architecture.Get("ai-ca-nhan.browser")
+        };
+
+        Require(
+            external.All(item =>
+                item is not null &&
+                item.Replaceable &&
+                item.Strategy is
+                    IntegrationStrategies.Adapt or
+                    IntegrationStrategies.Reuse),
+            "External integration không giữ adapter boundary/replaceability.");
     }
 
     private static void CheckExecutionPauseResumeStop()

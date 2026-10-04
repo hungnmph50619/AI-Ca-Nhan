@@ -458,6 +458,16 @@ public sealed class ComputerOperatorAcceptanceService
 
         RunCheck(
             checks,
+            "safe replan bridge cho tiếp tục sau replan-arguments",
+            CheckClosedLoopLiveBridgeAllowsSafeReplan);
+
+        RunCheck(
+            checks,
+            "safe replan bridge truyền context vòng trước vào tool planner",
+            CheckDirectToolPathPassesReplanContextToPlanner);
+
+        RunCheck(
+            checks,
             "pause resume stop giữ đúng trạng thái và cancellation",
             CheckExecutionPauseResumeStop);
 
@@ -3774,6 +3784,176 @@ public sealed class ComputerOperatorAcceptanceService
             "Live bridge đã tự chạy execution agent fallback.");
     }
 
+    private static void CheckClosedLoopLiveBridgeAllowsSafeReplan()
+    {
+        var route =
+            BuildAcceptanceRoute(
+                ExecutionAgentChannels.Browser);
+
+        using var arguments =
+            System.Text.Json.JsonDocument.Parse(
+                """{"query":"acceptance"}""");
+
+        var proposal =
+            new ToolCallProposal(
+                Guid.NewGuid(),
+                "browser.acceptance.read",
+                arguments.RootElement.Clone(),
+                "acceptance",
+                "acceptance",
+                [ToolPermissions.Read],
+                RequiresConfirmation: false,
+                DateTimeOffset.UtcNow.AddMinutes(5));
+
+        var execution =
+            BuildAcceptanceToolExecution(
+                ToolExecutionStatuses.Succeeded,
+                success: true,
+                error: null) with
+            {
+                ToolName = "browser.acceptance.read"
+            };
+
+        var executionResponse =
+            new ToolProposalExecutionResponse(
+                proposal,
+                execution,
+                "acceptance",
+                CanAiSynthesize: false);
+
+        var verificationResult =
+            new UniversalVerificationPipelineResult(
+                new UniversalVerificationEvidenceRoute(
+                    UniversalVerificationStrategies.BrowserReadback,
+                    ExecutionAgentChannels.Browser,
+                    CanVerifyAutomatically: true,
+                    RequiresExternalAi: false,
+                    RequiresReadback: true,
+                    "browser-readback",
+                    "acceptance"),
+                new UniversalOutcomeEvidence(
+                    "browser-readback",
+                    Passed: false,
+                    Confidence: 0.95,
+                    "Arguments chưa đưa đến nội dung đúng."),
+                new UniversalOutcomeVerificationResult(
+                    UniversalOutcomeStatuses.NotAchieved,
+                    ExecutionSucceeded: true,
+                    GoalAchieved: false,
+                    IndependentlyVerified: true,
+                    Confidence: 0.95,
+                    Source: "browser-readback",
+                    "Goal chưa đạt."),
+                new UniversalFallbackDecision(
+                    UniversalFallbackActions.ReplanArguments,
+                    AllowAgentFallback: false,
+                    FallbackChannel: null,
+                    "Lập lại arguments."));
+
+        var runner =
+            new UniversalClosedLoopLiveStepRunner(
+                new AcceptanceDirectToolPath(
+                    new UniversalExecutionPrepareResult(
+                        UniversalExecutionModes.DirectToolProposal,
+                        route,
+                        ToolPlan: null,
+                        proposal,
+                        FallbackChannel:
+                            ExecutionAgentChannels.Browser,
+                        "acceptance")),
+                new AcceptanceLiveToolOrchestrationService(
+                    executionResponse),
+                new AcceptanceVerificationPipeline(
+                    verificationResult));
+
+        var result = runner.RunAsync(
+                new UniversalClosedLoopStepRequest(
+                    "Đọc đúng nội dung trang",
+                    2,
+                    PreviousSummary:
+                        "Lần trước query sai."))
+            .GetAwaiter()
+            .GetResult();
+
+        Require(
+            result.Executed &&
+            result.ReplanRequired &&
+            result.CanContinue &&
+            !result.RequiresConfirmation &&
+            !result.NeedsVerification,
+            "Safe Replan Bridge không cho vòng lặp tiếp tục sau replan-arguments hợp lệ.");
+    }
+
+    private static void CheckDirectToolPathPassesReplanContextToPlanner()
+    {
+        using var arguments =
+            System.Text.Json.JsonDocument.Parse(
+                """{"query":"new-query"}""");
+
+        var route =
+            new UniversalTaskRoutePreview(
+                "Tìm nội dung đúng",
+                [
+                    new UniversalTaskRouteCandidate(
+                        ExecutionAgentChannels.Browser,
+                        0.90,
+                        0.82,
+                        UniversalRouteRisk.Medium,
+                        2,
+                        2,
+                        1,
+                        1,
+                        "browser.acceptance.read",
+                        "direct-tool")
+                ],
+                ExecutionAgentChannels.Browser,
+                NeedsFurtherRouting: false,
+                "acceptance");
+
+        var router =
+            new AcceptanceUniversalTaskRouter(
+                route);
+
+        var planner =
+            new AcceptanceToolArgumentPlanner(
+                new ToolArgumentPlanResult(
+                    true,
+                    "browser.acceptance.read",
+                    arguments.RootElement.Clone(),
+                    RequiresConfirmation: false,
+                    [ToolPermissions.Read],
+                    "AcceptanceAI",
+                    "acceptance-model",
+                    "acceptance"));
+
+        var orchestration =
+            new AcceptanceToolOrchestrationService();
+
+        var pathService =
+            new UniversalDirectToolPath(
+                router,
+                planner,
+                orchestration);
+
+        _ = pathService.PrepareAsync(
+                new UniversalExecutionPrepareRequest(
+                    "Tìm nội dung đúng",
+                    ReplanContext:
+                        "Query cũ không tìm được nội dung mục tiêu."))
+            .GetAwaiter()
+            .GetResult();
+
+        Require(
+            planner.LastRequest is not null &&
+            planner.LastRequest.Goal.Contains(
+                "Query cũ không tìm được nội dung mục tiêu.",
+                StringComparison.Ordinal) &&
+            planner.LastRequest.Goal.Contains(
+                "Không lặp nguyên phương án cũ",
+                StringComparison.Ordinal),
+            "Replan context không được truyền vào Tool Argument Planner.");
+    }
+
     private static void CheckExecutionPauseResumeStop()
     {
         using var execution = new ComputerOperatorExecutionControl();
@@ -4235,6 +4415,7 @@ public sealed class ComputerOperatorAcceptanceService
         private readonly ToolArgumentPlanResult? result;
 
         public int CallCount { get; private set; }
+        public ToolArgumentPlanRequest? LastRequest { get; private set; }
 
         public AcceptanceToolArgumentPlanner(
             ToolArgumentPlanResult? result)
@@ -4248,6 +4429,7 @@ public sealed class ComputerOperatorAcceptanceService
         {
             cancellationToken.ThrowIfCancellationRequested();
             CallCount++;
+            LastRequest = request;
 
             return result is null
                 ? throw new InvalidOperationException(

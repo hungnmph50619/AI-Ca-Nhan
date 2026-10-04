@@ -5,6 +5,7 @@ public static class ComputerCoordinateSpaces
     public const string ImagePixel = "image-pixel";
     public const string ImageNormalized = "image-normalized";
     public const string WindowNormalized = "window-normalized";
+    public const string MonitorNormalized = "monitor-normalized";
     public const string VirtualDesktopNormalized = "virtual-desktop-normalized";
 
     public static readonly IReadOnlySet<string> All =
@@ -13,6 +14,7 @@ public static class ComputerCoordinateSpaces
                 ImagePixel,
                 ImageNormalized,
                 WindowNormalized,
+                MonitorNormalized,
                 VirtualDesktopNormalized
             ],
             StringComparer.OrdinalIgnoreCase);
@@ -24,7 +26,8 @@ public sealed record ComputerCoordinateRequest(
     int ImageY,
     double NormalizedX,
     double NormalizedY,
-    string WindowId);
+    string WindowId,
+    string MonitorDevice = "");
 
 public sealed record ComputerCoordinatePoint(
     int DesktopX,

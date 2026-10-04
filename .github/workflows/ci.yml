@@ -3072,6 +3072,11 @@ jobs:
           grep -Fq 'temporalScenes.Analyze' src/PersonalAI.Web/Services/ComputerOperatorTaskService.cs
           grep -Fq '"temporal-scene"' src/PersonalAI.Web/Services/ComputerOperatorTaskService.cs
           grep -Fq 'TEMPORAL SCENE:' src/PersonalAI.Web/Services/DesktopVisionService.cs
+          grep -Fq 'IComputerOperatorActionExecutor' src/PersonalAI.Web/Services/ComputerOperatorActionExecutor.cs
+          grep -Fq 'targeting.Resolve(decision, frame)' src/PersonalAI.Web/Services/ComputerOperatorActionExecutor.cs
+          grep -Fq 'Foreground đã thay đổi trước thao tác bàn phím' src/PersonalAI.Web/Services/ComputerOperatorActionExecutor.cs
+          grep -Fq 'actionExecutor.Execute(decision, frame)' src/PersonalAI.Web/Services/ComputerOperatorTaskService.cs
+          ! grep -Fq 'action = ExecuteDecision(decision, frame);' src/PersonalAI.Web/Services/ComputerOperatorTaskService.cs
           grep -Fq '"frame-difference"' src/PersonalAI.Web/Services/ComputerOperatorTaskService.cs
           grep -Fq 'changedRatio=' src/PersonalAI.Web/Services/DesktopVisionService.cs
           grep -Fq 'RequiresExpectedEffect' src/PersonalAI.Web/Services/ComputerOperatorTaskService.cs

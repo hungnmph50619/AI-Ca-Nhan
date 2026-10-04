@@ -435,7 +435,9 @@ public sealed class ComputerOperatorTaskService(
                 DesktopScreenshotFrame? verificationBaseline = null;
                 try
                 {
-                    verificationBaseline = await CapturePostActionFrameAsync(linked.Token);
+                    verificationBaseline = await CapturePostActionFrameAsync(
+                        linked.Token,
+                        maximumWaitMs: 1_400);
                     progress.Add(
                         "frame-baseline",
                         $"Đã chụp baseline trước hành động {verificationBaseline.Width}x{verificationBaseline.Height}; scope={verificationBaseline.CaptureScope}.",
@@ -686,7 +688,8 @@ public sealed class ComputerOperatorTaskService(
         await execution.WaitIfPausedAsync(cancellationToken);
 
         var after = await CapturePostActionFrameAsync(
-            cancellationToken);
+            cancellationToken,
+            maximumWaitMs: 1_400);
 
         try
         {
@@ -783,8 +786,10 @@ public sealed class ComputerOperatorTaskService(
     }
 
     private async Task<DesktopScreenshotFrame> CapturePostActionFrameAsync(
-        CancellationToken cancellationToken)
+        CancellationToken cancellationToken,
+        int maximumWaitMs = 1_400)
     {
+        var safeMaximumWaitMs = Math.Clamp(maximumWaitMs, 500, 5_000);
         var active = computer.GetActiveWindow();
 
         if (active is not null &&
@@ -795,7 +800,7 @@ public sealed class ComputerOperatorTaskService(
             {
                 return await screenshots.CaptureStableWindowAsync(
                     active.WindowId,
-                    maximumWaitMs: 5000,
+                    maximumWaitMs: safeMaximumWaitMs,
                     cancellationToken);
             }
             catch (Exception exception) when (
@@ -820,7 +825,7 @@ public sealed class ComputerOperatorTaskService(
             {
                 return await screenshots.CaptureStableMonitorAsync(
                     monitor.DeviceName,
-                    maximumWaitMs: 5000,
+                    maximumWaitMs: safeMaximumWaitMs,
                     cancellationToken);
             }
         }
@@ -834,7 +839,7 @@ public sealed class ComputerOperatorTaskService(
         }
 
         return await screenshots.CaptureStableVirtualScreenAsync(
-            maximumWaitMs: 5000,
+            maximumWaitMs: safeMaximumWaitMs,
             cancellationToken);
     }
 

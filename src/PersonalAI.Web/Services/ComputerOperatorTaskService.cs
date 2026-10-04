@@ -328,7 +328,7 @@ public sealed class ComputerOperatorTaskService(
 
                     progress.Add(
                         "action-state",
-                        $"State machine: {successState.State} — {successState.Detail}",
+                        $"State machine: {actionSuccessState.State} — {actionSuccessState.Detail}",
                         "success");
                     taskHistory.Add(
                         $"BƯỚC {index}: COMPLETE — {decision.Reason}");

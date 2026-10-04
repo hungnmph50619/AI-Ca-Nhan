@@ -113,6 +113,16 @@ public sealed class ComputerOperatorAcceptanceService
 
         RunCheck(
             checks,
+            "ROI Vision ưu tiên target box khi cùng không gian ảnh",
+            CheckRoiVisionTargetPriority);
+
+        RunCheck(
+            checks,
+            "ROI Vision fallback vùng thay đổi khi target box không dùng được",
+            CheckRoiVisionChangedRegionFallback);
+
+        RunCheck(
+            checks,
             "pause resume stop giữ đúng trạng thái và cancellation",
             CheckExecutionPauseResumeStop);
 
@@ -818,6 +828,132 @@ public sealed class ComputerOperatorAcceptanceService
         Require(
             route.Route == DesktopVerificationRoute.GeminiRequired,
             "Verification Router đã tự xác minh click semantic chỉ từ frame difference.");
+    }
+
+    private static void CheckRoiVisionTargetPriority()
+    {
+        var service = new DesktopRoiVisionService();
+        using var jpeg = BuildAcceptanceJpeg(800, 600);
+        var bytes = jpeg.ToArray();
+
+        var frame = new DesktopScreenshotFrame(
+            bytes.ToArray(),
+            0,
+            0,
+            800,
+            600,
+            DateTimeOffset.UtcNow);
+
+        var decision = BuildClickDecision(
+            ComputerCoordinateSpaces.ImagePixel,
+            boxLeft: 300,
+            boxTop: 220,
+            boxWidth: 100,
+            boxHeight: 60);
+
+        var selection = service.SelectVerificationFrame(
+            decision,
+            frame,
+            frame,
+            new DesktopFrameDifference(
+                true, 0.2, 200, 1000,
+                10, 10, 100, 100, 30, "acceptance"));
+
+        try
+        {
+            Require(
+                selection.Source == "target-roi" &&
+                selection.Frame.Width < frame.Width &&
+                selection.Frame.Height < frame.Height &&
+                selection.Frame.Left <= decision.BoxLeft &&
+                selection.Frame.Top <= decision.BoxTop,
+                "ROI Vision không ưu tiên/cắt đúng vùng target.");
+        }
+        finally
+        {
+            selection.Clear();
+            frame.Clear();
+        }
+    }
+
+    private static void CheckRoiVisionChangedRegionFallback()
+    {
+        var service = new DesktopRoiVisionService();
+        using var jpeg = BuildAcceptanceJpeg(800, 600);
+        var bytes = jpeg.ToArray();
+
+        var planning = new DesktopScreenshotFrame(
+            bytes.ToArray(),
+            -100,
+            0,
+            800,
+            600,
+            DateTimeOffset.UtcNow);
+
+        var current = new DesktopScreenshotFrame(
+            bytes.ToArray(),
+            0,
+            0,
+            800,
+            600,
+            DateTimeOffset.UtcNow,
+            CaptureScope: "window",
+            WindowId: AcceptanceComputerUseService.WindowId);
+
+        var decision = BuildClickDecision(
+            ComputerCoordinateSpaces.ImagePixel,
+            boxLeft: 300,
+            boxTop: 220,
+            boxWidth: 100,
+            boxHeight: 60);
+
+        var selection = service.SelectVerificationFrame(
+            decision,
+            planning,
+            current,
+            new DesktopFrameDifference(
+                true, 0.12, 120, 1000,
+                250, 180, 120, 90, 25, "acceptance"));
+
+        try
+        {
+            Require(
+                selection.Source == "changed-region" &&
+                selection.Frame.Width < current.Width &&
+                selection.Frame.Height < current.Height,
+                "ROI Vision không fallback về changed-region khi target box không cùng không gian.");
+        }
+        finally
+        {
+            selection.Clear();
+            planning.Clear();
+            current.Clear();
+        }
+    }
+
+    private static MemoryStream BuildAcceptanceJpeg(
+        int width,
+        int height)
+    {
+        using var bitmap = new System.Drawing.Bitmap(
+            width,
+            height,
+            System.Drawing.Imaging.PixelFormat.Format24bppRgb);
+        using var graphics = System.Drawing.Graphics.FromImage(bitmap);
+        graphics.Clear(System.Drawing.Color.White);
+        graphics.FillRectangle(
+            System.Drawing.Brushes.Black,
+            width / 3,
+            height / 3,
+            width / 4,
+            height / 4);
+
+        var stream = new MemoryStream();
+        bitmap.Save(
+            stream,
+            System.Drawing.Imaging.ImageFormat.Jpeg);
+        stream.Position = 0;
+        return stream;
     }
 
     private static void CheckExecutionPauseResumeStop()

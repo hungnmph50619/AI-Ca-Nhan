@@ -3109,6 +3109,13 @@ jobs:
           grep -Fq 'if (selectedActive)' src/PersonalAI.Web/Services/WindowsAiOperatorConsoleService.cs
           grep -Fq 'maximumSeconds: 170' src/PersonalAI.Web/Services/ComputerOperatorTaskService.cs
           grep -Fq '180_000' src/PersonalAI.Web/Services/ComputerOperatorTaskTool.cs
+          grep -Fq 'IComputerOperatorLocalVerificationService' src/PersonalAI.Web/Services/ComputerOperatorLocalVerificationService.cs
+          grep -Fq 'vision-fallback' src/PersonalAI.Web/Services/ComputerOperatorTaskService.cs
+          grep -Fq 'local-verify' src/PersonalAI.Web/Services/ComputerOperatorTaskService.cs
+          grep -Fq 'maximumWaitMs: 1_400' src/PersonalAI.Web/Services/ComputerOperatorTaskService.cs
+          grep -Fq 'CheckLocalVerifierForeground' src/PersonalAI.Web/Services/ComputerOperatorAcceptanceService.cs
+          grep -Fq 'CheckLocalVerifierFrameChange' src/PersonalAI.Web/Services/ComputerOperatorAcceptanceService.cs
+          grep -Fq 'CheckLocalVerifierFallsBack' src/PersonalAI.Web/Services/ComputerOperatorAcceptanceService.cs
           ! grep -Fq 'action = ExecuteDecision(decision, frame);' src/PersonalAI.Web/Services/ComputerOperatorTaskService.cs
           grep -Fq '"frame-difference"' src/PersonalAI.Web/Services/ComputerOperatorTaskService.cs
           grep -Fq 'changedRatio=' src/PersonalAI.Web/Services/DesktopVisionService.cs

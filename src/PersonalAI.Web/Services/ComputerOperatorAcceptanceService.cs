@@ -123,6 +123,16 @@ public sealed class ComputerOperatorAcceptanceService
 
         RunCheck(
             checks,
+            "adaptive Gemini bỏ qua verify khi action không làm UI thay đổi",
+            CheckAdaptiveGeminiSkipsNoChange);
+
+        RunCheck(
+            checks,
+            "adaptive Gemini vẫn gọi AI khi context desktop đổi mạnh",
+            CheckAdaptiveGeminiCallsOnContextChange);
+
+        RunCheck(
+            checks,
             "pause resume stop giữ đúng trạng thái và cancellation",
             CheckExecutionPauseResumeStop);
 
@@ -954,6 +964,93 @@ public sealed class ComputerOperatorAcceptanceService
             System.Drawing.Imaging.ImageFormat.Jpeg);
         stream.Position = 0;
         return stream;
+    }
+
+    private static void CheckAdaptiveGeminiSkipsNoChange()
+    {
+        var policy = new AdaptiveGeminiCallPolicy();
+        var decision = BuildClickDecision(
+            ComputerCoordinateSpaces.ImagePixel) with
+        {
+            Action = "click-left",
+            ExpectedEffect = "UI thay đổi"
+        };
+
+        var observation = new DesktopFastObservation(
+            ScreenChanged: false,
+            ChangeRatio: 0,
+            ForegroundWindowChanged: false,
+            WindowBoundsChanged: false,
+            CursorMoved: true,
+            MonitorChanged: false,
+            DpiChanged: false,
+            TargetMoved: false,
+            TargetMissing: false,
+            TargetLikelyOccluded: false,
+            Summary: "acceptance");
+
+        var result = policy.EvaluateVerification(
+            decision,
+            observation,
+            new DesktopFrameDifference(
+                true,
+                0.0005,
+                1,
+                2000,
+                0,
+                0,
+                4,
+                4,
+                1,
+                "acceptance"));
+
+        Require(
+            result.Decision == AdaptiveGeminiDecision.SkipAndFail &&
+            result.Confidence >= 0.9,
+            "Adaptive Gemini vẫn gọi model dù action không tạo thay đổi hình ảnh.");
+    }
+
+    private static void CheckAdaptiveGeminiCallsOnContextChange()
+    {
+        var policy = new AdaptiveGeminiCallPolicy();
+        var decision = BuildClickDecision(
+            ComputerCoordinateSpaces.ImagePixel) with
+        {
+            Action = "click-left",
+            ExpectedEffect = "Popup mới xuất hiện"
+        };
+
+        var observation = new DesktopFastObservation(
+            ScreenChanged: true,
+            ChangeRatio: 0.08,
+            ForegroundWindowChanged: true,
+            WindowBoundsChanged: false,
+            CursorMoved: true,
+            MonitorChanged: false,
+            DpiChanged: false,
+            TargetMoved: false,
+            TargetMissing: false,
+            TargetLikelyOccluded: false,
+            Summary: "acceptance");
+
+        var result = policy.EvaluateVerification(
+            decision,
+            observation,
+            new DesktopFrameDifference(
+                true,
+                0.08,
+                80,
+                1000,
+                0,
+                0,
+                200,
+                120,
+                20,
+                "acceptance"));
+
+        Require(
+            result.Decision == AdaptiveGeminiDecision.CallGemini,
+            "Adaptive Gemini bỏ qua model dù foreground/context vừa thay đổi.");
     }
 
     private static void CheckExecutionPauseResumeStop()

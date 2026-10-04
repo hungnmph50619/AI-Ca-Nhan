@@ -48,6 +48,7 @@ builder.Services.AddAutomationFoundation();
 builder.Services.AddToolFramework();
 builder.Services.AddAgentFramework();
 builder.Services.AddExecutionGateway();
+builder.Services.AddUniversalTaskRouter();
 builder.Services.AddTaskEngine();
 builder.Services.AddSingleton<IKnowledgeGroundingService, KnowledgeGroundingService>();
 builder.Services.AddSingleton<KnowledgeSourceReader>();
@@ -121,6 +122,7 @@ app.MapHardeningFoundation();
 app.MapPersonalAiOs();
 app.MapAgentFramework();
 app.MapExecutionGateway();
+app.MapUniversalTaskRouter();
 app.MapEvaluationFramework();
 app.MapModelLab();
 

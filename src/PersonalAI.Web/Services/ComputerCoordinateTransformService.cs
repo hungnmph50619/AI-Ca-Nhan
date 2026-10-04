@@ -63,6 +63,9 @@ public sealed class ComputerCoordinateTransformService(
             ComputerCoordinateSpaces.WindowNormalized =>
                 FromWindowNormalized(request),
 
+            ComputerCoordinateSpaces.MonitorNormalized =>
+                FromMonitorNormalized(request),
+
             ComputerCoordinateSpaces.VirtualDesktopNormalized =>
                 FromVirtualDesktopNormalized(request, screen),
 
@@ -113,7 +116,9 @@ public sealed class ComputerCoordinateTransformService(
             string.IsNullOrWhiteSpace(request.WindowId)
                 ? null
                 : request.WindowId.Trim(),
-            monitor?.DeviceName,
+            !string.IsNullOrWhiteSpace(request.MonitorDevice)
+                ? request.MonitorDevice.Trim()
+                : monitor?.DeviceName,
             monitorX,
             monitorY,
             monitor?.DpiX ?? 96,
@@ -196,6 +201,42 @@ public sealed class ComputerCoordinateTransformService(
             y,
             ComputerCoordinateSpaces.WindowNormalized,
             $"cửa sổ {window.WindowId} “{window.Title}” tại ({request.NormalizedX:0.0000},{request.NormalizedY:0.0000})");
+    }
+
+    private ComputerCoordinatePoint FromMonitorNormalized(
+        ComputerCoordinateRequest request)
+    {
+        ValidateNormalized(request.NormalizedX, request.NormalizedY);
+
+        var device = (request.MonitorDevice ?? string.Empty).Trim();
+        if (string.IsNullOrWhiteSpace(device))
+            throw new ToolExecutionInputException(
+                "Hệ tọa độ màn hình cần monitorDevice.");
+
+        var monitor = displays.GetTopology().Monitors
+            .FirstOrDefault(item =>
+                item.DeviceName.Equals(
+                    device,
+                    StringComparison.OrdinalIgnoreCase))
+            ?? throw new ToolExecutionInputException(
+                "Màn hình dùng làm hệ tọa độ không còn tồn tại.");
+
+        if (monitor.Width <= 0 || monitor.Height <= 0)
+            throw new ToolExecutionInputException(
+                "Màn hình dùng làm hệ tọa độ không có kích thước hợp lệ.");
+
+        var x = monitor.Left + ScaleNormalized(
+            request.NormalizedX,
+            monitor.Width);
+        var y = monitor.Top + ScaleNormalized(
+            request.NormalizedY,
+            monitor.Height);
+
+        return new(
+            x,
+            y,
+            ComputerCoordinateSpaces.MonitorNormalized,
+            $"màn hình {monitor.DeviceName} tại ({request.NormalizedX:0.0000},{request.NormalizedY:0.0000})");
     }
 
     private static ComputerCoordinatePoint FromVirtualDesktopNormalized(

@@ -45,9 +45,12 @@ public interface IUniversalOutcomeVerificationService
 
 public sealed class UniversalOutcomeVerificationService(
     IToolCapabilityRegistry toolCapabilities,
-    IExecutionAgentRegistry executionAgents)
+    IExecutionAgentRegistry executionAgents,
+    IUniversalVerificationEvidenceAdapters? evidenceAdapters = null)
     : IUniversalOutcomeVerificationService
 {
+    private readonly IUniversalVerificationEvidenceAdapters evidenceAdapters =
+        evidenceAdapters ?? new UniversalVerificationEvidenceAdapters();
     private const double StrongEvidenceThreshold = 0.80;
 
     public UniversalOutcomeVerificationResult VerifyTool(
@@ -165,8 +168,7 @@ public sealed class UniversalOutcomeVerificationService(
                         request.Execution.AgentId,
                         StringComparison.OrdinalIgnoreCase));
 
-        if (definition?.SupportsVerification != true ||
-            !request.Execution.Verified)
+        if (definition?.SupportsVerification != true)
         {
             return new(
                 UniversalOutcomeStatuses.NeedsVerification,
@@ -175,7 +177,52 @@ public sealed class UniversalOutcomeVerificationService(
                 IndependentlyVerified: false,
                 Confidence: 0,
                 Source: request.Execution.AgentId,
-                "Agent báo execution thành công nhưng chưa có verification contract đạt.");
+                "Agent báo execution thành công nhưng agent contract không hỗ trợ verification.");
+        }
+
+        var evidence =
+            evidenceAdapters.FromAgent(
+                request.Execution);
+
+        if (evidence is null)
+        {
+            return new(
+                UniversalOutcomeStatuses.NeedsVerification,
+                ExecutionSucceeded: true,
+                GoalAchieved: false,
+                IndependentlyVerified: false,
+                Confidence: 0,
+                Source: request.Execution.AgentId,
+                "Agent báo execution thành công nhưng adapter chưa tạo được universal outcome evidence.");
+        }
+
+        var confidence = Math.Clamp(
+            evidence.Confidence,
+            0,
+            1);
+
+        if (confidence < StrongEvidenceThreshold)
+        {
+            return new(
+                UniversalOutcomeStatuses.NeedsVerification,
+                ExecutionSucceeded: true,
+                GoalAchieved: false,
+                IndependentlyVerified: false,
+                confidence,
+                evidence.Source,
+                $"Universal agent evidence chưa đủ mạnh ({confidence:0.00} < {StrongEvidenceThreshold:0.00}): {evidence.Summary}");
+        }
+
+        if (!evidence.Passed)
+        {
+            return new(
+                UniversalOutcomeStatuses.NotAchieved,
+                ExecutionSucceeded: true,
+                GoalAchieved: false,
+                IndependentlyVerified: true,
+                confidence,
+                evidence.Source,
+                $"Agent execution thành công nhưng universal verifier xác nhận goal chưa đạt: {evidence.Summary}");
         }
 
         return new(
@@ -183,8 +230,8 @@ public sealed class UniversalOutcomeVerificationService(
             ExecutionSucceeded: true,
             GoalAchieved: true,
             IndependentlyVerified: true,
-            Confidence: 0.95,
-            Source: request.Execution.AgentId,
-            "Agent hỗ trợ verification và execution result đã được đánh dấu Verified.");
+            confidence,
+            evidence.Source,
+            $"Universal evidence xác nhận agent đã đạt goal: {evidence.Summary}");
     }
 }

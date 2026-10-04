@@ -143,6 +143,16 @@ public sealed class ComputerOperatorAcceptanceService
 
         RunCheck(
             checks,
+            "coordinate engine v2 map monitor-normalized trên màn hình tọa độ âm",
+            CheckMonitorNormalizedCoordinates);
+
+        RunCheck(
+            checks,
+            "coordinate engine v2 giữ đúng origin của ROI",
+            CheckRoiOriginMapsToPhysicalDesktop);
+
+        RunCheck(
+            checks,
             "pause resume stop giữ đúng trạng thái và cancellation",
             CheckExecutionPauseResumeStop);
 
@@ -1156,6 +1166,69 @@ public sealed class ComputerOperatorAcceptanceService
             !result.SafeToExecute &&
             !result.Adjusted,
             "Target tracker vẫn cho click khi identity cửa sổ đã thay đổi.");
+    }
+
+    private static void CheckMonitorNormalizedCoordinates()
+    {
+        var transform = new ComputerCoordinateTransformService(
+            new AcceptanceComputerUseService(),
+            new AcceptanceDisplayTopologyService());
+
+        var frame = new DesktopScreenshotFrame(
+            Array.Empty<byte>(),
+            -1920,
+            0,
+            3840,
+            1080,
+            DateTimeOffset.UtcNow);
+
+        var point = transform.ToDesktopPoint(
+            new ComputerCoordinateRequest(
+                ComputerCoordinateSpaces.MonitorNormalized,
+                0,
+                0,
+                0.5,
+                0.5,
+                string.Empty,
+                "LEFT"),
+            frame);
+
+        Require(
+            point.DesktopX is >= -961 and <= -960 &&
+            point.DesktopY is >= 539 and <= 540 &&
+            point.MonitorDevice == "LEFT",
+            $"Monitor-normalized map sai: ({point.DesktopX},{point.DesktopY}), monitor={point.MonitorDevice}.");
+    }
+
+    private static void CheckRoiOriginMapsToPhysicalDesktop()
+    {
+        var transform = new ComputerCoordinateTransformService(
+            new AcceptanceComputerUseService(),
+            new AcceptanceDisplayTopologyService());
+
+        var roi = new DesktopScreenshotFrame(
+            Array.Empty<byte>(),
+            -450,
+            220,
+            400,
+            300,
+            DateTimeOffset.UtcNow,
+            CaptureScope: "roi");
+
+        var point = transform.ToDesktopPoint(
+            new ComputerCoordinateRequest(
+                ComputerCoordinateSpaces.ImagePixel,
+                125,
+                80,
+                0,
+                0,
+                string.Empty),
+            roi);
+
+        Require(
+            point.DesktopX == -325 &&
+            point.DesktopY == 300,
+            $"ROI origin bị mất khi map về desktop vật lý: ({point.DesktopX},{point.DesktopY}).");
     }
 
     private static void CheckExecutionPauseResumeStop()

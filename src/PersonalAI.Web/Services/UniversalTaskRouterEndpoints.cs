@@ -14,6 +14,7 @@ public static class UniversalTaskRouterEndpoints
         services.AddSingleton<IUniversalVerificationEvidenceRouter, UniversalVerificationEvidenceRouter>();
         services.AddSingleton<IUniversalVerificationEvidenceAdapters, UniversalVerificationEvidenceAdapters>();
         services.AddScoped<IUniversalVerificationEvidenceCollectionService, UniversalVerificationEvidenceCollectionService>();
+        services.AddScoped<IUniversalPostExecutionVerificationService, UniversalPostExecutionVerificationService>();
         return services;
     }
 
@@ -121,6 +122,25 @@ public static class UniversalTaskRouterEndpoints
             {
                 return Results.Ok(
                     await collection.CollectAsync(
+                        request,
+                        cancellationToken));
+            }
+            catch (AgentValidationException exception)
+            {
+                return Results.BadRequest(
+                    new ApiError(exception.Message));
+            }
+        });
+
+        app.MapPost("/api/universal-router/verify-post-execution", async (
+            UniversalPostExecutionVerificationRequest request,
+            IUniversalPostExecutionVerificationService verification,
+            CancellationToken cancellationToken) =>
+        {
+            try
+            {
+                return Results.Ok(
+                    await verification.VerifyAsync(
                         request,
                         cancellationToken));
             }

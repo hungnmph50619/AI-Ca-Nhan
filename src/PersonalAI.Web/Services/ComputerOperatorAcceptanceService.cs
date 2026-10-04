@@ -1588,7 +1588,7 @@ public sealed class ComputerOperatorAcceptanceService
             executionAgent);
 
         Require(
-            tool is Microsoft.Agents.AI.ApprovalRequiredAIFunction,
+            tool is Microsoft.Extensions.AI.ApprovalRequiredAIFunction,
             "Execution agent side effect chưa được bọc ApprovalRequiredAIFunction.");
     }
 

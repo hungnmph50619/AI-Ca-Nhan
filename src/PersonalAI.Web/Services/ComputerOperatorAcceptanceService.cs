@@ -283,6 +283,16 @@ public sealed class ComputerOperatorAcceptanceService
 
         RunCheck(
             checks,
+            "execution gateway route đúng agent theo channel",
+            CheckExecutionGatewayRoutesByChannel);
+
+        RunCheck(
+            checks,
+            "execution gateway chặn side effect khi chưa xác nhận",
+            CheckExecutionGatewayRequiresConfirmation);
+
+        RunCheck(
+            checks,
             "pause resume stop giữ đúng trạng thái và cancellation",
             CheckExecutionPauseResumeStop);
 
@@ -2068,6 +2078,66 @@ public sealed class ComputerOperatorAcceptanceService
                     IntegrationStrategies.Adapt or
                     IntegrationStrategies.Reuse),
             "External integration không giữ adapter boundary/replaceability.");
+    }
+
+    private static void CheckExecutionGatewayRoutesByChannel()
+    {
+        IExecutionAgent computer =
+            new ComputerOperatorExecutionAgent(
+                new AcceptanceOperatorTaskService());
+        IExecutionAgent browser =
+            new BrowserExecutionAgent(
+                new AcceptanceBrowserExecutionBackend());
+
+        var registry = new ExecutionAgentRegistry(
+            new[] { computer, browser });
+        var gateway = new ExecutionGateway(
+            registry);
+
+        var preview = gateway.Preview(
+            new ExecutionGatewayRequest(
+                "Mở ứng dụng thử nghiệm",
+                Channel: ExecutionAgentChannels.Computer));
+
+        Require(
+            preview.SelectedAgentId ==
+                ComputerOperatorExecutionAgent.AgentId &&
+            preview.Candidates.Count == 1 &&
+            preview.ConfirmationRequired,
+            "Execution Gateway route sai agent/channel.");
+    }
+
+    private static void CheckExecutionGatewayRequiresConfirmation()
+    {
+        IExecutionAgent computer =
+            new ComputerOperatorExecutionAgent(
+                new AcceptanceOperatorTaskService());
+
+        var registry = new ExecutionAgentRegistry(
+            new[] { computer });
+        var gateway = new ExecutionGateway(
+            registry);
+
+        var rejected = false;
+
+        try
+        {
+            _ = gateway.ExecuteAsync(
+                    new ExecutionGatewayRequest(
+                        "Mở ứng dụng thử nghiệm",
+                        Channel: ExecutionAgentChannels.Computer,
+                        ConfirmExecution: false))
+                .GetAwaiter()
+                .GetResult();
+        }
+        catch (AgentValidationException)
+        {
+            rejected = true;
+        }
+
+        Require(
+            rejected,
+            "Execution Gateway vẫn chạy side effect khi chưa ConfirmExecution.");
     }
 
     private static void CheckExecutionPauseResumeStop()

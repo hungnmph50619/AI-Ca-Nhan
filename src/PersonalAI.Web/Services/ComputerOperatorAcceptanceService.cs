@@ -408,6 +408,21 @@ public sealed class ComputerOperatorAcceptanceService
 
         RunCheck(
             checks,
+            "unified verification pipeline complete browser khi readback verified",
+            CheckUnifiedVerificationPipelineCompletesBrowser);
+
+        RunCheck(
+            checks,
+            "unified verification pipeline replan coding khi verification gate fail",
+            CheckUnifiedVerificationPipelineReplansCodingFailure);
+
+        RunCheck(
+            checks,
+            "unified verification pipeline giữ verify-outcome khi computer cần semantic verifier",
+            CheckUnifiedVerificationPipelineKeepsComputerSemanticVerification);
+
+        RunCheck(
+            checks,
             "pause resume stop giữ đúng trạng thái và cancellation",
             CheckExecutionPauseResumeStop);
 
@@ -3161,6 +3176,203 @@ public sealed class ComputerOperatorAcceptanceService
         Require(
             evidence is null,
             "Adapter đã bịa universal evidence dù Desktop Verification Router yêu cầu Gemini.");
+    }
+
+    private static void CheckUnifiedVerificationPipelineCompletesBrowser()
+    {
+        IPersonalAiTool tool =
+            new AcceptanceSchemaTool(
+                "browser.acceptance.read",
+                requiredField: "query");
+
+        var capabilityRegistry =
+            new ToolCapabilityRegistry(
+                new ToolRegistry(
+                    new[] { tool }));
+
+        var agentRegistry =
+            new ExecutionAgentRegistry(
+                new IExecutionAgent[]
+                {
+                    new AcceptanceExecutionAgent(
+                        "execution.browser.acceptance",
+                        ExecutionAgentChannels.Browser)
+                });
+
+        var pipeline =
+            new UniversalVerificationPipeline(
+                new UniversalVerificationEvidenceRouter(
+                    capabilityRegistry),
+                new UniversalVerificationEvidenceAdapters(),
+                new UniversalOutcomeVerificationService(
+                    capabilityRegistry,
+                    agentRegistry),
+                new UniversalFallbackPolicy());
+
+        var execution = BuildAcceptanceToolExecution(
+            ToolExecutionStatuses.Succeeded,
+            success: true,
+            error: null) with
+        {
+            ToolName = "browser.acceptance.read"
+        };
+
+        var result = pipeline.Verify(
+            new UniversalVerificationPipelineRequest(
+                "Đọc trang đích",
+                BuildAcceptanceRoute(
+                    ExecutionAgentChannels.Browser),
+                execution,
+                Browser: new BrowserExecutionBackendResult(
+                    Success: true,
+                    Summary: "Readback khớp URL và nội dung.",
+                    Evidence: ["url-match", "content-match"],
+                    ChangedExternalState: true,
+                    Verified: true,
+                    Engine: "acceptance-browser")));
+
+        Require(
+            result.EvidenceRoute.Strategy ==
+                UniversalVerificationStrategies.BrowserReadback &&
+            result.Evidence is { Passed: true } &&
+            result.Verification.Status ==
+                UniversalOutcomeStatuses.Verified &&
+            result.Verification.GoalAchieved &&
+            result.Decision.Action ==
+                UniversalFallbackActions.Complete,
+            $"Unified pipeline không complete browser verified: {result.Verification.Reason}");
+    }
+
+    private static void CheckUnifiedVerificationPipelineReplansCodingFailure()
+    {
+        IPersonalAiTool tool =
+            new AcceptanceSchemaTool(
+                "development.acceptance.run",
+                requiredField: "target");
+
+        var capabilityRegistry =
+            new ToolCapabilityRegistry(
+                new ToolRegistry(
+                    new[] { tool }));
+
+        var agentRegistry =
+            new ExecutionAgentRegistry(
+                new IExecutionAgent[]
+                {
+                    new AcceptanceExecutionAgent(
+                        "execution.coding.acceptance",
+                        ExecutionAgentChannels.Coding)
+                });
+
+        var pipeline =
+            new UniversalVerificationPipeline(
+                new UniversalVerificationEvidenceRouter(
+                    capabilityRegistry),
+                new UniversalVerificationEvidenceAdapters(),
+                new UniversalOutcomeVerificationService(
+                    capabilityRegistry,
+                    agentRegistry),
+                new UniversalFallbackPolicy());
+
+        var execution = BuildAcceptanceToolExecution(
+            ToolExecutionStatuses.Succeeded,
+            success: true,
+            error: null) with
+        {
+            ToolName = "development.acceptance.run"
+        };
+
+        var result = pipeline.Verify(
+            new UniversalVerificationPipelineRequest(
+                "Sửa code và chạy test",
+                BuildAcceptanceRoute(
+                    ExecutionAgentChannels.Coding),
+                execution,
+                Coding: new CodingVerificationReport(
+                    Passed: false,
+                    [
+                        new CodingVerificationStep(
+                            "restore",
+                            true,
+                            "ok"),
+                        new CodingVerificationStep(
+                            "build",
+                            false,
+                            "failed")
+                    ],
+                    "Build thất bại.")));
+
+        Require(
+            result.EvidenceRoute.Strategy ==
+                UniversalVerificationStrategies.CodingVerificationGate &&
+            result.Evidence is { Passed: false } &&
+            result.Verification.Status ==
+                UniversalOutcomeStatuses.NotAchieved &&
+            !result.Verification.GoalAchieved &&
+            result.Decision.Action ==
+                UniversalFallbackActions.ReplanGoal,
+            "Unified pipeline không replan khi coding verification gate fail.");
+    }
+
+    private static void CheckUnifiedVerificationPipelineKeepsComputerSemanticVerification()
+    {
+        IPersonalAiTool tool =
+            new AcceptanceSchemaTool(
+                "computer.acceptance.action",
+                requiredField: "goal");
+
+        var capabilityRegistry =
+            new ToolCapabilityRegistry(
+                new ToolRegistry(
+                    new[] { tool }));
+
+        var agentRegistry =
+            new ExecutionAgentRegistry(
+                new IExecutionAgent[]
+                {
+                    new AcceptanceExecutionAgent(
+                        "execution.computer.acceptance",
+                        ExecutionAgentChannels.Computer)
+                });
+
+        var pipeline =
+            new UniversalVerificationPipeline(
+                new UniversalVerificationEvidenceRouter(
+                    capabilityRegistry),
+                new UniversalVerificationEvidenceAdapters(),
+                new UniversalOutcomeVerificationService(
+                    capabilityRegistry,
+                    agentRegistry),
+                new UniversalFallbackPolicy());
+
+        var execution = BuildAcceptanceToolExecution(
+            ToolExecutionStatuses.Succeeded,
+            success: true,
+            error: null) with
+        {
+            ToolName = "computer.acceptance.action"
+        };
+
+        var result = pipeline.Verify(
+            new UniversalVerificationPipelineRequest(
+                "Mở đúng cửa sổ mục tiêu",
+                BuildAcceptanceRoute(
+                    ExecutionAgentChannels.Computer),
+                execution,
+                Desktop: new DesktopVerificationRoutingResult(
+                    DesktopVerificationRoute.GeminiRequired,
+                    0,
+                    "Cần hiểu semantic màn hình.")));
+
+        Require(
+            result.EvidenceRoute.Strategy ==
+                UniversalVerificationStrategies.ComputerOperatorVerifier &&
+            result.Evidence is null &&
+            result.Verification.Status ==
+                UniversalOutcomeStatuses.NeedsVerification &&
+            result.Decision.Action ==
+                UniversalFallbackActions.VerifyOutcome,
+            "Unified pipeline đã complete dù desktop verifier yêu cầu semantic verification.");
     }
 
     private static void CheckExecutionPauseResumeStop()

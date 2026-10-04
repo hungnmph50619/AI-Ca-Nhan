@@ -373,6 +373,21 @@ public sealed class ComputerOperatorAcceptanceService
 
         RunCheck(
             checks,
+            "verification evidence router ưu tiên verifier riêng của tool",
+            CheckVerificationEvidenceRouterPrefersToolVerifier);
+
+        RunCheck(
+            checks,
+            "verification evidence router dùng browser readback trước semantic AI",
+            CheckVerificationEvidenceRouterUsesBrowserReadback);
+
+        RunCheck(
+            checks,
+            "verification evidence router dùng observe verify cho computer",
+            CheckVerificationEvidenceRouterUsesComputerVerifier);
+
+        RunCheck(
+            checks,
             "pause resume stop giữ đúng trạng thái và cancellation",
             CheckExecutionPauseResumeStop);
 
@@ -2927,6 +2942,115 @@ public sealed class ComputerOperatorAcceptanceService
             "Outcome pass đủ mạnh vẫn không complete.");
     }
 
+    private static void CheckVerificationEvidenceRouterPrefersToolVerifier()
+    {
+        IPersonalAiTool tool =
+            new AcceptanceSchemaTool(
+                "browser.acceptance.verified",
+                requiredField: "query",
+                supportsVerification: true);
+
+        var router =
+            new UniversalVerificationEvidenceRouter(
+                new ToolCapabilityRegistry(
+                    new ToolRegistry(
+                        new[] { tool })));
+
+        var execution = BuildAcceptanceToolExecution(
+            ToolExecutionStatuses.Succeeded,
+            success: true,
+            error: null) with
+        {
+            ToolName = "browser.acceptance.verified"
+        };
+
+        var result = router.Route(
+            new UniversalVerificationEvidenceRouteRequest(
+                BuildAcceptanceRoute(
+                    ExecutionAgentChannels.Browser),
+                execution));
+
+        Require(
+            result.Strategy ==
+                UniversalVerificationStrategies.LocalToolVerifier &&
+            result.CanVerifyAutomatically &&
+            !result.RequiresExternalAi &&
+            !result.RequiresReadback,
+            $"Evidence Router không ưu tiên tool verifier: {result.Reason}");
+    }
+
+    private static void CheckVerificationEvidenceRouterUsesBrowserReadback()
+    {
+        IPersonalAiTool tool =
+            new AcceptanceSchemaTool(
+                "browser.acceptance.read",
+                requiredField: "query");
+
+        var router =
+            new UniversalVerificationEvidenceRouter(
+                new ToolCapabilityRegistry(
+                    new ToolRegistry(
+                        new[] { tool })));
+
+        var execution = BuildAcceptanceToolExecution(
+            ToolExecutionStatuses.Succeeded,
+            success: true,
+            error: null) with
+        {
+            ToolName = "browser.acceptance.read"
+        };
+
+        var result = router.Route(
+            new UniversalVerificationEvidenceRouteRequest(
+                BuildAcceptanceRoute(
+                    ExecutionAgentChannels.Browser),
+                execution));
+
+        Require(
+            result.Strategy ==
+                UniversalVerificationStrategies.BrowserReadback &&
+            result.CanVerifyAutomatically &&
+            !result.RequiresExternalAi &&
+            result.RequiresReadback,
+            $"Evidence Router không chọn browser readback: {result.Reason}");
+    }
+
+    private static void CheckVerificationEvidenceRouterUsesComputerVerifier()
+    {
+        IPersonalAiTool tool =
+            new AcceptanceSchemaTool(
+                "computer.acceptance.action",
+                requiredField: "goal");
+
+        var router =
+            new UniversalVerificationEvidenceRouter(
+                new ToolCapabilityRegistry(
+                    new ToolRegistry(
+                        new[] { tool })));
+
+        var execution = BuildAcceptanceToolExecution(
+            ToolExecutionStatuses.Succeeded,
+            success: true,
+            error: null) with
+        {
+            ToolName = "computer.acceptance.action"
+        };
+
+        var result = router.Route(
+            new UniversalVerificationEvidenceRouteRequest(
+                BuildAcceptanceRoute(
+                    ExecutionAgentChannels.Computer),
+                execution));
+
+        Require(
+            result.Strategy ==
+                UniversalVerificationStrategies.ComputerOperatorVerifier &&
+            result.CanVerifyAutomatically &&
+            result.RequiresExternalAi &&
+            result.RequiresReadback,
+            $"Evidence Router không chọn Computer Operator verifier: {result.Reason}");
+    }
+
     private static void CheckExecutionPauseResumeStop()
     {
         using var execution = new ComputerOperatorExecutionControl();
@@ -3411,7 +3535,8 @@ public sealed class ComputerOperatorAcceptanceService
 
         public AcceptanceSchemaTool(
             string name,
-            string requiredField)
+            string requiredField,
+            bool supportsVerification = false)
         {
             var schemaText =
                 "{\"type\":\"object\",\"properties\":{\"" +
@@ -3432,7 +3557,8 @@ public sealed class ComputerOperatorAcceptanceService
                 1000,
                 schema.RootElement.Clone(),
                 LocalOnly: true,
-                RequiresConfirmation: false);
+                RequiresConfirmation: false,
+                SupportsVerification: supportsVerification);
         }
 
         public Task<System.Text.Json.JsonElement> ExecuteAsync(

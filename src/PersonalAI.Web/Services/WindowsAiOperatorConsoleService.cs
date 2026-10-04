@@ -11,16 +11,21 @@ public sealed class WindowsAiOperatorConsoleService
     private readonly ComputerOperatorExecutionControl execution;
     private readonly ComputerControlGate control;
     private readonly ILogger<WindowsAiOperatorConsoleService> logger;
-    private const int ConsoleWidth = 620;
-    private const int ConsoleHeight = 470;
+    private const int ConsoleWidth = 680;
+    private const int ConsoleHeight = 560;
     private const int Margin = 18;
     private const int ButtonHeight = 30;
-    private const int ButtonWidth = 128;
+    private const int ButtonWidth = 116;
     private const int Gap = 8;
 
     private const uint WsPopup = 0x80000000;
     private const uint WsVisible = 0x10000000;
     private const uint WsChild = 0x40000000;
+    private const uint WsVScroll = 0x00200000;
+    private const uint EsMultiline = 0x0004;
+    private const uint EsAutoVScroll = 0x0040;
+    private const uint EsReadOnly = 0x0800;
+    private const uint EsNoHideSel = 0x0100;
     private const uint SsLeft = 0x00000000;
     private const uint BsPushButton = 0x00000000;
     private const uint WsExTopmost = 0x00000008;
@@ -36,6 +41,9 @@ public sealed class WindowsAiOperatorConsoleService
     private const uint WmSetFont = 0x0030;
     private const uint WmCommand = 0x0111;
     private const uint WmCtlColorStatic = 0x0138;
+    private const uint WmCtlColorEdit = 0x0133;
+    private const uint EmSetSel = 0x00B1;
+    private const uint EmScrollCaret = 0x00B7;
     private const uint WmClose = 0x0010;
     private const uint WmDestroy = 0x0002;
     private const int DefaultGuiFont = 17;
@@ -44,6 +52,7 @@ public sealed class WindowsAiOperatorConsoleService
     private const int IdResume = 4102;
     private const int IdStop = 4103;
     private const int IdClose = 4104;
+    private const int IdTail = 4105;
 
     private readonly object _sync = new();
     private readonly WindowProcedure _windowProcedure;
@@ -55,6 +64,7 @@ public sealed class WindowsAiOperatorConsoleService
     private IntPtr _resumeButton;
     private IntPtr _stopButton;
     private IntPtr _closeButton;
+    private IntPtr _tailButton;
     private IntPtr _blackBrush;
     private string _lastText = string.Empty;
     private string? _registeredClass;
@@ -66,6 +76,7 @@ public sealed class WindowsAiOperatorConsoleService
     private long _lastLoopUtcTicks;
     private long _lastTaskStartedAtUtcTicks;
     private volatile bool _userHidden;
+    private volatile bool _followTail = true;
 
     public object GetDiagnosticStatus()
     {
@@ -257,9 +268,9 @@ public sealed class WindowsAiOperatorConsoleService
             var font = GetStockObject(DefaultGuiFont);
             _text = CreateWindowEx(
                 0,
-                "STATIC",
+                "EDIT",
                 "AI Operator Console đang chờ tác vụ…",
-                WsChild | WsVisible | SsLeft,
+                WsChild | WsVisible | WsVScroll | EsMultiline | EsAutoVScroll | EsReadOnly | EsNoHideSel,
                 14,
                 54,
                 ConsoleWidth - 28,
@@ -287,14 +298,20 @@ public sealed class WindowsAiOperatorConsoleService
                 14,
                 IdStop,
                 instance);
+            _tailButton = CreateButton(
+                "VỀ CUỐI ↓",
+                14 + (ButtonWidth + Gap) * 3,
+                14,
+                IdTail,
+                instance);
             _closeButton = CreateButton(
                 "ĐÓNG",
-                14 + (ButtonWidth + Gap) * 3,
+                14 + (ButtonWidth + Gap) * 4,
                 14,
                 IdClose,
                 instance);
 
-            foreach (var handle in new[] { _text, _pauseButton, _resumeButton, _stopButton, _closeButton })
+            foreach (var handle in new[] { _text, _pauseButton, _resumeButton, _stopButton, _tailButton, _closeButton })
             {
                 if (handle != IntPtr.Zero && font != IntPtr.Zero)
                     _ = SendMessage(handle, WmSetFont, font, new IntPtr(1));
@@ -365,6 +382,9 @@ public sealed class WindowsAiOperatorConsoleService
                     {
                         SetWindowText(_text, text);
                         _lastText = text;
+
+                        if (_followTail)
+                            ScrollLogToEnd();
                     }
 
                     UpdateButtons(operatorSnapshot, leagueSnapshot, useOperator);
@@ -445,6 +465,9 @@ public sealed class WindowsAiOperatorConsoleService
             _stopButton,
             operatorRunning || leagueSnapshot.Active);
         _ = EnableWindow(
+            _tailButton,
+            true);
+        _ = EnableWindow(
             _closeButton,
             true);
     }
@@ -479,6 +502,11 @@ public sealed class WindowsAiOperatorConsoleService
                         "Người dùng đã dừng Computer Operator từ console nổi.");
                     return IntPtr.Zero;
 
+                case IdTail:
+                    _followTail = true;
+                    ScrollLogToEnd();
+                    return IntPtr.Zero;
+
                 case IdClose:
                     _userHidden = true;
                     ShowWindow(_window, SwHide);
@@ -489,7 +517,7 @@ public sealed class WindowsAiOperatorConsoleService
             }
         }
 
-        if (message == WmCtlColorStatic)
+        if (message == WmCtlColorStatic || message == WmCtlColorEdit)
         {
             _ = SetTextColor(wParam, 0x00F4F4F4);
             _ = SetBkColor(wParam, 0x00111111);
@@ -562,7 +590,7 @@ Console chỉ ẩn khi bạn bấm ĐÓNG; task mới sẽ tự hiện lại.
         builder.AppendLine("Ctrl + Shift + F12 hoặc DỪNG NGAY để hủy; ĐÓNG chỉ ẩn console.");
         builder.AppendLine(new string('─', 66));
 
-        foreach (var entry in snapshot.Entries.TakeLast(11))
+        foreach (var entry in snapshot.Entries.TakeLast(160))
         {
             var time = entry.AtUtc.ToLocalTime().ToString("HH:mm:ss");
             var confidence = entry.Confidence is double value
@@ -613,6 +641,23 @@ Console chỉ ẩn khi bạn bấm ĐÓNG; task mới sẽ tự hiện lại.
         }
 
         return builder.ToString();
+    }
+
+    private void ScrollLogToEnd()
+    {
+        if (_text == IntPtr.Zero)
+            return;
+
+        _ = SendMessage(
+            _text,
+            EmSetSel,
+            new IntPtr(-1),
+            new IntPtr(-1));
+        _ = SendMessage(
+            _text,
+            EmScrollCaret,
+            IntPtr.Zero,
+            IntPtr.Zero);
     }
 
     private static void PositionConsole(IntPtr handle)

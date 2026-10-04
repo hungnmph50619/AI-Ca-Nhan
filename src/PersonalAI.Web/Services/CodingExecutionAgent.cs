@@ -10,6 +10,7 @@ public static class CodingExecutionOperations
     public const string DotnetRestore = "dotnet-restore";
     public const string DotnetBuild = "dotnet-build";
     public const string DotnetTest = "dotnet-test";
+    public const string Verify = "verify";
 }
 
 public sealed record CodingExecutionCommand(
@@ -41,7 +42,8 @@ public interface ICodingExecutionBackend
 }
 
 public sealed class SafeDevelopmentCodingBackend(
-    IDevelopmentAgentService development)
+    IDevelopmentAgentService development,
+    ICodingVerificationGate verificationGate)
     : ICodingExecutionBackend
 {
     public string Engine => "internal-development-safe";
@@ -122,10 +124,34 @@ public sealed class SafeDevelopmentCodingBackend(
                     "Debug");
                 break;
 
+            case CodingExecutionOperations.Verify:
+            {
+                var parts = argument
+                    .Split(
+                        '|',
+                        2,
+                        StringSplitOptions.TrimEntries);
+
+                if (parts.Length != 2 ||
+                    parts.Any(string.IsNullOrWhiteSpace))
+                {
+                    confidence = 0;
+                    reason =
+                        "verify yêu cầu cú pháp: verify: <targetPath> | <repositoryPath>.";
+                    return false;
+                }
+
+                command = new(
+                    CodingExecutionOperations.Verify,
+                    argument,
+                    "Release");
+                break;
+            }
+
             default:
                 confidence = 0.30;
                 reason =
-                    "Coding backend v3.9.0 chỉ nhận command explicit: inspect, git-status, git-diff, dotnet-restore, dotnet-build, dotnet-test.";
+                    "Coding backend chỉ nhận command explicit: inspect, git-status, git-diff, dotnet-restore, dotnet-build, dotnet-test, verify.";
                 return false;
         }
 
@@ -222,6 +248,39 @@ public sealed class SafeDevelopmentCodingBackend(
                     "dotnet test",
                     result,
                     changedExternalState: true);
+            }
+
+            case CodingExecutionOperations.Verify:
+            {
+                var parts = command.TargetPath
+                    .Split(
+                        '|',
+                        2,
+                        StringSplitOptions.TrimEntries);
+
+                if (parts.Length != 2)
+                {
+                    throw new AgentValidationException(
+                        "verify command payload không hợp lệ.");
+                }
+
+                var report = await verificationGate.VerifyAsync(
+                    new CodingVerificationRequest(
+                        parts[0],
+                        parts[1],
+                        command.Configuration),
+                    cancellationToken);
+
+                return new(
+                    report.Passed,
+                    report.Summary,
+                    report.Steps
+                        .Select(step =>
+                            $"{step.Name}: {(step.Passed ? "PASS" : "FAIL")} — {step.Detail}")
+                        .ToArray(),
+                    ChangedExternalState: false,
+                    Verified: report.Passed,
+                    Engine);
             }
 
             default:

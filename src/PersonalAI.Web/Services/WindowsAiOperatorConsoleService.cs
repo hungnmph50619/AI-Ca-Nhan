@@ -44,6 +44,9 @@ public sealed class WindowsAiOperatorConsoleService
     private const uint WmCtlColorEdit = 0x0133;
     private const uint EmSetSel = 0x00B1;
     private const uint EmScrollCaret = 0x00B7;
+    private const uint EmLineScroll = 0x00B6;
+    private const uint EmGetFirstVisibleLine = 0x00CE;
+    private const int EnVScroll = 0x0602;
     private const uint WmClose = 0x0010;
     private const uint WmDestroy = 0x0002;
     private const int DefaultGuiFont = 17;
@@ -53,6 +56,7 @@ public sealed class WindowsAiOperatorConsoleService
     private const int IdStop = 4103;
     private const int IdClose = 4104;
     private const int IdTail = 4105;
+    private const int IdLog = 4106;
 
     private readonly object _sync = new();
     private readonly WindowProcedure _windowProcedure;
@@ -77,6 +81,7 @@ public sealed class WindowsAiOperatorConsoleService
     private long _lastTaskStartedAtUtcTicks;
     private volatile bool _userHidden;
     private volatile bool _followTail = true;
+    private volatile bool _programmaticLogScroll;
 
     public object GetDiagnosticStatus()
     {
@@ -276,7 +281,7 @@ public sealed class WindowsAiOperatorConsoleService
                 ConsoleWidth - 28,
                 ConsoleHeight - 68,
                 _window,
-                IntPtr.Zero,
+                new IntPtr(IdLog),
                 instance,
                 IntPtr.Zero);
 
@@ -380,11 +385,37 @@ public sealed class WindowsAiOperatorConsoleService
 
                     if (!string.Equals(text, _lastText, StringComparison.Ordinal))
                     {
+                        var firstVisibleLine = !_followTail && _text != IntPtr.Zero
+                            ? SendMessage(
+                                _text,
+                                EmGetFirstVisibleLine,
+                                IntPtr.Zero,
+                                IntPtr.Zero).ToInt32()
+                            : 0;
+
                         SetWindowText(_text, text);
                         _lastText = text;
 
                         if (_followTail)
+                        {
                             ScrollLogToEnd();
+                        }
+                        else if (firstVisibleLine > 0)
+                        {
+                            _programmaticLogScroll = true;
+                            try
+                            {
+                                _ = SendMessage(
+                                    _text,
+                                    EmLineScroll,
+                                    IntPtr.Zero,
+                                    new IntPtr(firstVisibleLine));
+                            }
+                            finally
+                            {
+                                _programmaticLogScroll = false;
+                            }
+                        }
                     }
 
                     UpdateButtons(operatorSnapshot, leagueSnapshot, useOperator);
@@ -480,7 +511,18 @@ public sealed class WindowsAiOperatorConsoleService
     {
         if (message == WmCommand)
         {
-            var id = unchecked((int)(wParam.ToInt64() & 0xFFFF));
+            var rawCommand = wParam.ToInt64();
+            var id = unchecked((int)(rawCommand & 0xFFFF));
+            var notification = unchecked((int)((rawCommand >> 16) & 0xFFFF));
+
+            if (id == IdLog &&
+                notification == EnVScroll &&
+                !_programmaticLogScroll)
+            {
+                _followTail = false;
+                return IntPtr.Zero;
+            }
+
             switch (id)
             {
                 case IdPause:
@@ -648,16 +690,24 @@ Console chỉ ẩn khi bạn bấm ĐÓNG; task mới sẽ tự hiện lại.
         if (_text == IntPtr.Zero)
             return;
 
-        _ = SendMessage(
-            _text,
-            EmSetSel,
-            new IntPtr(-1),
-            new IntPtr(-1));
-        _ = SendMessage(
-            _text,
-            EmScrollCaret,
-            IntPtr.Zero,
-            IntPtr.Zero);
+        _programmaticLogScroll = true;
+        try
+        {
+            _ = SendMessage(
+                _text,
+                EmSetSel,
+                new IntPtr(-1),
+                new IntPtr(-1));
+            _ = SendMessage(
+                _text,
+                EmScrollCaret,
+                IntPtr.Zero,
+                IntPtr.Zero);
+        }
+        finally
+        {
+            _programmaticLogScroll = false;
+        }
     }
 
     private static void PositionConsole(IntPtr handle)

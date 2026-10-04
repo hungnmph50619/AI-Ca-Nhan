@@ -25,6 +25,7 @@ public static class ComputerUseEndpoints
         services.AddSingleton<IComputerOperatorTaskService, ComputerOperatorTaskService>();
         services.AddSingleton<IExecutionAgent, ComputerOperatorExecutionAgent>();
         services.AddSingleton<IExecutionAgentRegistry, ExecutionAgentRegistry>();
+        services.AddSingleton<IMicrosoftAgentFrameworkAdapter, MicrosoftAgentFrameworkAdapter>();
         services.AddSingleton<IDesktopScreenshotService, WindowsDesktopScreenshotService>();
         services.AddSingleton<IDesktopFrameDifferenceService, DesktopFrameDifferenceService>();
         services.AddSingleton<IDesktopLocalFastObserver, DesktopLocalFastObserver>();
@@ -88,6 +89,10 @@ public static class ComputerUseEndpoints
                 ? Results.Ok(agent.Definition)
                 : Results.NotFound(
                     new ApiError("Không tìm thấy execution agent.")));
+
+        app.MapGet("/api/execution-agents/microsoft-agent-framework/status", (
+            IMicrosoftAgentFrameworkAdapter adapter) =>
+            Results.Ok(adapter.GetStatus()));
 
         app.MapGet("/api/computer/operator-acceptance", (
             HttpContext context,

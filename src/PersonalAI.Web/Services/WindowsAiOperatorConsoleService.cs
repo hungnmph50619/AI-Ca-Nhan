@@ -345,6 +345,12 @@ public sealed class WindowsAiOperatorConsoleService
                 var selectedStatus = useOperator
                     ? operatorSnapshot.Status
                     : leagueSnapshot.Status;
+
+                // Tác vụ đang chạy luôn bám dòng log mới nhất để người dùng
+                // thấy ngay hành động hiện tại. Chỉ cho phép giữ vị trí đọc cũ
+                // khi tác vụ đã tạm dừng hoặc kết thúc.
+                if (selectedActive)
+                    _followTail = true;
                 var selectedStartedAt = useOperator
                     ? operatorSnapshot.StartedAtUtc
                     : leagueSnapshot.StartedAtUtc;
@@ -520,7 +526,13 @@ public sealed class WindowsAiOperatorConsoleService
                 notification == EnVScroll &&
                 !_programmaticLogScroll)
             {
-                _followTail = false;
+                var operatorSnapshot = operatorProgress.Get();
+                var leagueSnapshot = leagueProgress.Get();
+                var activeNow = operatorSnapshot.Active || leagueSnapshot.Active;
+
+                // Khi đang chạy, bảng phải tiếp tục bám log mới nhất.
+                // Khi đã dừng/tạm dừng/kết thúc, người dùng được tự kéo để xem lại.
+                _followTail = activeNow;
                 return IntPtr.Zero;
             }
 

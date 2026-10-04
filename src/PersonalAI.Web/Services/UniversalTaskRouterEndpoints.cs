@@ -9,6 +9,7 @@ public static class UniversalTaskRouterEndpoints
     {
         services.AddScoped<IUniversalTaskRouter, UniversalTaskRouter>();
         services.AddScoped<IUniversalDirectToolPath, UniversalDirectToolPath>();
+        services.AddSingleton<IUniversalFallbackPolicy, UniversalFallbackPolicy>();
         return services;
     }
 
@@ -88,6 +89,14 @@ public static class UniversalTaskRouterEndpoints
                     statusCode: StatusCodes.Status504GatewayTimeout);
             }
         });
+
+        app.MapPost("/api/universal-router/evaluate-tool-outcome", (
+            UniversalFallbackEvaluateRequest request,
+            IUniversalFallbackPolicy fallbackPolicy) =>
+            Results.Ok(
+                fallbackPolicy.Evaluate(
+                    request.Route,
+                    request.Execution)));
 
         return app;
     }

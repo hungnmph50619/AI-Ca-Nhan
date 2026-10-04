@@ -203,6 +203,16 @@ public sealed class ComputerOperatorAcceptanceService
 
         RunCheck(
             checks,
+            "Microsoft Agent Framework adapter giữ approval cho side effect",
+            CheckMicrosoftAgentFrameworkApprovalBoundary);
+
+        RunCheck(
+            checks,
+            "Microsoft Agent Framework adapter báo đúng package và execution agents",
+            CheckMicrosoftAgentFrameworkAdapterStatus);
+
+        RunCheck(
+            checks,
             "pause resume stop giữ đúng trạng thái và cancellation",
             CheckExecutionPauseResumeStop);
 
@@ -1562,6 +1572,45 @@ public sealed class ComputerOperatorAcceptanceService
             result.Status == AgentExecutionStatuses.Succeeded &&
             result.Verified,
             "Execution agent không bọc đúng Computer Operator task result.");
+    }
+
+    private static void CheckMicrosoftAgentFrameworkApprovalBoundary()
+    {
+        IExecutionAgent executionAgent =
+            new ComputerOperatorExecutionAgent(
+                new AcceptanceOperatorTaskService());
+        var registry = new ExecutionAgentRegistry(
+            new[] { executionAgent });
+        var adapter = new MicrosoftAgentFrameworkAdapter(
+            registry);
+
+        var tool = adapter.CreateApprovalRequiredTool(
+            executionAgent);
+
+        Require(
+            tool is Microsoft.Agents.AI.ApprovalRequiredAIFunction,
+            "Execution agent side effect chưa được bọc ApprovalRequiredAIFunction.");
+    }
+
+    private static void CheckMicrosoftAgentFrameworkAdapterStatus()
+    {
+        IExecutionAgent executionAgent =
+            new ComputerOperatorExecutionAgent(
+                new AcceptanceOperatorTaskService());
+        var registry = new ExecutionAgentRegistry(
+            new[] { executionAgent });
+        var adapter = new MicrosoftAgentFrameworkAdapter(
+            registry);
+
+        var status = adapter.GetStatus();
+
+        Require(
+            status.Package == "Microsoft.Agents.AI" &&
+            status.ExecutionAgents == 1 &&
+            status.ApprovalRequiredForSideEffects &&
+            !status.DirectAutonomousExecutionEnabled &&
+            !string.IsNullOrWhiteSpace(status.Version),
+            "Microsoft Agent Framework adapter status không giữ đúng boundary an toàn.");
     }
 
     private static void CheckExecutionPauseResumeStop()

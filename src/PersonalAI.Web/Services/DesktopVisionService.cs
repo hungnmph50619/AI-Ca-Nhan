@@ -784,8 +784,16 @@ Các field không dùng để chuỗi rỗng hoặc [].
             throw new InvalidOperationException(
                 "Desktop Vision trả quyết định Computer Operator không hợp lệ.");
 
+        var normalizedSceneElements = NormalizeSceneGraphRelations(
+            decision.SceneElements ?? Array.Empty<DesktopSceneElement>());
+
+        decision = decision with
+        {
+            SceneElements = normalizedSceneElements
+        };
+
         ValidateSceneGraph(
-            decision.SceneElements ?? Array.Empty<DesktopSceneElement>(),
+            normalizedSceneElements,
             frame);
 
         var pointerActions = new HashSet<string>(

@@ -78,8 +78,8 @@ jobs:
               $failedChecks = @($acceptance.checks | Where-Object { $_.passed -ne $true } | ForEach-Object { "$($_.name): $($_.detail)" })
               throw "Computer Operator acceptance suite thất bại: $($failedChecks -join '; ')"
             }
-            if ($acceptance.totalCount -lt 26 -or $acceptance.passedCount -ne $acceptance.totalCount) {
-              throw "Computer Operator acceptance suite không chạy đủ 26 kiểm tra bắt buộc."
+            if ($acceptance.totalCount -lt 28 -or $acceptance.passedCount -ne $acceptance.totalCount) {
+              throw "Computer Operator acceptance suite không chạy đủ 28 kiểm tra bắt buộc."
             }
             Write-Host "Đạt Computer Operator acceptance suite: $($acceptance.passedCount)/$($acceptance.totalCount)."
 

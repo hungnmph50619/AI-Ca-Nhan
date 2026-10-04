@@ -17,6 +17,7 @@ public sealed record UniversalTaskRouteRequest(
 public sealed record UniversalTaskRouteCandidate(
     string Channel,
     double Confidence,
+    double UtilityScore,
     string Risk,
     int RelativeCost,
     int RelativeLatency,
@@ -50,10 +51,14 @@ public sealed class UniversalTaskRouter(
     : IUniversalTaskRouter
 {
     private const double MinimumSelectionConfidence = 0.66;
-    private const double MinimumWinningMargin = 0.10;
+    private const double MinimumWinningMargin = 0.06;
+    private const double CostPenaltyWeight = 0.025;
+    private const double LatencyPenaltyWeight = 0.020;
+    private const double MediumRiskPenalty = 0.015;
+    private const double HighRiskPenalty = 0.040;
 
     private static readonly Regex UrlRegex = new(
-        @"https?://[^s]+",
+        @"https?://[^\s]+",
         RegexOptions.IgnoreCase |
         RegexOptions.CultureInvariant |
         RegexOptions.Compiled);
@@ -157,6 +162,8 @@ public sealed class UniversalTaskRouter(
                 preferred)
         }
         .OrderByDescending(item =>
+            item.UtilityScore)
+        .ThenByDescending(item =>
             item.Confidence)
         .ThenBy(item =>
             item.RelativeCost)
@@ -186,8 +193,8 @@ public sealed class UniversalTaskRouter(
 
         var margin = runnerUp is null
             ? 1.0
-            : top.Confidence -
-              runnerUp.Confidence;
+            : top.UtilityScore -
+              runnerUp.UtilityScore;
 
         var selected =
             top.Confidence >= MinimumSelectionConfidence &&
@@ -201,8 +208,8 @@ public sealed class UniversalTaskRouter(
             selected,
             NeedsFurtherRouting: selected is null,
             selected is null
-                ? $"Router chưa đủ chắc: top={top.Channel}:{top.Confidence:0.00}; margin={margin:0.00}. Cần model/user chọn channel."
-                : $"Chọn {top.Channel}: confidence={top.Confidence:0.00}; margin={margin:0.00}; risk={top.Risk}; cost={top.RelativeCost}; latency={top.RelativeLatency}.");
+                ? $"Router chưa đủ chắc: top={top.Channel}; confidence={top.Confidence:0.00}; utility={top.UtilityScore:0.00}; margin={margin:0.00}. Cần model/user chọn channel."
+                : $"Chọn {top.Channel}: confidence={top.Confidence:0.00}; utility={top.UtilityScore:0.00}; margin={margin:0.00}; risk={top.Risk}; cost={top.RelativeCost}; latency={top.RelativeLatency}.");
     }
 
     public async Task<UniversalTaskRouteExecution> ExecuteAsync(
@@ -346,9 +353,21 @@ public sealed class UniversalTaskRouter(
         if (available == 0)
             reasons.Add("no-agent-available");
 
+        var utility = Math.Clamp(
+            confidence -
+            (cost * CostPenaltyWeight) -
+            (latency * LatencyPenaltyWeight) -
+            RiskPenalty(risk),
+            0,
+            0.99);
+
+        reasons.Add(
+            $"utility:{utility:0.00}");
+
         return new(
             channel,
             confidence,
+            utility,
             risk,
             cost,
             latency,
@@ -357,6 +376,15 @@ public sealed class UniversalTaskRouter(
                 ? "no-strong-signal"
                 : string.Join(",", reasons));
     }
+
+    private static double RiskPenalty(
+        string risk) =>
+        risk switch
+        {
+            UniversalRouteRisk.Medium => MediumRiskPenalty,
+            UniversalRouteRisk.High => HighRiskPenalty,
+            _ => 0
+        };
 
     private static void AddTerms(
         string goal,

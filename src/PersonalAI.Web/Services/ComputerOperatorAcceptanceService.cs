@@ -293,6 +293,21 @@ public sealed class ComputerOperatorAcceptanceService
 
         RunCheck(
             checks,
+            "universal router chọn browser khi có URL rõ ràng",
+            CheckUniversalRouterSelectsBrowserForUrl);
+
+        RunCheck(
+            checks,
+            "universal router chọn coding cho task code rõ ràng",
+            CheckUniversalRouterSelectsCodingForCodeTask);
+
+        RunCheck(
+            checks,
+            "universal router không tự đoán goal mơ hồ",
+            CheckUniversalRouterRejectsAmbiguousGoal);
+
+        RunCheck(
+            checks,
             "pause resume stop giữ đúng trạng thái và cancellation",
             CheckExecutionPauseResumeStop);
 
@@ -2140,6 +2155,97 @@ public sealed class ComputerOperatorAcceptanceService
             "Execution Gateway vẫn chạy side effect khi chưa ConfirmExecution.");
     }
 
+    private static void CheckUniversalRouterSelectsBrowserForUrl()
+    {
+        var registry = new ExecutionAgentRegistry(
+            new IExecutionAgent[]
+            {
+                new AcceptanceExecutionAgent(
+                    "execution.browser.acceptance",
+                    ExecutionAgentChannels.Browser),
+                new AcceptanceExecutionAgent(
+                    "execution.coding.acceptance",
+                    ExecutionAgentChannels.Coding),
+                new AcceptanceExecutionAgent(
+                    "execution.computer.acceptance",
+                    ExecutionAgentChannels.Computer)
+            });
+
+        var gateway = new ExecutionGateway(registry);
+        var router = new UniversalTaskRouter(
+            registry,
+            gateway);
+
+        var route = router.Preview(
+            new UniversalTaskRouteRequest(
+                "Mở https://example.com và đọc nội dung trang"));
+
+        Require(
+            route.SelectedChannel == ExecutionAgentChannels.Browser &&
+            !route.NeedsFurtherRouting,
+            $"Universal Router không chọn browser cho URL: {route.Reason}");
+    }
+
+    private static void CheckUniversalRouterSelectsCodingForCodeTask()
+    {
+        var registry = new ExecutionAgentRegistry(
+            new IExecutionAgent[]
+            {
+                new AcceptanceExecutionAgent(
+                    "execution.browser.acceptance",
+                    ExecutionAgentChannels.Browser),
+                new AcceptanceExecutionAgent(
+                    "execution.coding.acceptance",
+                    ExecutionAgentChannels.Coding),
+                new AcceptanceExecutionAgent(
+                    "execution.computer.acceptance",
+                    ExecutionAgentChannels.Computer)
+            });
+
+        var router = new UniversalTaskRouter(
+            registry,
+            new ExecutionGateway(registry));
+
+        var route = router.Preview(
+            new UniversalTaskRouteRequest(
+                "Sửa code trong repository, chạy dotnet build và test project"));
+
+        Require(
+            route.SelectedChannel == ExecutionAgentChannels.Coding &&
+            !route.NeedsFurtherRouting,
+            $"Universal Router không chọn coding cho code task: {route.Reason}");
+    }
+
+    private static void CheckUniversalRouterRejectsAmbiguousGoal()
+    {
+        var registry = new ExecutionAgentRegistry(
+            new IExecutionAgent[]
+            {
+                new AcceptanceExecutionAgent(
+                    "execution.browser.acceptance",
+                    ExecutionAgentChannels.Browser),
+                new AcceptanceExecutionAgent(
+                    "execution.coding.acceptance",
+                    ExecutionAgentChannels.Coding),
+                new AcceptanceExecutionAgent(
+                    "execution.computer.acceptance",
+                    ExecutionAgentChannels.Computer)
+            });
+
+        var router = new UniversalTaskRouter(
+            registry,
+            new ExecutionGateway(registry));
+
+        var route = router.Preview(
+            new UniversalTaskRouteRequest(
+                "Giúp tôi xử lý việc này"));
+
+        Require(
+            route.SelectedChannel is null &&
+            route.NeedsFurtherRouting,
+            "Universal Router vẫn tự đoán channel cho goal mơ hồ.");
+    }
+
     private static void CheckExecutionPauseResumeStop()
     {
         using var execution = new ComputerOperatorExecutionControl();
@@ -2441,6 +2547,65 @@ public sealed class ComputerOperatorAcceptanceService
                 dpi,
                 scale,
                 scale);
+    }
+
+    private sealed class AcceptanceExecutionAgent
+        : IExecutionAgent
+    {
+        public ExecutionAgentDefinition Definition { get; }
+
+        public AcceptanceExecutionAgent(
+            string id,
+            string channel)
+        {
+            Definition = new ExecutionAgentDefinition(
+                id,
+                id,
+                "Acceptance execution agent.",
+                ["acceptance"],
+                [channel],
+                HasSideEffects: true,
+                RequiresExplicitInvocation: true,
+                SupportsVerification: true,
+                SupportsRecovery: false);
+        }
+
+        public bool CanHandle(
+            ExecutionAgentRequest request,
+            out double confidence,
+            out string reason)
+        {
+            var accepted = Definition.Channels.Any(channel =>
+                channel.Equals(
+                    request.Channel,
+                    StringComparison.OrdinalIgnoreCase));
+
+            confidence = accepted
+                ? 0.99
+                : 0;
+            reason = accepted
+                ? "acceptance"
+                : "wrong-channel";
+            return accepted;
+        }
+
+        public Task<ExecutionAgentResult> ExecuteAsync(
+            ExecutionAgentRequest request,
+            CancellationToken cancellationToken = default)
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+
+            return Task.FromResult(
+                new ExecutionAgentResult(
+                    Definition.Id,
+                    AgentExecutionStatuses.Succeeded,
+                    "acceptance",
+                    ["acceptance"],
+                    ChangedExternalState: true,
+                    Verified: true,
+                    Provider: "acceptance",
+                    Model: "acceptance"));
+        }
     }
 
     private sealed class AcceptanceDevelopmentAgentService

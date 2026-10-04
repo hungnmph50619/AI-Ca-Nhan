@@ -357,6 +357,7 @@ public sealed class WindowsAiOperatorConsoleService
                         ref _lastTaskStartedAtUtcTicks,
                         startedTicks);
                     _userHidden = false;
+                    _followTail = true;
                 }
 
                 var forceVisibleTicks = Interlocked.Read(
@@ -582,15 +583,15 @@ public sealed class WindowsAiOperatorConsoleService
 
     private static string BuildTestText() =>
         """
-● AI OPERATOR CONSOLE · TEST
+● BẢNG THEO DÕI TÁC NHÂN AI · KIỂM TRA
 
-Console native đang hoạt động.
+Bảng theo dõi gốc của Windows đang hoạt động.
 Nếu bạn nhìn thấy bảng này thì lớp hiển thị Win32 đã hoạt động bình thường.
 
 [TẠM DỪNG] [TIẾP TỤC] [DỪNG NGAY] [ĐÓNG]
 
-Console chỉ ẩn khi bạn bấm ĐÓNG; task mới sẽ tự hiện lại.
-Ảnh nội bộ gửi Desktop Vision sẽ che vùng console.
+Bảng chỉ ẩn khi bạn bấm ĐÓNG; tác vụ mới sẽ tự hiện lại.
+Ảnh nội bộ gửi cho thị giác máy tính sẽ che vùng bảng theo dõi.
 """;
 
     private static string BuildOperatorText(
@@ -600,16 +601,16 @@ Console chỉ ẩn khi bạn bấm ĐÓNG; task mới sẽ tự hiện lại.
 
         var heading = snapshot.Status switch
         {
-            "paused" => "Ⅱ AI OPERATOR ĐANG TẠM DỪNG",
-            "completed" => "✓ AI OPERATOR HOÀN TẤT",
-            "blocked" => "⚠ AI OPERATOR BỊ CHẶN",
-            "stopped" => "■ AI OPERATOR ĐÃ DỪNG",
-            _ => "● AI OPERATOR ĐANG LÀM"
+            "paused" => "Ⅱ TÁC NHÂN AI ĐANG TẠM DỪNG",
+            "completed" => "✓ TÁC NHÂN AI ĐÃ HOÀN TẤT",
+            "blocked" => "⚠ TÁC NHÂN AI BỊ CHẶN",
+            "stopped" => "■ TÁC NHÂN AI ĐÃ DỪNG",
+            _ => "● TÁC NHÂN AI ĐANG THỰC HIỆN"
         };
 
         builder.AppendLine(heading);
         builder.AppendLine(
-            $"Giai đoạn: {snapshot.CurrentStage.ToUpperInvariant()}   Quan sát: {snapshot.ObservationCount}   Hành động: {snapshot.ActionCount}");
+            $"Giai đoạn: {TranslateStage(snapshot.CurrentStage)}   Quan sát: {snapshot.ObservationCount}   Hành động: {snapshot.ActionCount}");
 
         if (snapshot.StartedAtUtc is DateTimeOffset started)
         {
@@ -620,16 +621,16 @@ Console chỉ ẩn khi bạn bấm ĐÓNG; task mới sẽ tự hiện lại.
             var lastUpdateAgo = DateTimeOffset.UtcNow - snapshot.UpdatedAtUtc;
 
             builder.AppendLine(
-                $"Thời gian task: {Math.Max(0, elapsed.TotalSeconds):0.0}s   Cập nhật cuối: {Math.Max(0, lastUpdateAgo.TotalSeconds):0.0}s trước");
+                $"Thời gian tác vụ: {Math.Max(0, elapsed.TotalSeconds):0.0}s   Cập nhật cuối: {Math.Max(0, lastUpdateAgo.TotalSeconds):0.0}s trước");
         }
 
         if (snapshot.Stale)
         {
             builder.AppendLine(
-                $"⚠ WATCHDOG: Không có bước mới trong {snapshot.StaleSeconds}s. Có thể đang chờ dịch vụ ngoài hoặc bị treo.");
+                $"⚠ GIÁM SÁT: Không có bước mới trong {snapshot.StaleSeconds}s. Có thể đang chờ dịch vụ ngoài hoặc bị treo.");
         }
 
-        builder.AppendLine("Ctrl + Shift + F12 hoặc DỪNG NGAY để hủy; ĐÓNG chỉ ẩn console.");
+        builder.AppendLine("Ctrl + Shift + F12 hoặc DỪNG NGAY để hủy; ĐÓNG chỉ ẩn bảng theo dõi.");
         builder.AppendLine(new string('─', 66));
 
         foreach (var entry in snapshot.Entries.TakeLast(160))
@@ -643,7 +644,7 @@ Console chỉ ẩn khi bạn bấm ĐÓNG; task mới sẽ tự hiện lại.
                 : string.Empty;
 
             builder.AppendLine(
-                $"{time}  {entry.Stage.ToUpperInvariant()}{confidence}{elapsed}");
+                $"{time}  {TranslateStage(entry.Stage)}{confidence}{elapsed}");
             builder.AppendLine($"  {Limit(entry.Message, 108)}");
         }
 
@@ -655,14 +656,14 @@ Console chỉ ẩn khi bạn bấm ĐÓNG; task mới sẽ tự hiện lại.
     {
         var builder = new StringBuilder();
         var heading = snapshot.Active
-            ? "● LEAGUE AGENT ĐANG LÀM"
+            ? "● TÁC NHÂN LEAGUE ĐANG THỰC HIỆN"
             : snapshot.Status == "completed"
-                ? "✓ LEAGUE AGENT HOÀN TẤT"
-                : "⚠ LEAGUE AGENT ĐÃ DỪNG";
+                ? "✓ TÁC NHÂN LEAGUE ĐÃ HOÀN TẤT"
+                : "⚠ TÁC NHÂN LEAGUE ĐÃ DỪNG";
 
         builder.AppendLine(heading);
         builder.AppendLine(
-            $"Quan sát: {snapshot.ObservationCount}   Click: {snapshot.ClickCount}");
+            $"Quan sát: {snapshot.ObservationCount}   Lần nhấp: {snapshot.ClickCount}");
         builder.AppendLine("Ctrl + Shift + F12 hoặc DỪNG NGAY để hủy; ĐÓNG chỉ ẩn console.");
         builder.AppendLine(new string('─', 66));
 
@@ -683,6 +684,45 @@ Console chỉ ẩn khi bạn bấm ĐÓNG; task mới sẽ tự hiện lại.
         }
 
         return builder.ToString();
+    }
+
+    private static string TranslateStage(string stage)
+    {
+        var normalized = (stage ?? string.Empty)
+            .Trim()
+            .ToLowerInvariant();
+
+        return normalized switch
+        {
+            "start" => "BẮT ĐẦU",
+            "stabilize" => "ỔN ĐỊNH MÀN HÌNH",
+            "observe" => "QUAN SÁT",
+            "analyze" => "PHÂN TÍCH",
+            "analyze-retry" => "PHÂN TÍCH LẠI",
+            "temporal-scene" => "ĐỐI CHIẾU THEO THỜI GIAN",
+            "subgoal" => "MỤC TIÊU CON",
+            "goal-progress" => "TIẾN ĐỘ MỤC TIÊU",
+            "state" => "TRẠNG THÁI",
+            "plan" => "KẾ HOẠCH",
+            "decide" => "QUYẾT ĐỊNH",
+            "act" => "CHUẨN BỊ HÀNH ĐỘNG",
+            "acted" => "ĐÃ HÀNH ĐỘNG",
+            "frame-baseline" => "ẢNH GỐC TRƯỚC HÀNH ĐỘNG",
+            "frame-difference" => "SO SÁNH ẢNH",
+            "verify" => "XÁC MINH",
+            "verify-result" => "KẾT QUẢ XÁC MINH",
+            "milestone" => "MỐC ĐÃ XÁC MINH",
+            "recovery" => "PHỤC HỒI",
+            "replan" => "LẬP LẠI PHƯƠNG ÁN",
+            "loop-detected" => "PHÁT HIỆN VÒNG LẶP",
+            "wait" => "CHỜ",
+            "blocked" => "BỊ CHẶN",
+            "completed" => "HOÀN TẤT",
+            "stopped" => "ĐÃ DỪNG",
+            _ => string.IsNullOrWhiteSpace(normalized)
+                ? "ĐANG XỬ LÝ"
+                : normalized.Replace('-', ' ').ToUpperInvariant()
+        };
     }
 
     private void ScrollLogToEnd()

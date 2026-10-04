@@ -1617,7 +1617,7 @@ jobs:
           and any(.tools[]; .name == "computer.window.maximize" and .requiresConfirmation == true)
           and any(.tools[]; .name == "computer.window.restore" and .requiresConfirmation == true)
           and any(.tools[]; .name == "computer.window.focus-by-query" and .requiresConfirmation == true)
-          and any(.tools[]; .name == "computer.operator.run-task" and .requiresConfirmation == true and .timeoutMs == 100000)
+          and any(.tools[]; .name == "computer.operator.run-task" and .requiresConfirmation == true and .timeoutMs == 180000)
           and any(.tools[]; .name == "computer.app.launch" and .requiredPermissions == ["WRITE","EXTERNAL","COMPUTER","SENSITIVE"] and .requiresConfirmation == true and .timeoutMs == 100000)
           and any(.tools[]; .name == "computer.vision.locate" and .requiresConfirmation == true and .timeoutMs == 30000)
           and any(.tools[]; .name == "computer.vision.click-target" and .requiresConfirmation == true and .timeoutMs == 45000)

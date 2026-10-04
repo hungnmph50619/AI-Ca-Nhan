@@ -238,8 +238,7 @@ public sealed class SafeDevelopmentCodingBackend(
         var evidence = new[]
         {
             $"exitCode={result.ExitCode}",
-            Limit(result.StdOut),
-            Limit(result.StdErr)
+            Limit(result.Output)
         }
         .Where(value =>
             !string.IsNullOrWhiteSpace(value))
@@ -262,8 +261,7 @@ public sealed class SafeDevelopmentCodingBackend(
         var evidence = new[]
         {
             $"exitCode={result.ExitCode}; timedOut={result.TimedOut}",
-            Limit(result.StdOut),
-            Limit(result.StdErr)
+            Limit(result.Output)
         }
         .Where(value =>
             !string.IsNullOrWhiteSpace(value))

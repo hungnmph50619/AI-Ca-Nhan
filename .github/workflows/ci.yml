@@ -3114,7 +3114,7 @@ jobs:
           grep -Fq 'changedRatio=' src/PersonalAI.Web/Services/DesktopVisionService.cs
           grep -Fq 'RequiresExpectedEffect' src/PersonalAI.Web/Services/ComputerOperatorTaskService.cs
           grep -Fq 'VERIFY-FAILED' src/PersonalAI.Web/Services/ComputerOperatorTaskService.cs
-          grep -Fq 'BƯỚC {index}: VERIFIED' src/PersonalAI.Web/Services/ComputerOperatorTaskService.cs
+          grep -Fq 'STEP {index}: VERIFIED' src/PersonalAI.Web/Services/ComputerOperatorTaskService.cs
           grep -Fq 'ComputerOperatorRecoverySession' src/PersonalAI.Web/Services/ComputerOperatorRecoverySession.cs
           grep -Fq 'ShouldAvoidRepeatedStrategy' src/PersonalAI.Web/Services/ComputerOperatorRecoverySession.cs
           grep -Fq 'BuildContext()' src/PersonalAI.Web/Services/ComputerOperatorRecoverySession.cs

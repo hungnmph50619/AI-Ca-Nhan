@@ -3163,7 +3163,15 @@ jobs:
           grep -Fq '"id": "pause-resume-stop"' tests/computer-use/v3.4.9-acceptance-scenarios.json
           grep -Fq '"id": "loop-recovery"' tests/computer-use/v3.4.9-acceptance-scenarios.json
           grep -Fq '"id": "multi-step-open-and-type"' tests/computer-use/v3.4.9-acceptance-scenarios.json
-          grep -Fq 'totalCount -lt 82' .github/workflows/desktop-control.yml
+          grep -Fq 'totalCount -lt 85' .github/workflows/desktop-control.yml
+          # v4.0.10 — Universal Execution Lifecycle Coordinator
+          grep -Fq 'IUniversalExecutionLifecycleCoordinator' src/PersonalAI.Web/Services/UniversalExecutionLifecycle.cs
+          grep -Fq 'UniversalExecutionLifecycleCoordinator' src/PersonalAI.Web/Services/UniversalExecutionLifecycle.cs
+          grep -Fq 'UniversalExecutionLifecycleActions.Complete' src/PersonalAI.Web/Services/UniversalExecutionLifecycle.cs
+          grep -Fq '/api/universal-router/execute-lifecycle' src/PersonalAI.Web/Services/UniversalTaskRouterEndpoints.cs
+          grep -Fq 'CheckExecutionLifecycleCompletesOnlyAfterVerification' src/PersonalAI.Web/Services/ComputerOperatorAcceptanceService.cs
+          grep -Fq 'CheckExecutionLifecycleBlocksMissingEvidence' src/PersonalAI.Web/Services/ComputerOperatorAcceptanceService.cs
+          grep -Fq 'CheckExecutionLifecycleStopsOnExecutionFailure' src/PersonalAI.Web/Services/ComputerOperatorAcceptanceService.cs
           # v4.0.9 — Verification Evidence Pipeline Integration
           grep -Fq 'IUniversalVerificationEvidenceAdapters? evidenceAdapters = null' src/PersonalAI.Web/Services/UniversalOutcomeVerification.cs
           grep -Fq 'evidenceAdapters.FromAgent' src/PersonalAI.Web/Services/UniversalOutcomeVerification.cs

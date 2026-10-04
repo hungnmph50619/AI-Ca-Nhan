@@ -9,6 +9,8 @@ public static class DevelopmentEndpoints
         this IServiceCollection services)
     {
         services.AddSingleton<IDevelopmentAgentService, DevelopmentAgentService>();
+        services.AddSingleton<ICodingExecutionBackend, SafeDevelopmentCodingBackend>();
+        services.AddSingleton<IExecutionAgent, CodingExecutionAgent>();
         services.AddSingleton<ILocalGitRepositoryService, LocalGitRepositoryService>();
         services.AddSingleton<IDevelopmentWorktreeService, DevelopmentWorktreeService>();
         services.AddSingleton<IDevelopmentRunWorktreeService, DevelopmentRunWorktreeService>();

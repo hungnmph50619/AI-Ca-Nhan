@@ -25,6 +25,7 @@ public static class ComputerUseEndpoints
         services.AddSingleton<IComputerOperatorTaskService, ComputerOperatorTaskService>();
         services.AddSingleton<IDesktopScreenshotService, WindowsDesktopScreenshotService>();
         services.AddSingleton<IDesktopFrameDifferenceService, DesktopFrameDifferenceService>();
+        services.AddSingleton<IComputerOperatorLocalVerificationService, ComputerOperatorLocalVerificationService>();
         services.AddSingleton<IComputerWindowVisibilityService, ComputerWindowVisibilityService>();
         services.AddSingleton<IDesktopTemporalSceneService, DesktopTemporalSceneService>();
         services.AddSingleton<IComputerOperatorActionExecutor, ComputerOperatorActionExecutor>();

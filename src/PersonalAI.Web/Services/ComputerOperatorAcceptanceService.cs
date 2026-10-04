@@ -111,6 +111,21 @@ public sealed class ComputerOperatorAcceptanceService
             "mở ứng dụng không giả định taskbar hay executable",
             CheckGenericAppLaunchDoesNotAssumeTaskbar);
 
+        RunCheck(
+            checks,
+            "local verifier xác minh foreground bằng metadata Windows",
+            CheckLocalVerifierForeground);
+
+        RunCheck(
+            checks,
+            "local verifier dùng frame-change làm bằng chứng tạm thời",
+            CheckLocalVerifierFrameChange);
+
+        RunCheck(
+            checks,
+            "local verifier fallback Gemini khi bằng chứng chưa đủ",
+            CheckLocalVerifierFallsBack);
+
         var passed = checks.Count(item => item.Passed);
 
         return new(
@@ -808,6 +823,155 @@ public sealed class ComputerOperatorAcceptanceService
             ExpectedEffect: "test",
             Confidence: 0.95,
             Reason: "test");
+
+    private static void CheckLocalVerifierForeground()
+    {
+        var verifier = new ComputerOperatorLocalVerificationService(
+            new AcceptanceComputerUseService());
+
+        var decision = BuildClickDecision(
+            ComputerCoordinateSpaces.ImagePixel,
+            boxLeft: 10,
+            boxTop: 10,
+            boxWidth: 20,
+            boxHeight: 20) with
+        {
+            Action = "focus-window",
+            Query = "Acceptance"
+        };
+
+        var frame = new DesktopScreenshotFrame(
+            Array.Empty<byte>(),
+            0,
+            0,
+            800,
+            600,
+            DateTimeOffset.UtcNow,
+            CaptureScope: "window",
+            WindowId: AcceptanceComputerUseService.WindowId,
+            WindowTitle: "Acceptance Window",
+            WindowWasForeground: true);
+
+        var result = verifier.Verify(
+            decision,
+            frame,
+            frame,
+            null);
+
+        Require(
+            result.Handled &&
+            result.Verified &&
+            result.SemanticVerified &&
+            result.EvidenceKind == "foreground-window",
+            "Local verifier không xác minh được foreground bằng metadata Windows.");
+    }
+
+    private static void CheckLocalVerifierFrameChange()
+    {
+        var verifier = new ComputerOperatorLocalVerificationService(
+            new AcceptanceComputerUseService());
+
+        var decision = BuildClickDecision(
+            ComputerCoordinateSpaces.ImagePixel,
+            boxLeft: 10,
+            boxTop: 10,
+            boxWidth: 20,
+            boxHeight: 20) with
+        {
+            Action = "type-text",
+            Text = "abc"
+        };
+
+        var before = new DesktopScreenshotFrame(
+            Array.Empty<byte>(),
+            0,
+            0,
+            800,
+            600,
+            DateTimeOffset.UtcNow,
+            CaptureScope: "window",
+            WindowId: AcceptanceComputerUseService.WindowId);
+
+        var after = before with
+        {
+            CapturedAtUtc = DateTimeOffset.UtcNow.AddMilliseconds(100)
+        };
+
+        var difference = new DesktopFrameDifference(
+            true,
+            0.01,
+            100,
+            10_000,
+            20,
+            20,
+            100,
+            30,
+            18,
+            "acceptance");
+
+        var result = verifier.Verify(
+            decision,
+            before,
+            after,
+            difference);
+
+        Require(
+            result.Handled &&
+            result.Verified &&
+            !result.SemanticVerified &&
+            result.EvidenceKind == "frame-difference",
+            "Frame-change phải chỉ được coi là bằng chứng local tạm thời, không phải xác minh ngữ nghĩa.");
+    }
+
+    private static void CheckLocalVerifierFallsBack()
+    {
+        var verifier = new ComputerOperatorLocalVerificationService(
+            new AcceptanceComputerUseService());
+
+        var decision = BuildClickDecision(
+            ComputerCoordinateSpaces.ImagePixel,
+            boxLeft: 10,
+            boxTop: 10,
+            boxWidth: 20,
+            boxHeight: 20) with
+        {
+            Action = "press-key",
+            Key = "ENTER"
+        };
+
+        var frame = new DesktopScreenshotFrame(
+            Array.Empty<byte>(),
+            0,
+            0,
+            800,
+            600,
+            DateTimeOffset.UtcNow,
+            CaptureScope: "window",
+            WindowId: AcceptanceComputerUseService.WindowId);
+
+        var noChange = new DesktopFrameDifference(
+            true,
+            0,
+            0,
+            10_000,
+            0,
+            0,
+            0,
+            0,
+            0,
+            "không đổi");
+
+        var result = verifier.Verify(
+            decision,
+            frame,
+            frame,
+            noChange);
+
+        Require(
+            !result.Handled &&
+            !result.Verified,
+            "Khi local không có bằng chứng đủ mạnh, phải fallback Gemini.");
+    }
 
     private static void Require(
         bool condition,

@@ -9,8 +9,12 @@ public static class DevelopmentEndpoints
         this IServiceCollection services)
     {
         services.AddSingleton<IDevelopmentAgentService, DevelopmentAgentService>();
-        services.AddSingleton<ICodingExecutionBackend, SafeDevelopmentCodingBackend>();
+        services.AddSingleton<SafeDevelopmentCodingBackend>();
+        services.AddSingleton<IOpenHandsAgentServerClient, OpenHandsAgentServerClient>();
+        services.AddSingleton<OpenHandsCodingExecutionBackend>();
+        services.AddSingleton<ICodingExecutionBackend, CompositeCodingExecutionBackend>();
         services.AddSingleton<IExecutionAgent, CodingExecutionAgent>();
+        services.AddHttpClient("openhands-agent-server");
         services.AddSingleton<ILocalGitRepositoryService, LocalGitRepositoryService>();
         services.AddSingleton<IDevelopmentWorktreeService, DevelopmentWorktreeService>();
         services.AddSingleton<IDevelopmentRunWorktreeService, DevelopmentRunWorktreeService>();
@@ -58,6 +62,13 @@ public static class DevelopmentEndpoints
         app.MapGet("/api/development/status", (
             IDevelopmentAgentService development) =>
             Results.Ok(development.GetStatus()));
+
+        app.MapGet("/api/development/coding/openhands/status", async (
+            IOpenHandsAgentServerClient openHands,
+            CancellationToken cancellationToken) =>
+            Results.Ok(
+                await openHands.GetStatusAsync(
+                    cancellationToken)));
 
         app.MapGet("/api/development/git/status", async (
             string? repositoryPath,

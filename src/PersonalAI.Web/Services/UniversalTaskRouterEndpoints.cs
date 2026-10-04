@@ -12,6 +12,7 @@ public static class UniversalTaskRouterEndpoints
         services.AddSingleton<IUniversalFallbackPolicy, UniversalFallbackPolicy>();
         services.AddSingleton<IUniversalOutcomeVerificationService, UniversalOutcomeVerificationService>();
         services.AddSingleton<IUniversalVerificationEvidenceRouter, UniversalVerificationEvidenceRouter>();
+        services.AddSingleton<IUniversalVerificationEvidenceAdapters, UniversalVerificationEvidenceAdapters>();
         return services;
     }
 

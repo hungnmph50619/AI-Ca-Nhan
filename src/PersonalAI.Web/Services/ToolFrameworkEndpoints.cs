@@ -37,6 +37,7 @@ public static class ToolFrameworkEndpoints
         services.AddSingleton<IPersonalAiTool, WorkspaceDeleteTool>();
         services.AddSingleton<IToolRegistry, ToolRegistry>();
         services.AddSingleton<IToolCapabilityRegistry, ToolCapabilityRegistry>();
+        services.AddSingleton<ICapabilityToolRouter, CapabilityToolRouter>();
         services.AddSingleton<IToolInputValidator, ToolInputValidator>();
         services.AddSingleton<IToolPolicy, ToolPolicy>();
         services.AddSingleton<IToolExecutionService, ToolExecutionService>();
@@ -74,6 +75,22 @@ public static class ToolFrameworkEndpoints
                 count = tools.Count,
                 tools
             });
+        });
+
+        app.MapPost("/api/tool-capabilities/route", (
+            CapabilityToolRouteRequest request,
+            ICapabilityToolRouter router) =>
+        {
+            try
+            {
+                return Results.Ok(
+                    router.Route(request));
+            }
+            catch (AgentValidationException exception)
+            {
+                return Results.BadRequest(
+                    new ApiError(exception.Message));
+            }
         });
 
         app.MapGet("/api/tools/activity", (int? limit, IToolActivityStore activityStore) =>

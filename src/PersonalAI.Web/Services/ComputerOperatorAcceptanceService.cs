@@ -428,6 +428,21 @@ public sealed class ComputerOperatorAcceptanceService
 
         RunCheck(
             checks,
+            "post execution orchestrator complete khi browser readback xác minh goal",
+            CheckPostExecutionVerificationCompletesVerifiedBrowser);
+
+        RunCheck(
+            checks,
+            "post execution orchestrator replan khi browser readback fail",
+            CheckPostExecutionVerificationReplansFailedBrowser);
+
+        RunCheck(
+            checks,
+            "post execution orchestrator không complete coding khi thiếu verification context",
+            CheckPostExecutionVerificationRequiresCodingEvidence);
+
+        RunCheck(
+            checks,
             "pause resume stop giữ đúng trạng thái và cancellation",
             CheckExecutionPauseResumeStop);
 
@@ -3380,6 +3395,221 @@ public sealed class ComputerOperatorAcceptanceService
             "Desktop collector đã bịa evidence thay vì chuyển sang semantic verifier.");
     }
 
+    private static void CheckPostExecutionVerificationCompletesVerifiedBrowser()
+    {
+        IPersonalAiTool tool =
+            new AcceptanceSchemaTool(
+                "browser.acceptance.read",
+                requiredField: "query");
+
+        var capabilities =
+            new ToolCapabilityRegistry(
+                new ToolRegistry(
+                    new[] { tool }));
+
+        var agentRegistry =
+            new ExecutionAgentRegistry(
+                new IExecutionAgent[]
+                {
+                    new AcceptanceExecutionAgent(
+                        "execution.browser.acceptance",
+                        ExecutionAgentChannels.Browser)
+                });
+
+        var evidenceRouter =
+            new UniversalVerificationEvidenceRouter(
+                capabilities);
+        var evidenceAdapters =
+            new UniversalVerificationEvidenceAdapters();
+        var collection =
+            new UniversalVerificationEvidenceCollectionService(
+                evidenceRouter,
+                evidenceAdapters,
+                new AcceptanceBrowserAgentService(
+                    statusCode: 200,
+                    title: "Example"),
+                new AcceptanceCodingVerificationGate());
+        var verifier =
+            new UniversalOutcomeVerificationService(
+                capabilities,
+                agentRegistry);
+
+        var service =
+            new UniversalPostExecutionVerificationService(
+                evidenceRouter,
+                collection,
+                verifier,
+                new UniversalFallbackPolicy());
+
+        var execution = BuildAcceptanceToolExecution(
+            ToolExecutionStatuses.Succeeded,
+            success: true,
+            error: null) with
+        {
+            ToolName = "browser.acceptance.read"
+        };
+
+        var result = service.VerifyAsync(
+                new UniversalPostExecutionVerificationRequest(
+                    "Đọc trang Example",
+                    BuildAcceptanceRoute(
+                        ExecutionAgentChannels.Browser),
+                    execution))
+            .GetAwaiter()
+            .GetResult();
+
+        Require(
+            result.Collection.Collected &&
+            result.Verification.Status ==
+                UniversalOutcomeStatuses.Verified &&
+            result.Verification.GoalAchieved &&
+            result.Decision.Action ==
+                UniversalFallbackActions.Complete,
+            $"Post-execution browser success không complete đúng: {result.Decision.Reason}");
+    }
+
+    private static void CheckPostExecutionVerificationReplansFailedBrowser()
+    {
+        IPersonalAiTool tool =
+            new AcceptanceSchemaTool(
+                "browser.acceptance.read",
+                requiredField: "query");
+
+        var capabilities =
+            new ToolCapabilityRegistry(
+                new ToolRegistry(
+                    new[] { tool }));
+
+        var agentRegistry =
+            new ExecutionAgentRegistry(
+                new IExecutionAgent[]
+                {
+                    new AcceptanceExecutionAgent(
+                        "execution.browser.acceptance",
+                        ExecutionAgentChannels.Browser)
+                });
+
+        var evidenceRouter =
+            new UniversalVerificationEvidenceRouter(
+                capabilities);
+        var evidenceAdapters =
+            new UniversalVerificationEvidenceAdapters();
+        var collection =
+            new UniversalVerificationEvidenceCollectionService(
+                evidenceRouter,
+                evidenceAdapters,
+                new AcceptanceBrowserAgentService(
+                    statusCode: 500,
+                    title: "Server Error"),
+                new AcceptanceCodingVerificationGate());
+        var verifier =
+            new UniversalOutcomeVerificationService(
+                capabilities,
+                agentRegistry);
+
+        var service =
+            new UniversalPostExecutionVerificationService(
+                evidenceRouter,
+                collection,
+                verifier,
+                new UniversalFallbackPolicy());
+
+        var execution = BuildAcceptanceToolExecution(
+            ToolExecutionStatuses.Succeeded,
+            success: true,
+            error: null) with
+        {
+            ToolName = "browser.acceptance.read"
+        };
+
+        var result = service.VerifyAsync(
+                new UniversalPostExecutionVerificationRequest(
+                    "Đọc trang Example",
+                    BuildAcceptanceRoute(
+                        ExecutionAgentChannels.Browser),
+                    execution))
+            .GetAwaiter()
+            .GetResult();
+
+        Require(
+            result.Collection.Collected &&
+            result.Collection.Evidence is not null &&
+            !result.Collection.Evidence.Passed &&
+            result.Verification.Status ==
+                UniversalOutcomeStatuses.NotAchieved &&
+            result.Decision.Action ==
+                UniversalFallbackActions.ReplanGoal,
+            $"Post-execution browser failure không replan đúng: {result.Decision.Reason}");
+    }
+
+    private static void CheckPostExecutionVerificationRequiresCodingEvidence()
+    {
+        IPersonalAiTool tool =
+            new AcceptanceSchemaTool(
+                "development.acceptance.build",
+                requiredField: "targetPath");
+
+        var capabilities =
+            new ToolCapabilityRegistry(
+                new ToolRegistry(
+                    new[] { tool }));
+
+        var agentRegistry =
+            new ExecutionAgentRegistry(
+                new IExecutionAgent[]
+                {
+                    new AcceptanceExecutionAgent(
+                        "execution.coding.acceptance",
+                        ExecutionAgentChannels.Coding)
+                });
+
+        var evidenceRouter =
+            new UniversalVerificationEvidenceRouter(
+                capabilities);
+        var collection =
+            new UniversalVerificationEvidenceCollectionService(
+                evidenceRouter,
+                new UniversalVerificationEvidenceAdapters(),
+                new AcceptanceBrowserAgentService(),
+                new AcceptanceCodingVerificationGate());
+        var verifier =
+            new UniversalOutcomeVerificationService(
+                capabilities,
+                agentRegistry);
+
+        var service =
+            new UniversalPostExecutionVerificationService(
+                evidenceRouter,
+                collection,
+                verifier,
+                new UniversalFallbackPolicy());
+
+        var execution = BuildAcceptanceToolExecution(
+            ToolExecutionStatuses.Succeeded,
+            success: true,
+            error: null) with
+        {
+            ToolName = "development.acceptance.build"
+        };
+
+        var result = service.VerifyAsync(
+                new UniversalPostExecutionVerificationRequest(
+                    "Build project",
+                    BuildAcceptanceRoute(
+                        ExecutionAgentChannels.Coding),
+                    execution))
+            .GetAwaiter()
+            .GetResult();
+
+        Require(
+            !result.Collection.Collected &&
+            result.Verification.Status ==
+                UniversalOutcomeStatuses.NeedsVerification &&
+            result.Decision.Action ==
+                UniversalFallbackActions.VerifyOutcome,
+            "Post-execution coding thiếu context vẫn bị complete.");
+    }
+
     private static void CheckExecutionPauseResumeStop()
     {
         using var execution = new ComputerOperatorExecutionControl();
@@ -3686,7 +3916,18 @@ public sealed class ComputerOperatorAcceptanceService
     private sealed class AcceptanceBrowserAgentService
         : IBrowserAgentService
     {
+        private readonly int statusCode;
+        private readonly string title;
+
         public int ObserveCount { get; private set; }
+
+        public AcceptanceBrowserAgentService(
+            int statusCode = 200,
+            string title = "Example")
+        {
+            this.statusCode = statusCode;
+            this.title = title;
+        }
 
         public BrowserAgentStatusResponse GetStatus() =>
             new(
@@ -3710,8 +3951,8 @@ public sealed class ComputerOperatorAcceptanceService
                 true,
                 "https://example.com/",
                 "https://example.com",
-                "Example",
-                200,
+                title,
+                statusCode,
                 "text/html",
                 DateTimeOffset.UtcNow,
                 42,
@@ -3740,8 +3981,8 @@ public sealed class ComputerOperatorAcceptanceService
                 "acceptance",
                 "https://example.com/",
                 "https://example.com",
-                "Example",
-                200,
+                title,
+                statusCode,
                 "text/html",
                 DateTimeOffset.UtcNow,
                 "acceptance page content",

@@ -183,6 +183,16 @@ public sealed class ComputerOperatorAcceptanceService
 
         RunCheck(
             checks,
+            "anti-loop phát hiện cùng scene action outcome lặp lại",
+            CheckRepeatedOutcomeFingerprint);
+
+        RunCheck(
+            checks,
+            "anti-loop reset outcome fingerprint sau khi có progress",
+            CheckOutcomeFingerprintResetsAfterProgress);
+
+        RunCheck(
+            checks,
             "pause resume stop giữ đúng trạng thái và cancellation",
             CheckExecutionPauseResumeStop);
 
@@ -1436,6 +1446,48 @@ public sealed class ComputerOperatorAcceptanceService
             plan.Fallbacks.Contains(
                 ComputerOperatorRecoveryAction.Block),
             "Failure Recovery không escalate khi cùng lỗi lặp nhiều lần.");
+    }
+
+    private static void CheckRepeatedOutcomeFingerprint()
+    {
+        var loop = new ComputerOperatorLoopGuardSession();
+
+        _ = loop.ObserveOutcome(
+            "Cùng trạng thái",
+            "click-left:image-pixel:100,100",
+            "không tạo thay đổi");
+
+        var result = loop.ObserveOutcome(
+            "Cùng trạng thái",
+            "click-left:image-pixel:100,100",
+            "không tạo thay đổi");
+
+        Require(
+            result.Detected &&
+            result.RequiresStrategyChange &&
+            result.Kind == "repeated-outcome",
+            "Anti-loop không phát hiện scene + action + outcome lặp lại.");
+    }
+
+    private static void CheckOutcomeFingerprintResetsAfterProgress()
+    {
+        var loop = new ComputerOperatorLoopGuardSession();
+
+        _ = loop.ObserveOutcome(
+            "Cùng trạng thái",
+            "click-left:image-pixel:100,100",
+            "không tạo thay đổi");
+
+        loop.MarkProgress();
+
+        var result = loop.ObserveOutcome(
+            "Cùng trạng thái",
+            "click-left:image-pixel:100,100",
+            "không tạo thay đổi");
+
+        Require(
+            !result.Detected,
+            "Anti-loop không reset outcome fingerprint sau progress.");
     }
 
     private static void CheckExecutionPauseResumeStop()

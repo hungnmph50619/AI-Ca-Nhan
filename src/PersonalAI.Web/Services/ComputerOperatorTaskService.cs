@@ -297,6 +297,10 @@ public sealed class ComputerOperatorTaskService(
                             "replan",
                             decision.Confidence);
 
+                        _ = actionState.MoveTo(
+                            ComputerOperatorActionState.Replan,
+                            "Loop guard yêu cầu đổi chiến lược.");
+
                         await Task.Delay(250, linked.Token);
                         continue;
                     }
@@ -354,6 +358,10 @@ public sealed class ComputerOperatorTaskService(
                             "replan",
                             decision.Confidence);
 
+                        _ = actionState.MoveTo(
+                            ComputerOperatorActionState.Replan,
+                            "Blocked tạm thời; cần quan sát và thử chiến lược khác.");
+
                         await Task.Delay(350, linked.Token);
                         continue;
                     }
@@ -387,6 +395,11 @@ public sealed class ComputerOperatorTaskService(
                         $"Vision yêu cầu chờ rồi quan sát lại: {decision.Reason}",
                         "wait",
                         decision.Confidence);
+
+                    _ = actionState.MoveTo(
+                        ComputerOperatorActionState.Replan,
+                        "Chờ UI ổn định rồi quan sát lại.");
+
                     await Task.Delay(900, linked.Token);
                     continue;
                 }
@@ -414,12 +427,20 @@ public sealed class ComputerOperatorTaskService(
 
                     if (lowConfidenceCount >= 3)
                     {
+                        _ = actionState.MoveTo(
+                            ComputerOperatorActionState.Blocked,
+                            "Vision không đủ chắc chắn sau 3 lần quan sát.");
+
                         progress.Block(
                             "Vision không đủ chắc chắn sau 3 lần quan sát.");
                         return Finish(
                             false,
                             "Vision không đủ chắc chắn sau 3 lần quan sát.");
                     }
+
+                    _ = actionState.MoveTo(
+                        ComputerOperatorActionState.Replan,
+                        "Độ tin cậy thấp; cần quan sát lại.");
 
                     await Task.Delay(700, linked.Token);
                     continue;
@@ -508,6 +529,10 @@ public sealed class ComputerOperatorTaskService(
                         decision.Action,
                         decision.Confidence);
 
+                    _ = actionState.MoveTo(
+                        ComputerOperatorActionState.Replan,
+                        "Thiếu expected effect; không được execute.");
+
                     await Task.Delay(300, linked.Token);
                     continue;
                 }
@@ -527,6 +552,10 @@ public sealed class ComputerOperatorTaskService(
                         $"Không lặp lại chiến lược vừa thất bại: {avoidReason}",
                         decision.Action,
                         decision.Confidence);
+
+                    _ = actionState.MoveTo(
+                        ComputerOperatorActionState.Replan,
+                        "Recovery memory yêu cầu chiến lược khác.");
 
                     await Task.Delay(250, linked.Token);
                     continue;

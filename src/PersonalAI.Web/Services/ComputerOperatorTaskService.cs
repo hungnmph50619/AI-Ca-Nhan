@@ -45,6 +45,8 @@ public sealed class ComputerOperatorTaskService(
         new DesktopVerificationRouter();
     private static readonly IDesktopRoiVisionService RoiVision =
         new DesktopRoiVisionService();
+    private static readonly IAdaptiveGeminiCallPolicy GeminiCallPolicy =
+        new AdaptiveGeminiCallPolicy();
 
     private static readonly string[] SecretTerms =
     [
@@ -774,6 +776,35 @@ public sealed class ComputerOperatorTaskService(
                         false,
                         route.Confidence,
                         $"Xác minh cục bộ thất bại: {route.Reason}");
+                }
+
+                var adaptive = GeminiCallPolicy.EvaluateVerification(
+                    decision,
+                    fastObservation,
+                    frameDifference);
+
+                progress.Add(
+                    "gemini-call-policy",
+                    $"Adaptive Gemini: {adaptive.Decision} — {adaptive.Reason}",
+                    adaptive.Decision == AdaptiveGeminiDecision.CallGemini
+                        ? "gemini"
+                        : "local",
+                    adaptive.Confidence);
+
+                if (adaptive.Decision == AdaptiveGeminiDecision.SkipAndPass)
+                {
+                    return new(
+                        true,
+                        adaptive.Confidence,
+                        $"Không gọi Gemini: {adaptive.Reason}");
+                }
+
+                if (adaptive.Decision == AdaptiveGeminiDecision.SkipAndFail)
+                {
+                    return new(
+                        false,
+                        adaptive.Confidence,
+                        $"Không gọi Gemini: {adaptive.Reason}");
                 }
             }
 

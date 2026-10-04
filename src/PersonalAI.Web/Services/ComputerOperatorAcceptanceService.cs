@@ -33,6 +33,11 @@ public sealed class ComputerOperatorAcceptanceService
 
         RunCheck(
             checks,
+            "canonical interaction space quy về desktop ảo 0..1",
+            CheckCanonicalInteractionSpace);
+
+        RunCheck(
+            checks,
             "tọa độ chuẩn hóa trong cửa sổ",
             CheckWindowNormalizedCoordinates);
 
@@ -174,6 +179,53 @@ public sealed class ComputerOperatorAcceptanceService
         Require(
             point.MonitorDevice == "LEFT",
             "Không gắn đúng metadata màn hình trái.");
+    }
+
+    private static void CheckCanonicalInteractionSpace()
+    {
+        var transform = new ComputerCoordinateTransformService(
+            new AcceptanceComputerUseService(),
+            new AcceptanceDisplayTopologyService());
+
+        var frame = new DesktopScreenshotFrame(
+            Array.Empty<byte>(),
+            -1920,
+            0,
+            3840,
+            1080,
+            DateTimeOffset.UtcNow);
+
+        var canonical = transform.ToCanonicalPoint(
+            new(
+                ComputerCoordinateSpaces.ImagePixel,
+                100,
+                50,
+                0,
+                0,
+                string.Empty),
+            frame);
+
+        Require(
+            canonical.PhysicalX == -1820 &&
+            canonical.PhysicalY == 50,
+            $"Canonical làm thay đổi pixel vật lý: ({canonical.PhysicalX},{canonical.PhysicalY}).");
+
+        Require(
+            Math.Abs(canonical.X - (100.0 / 3839.0)) < 0.0001 &&
+            Math.Abs(canonical.Y - (50.0 / 1079.0)) < 0.0001,
+            $"Sai canonical desktop: ({canonical.X:0.000000},{canonical.Y:0.000000}).");
+
+        Require(
+            canonical.MonitorDevice == "LEFT" &&
+            Math.Abs(canonical.MonitorX - (100.0 / 1919.0)) < 0.0001,
+            $"Sai canonical monitor: {canonical.MonitorDevice} x={canonical.MonitorX:0.000000}.");
+
+        Require(
+            canonical.X is >= 0 and <= 1 &&
+            canonical.Y is >= 0 and <= 1 &&
+            canonical.MonitorX is >= 0 and <= 1 &&
+            canonical.MonitorY is >= 0 and <= 1,
+            "Canonical coordinate phải luôn nằm trong khoảng 0..1.");
     }
 
     private static void CheckWindowNormalizedCoordinates()

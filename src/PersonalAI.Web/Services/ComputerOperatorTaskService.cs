@@ -51,6 +51,8 @@ public sealed class ComputerOperatorTaskService(
         new DesktopDynamicTargetTracker();
     private static readonly IComputerOperatorConfidenceEngine ConfidenceEngine =
         new ComputerOperatorConfidenceEngine();
+    private static readonly IComputerOperatorFailureRecoveryEngine RecoveryEngine =
+        new ComputerOperatorFailureRecoveryEngine();
 
     private static readonly string[] SecretTerms =
     [
@@ -655,6 +657,26 @@ public sealed class ComputerOperatorTaskService(
                         $"State machine: {diagnoseState.State} -> {replanState.State}",
                         "replan");
 
+                    var recoveryPlan = RecoveryEngine.Plan(
+                        new ComputerOperatorFailureContext(
+                            ClassifyFailureKind(
+                                decision.Action,
+                                exception.Message,
+                                actionApplied: false,
+                                verificationFailed: false),
+                            decision.Action,
+                            exception.Message,
+                            RepeatedFailures: failures));
+
+                    progress.Add(
+                        "recovery-plan",
+                        $"Recovery Engine: {recoveryPlan.PrimaryAction}; fallback={string.Join(",", recoveryPlan.Fallbacks)}; retrySame={recoveryPlan.AllowSameStrategyRetry}. {recoveryPlan.Reason}",
+                        recoveryPlan.PrimaryAction.ToString().ToLowerInvariant(),
+                        decision.Confidence);
+
+                    taskHistory.Add(
+                        $"RECOVERY-PLAN: {recoveryPlan.PrimaryAction}; {recoveryPlan.Reason}");
+
                     progress.Add(
                         "recovery",
                         $"Hành động bị từ chối ({failures} lần với chiến lược này): {exception.Message}. AI sẽ quan sát lại và lập phương án khác.",
@@ -707,6 +729,26 @@ public sealed class ComputerOperatorTaskService(
                         "action-state",
                         $"State machine: {diagnoseState.State} -> {replanState.State}",
                         "replan");
+
+                    var recoveryPlan = RecoveryEngine.Plan(
+                        new ComputerOperatorFailureContext(
+                            ClassifyFailureKind(
+                                decision.Action,
+                                action.Detail,
+                                actionApplied: false,
+                                verificationFailed: false),
+                            decision.Action,
+                            action.Detail,
+                            RepeatedFailures: failures));
+
+                    progress.Add(
+                        "recovery-plan",
+                        $"Recovery Engine: {recoveryPlan.PrimaryAction}; fallback={string.Join(",", recoveryPlan.Fallbacks)}; retrySame={recoveryPlan.AllowSameStrategyRetry}. {recoveryPlan.Reason}",
+                        recoveryPlan.PrimaryAction.ToString().ToLowerInvariant(),
+                        decision.Confidence);
+
+                    taskHistory.Add(
+                        $"RECOVERY-PLAN: {recoveryPlan.PrimaryAction}; {recoveryPlan.Reason}");
 
                     progress.Add(
                         "recovery",
@@ -812,6 +854,26 @@ public sealed class ComputerOperatorTaskService(
                         "action-state",
                         $"State machine: {diagnoseState.State} -> {replanState.State}",
                         "replan");
+
+                    var recoveryPlan = RecoveryEngine.Plan(
+                        new ComputerOperatorFailureContext(
+                            ClassifyFailureKind(
+                                decision.Action,
+                                verification.Detail,
+                                actionApplied: true,
+                                verificationFailed: true),
+                            decision.Action,
+                            verification.Detail,
+                            RepeatedFailures: failures));
+
+                    progress.Add(
+                        "recovery-plan",
+                        $"Recovery Engine: {recoveryPlan.PrimaryAction}; fallback={string.Join(",", recoveryPlan.Fallbacks)}; retrySame={recoveryPlan.AllowSameStrategyRetry}. {recoveryPlan.Reason}",
+                        recoveryPlan.PrimaryAction.ToString().ToLowerInvariant(),
+                        verification.Confidence);
+
+                    taskHistory.Add(
+                        $"RECOVERY-PLAN: {recoveryPlan.PrimaryAction}; {recoveryPlan.Reason}");
 
                     progress.Add(
                         "recovery",
@@ -1181,6 +1243,66 @@ public sealed class ComputerOperatorTaskService(
         return insideActive
             ? activeAtPlanning
             : null;
+    }
+
+    private static string ClassifyFailureKind(
+        string action,
+        string detail,
+        bool actionApplied,
+        bool verificationFailed)
+    {
+        var normalizedAction = (action ?? string.Empty)
+            .Trim()
+            .ToLowerInvariant();
+        var normalizedDetail = (detail ?? string.Empty)
+            .Trim()
+            .ToLowerInvariant();
+
+        if (normalizedDetail.Contains("target") &&
+            (normalizedDetail.Contains("không còn") ||
+             normalizedDetail.Contains("not found") ||
+             normalizedDetail.Contains("biến mất")))
+            return ComputerOperatorFailureTaxonomy.TargetNotFound;
+
+        if (normalizedDetail.Contains("occlud") ||
+            normalizedDetail.Contains("bị che") ||
+            normalizedDetail.Contains("popup"))
+            return normalizedDetail.Contains("popup")
+                ? ComputerOperatorFailureTaxonomy.UnexpectedPopup
+                : ComputerOperatorFailureTaxonomy.TargetOccluded;
+
+        if (normalizedDetail.Contains("foreground") ||
+            normalizedDetail.Contains("focus"))
+            return ComputerOperatorFailureTaxonomy.WrongFocus;
+
+        if (normalizedDetail.Contains("window") &&
+            normalizedDetail.Contains("khác"))
+            return ComputerOperatorFailureTaxonomy.WrongWindow;
+
+        if (normalizedDetail.Contains("dpi") ||
+            normalizedDetail.Contains("monitor") ||
+            normalizedDetail.Contains("resolution"))
+            return ComputerOperatorFailureTaxonomy.ResolutionChanged;
+
+        if (normalizedAction == "scroll" &&
+            (!actionApplied || verificationFailed))
+            return ComputerOperatorFailureTaxonomy.ScrollNoEffect;
+
+        if ((normalizedAction == "type-text" ||
+             normalizedAction == "press-key" ||
+             normalizedAction == "press-hotkey") &&
+            (!actionApplied || verificationFailed))
+            return ComputerOperatorFailureTaxonomy.KeyboardRejected;
+
+        if (normalizedDetail.Contains("timeout") ||
+            normalizedDetail.Contains("loading") ||
+            normalizedDetail.Contains("đang tải"))
+            return ComputerOperatorFailureTaxonomy.LoadingTimeout;
+
+        if (!actionApplied || verificationFailed)
+            return ComputerOperatorFailureTaxonomy.ActionNoEffect;
+
+        return ComputerOperatorFailureTaxonomy.Unknown;
     }
 
     private static bool RequiresExpectedEffect(

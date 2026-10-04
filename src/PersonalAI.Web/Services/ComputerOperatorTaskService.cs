@@ -177,11 +177,11 @@ public sealed class ComputerOperatorTaskService(
 
                     progress.Add(
                         "temporal-scene",
-                        $"Scene theo thời gian: stable={temporalAnalysis.StableCount}; moved={temporalAnalysis.MovedCount}; appeared={temporalAnalysis.AppearedIds.Count}; disappeared={temporalAnalysis.DisappearedIds.Count}.",
+                        $"Đối chiếu cảnh theo thời gian: ổn định={temporalAnalysis.StableCount}; di chuyển={temporalAnalysis.MovedCount}; xuất hiện={temporalAnalysis.AppearedIds.Count}; biến mất={temporalAnalysis.DisappearedIds.Count}.",
                         observation: true);
 
                     taskHistory.Add(
-                        $"TEMPORAL-SCENE: {temporalSceneContext}");
+                        $"CẢNH-THEO-THỜI-GIAN: {temporalSceneContext}");
                 }
 
                 previousScene = currentScene
@@ -198,10 +198,10 @@ public sealed class ComputerOperatorTaskService(
                 {
                     currentSubgoal = decision.CurrentSubgoal.Trim();
                     taskHistory.Add(
-                        $"SUBGOAL: {currentSubgoal}");
+                        $"MỤC-TIÊU-CON: {currentSubgoal}");
                     progress.Add(
                         "subgoal",
-                        $"MỤC TIÊU CON: {currentSubgoal}",
+                        $"Mục tiêu con: {currentSubgoal}",
                         "plan",
                         decision.Confidence);
                 }
@@ -210,7 +210,7 @@ public sealed class ComputerOperatorTaskService(
 
                 progress.Add(
                     "goal-progress",
-                    $"TIẾN ĐỘ MỤC TIÊU: khoảng {latestGoalProgress * 100:0}%.",
+                    $"Tiến độ mục tiêu: khoảng {latestGoalProgress * 100:0}%.",
                     "plan",
                     decision.Confidence);
 
@@ -222,7 +222,7 @@ public sealed class ComputerOperatorTaskService(
                         continue;
 
                     taskHistory.Add(
-                        $"MILESTONE-OBSERVED: {normalizedMilestone}");
+                        $"MỐC-ĐÃ-QUAN-SÁT: {normalizedMilestone}");
                     progress.Add(
                         "milestone",
                         $"MỐC ĐÃ XÁC MINH: {normalizedMilestone}",
@@ -242,13 +242,13 @@ public sealed class ComputerOperatorTaskService(
                 progress.Add(
                     "state",
                     string.IsNullOrWhiteSpace(decision.State)
-                        ? "AI đã cập nhật trạng thái desktop."
-                        : $"STATE: {decision.State}");
+                        ? "AI đã cập nhật trạng thái màn hình."
+                        : $"Trạng thái: {decision.State}");
 
                 if (loopAssessment.Detected)
                 {
                     taskHistory.Add(
-                        $"LOOP-WARNING {loopAssessment.Kind}: {loopAssessment.Detail}");
+                        $"CẢNH-BÁO-VÒNG-LẶP {loopAssessment.Kind}: {loopAssessment.Detail}");
 
                     progress.Add(
                         "loop-detected",
@@ -259,7 +259,7 @@ public sealed class ComputerOperatorTaskService(
                     if (loopAssessment.RequiresStrategyChange)
                     {
                         taskHistory.Add(
-                            "LOOP-DIRECTIVE: BẮT BUỘC đổi chiến lược. Không lặp lại cùng action/target. Nếu không còn phương án an toàn hợp lý, trả blocked và giải thích.");
+                            "CHỈ DẪN THOÁT VÒNG LẶP: BẮT BUỘC đổi chiến lược. Không lặp lại cùng action/target. Nếu không còn phương án an toàn hợp lý, trả blocked và giải thích.");
 
                         progress.Add(
                             "replan",
@@ -276,20 +276,20 @@ public sealed class ComputerOperatorTaskService(
                     "plan",
                     string.IsNullOrWhiteSpace(decision.Plan)
                         ? "AI đang chọn bước tiếp theo từ trạng thái hiện tại."
-                        : $"PLAN: {decision.Plan}",
+                        : $"Kế hoạch: {decision.Plan}",
                     decision.Action,
                     decision.Confidence);
 
                 progress.Add(
                     "decide",
-                    $"DECIDE: {decision.Reason}",
+                    $"Quyết định: {decision.Reason}",
                     decision.Action,
                     decision.Confidence);
 
                 if (decision.Action == "complete")
                 {
                     taskHistory.Add(
-                        $"STEP {index}: COMPLETE — {decision.Reason}");
+                        $"BƯỚC {index}: COMPLETE — {decision.Reason}");
                     progress.Complete(
                         $"Vision xác nhận mục tiêu đã đạt: {decision.Reason}");
                     return Finish(
@@ -308,7 +308,7 @@ public sealed class ComputerOperatorTaskService(
                     if (blockedReplanCount < 3 && index < MaximumSteps)
                     {
                         taskHistory.Add(
-                            "BLOCKED-REPLAN-DIRECTIVE: Không coi blocked lần đầu là kết luận cuối. Hãy quan sát lại desktop hiện tại, kiểm tra các cửa sổ/scene mới và thử một chiến lược an toàn khác. Chỉ blocked lần nữa nếu thực sự không còn phương án hợp lý.");
+                            "CHỈ DẪN THỬ LẠI KHI BỊ CHẶN: Không coi blocked lần đầu là kết luận cuối. Hãy quan sát lại desktop hiện tại, kiểm tra các cửa sổ/scene mới và thử một chiến lược an toàn khác. Chỉ blocked lần nữa nếu thực sự không còn phương án hợp lý.");
 
                         progress.Add(
                             "replan",
@@ -484,7 +484,7 @@ public sealed class ComputerOperatorTaskService(
                     if (failures >= 3)
                     {
                         taskHistory.Add(
-                            "REPLAN-DIRECTIVE: chiến lược này đã bị loại bỏ. Phải chọn chiến lược khác; chỉ trả blocked nếu không còn lựa chọn an toàn hợp lý.");
+                            "CHỈ DẪN LẬP LẠI PHƯƠNG ÁN: chiến lược này đã bị loại bỏ. Phải chọn chiến lược khác; chỉ trả blocked nếu không còn lựa chọn an toàn hợp lý.");
                         progress.Add(
                             "replan",
                             "Chiến lược bị từ chối nhiều lần và đã được đánh dấu không dùng lại. AI phải đổi cách tiếp cận.",
@@ -600,10 +600,10 @@ public sealed class ComputerOperatorTaskService(
                     verifiedMilestones.Add(decision.ExpectedEffect.Trim()))
                 {
                     taskHistory.Add(
-                        $"MILESTONE-SYSTEM-VERIFIED: {decision.ExpectedEffect.Trim()}");
+                        $"MỐC-HỆ-THỐNG-ĐÃ-XÁC-MINH: {decision.ExpectedEffect.Trim()}");
                     progress.Add(
                         "milestone",
-                        $"MỐC HỆ THỐNG ĐÃ XÁC MINH: {decision.ExpectedEffect.Trim()}",
+                        $"Mốc hệ thống đã xác minh: {decision.ExpectedEffect.Trim()}",
                         "verified",
                         verification.Confidence);
                 }

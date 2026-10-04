@@ -34,6 +34,7 @@ public sealed class ComputerOperatorTaskService(
     IComputerSafeTargetingService targeting,
     IDesktopFrameDifferenceService frameDifferences,
     IDesktopTemporalSceneService temporalScenes,
+    IComputerOperatorActionExecutor actionExecutor,
     ILogger<ComputerOperatorTaskService> logger)
     : IComputerOperatorTaskService
 {
@@ -430,7 +431,7 @@ public sealed class ComputerOperatorTaskService(
                 try
                 {
                     await execution.WaitIfPausedAsync(linked.Token);
-                    action = ExecuteDecision(decision, frame);
+                    action = actionExecutor.Execute(decision, frame);
                 }
                 catch (ToolExecutionInputException exception)
                 {

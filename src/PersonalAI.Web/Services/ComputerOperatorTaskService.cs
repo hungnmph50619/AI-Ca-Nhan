@@ -89,6 +89,7 @@ public sealed class ComputerOperatorTaskService(
         var currentSubgoal = string.Empty;
         var latestGoalProgress = 0.0;
         var lowConfidenceCount = 0;
+        var blockedReplanCount = 0;
         IReadOnlyList<DesktopSceneElement> previousScene = Array.Empty<DesktopSceneElement>();
         var temporalSceneContext = string.Empty;
 
@@ -300,14 +301,35 @@ public sealed class ComputerOperatorTaskService(
 
                 if (decision.Action == "blocked")
                 {
+                    blockedReplanCount++;
                     taskHistory.Add(
-                        $"STEP {index}: BLOCKED — {decision.Reason}");
+                        $"STEP {index}: BLOCKED-CANDIDATE ({blockedReplanCount}/3) — {decision.Reason}");
+
+                    if (blockedReplanCount < 3 && index < MaximumSteps)
+                    {
+                        taskHistory.Add(
+                            "BLOCKED-REPLAN-DIRECTIVE: Không coi blocked lần đầu là kết luận cuối. Hãy quan sát lại desktop hiện tại, kiểm tra các cửa sổ/scene mới và thử một chiến lược an toàn khác. Chỉ blocked lần nữa nếu thực sự không còn phương án hợp lý.");
+
+                        progress.Add(
+                            "replan",
+                            $"Vision chưa tìm thấy bước an toàn ({blockedReplanCount}/3): {decision.Reason}. Sẽ chụp lại màn hình và thử chiến lược khác trước khi kết luận bị chặn.",
+                            "replan",
+                            decision.Confidence);
+
+                        await Task.Delay(350, linked.Token);
+                        continue;
+                    }
+
+                    taskHistory.Add(
+                        $"STEP {index}: BLOCKED-FINAL — {decision.Reason}");
                     progress.Block(
-                        $"Vision dừng an toàn sau khi xem trạng thái và lịch sử: {decision.Reason}");
+                        $"Vision đã quan sát/lập lại phương án nhiều lần nhưng vẫn không còn bước an toàn: {decision.Reason}");
                     return Finish(
                         false,
-                        $"Vision dừng an toàn: {decision.Reason}");
+                        $"Vision dừng an toàn sau nhiều lần thử lại: {decision.Reason}");
                 }
+
+                blockedReplanCount = 0;
 
                 if (decision.Action == "wait")
                 {

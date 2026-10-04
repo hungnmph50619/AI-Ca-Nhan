@@ -11,6 +11,10 @@ public static class UniversalFallbackActions
     public const string Stop = "stop";
 }
 
+public sealed record UniversalFallbackEvaluateRequest(
+    UniversalTaskRoutePreview Route,
+    ToolExecutionResponse Execution);
+
 public sealed record UniversalFallbackDecision(
     string Action,
     bool AllowAgentFallback,

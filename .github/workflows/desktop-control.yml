@@ -28,6 +28,7 @@ on:
       - 'src/PersonalAI.Web/Services/AdaptiveGeminiCallPolicy.cs'
       - 'src/PersonalAI.Web/Services/DesktopDynamicTargetTracker.cs'
       - 'src/PersonalAI.Web/Services/ComputerOperatorActionStateMachine.cs'
+      - 'src/PersonalAI.Web/Services/ComputerOperatorConfidenceEngine.cs'
       - 'src/PersonalAI.Web/Services/ComputerWindowVisibilityService.cs'
       - 'src/PersonalAI.Web/Services/DesktopTemporalSceneService.cs'
       - 'src/PersonalAI.Web/Services/DesktopVisionService.cs'
@@ -79,8 +80,8 @@ jobs:
               $failedChecks = @($acceptance.checks | Where-Object { $_.passed -ne $true } | ForEach-Object { "$($_.name): $($_.detail)" })
               throw "Computer Operator acceptance suite thất bại: $($failedChecks -join '; ')"
             }
-            if ($acceptance.totalCount -lt 30 -or $acceptance.passedCount -ne $acceptance.totalCount) {
-              throw "Computer Operator acceptance suite không chạy đủ 30 kiểm tra bắt buộc."
+            if ($acceptance.totalCount -lt 32 -or $acceptance.passedCount -ne $acceptance.totalCount) {
+              throw "Computer Operator acceptance suite không chạy đủ 32 kiểm tra bắt buộc."
             }
             Write-Host "Đạt Computer Operator acceptance suite: $($acceptance.passedCount)/$($acceptance.totalCount)."
 

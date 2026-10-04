@@ -328,6 +328,16 @@ public sealed class ComputerOperatorAcceptanceService
 
         RunCheck(
             checks,
+            "tool argument planner chấp nhận arguments đúng schema",
+            CheckToolArgumentPlannerAcceptsValidArguments);
+
+        RunCheck(
+            checks,
+            "tool argument planner chặn arguments sai schema",
+            CheckToolArgumentPlannerRejectsInvalidArguments);
+
+        RunCheck(
+            checks,
             "pause resume stop giữ đúng trạng thái và cancellation",
             CheckExecutionPauseResumeStop);
 
@@ -2418,6 +2428,86 @@ public sealed class ComputerOperatorAcceptanceService
             "Capability-first router coi Computer Operator fallback là direct tool.");
     }
 
+    private static void CheckToolArgumentPlannerAcceptsValidArguments()
+    {
+        using var argumentsDocument =
+            System.Text.Json.JsonDocument.Parse(
+                """{"query":"acceptance"}""");
+
+        IPersonalAiTool tool =
+            new AcceptanceSchemaTool(
+                "test.search",
+                requiredField: "query");
+
+        var provider =
+            new AcceptanceFunctionPlanningProvider(
+                argumentsDocument.RootElement.Clone());
+
+        var planner = new ToolArgumentPlanner(
+            new ToolRegistry(
+                new[] { tool }),
+            new ToolInputValidator(),
+            new AcceptanceAiProviderResolver(
+                provider));
+
+        var result = planner.PlanAsync(
+                new ToolArgumentPlanRequest(
+                    "test.search",
+                    "Tìm acceptance"))
+            .GetAwaiter()
+            .GetResult();
+
+        Require(
+            result.Proposed &&
+            result.ToolName == "test.search" &&
+            result.Arguments is { } arguments &&
+            arguments.Value.TryGetProperty(
+                "query",
+                out var query) &&
+            query.GetString() == "acceptance" &&
+            !result.RequiresConfirmation &&
+            provider.ProposalCount == 1,
+            $"Tool Argument Planner từ chối arguments hợp lệ: {result.Reason}");
+    }
+
+    private static void CheckToolArgumentPlannerRejectsInvalidArguments()
+    {
+        using var argumentsDocument =
+            System.Text.Json.JsonDocument.Parse(
+                """{"invented":"value"}""");
+
+        IPersonalAiTool tool =
+            new AcceptanceSchemaTool(
+                "test.search",
+                requiredField: "query");
+
+        var provider =
+            new AcceptanceFunctionPlanningProvider(
+                argumentsDocument.RootElement.Clone());
+
+        var planner = new ToolArgumentPlanner(
+            new ToolRegistry(
+                new[] { tool }),
+            new ToolInputValidator(),
+            new AcceptanceAiProviderResolver(
+                provider));
+
+        var result = planner.PlanAsync(
+                new ToolArgumentPlanRequest(
+                    "test.search",
+                    "Tìm acceptance"))
+            .GetAwaiter()
+            .GetResult();
+
+        Require(
+            !result.Proposed &&
+            result.Arguments is null &&
+            result.Reason.Contains(
+                "schema validator",
+                StringComparison.OrdinalIgnoreCase),
+            "Tool Argument Planner vẫn chấp nhận arguments sai schema.");
+    }
+
     private static void CheckExecutionPauseResumeStop()
     {
         using var execution = new ComputerOperatorExecutionControl();
@@ -2719,6 +2809,125 @@ public sealed class ComputerOperatorAcceptanceService
                 dpi,
                 scale,
                 scale);
+    }
+
+    private sealed class AcceptanceAiProviderResolver
+        : IAiProviderResolver
+    {
+        private readonly IAiProvider provider;
+
+        public AcceptanceAiProviderResolver(
+            IAiProvider provider)
+        {
+            this.provider = provider;
+        }
+
+        public IAiProvider GetActive() =>
+            provider;
+
+        public IAiProvider GetByName(
+            string providerName) =>
+            provider;
+    }
+
+    private sealed class AcceptanceFunctionPlanningProvider
+        : IAiProvider
+    {
+        private readonly System.Text.Json.JsonElement arguments;
+
+        public int ProposalCount { get; private set; }
+
+        public AcceptanceFunctionPlanningProvider(
+            System.Text.Json.JsonElement arguments)
+        {
+            this.arguments = arguments.Clone();
+        }
+
+        public string Name => "AcceptanceAI";
+        public string Model => "acceptance-model";
+        public bool IsConfigured => true;
+
+        public Task<string> ReplyAsync(
+            IReadOnlyList<ChatMessage> messages,
+            CancellationToken cancellationToken) =>
+            Task.FromResult("acceptance");
+
+        public Task<ProviderFunctionCallDecision?> ProposeFunctionCallAsync(
+            IReadOnlyList<ChatMessage> messages,
+            IReadOnlyList<ProviderFunctionDefinition> functions,
+            CancellationToken cancellationToken)
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            ProposalCount++;
+
+            var function = functions.Single();
+            var context =
+                new ProviderFunctionCallContext(
+                    Name,
+                    Model,
+                    function.Name,
+                    ResponseId: null,
+                    CallId: "acceptance-call",
+                    arguments,
+                    messages,
+                    function);
+
+            return Task.FromResult<ProviderFunctionCallDecision?>(
+                new ProviderFunctionCallDecision(
+                    function.Name,
+                    arguments,
+                    context));
+        }
+
+        public Task<string> ContinueFunctionCallAsync(
+            ProviderFunctionCallContext context,
+            string toolResultPayload,
+            CancellationToken cancellationToken) =>
+            Task.FromResult("acceptance");
+    }
+
+    private sealed class AcceptanceSchemaTool
+        : IPersonalAiTool
+    {
+        public ToolDefinition Definition { get; }
+
+        public AcceptanceSchemaTool(
+            string name,
+            string requiredField)
+        {
+            using var schema =
+                System.Text.Json.JsonDocument.Parse(
+                    $"""
+                    {
+                      "type": "object",
+                      "properties": {
+                        "{{requiredField}}": {
+                          "type": "string",
+                          "minLength": 1
+                        }
+                      },
+                      "required": ["{{requiredField}}"],
+                      "additionalProperties": false
+                    }
+                    """);
+
+            Definition = new ToolDefinition(
+                name,
+                "Acceptance schema tool.",
+                "1.0.0",
+                [ToolPermissions.Read],
+                1000,
+                schema.RootElement.Clone(),
+                LocalOnly: true,
+                RequiresConfirmation: false);
+        }
+
+        public Task<System.Text.Json.JsonElement> ExecuteAsync(
+            System.Text.Json.JsonElement arguments,
+            CancellationToken cancellationToken = default) =>
+            Task.FromResult(
+                System.Text.Json.JsonSerializer.SerializeToElement(
+                    new { ok = true }));
     }
 
     private sealed class AcceptanceExecutionAgent

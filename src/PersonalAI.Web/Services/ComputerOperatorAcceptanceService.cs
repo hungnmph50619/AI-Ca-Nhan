@@ -2895,21 +2895,16 @@ public sealed class ComputerOperatorAcceptanceService
             string name,
             string requiredField)
         {
+            var schemaText =
+                "{\"type\":\"object\",\"properties\":{\"" +
+                requiredField +
+                "\":{\"type\":\"string\",\"minLength\":1}},\"required\":[\"" +
+                requiredField +
+                "\"],\"additionalProperties\":false}";
+
             using var schema =
                 System.Text.Json.JsonDocument.Parse(
-                    $"""
-                    {
-                      "type": "object",
-                      "properties": {
-                        "{{requiredField}}": {
-                          "type": "string",
-                          "minLength": 1
-                        }
-                      },
-                      "required": ["{{requiredField}}"],
-                      "additionalProperties": false
-                    }
-                    """);
+                    schemaText);
 
             Definition = new ToolDefinition(
                 name,

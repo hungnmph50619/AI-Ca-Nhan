@@ -181,6 +181,7 @@ Nếu bằng chứng không đủ rõ ràng, satisfied=false.
 Trả đúng một JSON object, không markdown:
 {"satisfied":true,"confidence":0.95,"reason":"..."}
 confidence từ 0 đến 1.
+Mọi nội dung mô tả trong trường reason phải viết bằng tiếng Việt tự nhiên. Chỉ giữ nguyên tên ứng dụng, nhãn UI hoặc chuỗi literal cần đối chiếu.
 """;
 
         var payload = new
@@ -593,6 +594,9 @@ Quy tắc an toàn:
 - focus-window dùng query là cửa sổ/process cần chuyển tới.
 - minimize/maximize/restore áp dụng cho foreground hiện tại.
 - type-text chỉ khi foreground/ô nhập phù hợp và nội dung không nhạy cảm.
+- Trường text của type-text CHỈ được chứa đúng văn bản hiển thị cần gõ. Tuyệt đối không mã hóa phím điều khiển vào text: không dùng ^a, {BACKSPACE}, {ENTER}, \x, SendKeys syntax hay chuỗi tương tự.
+- Nếu cần Ctrl+A, Backspace, Delete, Enter hoặc hotkey khác thì phải chọn press-key/press-hotkey ở một lượt riêng. Mỗi lượt vẫn chỉ có MỘT action.
+- Nếu văn bản đang được chọn và mục tiêu là thay thế nó, ưu tiên type-text đúng nội dung cần nhập; không cần chèn ký hiệu Backspace vào text.
 - press-key dùng key; press-hotkey dùng keys.
 - open-browser chỉ cho HTTP/HTTPS hoặc để trống.
 - Với mọi hành động ngoài move-pointer/wait/complete/blocked, expectedEffect phải mô tả một trạng thái giao diện quan sát được để hệ thống chụp ảnh và xác minh ngay sau hành động.
@@ -600,6 +604,8 @@ Quy tắc an toàn:
 - blocked chỉ khi không còn bước an toàn/hợp lý để tiếp tục, gặp ranh giới quyền/an toàn, hoặc các phương án thay thế hợp lý đã cạn. Không dùng blocked chỉ vì một cách vừa thất bại.
 - Nếu BỘ NHỚ PHỤC HỒI cho thấy một chiến lược đã thất bại trong trạng thái tương đương, không chọn lại đúng chiến lược đó trừ khi ảnh hiện tại có bằng chứng rõ rằng trạng thái đã thay đổi khiến việc thử lại hợp lý.
 - confidence từ 0 đến 1.
+- Mọi trường mô tả do AI sinh ra gồm state, plan, currentSubgoal, expectedEffect, reason và nội dung relations phải viết bằng tiếng Việt tự nhiên. Chỉ giữ nguyên tên ứng dụng, tiêu đề cửa sổ, nhãn UI, phím/hotkey và chuỗi literal mà người dùng yêu cầu nhập.
+- Không dùng các nhãn tiếng Anh như STATE, PLAN, SUBGOAL trong giá trị văn bản; tên field JSON vẫn giữ nguyên theo schema.
 
 Trả đúng một JSON object, không markdown:
 {
@@ -736,6 +742,27 @@ Các field không dùng để chuỗi rỗng hoặc [].
 
         var decision = ParseDesktopOperatorDecision(
             ExtractJsonObject(text));
+
+        if (decision.Action.Equals(
+                "type-text",
+                StringComparison.OrdinalIgnoreCase) &&
+            LooksLikeEncodedKeyboardControl(decision.Text) &&
+            !goal.Contains(
+                decision.Text,
+                StringComparison.Ordinal))
+        {
+            decision = decision with
+            {
+                Action = "wait",
+                Text = string.Empty,
+                ExpectedEffect = string.Empty,
+                Reason = "Vision đã trộn ký hiệu phím điều khiển vào văn bản cần gõ. Hệ thống từ chối nhập chuỗi này và sẽ quan sát lại để chọn thao tác bàn phím đúng.",
+                Plan = "Quan sát lại trạng thái ô nhập và tách thao tác phím điều khiển khỏi thao tác gõ văn bản.",
+                CurrentSubgoal = string.IsNullOrWhiteSpace(decision.CurrentSubgoal)
+                    ? "Nhập đúng văn bản mà không gõ nhầm ký hiệu điều khiển."
+                    : decision.CurrentSubgoal
+            };
+        }
 
         var allowed = new HashSet<string>(
             [
@@ -911,6 +938,26 @@ Các field không dùng để chuỗi rỗng hoặc [].
         {
             Action = decision.Action.Trim().ToLowerInvariant()
         };
+    }
+
+    private static bool LooksLikeEncodedKeyboardControl(
+        string text)
+    {
+        if (string.IsNullOrWhiteSpace(text))
+            return false;
+
+        var value = text.Trim();
+
+        return value.Contains("{BACKSPACE}", StringComparison.OrdinalIgnoreCase)
+            || value.Contains("{ENTER}", StringComparison.OrdinalIgnoreCase)
+            || value.Contains("{DELETE}", StringComparison.OrdinalIgnoreCase)
+            || value.Contains("{TAB}", StringComparison.OrdinalIgnoreCase)
+            || value.Contains("^a", StringComparison.OrdinalIgnoreCase)
+            || value.Contains("^c", StringComparison.OrdinalIgnoreCase)
+            || value.Contains("^v", StringComparison.OrdinalIgnoreCase)
+            || value.Contains("^x", StringComparison.OrdinalIgnoreCase)
+            || value.Contains("\\x", StringComparison.OrdinalIgnoreCase)
+            || value.Contains("SENDKEYS", StringComparison.OrdinalIgnoreCase);
     }
 
     private static IReadOnlyList<DesktopSceneElement> ParseSceneElements(

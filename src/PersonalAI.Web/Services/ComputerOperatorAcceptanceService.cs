@@ -318,6 +318,16 @@ public sealed class ComputerOperatorAcceptanceService
 
         RunCheck(
             checks,
+            "capability first router phát hiện direct tool an toàn",
+            CheckUniversalRouterDetectsDirectToolOpportunity);
+
+        RunCheck(
+            checks,
+            "capability first router không coi Computer Operator là direct tool",
+            CheckUniversalRouterExcludesComputerOperatorFromDirectTools);
+
+        RunCheck(
+            checks,
             "pause resume stop giữ đúng trạng thái và cancellation",
             CheckExecutionPauseResumeStop);
 
@@ -2319,6 +2329,93 @@ public sealed class ComputerOperatorAcceptanceService
                 StringComparison.OrdinalIgnoreCase) &&
             route.SelectedChannel == ExecutionAgentChannels.Browser,
             $"URL regex regression: {browser.Reason}; {route.Reason}");
+    }
+
+    private static void CheckUniversalRouterDetectsDirectToolOpportunity()
+    {
+        IPersonalAiTool browserTool =
+            new AcceptanceCapabilityTool(
+                "browser.acceptance.read",
+                [ToolPermissions.Read, ToolPermissions.Browser],
+                requiresConfirmation: false);
+
+        var capabilityRegistry =
+            new ToolCapabilityRegistry(
+                new ToolRegistry(
+                    new[] { browserTool }));
+
+        var agentRegistry =
+            new ExecutionAgentRegistry(
+                new IExecutionAgent[]
+                {
+                    new AcceptanceExecutionAgent(
+                        "execution.browser.acceptance",
+                        ExecutionAgentChannels.Browser),
+                    new AcceptanceExecutionAgent(
+                        "execution.computer.acceptance",
+                        ExecutionAgentChannels.Computer)
+                });
+
+        var router = new UniversalTaskRouter(
+            agentRegistry,
+            new ExecutionGateway(agentRegistry),
+            capabilityRegistry);
+
+        var route = router.Preview(
+            new UniversalTaskRouteRequest(
+                "website web trang web browser desktop màn hình chuột ứng dụng"));
+
+        var browser = route.Candidates.Single(candidate =>
+            candidate.Channel == ExecutionAgentChannels.Browser);
+
+        Require(
+            browser.DirectToolCount == 1 &&
+            browser.PreferredToolName == "browser.acceptance.read" &&
+            browser.Reason.Contains(
+                "direct-tool:browser.acceptance.read",
+                StringComparison.OrdinalIgnoreCase),
+            $"Capability-first router không phát hiện direct tool: {browser.Reason}");
+    }
+
+    private static void CheckUniversalRouterExcludesComputerOperatorFromDirectTools()
+    {
+        IPersonalAiTool operatorTool =
+            new ComputerOperatorTaskTool(
+                new AcceptanceOperatorTaskService());
+
+        var capabilityRegistry =
+            new ToolCapabilityRegistry(
+                new ToolRegistry(
+                    new[] { operatorTool }));
+
+        var agentRegistry =
+            new ExecutionAgentRegistry(
+                new IExecutionAgent[]
+                {
+                    new AcceptanceExecutionAgent(
+                        "execution.computer.acceptance",
+                        ExecutionAgentChannels.Computer)
+                });
+
+        var router = new UniversalTaskRouter(
+            agentRegistry,
+            new ExecutionGateway(agentRegistry),
+            capabilityRegistry);
+
+        var route = router.Preview(
+            new UniversalTaskRouteRequest(
+                "mở ứng dụng desktop bằng chuột và bàn phím"));
+
+        var computer = route.Candidates.Single(candidate =>
+            candidate.Channel == ExecutionAgentChannels.Computer);
+
+        Require(
+            computer.DirectToolCount == 0 &&
+            computer.PreferredToolName is null &&
+            !computer.Reason.Contains(
+                "direct-tool:computer.operator.run-task",
+                StringComparison.OrdinalIgnoreCase),
+            "Capability-first router coi Computer Operator fallback là direct tool.");
     }
 
     private static void CheckExecutionPauseResumeStop()

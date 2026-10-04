@@ -8,6 +8,7 @@ public static class UniversalTaskRouterEndpoints
         this IServiceCollection services)
     {
         services.AddScoped<IUniversalTaskRouter, UniversalTaskRouter>();
+        services.AddScoped<IUniversalDirectToolPath, UniversalDirectToolPath>();
         return services;
     }
 
@@ -46,6 +47,45 @@ public static class UniversalTaskRouterEndpoints
             {
                 return Results.BadRequest(
                     new ApiError(exception.Message));
+            }
+        });
+
+        app.MapPost("/api/universal-router/prepare-execution", async (
+            UniversalExecutionPrepareRequest request,
+            IUniversalDirectToolPath directToolPath,
+            CancellationToken cancellationToken) =>
+        {
+            try
+            {
+                return Results.Ok(
+                    await directToolPath.PrepareAsync(
+                        request,
+                        cancellationToken));
+            }
+            catch (ToolProposalValidationException exception)
+            {
+                return Results.BadRequest(
+                    new ApiError(exception.Message));
+            }
+            catch (InvalidOperationException exception)
+            {
+                return Results.Json(
+                    new ApiError(exception.Message),
+                    statusCode: StatusCodes.Status503ServiceUnavailable);
+            }
+            catch (HttpRequestException exception)
+            {
+                return Results.Json(
+                    new ApiError(exception.Message),
+                    statusCode: StatusCodes.Status502BadGateway);
+            }
+            catch (TaskCanceledException) when (
+                !cancellationToken.IsCancellationRequested)
+            {
+                return Results.Json(
+                    new ApiError(
+                        "Chuẩn bị direct tool mất quá nhiều thời gian. Hãy thử lại."),
+                    statusCode: StatusCodes.Status504GatewayTimeout);
             }
         });
 

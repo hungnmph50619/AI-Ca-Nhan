@@ -14,6 +14,7 @@ on:
       - 'src/PersonalAI.Web/Services/ComputerUse*'
       - 'src/PersonalAI.Web/Services/ComputerOperator*'
       - 'src/PersonalAI.Web/Services/ComputerOperatorActionExecutor.cs'
+      - 'src/PersonalAI.Web/Services/ComputerOperatorLocalVerificationService.cs'
       - 'src/PersonalAI.Web/Services/ComputerCoordinateTransformService.cs'
       - 'src/PersonalAI.Web/Models/ComputerCoordinateModels.cs'
       - 'src/PersonalAI.Web/Services/ComputerSafeTargetingService.cs'

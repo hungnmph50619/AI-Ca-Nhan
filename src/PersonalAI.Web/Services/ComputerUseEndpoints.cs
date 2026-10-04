@@ -23,6 +23,8 @@ public static class ComputerUseEndpoints
         services.AddSingleton<IComputerSafeTargetingService, ComputerSafeTargetingService>();
         services.AddSingleton<IComputerOperatorAcceptanceService, ComputerOperatorAcceptanceService>();
         services.AddSingleton<IComputerOperatorTaskService, ComputerOperatorTaskService>();
+        services.AddSingleton<IExecutionAgent, ComputerOperatorExecutionAgent>();
+        services.AddSingleton<IExecutionAgentRegistry, ExecutionAgentRegistry>();
         services.AddSingleton<IDesktopScreenshotService, WindowsDesktopScreenshotService>();
         services.AddSingleton<IDesktopFrameDifferenceService, DesktopFrameDifferenceService>();
         services.AddSingleton<IDesktopLocalFastObserver, DesktopLocalFastObserver>();
@@ -71,6 +73,21 @@ public static class ComputerUseEndpoints
         app.MapGet("/api/computer/operator-progress", (
             ComputerOperatorProgressStore progress) =>
             Results.Ok(progress.Get()));
+
+        app.MapGet("/api/execution-agents", (
+            IExecutionAgentRegistry agents) =>
+            Results.Ok(new
+            {
+                agents = agents.GetAll()
+            }));
+
+        app.MapGet("/api/execution-agents/{agentId}", (
+            string agentId,
+            IExecutionAgentRegistry agents) =>
+            agents.TryGet(agentId, out var agent) && agent is not null
+                ? Results.Ok(agent.Definition)
+                : Results.NotFound(
+                    new ApiError("Không tìm thấy execution agent.")));
 
         app.MapGet("/api/computer/operator-acceptance", (
             HttpContext context,

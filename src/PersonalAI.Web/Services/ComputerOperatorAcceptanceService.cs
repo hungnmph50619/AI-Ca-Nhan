@@ -98,6 +98,11 @@ public sealed class ComputerOperatorAcceptanceService
 
         RunCheck(
             checks,
+            "local fast observer phát hiện thay đổi cục bộ không cần AI",
+            CheckLocalFastObserverSignals);
+
+        RunCheck(
+            checks,
             "pause resume stop giữ đúng trạng thái và cancellation",
             CheckExecutionPauseResumeStop);
 
@@ -651,6 +656,87 @@ public sealed class ComputerOperatorAcceptanceService
         Require(
             rejected,
             "Safe targeting vẫn chấp nhận click khi bounding box không hợp lệ.");
+    }
+
+    private static void CheckLocalFastObserverSignals()
+    {
+        var observer = new DesktopLocalFastObserver(
+            new AcceptanceComputerUseService(),
+            new AcceptanceDisplayTopologyService());
+
+        var before = new DesktopFastObserverSample(
+            DateTimeOffset.UtcNow,
+            "window",
+            AcceptanceComputerUseService.WindowId,
+            AcceptanceComputerUseService.WindowId,
+            300,
+            200,
+            800,
+            600,
+            400,
+            300,
+            "PRIMARY",
+            96,
+            96,
+            false);
+
+        var after = before with
+        {
+            CapturedAtUtc = DateTimeOffset.UtcNow.AddMilliseconds(100),
+            ActiveWindowId = "0xBEEF",
+            WindowLeft = 320,
+            CursorX = 460,
+            DpiX = 120
+        };
+
+        var targetBefore = new DesktopSceneElement(
+            "target-before",
+            "button",
+            "Mục tiêu",
+            string.Empty,
+            100,
+            100,
+            120,
+            60,
+            0.95,
+            Array.Empty<string>());
+
+        var targetAfter = targetBefore with
+        {
+            Id = "target-after",
+            BoxLeft = 140,
+            BoxTop = 130
+        };
+
+        var frameDifference = new DesktopFrameDifference(
+            true,
+            0.12,
+            120,
+            1000,
+            90,
+            90,
+            220,
+            140,
+            31,
+            "acceptance");
+
+        var result = observer.Analyze(
+            before,
+            after,
+            frameDifference,
+            targetBefore,
+            targetAfter);
+
+        Require(
+            result.ScreenChanged &&
+            result.ForegroundWindowChanged &&
+            result.WindowBoundsChanged &&
+            result.CursorMoved &&
+            result.DpiChanged &&
+            result.TargetMoved &&
+            !result.TargetMissing &&
+            !result.TargetLikelyOccluded,
+            $"Fast observer bỏ sót tín hiệu: {result.Summary}");
     }
 
     private static void CheckExecutionPauseResumeStop()

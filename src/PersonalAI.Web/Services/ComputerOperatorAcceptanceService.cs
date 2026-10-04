@@ -423,6 +423,26 @@ public sealed class ComputerOperatorAcceptanceService
 
         RunCheck(
             checks,
+            "closed loop chỉ complete sau khi goal được xác minh",
+            CheckClosedLoopCompletesVerifiedGoal);
+
+        RunCheck(
+            checks,
+            "closed loop dừng trước confirmation boundary",
+            CheckClosedLoopStopsAtConfirmation);
+
+        RunCheck(
+            checks,
+            "closed loop phát hiện action outcome lặp",
+            CheckClosedLoopDetectsRepeatedFingerprint);
+
+        RunCheck(
+            checks,
+            "closed loop dừng khi đạt max iterations",
+            CheckClosedLoopStopsAtMaxIterations);
+
+        RunCheck(
+            checks,
             "pause resume stop giữ đúng trạng thái và cancellation",
             CheckExecutionPauseResumeStop);
 
@@ -3375,6 +3395,161 @@ public sealed class ComputerOperatorAcceptanceService
             "Unified pipeline đã complete dù desktop verifier yêu cầu semantic verification.");
     }
 
+    private static void CheckClosedLoopCompletesVerifiedGoal()
+    {
+        var runner = new AcceptanceClosedLoopStepRunner(
+            [
+                new UniversalClosedLoopStepResult(
+                    "route-browser",
+                    "not-achieved",
+                    Executed: true,
+                    GoalAchieved: false,
+                    RequiresConfirmation: false,
+                    NeedsVerification: false,
+                    ReplanRequired: true,
+                    CanContinue: true,
+                    "Cần thử lại với readback khác."),
+                new UniversalClosedLoopStepResult(
+                    "browser-readback",
+                    "verified",
+                    Executed: true,
+                    GoalAchieved: true,
+                    RequiresConfirmation: false,
+                    NeedsVerification: false,
+                    ReplanRequired: false,
+                    CanContinue: false,
+                    "Goal đã được verifier xác nhận.")
+            ]);
+
+        var orchestrator =
+            new UniversalClosedLoopOrchestrator(
+                runner);
+
+        var result = orchestrator.RunAsync(
+                new UniversalClosedLoopRequest(
+                    "Đọc đúng nội dung trang",
+                    MaxIterations: 4))
+            .GetAwaiter()
+            .GetResult();
+
+        Require(
+            result.Status ==
+                UniversalClosedLoopStatuses.Completed &&
+            result.Iterations == 2 &&
+            result.History[^1].GoalAchieved,
+            "Closed loop không complete đúng sau verified goal.");
+    }
+
+    private static void CheckClosedLoopStopsAtConfirmation()
+    {
+        var runner = new AcceptanceClosedLoopStepRunner(
+            [
+                new UniversalClosedLoopStepResult(
+                    "tool-proposal",
+                    "confirmation-required",
+                    Executed: false,
+                    GoalAchieved: false,
+                    RequiresConfirmation: true,
+                    NeedsVerification: false,
+                    ReplanRequired: false,
+                    CanContinue: false,
+                    "Tool side effect cần user confirm.")
+            ]);
+
+        var orchestrator =
+            new UniversalClosedLoopOrchestrator(
+                runner);
+
+        var result = orchestrator.RunAsync(
+                new UniversalClosedLoopRequest(
+                    "Gửi thay đổi",
+                    MaxIterations: 4))
+            .GetAwaiter()
+            .GetResult();
+
+        Require(
+            result.Status ==
+                UniversalClosedLoopStatuses.AwaitingConfirmation &&
+            result.Iterations == 1,
+            "Closed loop đã vượt confirmation boundary.");
+    }
+
+    private static void CheckClosedLoopDetectsRepeatedFingerprint()
+    {
+        var repeated =
+            new UniversalClosedLoopStepResult(
+                "retry-same-action",
+                "same-outcome",
+                Executed: true,
+                GoalAchieved: false,
+                RequiresConfirmation: false,
+                NeedsVerification: false,
+                ReplanRequired: true,
+                CanContinue: true,
+                "Không có tiến triển.");
+
+        var runner = new AcceptanceClosedLoopStepRunner(
+            [repeated, repeated, repeated, repeated]);
+
+        var orchestrator =
+            new UniversalClosedLoopOrchestrator(
+                runner);
+
+        var result = orchestrator.RunAsync(
+                new UniversalClosedLoopRequest(
+                    "Hoàn thành tác vụ",
+                    MaxIterations: 8))
+            .GetAwaiter()
+            .GetResult();
+
+        Require(
+            result.Status ==
+                UniversalClosedLoopStatuses.LoopDetected &&
+            result.Iterations == 3 &&
+            runner.CallCount == 3,
+            "Closed loop không dừng sau fingerprint lặp 3 lần.");
+    }
+
+    private static void CheckClosedLoopStopsAtMaxIterations()
+    {
+        var steps = Enumerable.Range(
+                1,
+                8)
+            .Select(index =>
+                new UniversalClosedLoopStepResult(
+                    $"action-{index}",
+                    $"outcome-{index}",
+                    Executed: true,
+                    GoalAchieved: false,
+                    RequiresConfirmation: false,
+                    NeedsVerification: false,
+                    ReplanRequired: true,
+                    CanContinue: true,
+                    $"iteration {index}"))
+            .ToArray();
+
+        var runner = new AcceptanceClosedLoopStepRunner(
+            steps);
+
+        var orchestrator =
+            new UniversalClosedLoopOrchestrator(
+                runner);
+
+        var result = orchestrator.RunAsync(
+                new UniversalClosedLoopRequest(
+                    "Hoàn thành tác vụ",
+                    MaxIterations: 3))
+            .GetAwaiter()
+            .GetResult();
+
+        Require(
+            result.Status ==
+                UniversalClosedLoopStatuses.MaxIterationsReached &&
+            result.Iterations == 3 &&
+            runner.CallCount == 3,
+            "Closed loop không tôn trọng max iterations.");
+    }
+
     private static void CheckExecutionPauseResumeStop()
     {
         using var execution = new ComputerOperatorExecutionControl();
@@ -3676,6 +3851,39 @@ public sealed class ComputerOperatorAcceptanceService
                 dpi,
                 scale,
                 scale);
+    }
+
+    private sealed class AcceptanceClosedLoopStepRunner
+        : IUniversalClosedLoopStepRunner
+    {
+        private readonly Queue<UniversalClosedLoopStepResult> steps;
+
+        public int CallCount { get; private set; }
+
+        public AcceptanceClosedLoopStepRunner(
+            IEnumerable<UniversalClosedLoopStepResult> steps)
+        {
+            this.steps =
+                new Queue<UniversalClosedLoopStepResult>(
+                    steps);
+        }
+
+        public Task<UniversalClosedLoopStepResult> RunAsync(
+            UniversalClosedLoopStepRequest request,
+            CancellationToken cancellationToken = default)
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            CallCount++;
+
+            if (steps.Count == 0)
+            {
+                throw new InvalidOperationException(
+                    "Acceptance closed-loop runner hết step.");
+            }
+
+            return Task.FromResult(
+                steps.Dequeue());
+        }
     }
 
     private sealed class AcceptanceUniversalTaskRouter

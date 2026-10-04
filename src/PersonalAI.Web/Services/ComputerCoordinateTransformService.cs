@@ -218,6 +218,22 @@ public sealed class ComputerCoordinateTransformService(
             $"desktop ảo chuẩn hóa ({request.NormalizedX:0.0000},{request.NormalizedY:0.0000})");
     }
 
+    private static double NormalizeDesktopCoordinate(
+        int value,
+        int origin,
+        int size)
+    {
+        if (size <= 0)
+            throw new ToolExecutionInputException(
+                "Không thể chuẩn hóa tọa độ vì kích thước vùng bằng 0.");
+
+        var offset = value - origin;
+        var denominator = Math.Max(1, size - 1);
+        var normalized = (double)offset / denominator;
+
+        return Math.Clamp(normalized, 0.0, 1.0);
+    }
+
     private static int ScaleNormalized(
         double normalized,
         int size)

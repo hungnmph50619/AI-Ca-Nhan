@@ -19,6 +19,7 @@ public static class AgentFrameworkEndpoints
         services.AddScoped<IAgentRegistry, AgentRegistry>();
         services.AddScoped<IAgentFrameworkService, AgentFrameworkService>();
         services.AddScoped<IAgentOrchestrationService, AgentOrchestrationService>();
+        services.AddSingleton<IExternalIntegrationArchitecture, ExternalIntegrationArchitecture>();
         return services;
     }
 
@@ -120,6 +121,25 @@ public static class AgentFrameworkEndpoints
         app.MapGet("/api/agents/status", (
             IAgentFrameworkService framework) =>
             Results.Ok(framework.GetStatus()));
+
+        app.MapGet("/api/agents/integrations", (
+            IExternalIntegrationArchitecture architecture) =>
+            Results.Ok(new
+            {
+                count = architecture.GetAll().Count,
+                integrations = architecture.GetAll()
+            }));
+
+        app.MapGet("/api/agents/integrations/{integrationId}", (
+            string integrationId,
+            IExternalIntegrationArchitecture architecture) =>
+        {
+            var integration = architecture.Get(integrationId);
+            return integration is null
+                ? Results.NotFound(
+                    new ApiError("Không tìm thấy integration architecture."))
+                : Results.Ok(integration);
+        });
 
         app.MapGet("/api/agents", (
             IAgentFrameworkService framework) =>

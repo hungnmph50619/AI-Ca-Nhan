@@ -338,6 +338,16 @@ public sealed class ComputerOperatorAcceptanceService
 
         RunCheck(
             checks,
+            "direct tool path tạo proposal nhưng chưa execute",
+            CheckUniversalDirectToolPathPreparesWithoutExecution);
+
+        RunCheck(
+            checks,
+            "direct tool path giữ execution agent làm fallback khi không có tool",
+            CheckUniversalDirectToolPathFallsBackWithoutExecuting);
+
+        RunCheck(
+            checks,
             "pause resume stop giữ đúng trạng thái và cancellation",
             CheckExecutionPauseResumeStop);
 
@@ -2508,6 +2518,124 @@ public sealed class ComputerOperatorAcceptanceService
             "Tool Argument Planner vẫn chấp nhận arguments sai schema.");
     }
 
+    private static void CheckUniversalDirectToolPathPreparesWithoutExecution()
+    {
+        using var argumentsDocument =
+            System.Text.Json.JsonDocument.Parse(
+                """{"query":"acceptance"}""");
+
+        var route = new UniversalTaskRoutePreview(
+            "Tìm acceptance",
+            [
+                new UniversalTaskRouteCandidate(
+                    ExecutionAgentChannels.Browser,
+                    0.90,
+                    0.80,
+                    UniversalRouteRisk.Medium,
+                    2,
+                    2,
+                    1,
+                    1,
+                    "browser.acceptance.read",
+                    "direct-tool")
+            ],
+            ExecutionAgentChannels.Browser,
+            NeedsFurtherRouting: false,
+            "acceptance-route");
+
+        var router =
+            new AcceptanceUniversalTaskRouter(
+                route);
+        var planner =
+            new AcceptanceToolArgumentPlanner(
+                new ToolArgumentPlanResult(
+                    true,
+                    "browser.acceptance.read",
+                    argumentsDocument.RootElement.Clone(),
+                    RequiresConfirmation: false,
+                    [ToolPermissions.Read],
+                    "AcceptanceAI",
+                    "acceptance-model",
+                    "acceptance"));
+        var orchestration =
+            new AcceptanceToolOrchestrationService();
+
+        var pathService =
+            new UniversalDirectToolPath(
+                router,
+                planner,
+                orchestration);
+
+        var result = pathService.PrepareAsync(
+                new UniversalExecutionPrepareRequest(
+                    "Tìm acceptance"))
+            .GetAwaiter()
+            .GetResult();
+
+        Require(
+            result.Mode ==
+                UniversalExecutionModes.DirectToolProposal &&
+            result.ToolProposal is not null &&
+            result.ToolProposal.ToolName ==
+                "browser.acceptance.read" &&
+            orchestration.PrepareCount == 1 &&
+            orchestration.ExecuteCount == 0,
+            "Direct Tool Path đã execute hoặc không tạo proposal đúng hai pha.");
+    }
+
+    private static void CheckUniversalDirectToolPathFallsBackWithoutExecuting()
+    {
+        var route = new UniversalTaskRoutePreview(
+            "Mở ứng dụng desktop",
+            [
+                new UniversalTaskRouteCandidate(
+                    ExecutionAgentChannels.Computer,
+                    0.90,
+                    0.70,
+                    UniversalRouteRisk.High,
+                    5,
+                    5,
+                    1,
+                    0,
+                    null,
+                    "no-direct-tool")
+            ],
+            ExecutionAgentChannels.Computer,
+            NeedsFurtherRouting: false,
+            "acceptance-route");
+
+        var router =
+            new AcceptanceUniversalTaskRouter(
+                route);
+        var planner =
+            new AcceptanceToolArgumentPlanner(
+                result: null);
+        var orchestration =
+            new AcceptanceToolOrchestrationService();
+
+        var pathService =
+            new UniversalDirectToolPath(
+                router,
+                planner,
+                orchestration);
+
+        var result = pathService.PrepareAsync(
+                new UniversalExecutionPrepareRequest(
+                    "Mở ứng dụng desktop"))
+            .GetAwaiter()
+            .GetResult();
+
+        Require(
+            result.Mode ==
+                UniversalExecutionModes.ExecutionAgentFallback &&
+            result.FallbackChannel ==
+                ExecutionAgentChannels.Computer &&
+            planner.CallCount == 0 &&
+            orchestration.PrepareCount == 0 &&
+            orchestration.ExecuteCount == 0,
+            "Direct Tool Path tự chạy fallback hoặc gọi planner khi không có direct tool.");
+    }
+
     private static void CheckExecutionPauseResumeStop()
     {
         using var execution = new ComputerOperatorExecutionControl();
@@ -2809,6 +2937,105 @@ public sealed class ComputerOperatorAcceptanceService
                 dpi,
                 scale,
                 scale);
+    }
+
+    private sealed class AcceptanceUniversalTaskRouter
+        : IUniversalTaskRouter
+    {
+        private readonly UniversalTaskRoutePreview preview;
+
+        public AcceptanceUniversalTaskRouter(
+            UniversalTaskRoutePreview preview)
+        {
+            this.preview = preview;
+        }
+
+        public UniversalTaskRoutePreview Preview(
+            UniversalTaskRouteRequest request) =>
+            preview;
+
+        public Task<UniversalTaskRouteExecution> ExecuteAsync(
+            UniversalTaskRouteRequest request,
+            CancellationToken cancellationToken = default) =>
+            throw new InvalidOperationException(
+                "Acceptance direct-tool prepare không được gọi router execute.");
+    }
+
+    private sealed class AcceptanceToolArgumentPlanner
+        : IToolArgumentPlanner
+    {
+        private readonly ToolArgumentPlanResult? result;
+
+        public int CallCount { get; private set; }
+
+        public AcceptanceToolArgumentPlanner(
+            ToolArgumentPlanResult? result)
+        {
+            this.result = result;
+        }
+
+        public Task<ToolArgumentPlanResult> PlanAsync(
+            ToolArgumentPlanRequest request,
+            CancellationToken cancellationToken = default)
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            CallCount++;
+
+            return result is null
+                ? throw new InvalidOperationException(
+                    "Planner không được gọi trong fallback acceptance test.")
+                : Task.FromResult(result);
+        }
+    }
+
+    private sealed class AcceptanceToolOrchestrationService
+        : IToolOrchestrationService
+    {
+        public int PrepareCount { get; private set; }
+        public int ExecuteCount { get; private set; }
+
+        public Task<ToolCallProposal?> ProposeAsync(
+            IReadOnlyList<ChatMessage> messages,
+            CancellationToken cancellationToken = default) =>
+            Task.FromResult<ToolCallProposal?>(null);
+
+        public ToolCallProposal Prepare(
+            ToolProposalDraft draft)
+        {
+            PrepareCount++;
+
+            return new ToolCallProposal(
+                Guid.NewGuid(),
+                draft.ToolName,
+                draft.Arguments.Clone(),
+                draft.Reason ?? "acceptance",
+                draft.AssistantMessage ?? "acceptance",
+                [ToolPermissions.Read],
+                RequiresConfirmation: false,
+                DateTimeOffset.UtcNow.AddMinutes(10),
+                PlanningMode: "acceptance");
+        }
+
+        public Task<ToolProposalExecutionResponse?> ExecuteAsync(
+            Guid proposalId,
+            bool confirmed,
+            CancellationToken cancellationToken = default)
+        {
+            ExecuteCount++;
+            return Task.FromResult<ToolProposalExecutionResponse?>(null);
+        }
+
+        public Task<ToolResultSynthesisResponse?> SynthesizeAsync(
+            Guid invocationId,
+            bool confirmedExternal,
+            CancellationToken cancellationToken = default) =>
+            Task.FromResult<ToolResultSynthesisResponse?>(null);
+
+        public Task<ToolNativeContinuationResponse?> ContinueNativeAsync(
+            Guid invocationId,
+            bool confirmedExternal,
+            CancellationToken cancellationToken = default) =>
+            Task.FromResult<ToolNativeContinuationResponse?>(null);
     }
 
     private sealed class AcceptanceAiProviderResolver

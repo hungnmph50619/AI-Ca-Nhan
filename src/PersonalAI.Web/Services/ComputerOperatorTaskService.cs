@@ -760,6 +760,33 @@ public sealed class ComputerOperatorTaskService(
                     verificationBaseline?.Clear();
                 }
 
+                var verificationAssessment =
+                    ConfidenceEngine.AssessVerification(
+                        decision,
+                        observation: null,
+                        verification.Confidence,
+                        verification.Detail.StartsWith(
+                            "Gemini Vision",
+                            StringComparison.OrdinalIgnoreCase));
+
+                progress.Add(
+                    "confidence-verify",
+                    $"Verification confidence: {verificationAssessment.Reason}",
+                    verificationAssessment.Decision.ToString().ToLowerInvariant(),
+                    verificationAssessment.OverallConfidence);
+
+                if (verification.Verified &&
+                    verificationAssessment.OverallConfidence < MinimumConfidence)
+                {
+                    verification = verification with
+                    {
+                        Verified = false,
+                        Confidence = verificationAssessment.OverallConfidence,
+                        Detail =
+                            $"Composite confidence chưa đủ để chấp nhận verification. {verificationAssessment.Reason}"
+                    };
+                }
+
                 if (!verification.Verified)
                 {
                     var failures = recovery.RecordFailure(

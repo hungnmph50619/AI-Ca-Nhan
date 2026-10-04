@@ -15,7 +15,13 @@ public sealed class ComputerOperatorLoopGuardSession
         string State,
         string Strategy);
 
+    private sealed record OutcomeObservation(
+        string State,
+        string Strategy,
+        string Outcome);
+
     private readonly List<Observation> observations = [];
+    private readonly List<OutcomeObservation> outcomes = [];
     private int warningCount;
 
     public ComputerOperatorLoopAssessment Observe(
@@ -58,9 +64,64 @@ public sealed class ComputerOperatorLoopGuardSession
         return None();
     }
 
+    public ComputerOperatorLoopAssessment ObserveOutcome(
+        string state,
+        string strategy,
+        string outcome)
+    {
+        var normalizedState = Normalize(state, 320);
+        var normalizedStrategy = Normalize(strategy, 260);
+        var normalizedOutcome = Normalize(outcome, 320);
+
+        if (normalizedStrategy.Length == 0 ||
+            normalizedOutcome.Length == 0)
+            return None();
+
+        outcomes.Add(
+            new OutcomeObservation(
+                normalizedState,
+                normalizedStrategy,
+                normalizedOutcome));
+
+        if (outcomes.Count > MaximumObservations)
+            outcomes.RemoveRange(
+                0,
+                outcomes.Count - MaximumObservations);
+
+        var sameFingerprint = outcomes
+            .Where(item =>
+                item.Strategy.Equals(
+                    normalizedStrategy,
+                    StringComparison.OrdinalIgnoreCase) &&
+                item.Outcome.Equals(
+                    normalizedOutcome,
+                    StringComparison.OrdinalIgnoreCase) &&
+                StatesEquivalent(
+                    item.State,
+                    normalizedState))
+            .ToArray();
+
+        if (sameFingerprint.Length >= 2)
+        {
+            warningCount++;
+
+            return new(
+                true,
+                true,
+                "repeated-outcome",
+                sameFingerprint.Length >= 3
+                    ? "Cùng scene + action + outcome thất bại đã lặp ít nhất 3 lần. Cấm retry chiến lược này; phải đổi phương án hoặc dừng an toàn."
+                    : "Cùng scene + action + outcome thất bại đã lặp lại. Không được retry y hệt; phải đổi chiến lược.",
+                warningCount);
+        }
+
+        return None();
+    }
+
     public void MarkProgress()
     {
         warningCount = 0;
+        outcomes.Clear();
 
         if (observations.Count > 1)
         {
@@ -192,6 +253,28 @@ public sealed class ComputerOperatorLoopGuardSession
             string.Empty,
             string.Empty,
             0);
+
+    private static bool StatesEquivalent(
+        string left,
+        string right)
+    {
+        if (left.Equals(
+                right,
+                StringComparison.OrdinalIgnoreCase))
+            return true;
+
+        if (left.Length >= 24 &&
+            right.Length >= 24 &&
+            (left.Contains(
+                 right,
+                 StringComparison.OrdinalIgnoreCase) ||
+             right.Contains(
+                 left,
+                 StringComparison.OrdinalIgnoreCase)))
+            return true;
+
+        return false;
+    }
 
     private static string Normalize(
         string value,

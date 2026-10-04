@@ -3120,7 +3120,7 @@ jobs:
           grep -Fq '"frame-difference"' src/PersonalAI.Web/Services/ComputerOperatorTaskService.cs
           grep -Fq 'changedRatio=' src/PersonalAI.Web/Services/DesktopVisionService.cs
           grep -Fq 'RequiresExpectedEffect' src/PersonalAI.Web/Services/ComputerOperatorTaskService.cs
-          grep -Fq 'VERIFY-FAILED' src/PersonalAI.Web/Services/ComputerOperatorTaskService.cs
+          grep -Fq 'XÁC MINH THẤT BẠI' src/PersonalAI.Web/Services/ComputerOperatorTaskService.cs
           grep -Fq 'LOCAL XÁC NHẬN HÀNH ĐỘNG CÓ HIỆU LỰC' src/PersonalAI.Web/Services/ComputerOperatorTaskService.cs
           grep -Fq 'ComputerOperatorRecoverySession' src/PersonalAI.Web/Services/ComputerOperatorRecoverySession.cs
           grep -Fq 'ShouldAvoidRepeatedStrategy' src/PersonalAI.Web/Services/ComputerOperatorRecoverySession.cs
@@ -3172,7 +3172,7 @@ jobs:
           grep -Fq '"id": "multi-step-open-and-type"' tests/computer-use/v3.4.9-acceptance-scenarios.json
           grep -Fq 'totalCount -lt 16' .github/workflows/desktop-control.yml
           ! grep -Eiq 'notepad|calculator|mspaint|explorer\.exe|notepad\.exe|calc\.exe' src/PersonalAI.Web/Services/ComputerOperatorAcceptanceService.cs
-          grep -Fq 'MILESTONE-SYSTEM-VERIFIED' src/PersonalAI.Web/Services/ComputerOperatorTaskService.cs
+          grep -Fq 'MỐC-HỆ-THỐNG-ĐÃ-XÁC-MINH' src/PersonalAI.Web/Services/ComputerOperatorTaskService.cs
           grep -Fq 'CURRENT SUBGOAL' src/PersonalAI.Web/Services/DesktopVisionService.cs
           grep -Fq 'verifiedMilestones' src/PersonalAI.Web/Services/DesktopVisionService.cs
           ! grep -Eiq 'notepad|calculator|mspaint|paint|explorer\.exe|notepad\.exe|calc\.exe' src/PersonalAI.Web/Services/ComputerOperatorTaskService.cs src/PersonalAI.Web/Services/DesktopVisionService.cs

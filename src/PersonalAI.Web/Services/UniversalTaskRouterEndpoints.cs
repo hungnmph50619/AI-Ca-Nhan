@@ -13,6 +13,7 @@ public static class UniversalTaskRouterEndpoints
         services.AddSingleton<IUniversalOutcomeVerificationService, UniversalOutcomeVerificationService>();
         services.AddSingleton<IUniversalVerificationEvidenceRouter, UniversalVerificationEvidenceRouter>();
         services.AddSingleton<IUniversalVerificationEvidenceAdapters, UniversalVerificationEvidenceAdapters>();
+        services.AddScoped<IUniversalVerificationEvidenceCollectionService, UniversalVerificationEvidenceCollectionService>();
         return services;
     }
 
@@ -110,6 +111,25 @@ public static class UniversalTaskRouterEndpoints
             IUniversalVerificationEvidenceRouter router) =>
             Results.Ok(
                 router.Route(request)));
+
+        app.MapPost("/api/universal-router/collect-verification-evidence", async (
+            UniversalVerificationEvidenceCollectionRequest request,
+            IUniversalVerificationEvidenceCollectionService collection,
+            CancellationToken cancellationToken) =>
+        {
+            try
+            {
+                return Results.Ok(
+                    await collection.CollectAsync(
+                        request,
+                        cancellationToken));
+            }
+            catch (AgentValidationException exception)
+            {
+                return Results.BadRequest(
+                    new ApiError(exception.Message));
+            }
+        });
 
         app.MapPost("/api/universal-router/evaluate-tool-outcome", (
             UniversalFallbackEvaluateRequest request,

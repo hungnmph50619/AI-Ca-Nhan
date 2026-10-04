@@ -33,6 +33,7 @@ public sealed class ComputerOperatorTaskService(
     IComputerDisplayTopologyService displays,
     IComputerSafeTargetingService targeting,
     IDesktopFrameDifferenceService frameDifferences,
+    IDesktopLocalFastObserver fastObserver,
     IDesktopTemporalSceneService temporalScenes,
     IComputerOperatorActionExecutor actionExecutor,
     ILogger<ComputerOperatorTaskService> logger)
@@ -432,9 +433,11 @@ public sealed class ComputerOperatorTaskService(
                     decision.Confidence);
 
                 DesktopScreenshotFrame? verificationBaseline = null;
+                DesktopFastObserverSample? fastObserverBaseline = null;
                 try
                 {
                     verificationBaseline = await CapturePostActionFrameAsync(linked.Token);
+                    fastObserverBaseline = fastObserver.CaptureSample(verificationBaseline);
                     progress.Add(
                         "frame-baseline",
                         $"Đã chụp baseline trước hành động {verificationBaseline.Width}x{verificationBaseline.Height}; scope={verificationBaseline.CaptureScope}.",
@@ -551,6 +554,7 @@ public sealed class ComputerOperatorTaskService(
                         decision,
                         frame,
                         verificationBaseline,
+                        fastObserverBaseline,
                         linked.Token);
                 }
                 finally
@@ -666,6 +670,7 @@ public sealed class ComputerOperatorTaskService(
         DesktopOperatorDecision decision,
         DesktopScreenshotFrame previousFrame,
         DesktopScreenshotFrame? verificationBaseline,
+        DesktopFastObserverSample? fastObserverBaseline,
         CancellationToken cancellationToken)
     {
         progress.Add(
@@ -722,6 +727,20 @@ public sealed class ComputerOperatorTaskService(
                     frameDifference.Comparable
                         ? $"Frame difference: {frameDifference.ChangedRatio * 100:0.00}% mẫu thay đổi; vùng=({frameDifference.BoxLeft},{frameDifference.BoxTop},{frameDifference.BoxWidth},{frameDifference.BoxHeight}); meanDelta={frameDifference.MeanChannelDelta:0.0}."
                         : $"Frame difference không khả dụng: {frameDifference.Reason}",
+                    observation: true);
+            }
+
+            if (fastObserverBaseline is not null)
+            {
+                var fastAfter = fastObserver.CaptureSample(after);
+                var fastObservation = fastObserver.Analyze(
+                    fastObserverBaseline,
+                    fastAfter,
+                    frameDifference);
+
+                progress.Add(
+                    "fast-observer",
+                    $"Quan sát cục bộ nhanh: {fastObservation.Summary}",
                     observation: true);
             }
 

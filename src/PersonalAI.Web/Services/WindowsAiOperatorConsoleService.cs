@@ -723,6 +723,8 @@ Bảng chỉ ẩn khi bạn bấm ĐÓNG; tác vụ mới sẽ tự hiện lại
             "frame-difference" => "SO SÁNH ẢNH",
             "verify" => "XÁC MINH",
             "verify-result" => "KẾT QUẢ XÁC MINH",
+            "local-verify" => "XÁC MINH NHANH TẠI MÁY",
+            "vision-fallback" => "CHUYỂN SANG GEMINI XÁC MINH",
             "milestone" => "MỐC ĐÃ XÁC MINH",
             "recovery" => "PHỤC HỒI",
             "replan" => "LẬP LẠI PHƯƠNG ÁN",

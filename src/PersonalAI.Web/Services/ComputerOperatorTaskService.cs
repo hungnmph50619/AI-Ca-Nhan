@@ -70,7 +70,7 @@ public sealed class ComputerOperatorTaskService(
 
         control.EnableScopedAutomation(
             maximumActions: 12,
-            maximumSeconds: 180);
+            maximumSeconds: 170);
 
         var operatorToken = execution.Begin(normalizedGoal);
         using var linked = CancellationTokenSource.CreateLinkedTokenSource(

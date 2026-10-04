@@ -2461,7 +2461,7 @@ public sealed class ComputerOperatorAcceptanceService
             result.Proposed &&
             result.ToolName == "test.search" &&
             result.Arguments is { } arguments &&
-            arguments.Value.TryGetProperty(
+            arguments.TryGetProperty(
                 "query",
                 out var query) &&
             query.GetString() == "acceptance" &&

@@ -30,6 +30,7 @@ on:
       - 'src/PersonalAI.Web/Services/ComputerOperatorActionStateMachine.cs'
       - 'src/PersonalAI.Web/Services/ComputerOperatorConfidenceEngine.cs'
       - 'src/PersonalAI.Web/Services/ComputerOperatorFailureRecoveryEngine.cs'
+      - 'src/PersonalAI.Web/Services/ExecutionAgentFramework.cs'
       - 'src/PersonalAI.Web/Services/ComputerWindowVisibilityService.cs'
       - 'src/PersonalAI.Web/Services/DesktopTemporalSceneService.cs'
       - 'src/PersonalAI.Web/Services/DesktopVisionService.cs'
@@ -81,8 +82,8 @@ jobs:
               $failedChecks = @($acceptance.checks | Where-Object { $_.passed -ne $true } | ForEach-Object { "$($_.name): $($_.detail)" })
               throw "Computer Operator acceptance suite thất bại: $($failedChecks -join '; ')"
             }
-            if ($acceptance.totalCount -lt 36 -or $acceptance.passedCount -ne $acceptance.totalCount) {
-              throw "Computer Operator acceptance suite không chạy đủ 36 kiểm tra bắt buộc."
+            if ($acceptance.totalCount -lt 38 -or $acceptance.passedCount -ne $acceptance.totalCount) {
+              throw "Computer Operator acceptance suite không chạy đủ 38 kiểm tra bắt buộc."
             }
             Write-Host "Đạt Computer Operator acceptance suite: $($acceptance.passedCount)/$($acceptance.totalCount)."
 

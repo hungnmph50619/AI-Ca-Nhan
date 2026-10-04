@@ -9,6 +9,7 @@ public static class DevelopmentEndpoints
         this IServiceCollection services)
     {
         services.AddSingleton<IDevelopmentAgentService, DevelopmentAgentService>();
+        services.AddSingleton<ICodingVerificationGate, CodingVerificationGate>();
         services.AddSingleton<SafeDevelopmentCodingBackend>();
         services.AddSingleton<IOpenHandsAgentServerClient, OpenHandsAgentServerClient>();
         services.AddSingleton<OpenHandsCodingExecutionBackend>();
@@ -69,6 +70,25 @@ public static class DevelopmentEndpoints
             Results.Ok(
                 await openHands.GetStatusAsync(
                     cancellationToken)));
+
+        app.MapPost("/api/development/coding/verify", async (
+            CodingVerificationRequest request,
+            ICodingVerificationGate verification,
+            CancellationToken cancellationToken) =>
+        {
+            try
+            {
+                return Results.Ok(
+                    await verification.VerifyAsync(
+                        request,
+                        cancellationToken));
+            }
+            catch (AgentValidationException exception)
+            {
+                return Results.BadRequest(
+                    new ApiError(exception.Message));
+            }
+        });
 
         app.MapGet("/api/development/git/status", async (
             string? repositoryPath,

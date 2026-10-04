@@ -173,6 +173,16 @@ public sealed class ComputerOperatorAcceptanceService
 
         RunCheck(
             checks,
+            "failure recovery ưu tiên retarget khi target biến mất",
+            CheckFailureRecoveryRetargetsMissingTarget);
+
+        RunCheck(
+            checks,
+            "failure recovery không retry y hệt khi lỗi lặp nhiều lần",
+            CheckFailureRecoveryEscalatesRepeatedFailure);
+
+        RunCheck(
+            checks,
             "pause resume stop giữ đúng trạng thái và cancellation",
             CheckExecutionPauseResumeStop);
 
@@ -1388,6 +1398,44 @@ public sealed class ComputerOperatorAcceptanceService
             result.Decision != ComputerOperatorConfidenceDecision.Execute &&
             result.TargetConfidence < 0.5,
             $"Confidence Engine vẫn cho execute target yếu: {result.Reason}");
+    }
+
+    private static void CheckFailureRecoveryRetargetsMissingTarget()
+    {
+        var engine = new ComputerOperatorFailureRecoveryEngine();
+
+        var plan = engine.Plan(
+            new ComputerOperatorFailureContext(
+                ComputerOperatorFailureTaxonomy.TargetNotFound,
+                "click-left",
+                "Target biến mất",
+                TargetMissing: true));
+
+        Require(
+            plan.PrimaryAction == ComputerOperatorRecoveryAction.Retarget &&
+            !plan.AllowSameStrategyRetry &&
+            plan.Fallbacks.Contains(
+                ComputerOperatorRecoveryAction.GeminiInspect),
+            "Failure Recovery không ưu tiên retarget khi target biến mất.");
+    }
+
+    private static void CheckFailureRecoveryEscalatesRepeatedFailure()
+    {
+        var engine = new ComputerOperatorFailureRecoveryEngine();
+
+        var plan = engine.Plan(
+            new ComputerOperatorFailureContext(
+                ComputerOperatorFailureTaxonomy.ActionNoEffect,
+                "click-left",
+                "Action không tạo hiệu ứng",
+                RepeatedFailures: 3));
+
+        Require(
+            plan.PrimaryAction == ComputerOperatorRecoveryAction.GeminiInspect &&
+            !plan.AllowSameStrategyRetry &&
+            plan.Fallbacks.Contains(
+                ComputerOperatorRecoveryAction.Block),
+            "Failure Recovery không escalate khi cùng lỗi lặp nhiều lần.");
     }
 
     private static void CheckExecutionPauseResumeStop()

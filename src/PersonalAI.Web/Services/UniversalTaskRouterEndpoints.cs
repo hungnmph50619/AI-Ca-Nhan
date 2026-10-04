@@ -13,6 +13,7 @@ public static class UniversalTaskRouterEndpoints
         services.AddSingleton<IUniversalOutcomeVerificationService, UniversalOutcomeVerificationService>();
         services.AddSingleton<IUniversalVerificationEvidenceRouter, UniversalVerificationEvidenceRouter>();
         services.AddSingleton<IUniversalVerificationEvidenceAdapters, UniversalVerificationEvidenceAdapters>();
+        services.AddScoped<IUniversalExecutionLifecycleCoordinator, UniversalExecutionLifecycleCoordinator>();
         return services;
     }
 
@@ -119,6 +120,25 @@ public static class UniversalTaskRouterEndpoints
                     request.Route,
                     request.Execution,
                     request.Verification)));
+
+        app.MapPost("/api/universal-router/execute-lifecycle", async (
+            UniversalExecutionLifecycleRequest request,
+            IUniversalExecutionLifecycleCoordinator lifecycle,
+            CancellationToken cancellationToken) =>
+        {
+            try
+            {
+                return Results.Ok(
+                    await lifecycle.ExecuteAsync(
+                        request,
+                        cancellationToken));
+            }
+            catch (AgentValidationException exception)
+            {
+                return Results.BadRequest(
+                    new ApiError(exception.Message));
+            }
+        });
 
         return app;
     }

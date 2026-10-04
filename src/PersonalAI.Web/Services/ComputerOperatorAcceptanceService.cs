@@ -423,6 +423,21 @@ public sealed class ComputerOperatorAcceptanceService
 
         RunCheck(
             checks,
+            "execution lifecycle chỉ complete sau verification",
+            CheckExecutionLifecycleCompletesOnlyAfterVerification);
+
+        RunCheck(
+            checks,
+            "execution lifecycle thiếu evidence không được complete",
+            CheckExecutionLifecycleBlocksMissingEvidence);
+
+        RunCheck(
+            checks,
+            "execution lifecycle dừng khi agent execution fail",
+            CheckExecutionLifecycleStopsOnExecutionFailure);
+
+        RunCheck(
+            checks,
             "pause resume stop giữ đúng trạng thái và cancellation",
             CheckExecutionPauseResumeStop);
 
@@ -3317,6 +3332,149 @@ public sealed class ComputerOperatorAcceptanceService
             "Agent contract không hỗ trợ verification nhưng vẫn được complete.");
     }
 
+    private static void CheckExecutionLifecycleCompletesOnlyAfterVerification()
+    {
+        var agents =
+            new ExecutionAgentRegistry(
+                new IExecutionAgent[]
+                {
+                    new AcceptanceExecutionAgent(
+                        "execution.browser.lifecycle",
+                        ExecutionAgentChannels.Browser)
+                });
+
+        var router =
+            new UniversalTaskRouter(
+                agents,
+                new ExecutionGateway(agents));
+
+        var verifier =
+            new UniversalOutcomeVerificationService(
+                new ToolCapabilityRegistry(
+                    new ToolRegistry(
+                        Array.Empty<IPersonalAiTool>())),
+                agents);
+
+        var lifecycle =
+            new UniversalExecutionLifecycleCoordinator(
+                router,
+                verifier);
+
+        var result = lifecycle.ExecuteAsync(
+                new UniversalExecutionLifecycleRequest(
+                    "Mở https://example.com và xác minh trang",
+                    PreferredChannel:
+                        ExecutionAgentChannels.Browser,
+                    ConfirmExecution: true))
+            .GetAwaiter()
+            .GetResult();
+
+        Require(
+            result.GoalComplete &&
+            result.Action ==
+                UniversalExecutionLifecycleActions.Complete &&
+            result.Verification.Status ==
+                UniversalOutcomeStatuses.Verified &&
+            result.Verification.IndependentlyVerified,
+            "Execution lifecycle complete trước hoặc không qua outcome verification.");
+    }
+
+    private static void CheckExecutionLifecycleBlocksMissingEvidence()
+    {
+        var agents =
+            new ExecutionAgentRegistry(
+                new IExecutionAgent[]
+                {
+                    new AcceptanceExecutionAgent(
+                        "execution.browser.lifecycle-unverified",
+                        ExecutionAgentChannels.Browser,
+                        verifiedResult: false)
+                });
+
+        var router =
+            new UniversalTaskRouter(
+                agents,
+                new ExecutionGateway(agents));
+
+        var verifier =
+            new UniversalOutcomeVerificationService(
+                new ToolCapabilityRegistry(
+                    new ToolRegistry(
+                        Array.Empty<IPersonalAiTool>())),
+                agents);
+
+        var lifecycle =
+            new UniversalExecutionLifecycleCoordinator(
+                router,
+                verifier);
+
+        var result = lifecycle.ExecuteAsync(
+                new UniversalExecutionLifecycleRequest(
+                    "Mở https://example.com và xác minh trang",
+                    PreferredChannel:
+                        ExecutionAgentChannels.Browser,
+                    ConfirmExecution: true))
+            .GetAwaiter()
+            .GetResult();
+
+        Require(
+            !result.GoalComplete &&
+            result.Action ==
+                UniversalExecutionLifecycleActions.VerifyOutcome &&
+            result.Verification.Status ==
+                UniversalOutcomeStatuses.NeedsVerification,
+            "Execution lifecycle đã complete dù universal evidence còn thiếu.");
+    }
+
+    private static void CheckExecutionLifecycleStopsOnExecutionFailure()
+    {
+        var agents =
+            new ExecutionAgentRegistry(
+                new IExecutionAgent[]
+                {
+                    new AcceptanceExecutionAgent(
+                        "execution.browser.lifecycle-failed",
+                        ExecutionAgentChannels.Browser,
+                        executionStatus:
+                            AgentExecutionStatuses.Failed,
+                        verifiedResult: false)
+                });
+
+        var router =
+            new UniversalTaskRouter(
+                agents,
+                new ExecutionGateway(agents));
+
+        var verifier =
+            new UniversalOutcomeVerificationService(
+                new ToolCapabilityRegistry(
+                    new ToolRegistry(
+                        Array.Empty<IPersonalAiTool>())),
+                agents);
+
+        var lifecycle =
+            new UniversalExecutionLifecycleCoordinator(
+                router,
+                verifier);
+
+        var result = lifecycle.ExecuteAsync(
+                new UniversalExecutionLifecycleRequest(
+                    "Mở https://example.com và xác minh trang",
+                    PreferredChannel:
+                        ExecutionAgentChannels.Browser,
+                    ConfirmExecution: true))
+            .GetAwaiter()
+            .GetResult();
+
+        Require(
+            !result.GoalComplete &&
+            result.Action ==
+                UniversalExecutionLifecycleActions.Stop &&
+            result.Verification.Status ==
+                UniversalOutcomeStatuses.ExecutionFailed,
+            "Execution lifecycle không stop khi execution agent fail.");
+    }
+
     private static void CheckExecutionPauseResumeStop()
     {
         using var execution = new ComputerOperatorExecutionControl();
@@ -3840,11 +3998,19 @@ public sealed class ComputerOperatorAcceptanceService
     {
         public ExecutionAgentDefinition Definition { get; }
 
+        private readonly string executionStatus;
+        private readonly bool verifiedResult;
+
         public AcceptanceExecutionAgent(
             string id,
             string channel,
-            bool supportsVerification = true)
+            bool supportsVerification = true,
+            string executionStatus = AgentExecutionStatuses.Succeeded,
+            bool verifiedResult = true)
         {
+            this.executionStatus = executionStatus;
+            this.verifiedResult = verifiedResult;
+
             Definition = new ExecutionAgentDefinition(
                 id,
                 id,
@@ -3885,11 +4051,11 @@ public sealed class ComputerOperatorAcceptanceService
             return Task.FromResult(
                 new ExecutionAgentResult(
                     Definition.Id,
-                    AgentExecutionStatuses.Succeeded,
+                    executionStatus,
                     "acceptance",
                     ["acceptance"],
                     ChangedExternalState: true,
-                    Verified: true,
+                    Verified: verifiedResult,
                     Provider: "acceptance",
                     Model: "acceptance"));
         }

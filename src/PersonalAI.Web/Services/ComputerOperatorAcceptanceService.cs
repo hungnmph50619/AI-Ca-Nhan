@@ -153,6 +153,16 @@ public sealed class ComputerOperatorAcceptanceService
 
         RunCheck(
             checks,
+            "action state machine đi đúng happy path",
+            CheckActionStateMachineHappyPath);
+
+        RunCheck(
+            checks,
+            "action state machine chặn execute trước target",
+            CheckActionStateMachineRejectsInvalidTransition);
+
+        RunCheck(
+            checks,
             "pause resume stop giữ đúng trạng thái và cancellation",
             CheckExecutionPauseResumeStop);
 
@@ -1229,6 +1239,59 @@ public sealed class ComputerOperatorAcceptanceService
             point.DesktopX == -325 &&
             point.DesktopY == 300,
             $"ROI origin bị mất khi map về desktop vật lý: ({point.DesktopX},{point.DesktopY}).");
+    }
+
+    private static void CheckActionStateMachineHappyPath()
+    {
+        var machine = new ComputerOperatorActionStateMachine();
+
+        _ = machine.StartObservation("observe");
+        _ = machine.MoveTo(
+            ComputerOperatorActionState.Plan,
+            "plan");
+        _ = machine.MoveTo(
+            ComputerOperatorActionState.Target,
+            "target");
+        _ = machine.MoveTo(
+            ComputerOperatorActionState.Execute,
+            "execute");
+        _ = machine.MoveTo(
+            ComputerOperatorActionState.Verify,
+            "verify");
+        var success = machine.MoveTo(
+            ComputerOperatorActionState.Success,
+            "success");
+
+        Require(
+            success.State == ComputerOperatorActionState.Success &&
+            success.TransitionCount == 6,
+            "Action state machine không hoàn thành đúng happy path.");
+    }
+
+    private static void CheckActionStateMachineRejectsInvalidTransition()
+    {
+        var machine = new ComputerOperatorActionStateMachine();
+
+        _ = machine.StartObservation("observe");
+        _ = machine.MoveTo(
+            ComputerOperatorActionState.Plan,
+            "plan");
+
+        var rejected = false;
+        try
+        {
+            _ = machine.MoveTo(
+                ComputerOperatorActionState.Execute,
+                "execute-too-early");
+        }
+        catch (InvalidOperationException)
+        {
+            rejected = true;
+        }
+
+        Require(
+            rejected,
+            "Action state machine vẫn cho EXECUTE trước TARGET.");
     }
 
     private static void CheckExecutionPauseResumeStop()

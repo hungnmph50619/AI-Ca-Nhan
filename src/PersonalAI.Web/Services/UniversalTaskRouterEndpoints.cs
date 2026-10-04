@@ -13,6 +13,7 @@ public static class UniversalTaskRouterEndpoints
         services.AddSingleton<IUniversalOutcomeVerificationService, UniversalOutcomeVerificationService>();
         services.AddSingleton<IUniversalVerificationEvidenceRouter, UniversalVerificationEvidenceRouter>();
         services.AddSingleton<IUniversalVerificationEvidenceAdapters, UniversalVerificationEvidenceAdapters>();
+        services.AddSingleton<IUniversalVerificationPipeline, UniversalVerificationPipeline>();
         return services;
     }
 
@@ -110,6 +111,12 @@ public static class UniversalTaskRouterEndpoints
             IUniversalVerificationEvidenceRouter router) =>
             Results.Ok(
                 router.Route(request)));
+
+        app.MapPost("/api/universal-router/verify-pipeline", (
+            UniversalVerificationPipelineRequest request,
+            IUniversalVerificationPipeline pipeline) =>
+            Results.Ok(
+                pipeline.Verify(request)));
 
         app.MapPost("/api/universal-router/evaluate-tool-outcome", (
             UniversalFallbackEvaluateRequest request,

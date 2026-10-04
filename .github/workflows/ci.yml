@@ -3097,6 +3097,14 @@ jobs:
           grep -Fq 'NormalizeSceneGraphRelations' src/PersonalAI.Web/Services/DesktopVisionService.cs
           grep -Fq 'ParentId = parentId' src/PersonalAI.Web/Services/DesktopVisionService.cs
           grep -Fq 'ids.Contains(parentId)' src/PersonalAI.Web/Services/DesktopVisionService.cs
+          grep -Fq 'LooksLikeEncodedKeyboardControl' src/PersonalAI.Web/Services/DesktopVisionService.cs
+          grep -Fq 'Vision đã trộn ký hiệu phím điều khiển' src/PersonalAI.Web/Services/DesktopVisionService.cs
+          grep -Fq 'Mọi trường mô tả do AI sinh ra' src/PersonalAI.Web/Services/DesktopVisionService.cs
+          grep -Fq 'TranslateStage' src/PersonalAI.Web/Services/WindowsAiOperatorConsoleService.cs
+          grep -Fq '_followTail = true' src/PersonalAI.Web/Services/WindowsAiOperatorConsoleService.cs
+          grep -Fq 'TÁC NHÂN AI ĐANG THỰC HIỆN' src/PersonalAI.Web/Services/WindowsAiOperatorConsoleService.cs
+          grep -Fq 'Trạng thái:' src/PersonalAI.Web/Services/ComputerOperatorTaskService.cs
+          grep -Fq 'Kế hoạch:' src/PersonalAI.Web/Services/ComputerOperatorTaskService.cs
           ! grep -Fq 'action = ExecuteDecision(decision, frame);' src/PersonalAI.Web/Services/ComputerOperatorTaskService.cs
           grep -Fq '"frame-difference"' src/PersonalAI.Web/Services/ComputerOperatorTaskService.cs
           grep -Fq 'changedRatio=' src/PersonalAI.Web/Services/DesktopVisionService.cs

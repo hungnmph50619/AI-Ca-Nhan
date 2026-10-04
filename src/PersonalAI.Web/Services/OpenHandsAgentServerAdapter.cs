@@ -233,9 +233,9 @@ public sealed class OpenHandsAgentServerClient(
                 llm,
                 tools = new object[]
                 {
-                    new { name = "TerminalTool", params = new { } },
-                    new { name = "FileEditorTool", params = new { } },
-                    new { name = "TaskTrackerTool", params = new { } }
+                    new { name = "TerminalTool", @params = new { } },
+                    new { name = "FileEditorTool", @params = new { } },
+                    new { name = "TaskTrackerTool", @params = new { } }
                 },
                 include_default_tools = new[]
                 {

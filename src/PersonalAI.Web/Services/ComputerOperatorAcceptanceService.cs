@@ -253,6 +253,16 @@ public sealed class ComputerOperatorAcceptanceService
 
         RunCheck(
             checks,
+            "OpenHands backend chỉ nhận explicit request khi adapter bật",
+            CheckOpenHandsExplicitRequestBoundary);
+
+        RunCheck(
+            checks,
+            "OpenHands backend khởi tạo conversation ở chế độ cần xác nhận",
+            CheckOpenHandsConversationContract);
+
+        RunCheck(
+            checks,
             "pause resume stop giữ đúng trạng thái và cancellation",
             CheckExecutionPauseResumeStop);
 
@@ -1875,6 +1885,77 @@ public sealed class ComputerOperatorAcceptanceService
             "Coding execution agent không bọc backend đúng contract.");
     }
 
+    private static void CheckOpenHandsExplicitRequestBoundary()
+    {
+        var server = new AcceptanceOpenHandsAgentServerClient(
+            enabled: true);
+        var backend = new OpenHandsCodingExecutionBackend(
+            server);
+
+        var accepted = backend.TryParse(
+            new ExecutionAgentRequest(
+                "openhands: C:\\repo | sửa lỗi build",
+                ExecutionAgentChannels.Coding),
+            out var command,
+            out var acceptedConfidence,
+            out _);
+
+        var rejected = backend.TryParse(
+            new ExecutionAgentRequest(
+                "hãy tự sửa project bằng OpenHands",
+                ExecutionAgentChannels.Coding),
+            out _,
+            out var rejectedConfidence,
+            out _);
+
+        Require(
+            accepted &&
+            command is not null &&
+            command.Operation == "openhands" &&
+            acceptedConfidence >= 0.9 &&
+            !rejected &&
+            rejectedConfidence == 0,
+            "OpenHands backend không giữ explicit-request boundary.");
+    }
+
+    private static void CheckOpenHandsConversationContract()
+    {
+        var server = new AcceptanceOpenHandsAgentServerClient(
+            enabled: true);
+        var backend = new OpenHandsCodingExecutionBackend(
+            server);
+
+        var parsed = backend.TryParse(
+            new ExecutionAgentRequest(
+                "openhands: C:\\repo | sửa lỗi build",
+                ExecutionAgentChannels.Coding),
+            out var command,
+            out _,
+            out _);
+
+        Require(
+            parsed && command is not null,
+            "OpenHands acceptance command không parse được.");
+
+        var result = backend.ExecuteAsync(
+                command!)
+            .GetAwaiter()
+            .GetResult();
+
+        Require(
+            server.StartCount == 1 &&
+            server.LastWorkingDirectory == "C:\\repo" &&
+            server.LastPrompt == "sửa lỗi build" &&
+            result.Success &&
+            !result.Verified &&
+            result.Engine == "openhands-agent-server" &&
+            result.Evidence.Any(value =>
+                value.Contains(
+                    "conversationId=",
+                    StringComparison.OrdinalIgnoreCase)),
+            "OpenHands backend không giữ đúng conversation/confirmation contract.");
+    }
+
     private static void CheckExecutionPauseResumeStop()
     {
         using var execution = new ComputerOperatorExecutionControl();
@@ -2176,6 +2257,67 @@ public sealed class ComputerOperatorAcceptanceService
                 dpi,
                 scale,
                 scale);
+    }
+
+    private sealed class AcceptanceOpenHandsAgentServerClient
+        : IOpenHandsAgentServerClient
+    {
+        private readonly bool enabled;
+
+        public int StartCount { get; private set; }
+        public string LastWorkingDirectory { get; private set; } = string.Empty;
+        public string LastPrompt { get; private set; } = string.Empty;
+
+        public AcceptanceOpenHandsAgentServerClient(
+            bool enabled)
+        {
+            this.enabled = enabled;
+        }
+
+        public OpenHandsAgentServerOptions GetOptions() =>
+            new(
+                enabled,
+                "http://127.0.0.1:8000",
+                "acceptance-model",
+                string.Empty,
+                20,
+                false);
+
+        public Task<OpenHandsAgentServerStatus> GetStatusAsync(
+            CancellationToken cancellationToken = default)
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+
+            return Task.FromResult(
+                new OpenHandsAgentServerStatus(
+                    enabled,
+                    Configured: true,
+                    Reachable: enabled,
+                    Ready: enabled,
+                    "http://127.0.0.1:8000",
+                    "acceptance-model",
+                    "acceptance",
+                    "acceptance"));
+        }
+
+        public Task<OpenHandsConversationStartResult> StartCodingConversationAsync(
+            string workingDirectory,
+            string prompt,
+            CancellationToken cancellationToken = default)
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+
+            StartCount++;
+            LastWorkingDirectory = workingDirectory;
+            LastPrompt = prompt;
+
+            return Task.FromResult(
+                new OpenHandsConversationStartResult(
+                    true,
+                    "00000000-0000-0000-0000-000000000001",
+                    "waiting_for_confirmation",
+                    "AlwaysConfirm"));
+        }
     }
 
     private sealed class AcceptanceCodingExecutionBackend

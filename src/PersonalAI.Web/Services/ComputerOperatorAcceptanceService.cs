@@ -358,6 +358,21 @@ public sealed class ComputerOperatorAcceptanceService
 
         RunCheck(
             checks,
+            "outcome verifier không coi tool success là goal success",
+            CheckUniversalOutcomeRequiresEvidence);
+
+        RunCheck(
+            checks,
+            "outcome verifier buộc replan khi evidence xác nhận goal chưa đạt",
+            CheckUniversalOutcomeFailedEvidenceReplans);
+
+        RunCheck(
+            checks,
+            "outcome verifier chỉ complete khi evidence đủ mạnh và pass",
+            CheckUniversalOutcomeVerifiedEvidenceCompletes);
+
+        RunCheck(
+            checks,
             "pause resume stop giữ đúng trạng thái và cancellation",
             CheckExecutionPauseResumeStop);
 
@@ -2732,6 +2747,185 @@ public sealed class ComputerOperatorAcceptanceService
             DateTimeOffset.UtcNow,
             [ToolPermissions.Read],
             [ToolPermissions.Read]);
+
+    private static void CheckUniversalOutcomeRequiresEvidence()
+    {
+        IPersonalAiTool tool =
+            new AcceptanceSchemaTool(
+                "browser.acceptance.read",
+                requiredField: "query");
+
+        var capabilityRegistry =
+            new ToolCapabilityRegistry(
+                new ToolRegistry(
+                    new[] { tool }));
+
+        var agentRegistry =
+            new ExecutionAgentRegistry(
+                new IExecutionAgent[]
+                {
+                    new AcceptanceExecutionAgent(
+                        "execution.browser.acceptance",
+                        ExecutionAgentChannels.Browser)
+                });
+
+        var verifier =
+            new UniversalOutcomeVerificationService(
+                capabilityRegistry,
+                agentRegistry);
+
+        var execution = BuildAcceptanceToolExecution(
+            ToolExecutionStatuses.Succeeded,
+            success: true,
+            error: null);
+
+        execution = execution with
+        {
+            ToolName = "browser.acceptance.read"
+        };
+
+        var verification = verifier.VerifyTool(
+            new UniversalToolOutcomeVerificationRequest(
+                "Đọc nội dung trang",
+                execution));
+
+        var fallback = new UniversalFallbackPolicy()
+            .Evaluate(
+                BuildAcceptanceRoute(
+                    ExecutionAgentChannels.Browser),
+                execution,
+                verification);
+
+        Require(
+            verification.Status ==
+                UniversalOutcomeStatuses.NeedsVerification &&
+            !verification.GoalAchieved &&
+            fallback.Action ==
+                UniversalFallbackActions.VerifyOutcome,
+            "Tool success vẫn bị coi là goal success khi chưa có evidence.");
+    }
+
+    private static void CheckUniversalOutcomeFailedEvidenceReplans()
+    {
+        IPersonalAiTool tool =
+            new AcceptanceSchemaTool(
+                "browser.acceptance.read",
+                requiredField: "query");
+
+        var capabilityRegistry =
+            new ToolCapabilityRegistry(
+                new ToolRegistry(
+                    new[] { tool }));
+
+        var agentRegistry =
+            new ExecutionAgentRegistry(
+                new IExecutionAgent[]
+                {
+                    new AcceptanceExecutionAgent(
+                        "execution.browser.acceptance",
+                        ExecutionAgentChannels.Browser)
+                });
+
+        var verifier =
+            new UniversalOutcomeVerificationService(
+                capabilityRegistry,
+                agentRegistry);
+
+        var execution = BuildAcceptanceToolExecution(
+            ToolExecutionStatuses.Succeeded,
+            success: true,
+            error: null) with
+        {
+            ToolName = "browser.acceptance.read"
+        };
+
+        var verification = verifier.VerifyTool(
+            new UniversalToolOutcomeVerificationRequest(
+                "Đọc nội dung trang",
+                execution,
+                new UniversalOutcomeEvidence(
+                    "acceptance-verifier",
+                    Passed: false,
+                    Confidence: 0.95,
+                    "Trang chưa tải đúng nội dung yêu cầu.")));
+
+        var fallback = new UniversalFallbackPolicy()
+            .Evaluate(
+                BuildAcceptanceRoute(
+                    ExecutionAgentChannels.Browser),
+                execution,
+                verification);
+
+        Require(
+            verification.Status ==
+                UniversalOutcomeStatuses.NotAchieved &&
+            verification.IndependentlyVerified &&
+            !verification.GoalAchieved &&
+            fallback.Action ==
+                UniversalFallbackActions.ReplanGoal,
+            "Outcome fail không buộc replan goal.");
+    }
+
+    private static void CheckUniversalOutcomeVerifiedEvidenceCompletes()
+    {
+        IPersonalAiTool tool =
+            new AcceptanceSchemaTool(
+                "browser.acceptance.read",
+                requiredField: "query");
+
+        var capabilityRegistry =
+            new ToolCapabilityRegistry(
+                new ToolRegistry(
+                    new[] { tool }));
+
+        var agentRegistry =
+            new ExecutionAgentRegistry(
+                new IExecutionAgent[]
+                {
+                    new AcceptanceExecutionAgent(
+                        "execution.browser.acceptance",
+                        ExecutionAgentChannels.Browser)
+                });
+
+        var verifier =
+            new UniversalOutcomeVerificationService(
+                capabilityRegistry,
+                agentRegistry);
+
+        var execution = BuildAcceptanceToolExecution(
+            ToolExecutionStatuses.Succeeded,
+            success: true,
+            error: null) with
+        {
+            ToolName = "browser.acceptance.read"
+        };
+
+        var verification = verifier.VerifyTool(
+            new UniversalToolOutcomeVerificationRequest(
+                "Đọc nội dung trang",
+                execution,
+                new UniversalOutcomeEvidence(
+                    "acceptance-verifier",
+                    Passed: true,
+                    Confidence: 0.95,
+                    "Trang đã tải và chứa nội dung mục tiêu.")));
+
+        var fallback = new UniversalFallbackPolicy()
+            .Evaluate(
+                BuildAcceptanceRoute(
+                    ExecutionAgentChannels.Browser),
+                execution,
+                verification);
+
+        Require(
+            verification.Status ==
+                UniversalOutcomeStatuses.Verified &&
+            verification.GoalAchieved &&
+            verification.IndependentlyVerified &&
+            fallback.Action ==
+                UniversalFallbackActions.Complete,
+            "Outcome pass đủ mạnh vẫn không complete.");
+    }
 
     private static void CheckExecutionPauseResumeStop()
     {

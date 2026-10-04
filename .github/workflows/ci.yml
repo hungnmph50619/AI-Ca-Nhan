@@ -3105,6 +3105,10 @@ jobs:
           grep -Fq 'TÁC NHÂN AI ĐANG THỰC HIỆN' src/PersonalAI.Web/Services/WindowsAiOperatorConsoleService.cs
           grep -Fq 'Trạng thái:' src/PersonalAI.Web/Services/ComputerOperatorTaskService.cs
           grep -Fq 'Kế hoạch:' src/PersonalAI.Web/Services/ComputerOperatorTaskService.cs
+          grep -Fq 'Tác vụ đang chạy luôn bám dòng log mới nhất' src/PersonalAI.Web/Services/WindowsAiOperatorConsoleService.cs
+          grep -Fq 'if (selectedActive)' src/PersonalAI.Web/Services/WindowsAiOperatorConsoleService.cs
+          grep -Fq 'maximumSeconds: 180' src/PersonalAI.Web/Services/ComputerOperatorTaskService.cs
+          grep -Fq '200_000' src/PersonalAI.Web/Services/ComputerOperatorTaskTool.cs
           ! grep -Fq 'action = ExecuteDecision(decision, frame);' src/PersonalAI.Web/Services/ComputerOperatorTaskService.cs
           grep -Fq '"frame-difference"' src/PersonalAI.Web/Services/ComputerOperatorTaskService.cs
           grep -Fq 'changedRatio=' src/PersonalAI.Web/Services/DesktopVisionService.cs

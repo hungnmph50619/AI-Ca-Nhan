@@ -36,6 +36,7 @@ public static class ToolFrameworkEndpoints
         services.AddSingleton<IPersonalAiTool, WorkspaceMoveTool>();
         services.AddSingleton<IPersonalAiTool, WorkspaceDeleteTool>();
         services.AddSingleton<IToolRegistry, ToolRegistry>();
+        services.AddSingleton<IToolCapabilityRegistry, ToolCapabilityRegistry>();
         services.AddSingleton<IToolInputValidator, ToolInputValidator>();
         services.AddSingleton<IToolPolicy, ToolPolicy>();
         services.AddSingleton<IToolExecutionService, ToolExecutionService>();
@@ -58,6 +59,21 @@ public static class ToolFrameworkEndpoints
             return registry.TryGet(toolName, out var tool) && tool is not null
                 ? Results.Ok(tool.Definition)
                 : Results.NotFound(new ApiError("Không tìm thấy công cụ đã đăng ký."));
+        });
+
+        app.MapGet("/api/tool-capabilities", (
+            string? capability,
+            IToolCapabilityRegistry registry) =>
+        {
+            var tools = string.IsNullOrWhiteSpace(capability)
+                ? registry.GetAll()
+                : registry.FindByCapability(capability);
+
+            return Results.Ok(new
+            {
+                count = tools.Count,
+                tools
+            });
         });
 
         app.MapGet("/api/tools/activity", (int? limit, IToolActivityStore activityStore) =>

@@ -25,6 +25,7 @@ on:
       - 'src/PersonalAI.Web/Services/DesktopFrameDifferenceService.cs'
       - 'src/PersonalAI.Web/Services/DesktopLocalFastObserver.cs'
       - 'src/PersonalAI.Web/Services/DesktopRoiVisionService.cs'
+      - 'src/PersonalAI.Web/Services/AdaptiveGeminiCallPolicy.cs'
       - 'src/PersonalAI.Web/Services/ComputerWindowVisibilityService.cs'
       - 'src/PersonalAI.Web/Services/DesktopTemporalSceneService.cs'
       - 'src/PersonalAI.Web/Services/DesktopVisionService.cs'
@@ -76,8 +77,8 @@ jobs:
               $failedChecks = @($acceptance.checks | Where-Object { $_.passed -ne $true } | ForEach-Object { "$($_.name): $($_.detail)" })
               throw "Computer Operator acceptance suite thất bại: $($failedChecks -join '; ')"
             }
-            if ($acceptance.totalCount -lt 22 -or $acceptance.passedCount -ne $acceptance.totalCount) {
-              throw "Computer Operator acceptance suite không chạy đủ 22 kiểm tra bắt buộc."
+            if ($acceptance.totalCount -lt 24 -or $acceptance.passedCount -ne $acceptance.totalCount) {
+              throw "Computer Operator acceptance suite không chạy đủ 24 kiểm tra bắt buộc."
             }
             Write-Host "Đạt Computer Operator acceptance suite: $($acceptance.passedCount)/$($acceptance.totalCount)."
 

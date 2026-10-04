@@ -408,6 +408,26 @@ public sealed class ComputerOperatorAcceptanceService
 
         RunCheck(
             checks,
+            "evidence collector tự browser readback sau execution",
+            CheckVerificationEvidenceCollectorBrowserReadback);
+
+        RunCheck(
+            checks,
+            "evidence collector không đoán coding context khi thiếu path",
+            CheckVerificationEvidenceCollectorCodingNeedsContext);
+
+        RunCheck(
+            checks,
+            "evidence collector chạy coding verification gate khi đủ context",
+            CheckVerificationEvidenceCollectorCodingGate);
+
+        RunCheck(
+            checks,
+            "evidence collector không bịa desktop evidence khi cần semantic vision",
+            CheckVerificationEvidenceCollectorDesktopSemanticFallback);
+
+        RunCheck(
+            checks,
             "pause resume stop giữ đúng trạng thái và cancellation",
             CheckExecutionPauseResumeStop);
 
@@ -3163,6 +3183,203 @@ public sealed class ComputerOperatorAcceptanceService
             "Adapter đã bịa universal evidence dù Desktop Verification Router yêu cầu Gemini.");
     }
 
+    private static void CheckVerificationEvidenceCollectorBrowserReadback()
+    {
+        IPersonalAiTool tool =
+            new AcceptanceSchemaTool(
+                "browser.acceptance.read",
+                requiredField: "query");
+
+        var capabilityRegistry =
+            new ToolCapabilityRegistry(
+                new ToolRegistry(
+                    new[] { tool }));
+
+        var evidenceRouter =
+            new UniversalVerificationEvidenceRouter(
+                capabilityRegistry);
+
+        var browser =
+            new AcceptanceBrowserAgentService();
+
+        var codingGate =
+            new AcceptanceCodingVerificationGate();
+
+        var collector =
+            new UniversalVerificationEvidenceCollectionService(
+                evidenceRouter,
+                new UniversalVerificationEvidenceAdapters(),
+                browser,
+                codingGate);
+
+        var execution = BuildAcceptanceToolExecution(
+            ToolExecutionStatuses.Succeeded,
+            success: true,
+            error: null) with
+        {
+            ToolName = "browser.acceptance.read"
+        };
+
+        var result = collector.CollectAsync(
+                new UniversalVerificationEvidenceCollectionRequest(
+                    BuildAcceptanceRoute(
+                        ExecutionAgentChannels.Browser),
+                    execution))
+            .GetAwaiter()
+            .GetResult();
+
+        Require(
+            result.Collected &&
+            result.Evidence is not null &&
+            result.Evidence.Passed &&
+            result.Evidence.Source ==
+                "browser-structured-readback" &&
+            browser.ObserveCount == 1 &&
+            codingGate.CallCount == 0,
+            $"Browser readback evidence collection sai: {result.Reason}");
+    }
+
+    private static void CheckVerificationEvidenceCollectorCodingNeedsContext()
+    {
+        IPersonalAiTool tool =
+            new AcceptanceSchemaTool(
+                "development.acceptance.build",
+                requiredField: "targetPath");
+
+        var collector =
+            new UniversalVerificationEvidenceCollectionService(
+                new UniversalVerificationEvidenceRouter(
+                    new ToolCapabilityRegistry(
+                        new ToolRegistry(
+                            new[] { tool }))),
+                new UniversalVerificationEvidenceAdapters(),
+                new AcceptanceBrowserAgentService(),
+                new AcceptanceCodingVerificationGate());
+
+        var execution = BuildAcceptanceToolExecution(
+            ToolExecutionStatuses.Succeeded,
+            success: true,
+            error: null) with
+        {
+            ToolName = "development.acceptance.build"
+        };
+
+        var result = collector.CollectAsync(
+                new UniversalVerificationEvidenceCollectionRequest(
+                    BuildAcceptanceRoute(
+                        ExecutionAgentChannels.Coding),
+                    execution))
+            .GetAwaiter()
+            .GetResult();
+
+        Require(
+            !result.Collected &&
+            result.Evidence is null &&
+            result.Strategy ==
+                UniversalVerificationStrategies.CodingVerificationGate &&
+            result.Reason.Contains(
+                "thiếu context",
+                StringComparison.OrdinalIgnoreCase),
+            "Coding collector vẫn tự đoán verification path khi thiếu context.");
+    }
+
+    private static void CheckVerificationEvidenceCollectorCodingGate()
+    {
+        IPersonalAiTool tool =
+            new AcceptanceSchemaTool(
+                "development.acceptance.build",
+                requiredField: "targetPath");
+
+        var gate =
+            new AcceptanceCodingVerificationGate(
+                passed: true);
+
+        var collector =
+            new UniversalVerificationEvidenceCollectionService(
+                new UniversalVerificationEvidenceRouter(
+                    new ToolCapabilityRegistry(
+                        new ToolRegistry(
+                            new[] { tool }))),
+                new UniversalVerificationEvidenceAdapters(),
+                new AcceptanceBrowserAgentService(),
+                gate);
+
+        var execution = BuildAcceptanceToolExecution(
+            ToolExecutionStatuses.Succeeded,
+            success: true,
+            error: null) with
+        {
+            ToolName = "development.acceptance.build"
+        };
+
+        var result = collector.CollectAsync(
+                new UniversalVerificationEvidenceCollectionRequest(
+                    BuildAcceptanceRoute(
+                        ExecutionAgentChannels.Coding),
+                    execution,
+                    new CodingVerificationRequest(
+                        "src/App/App.csproj",
+                        ".",
+                        "Release")))
+            .GetAwaiter()
+            .GetResult();
+
+        Require(
+            result.Collected &&
+            result.Evidence is not null &&
+            result.Evidence.Passed &&
+            result.Evidence.Source ==
+                "coding-verification-gate" &&
+            gate.CallCount == 1,
+            $"Coding verification evidence collection sai: {result.Reason}");
+    }
+
+    private static void CheckVerificationEvidenceCollectorDesktopSemanticFallback()
+    {
+        IPersonalAiTool tool =
+            new AcceptanceSchemaTool(
+                "computer.acceptance.action",
+                requiredField: "goal");
+
+        var collector =
+            new UniversalVerificationEvidenceCollectionService(
+                new UniversalVerificationEvidenceRouter(
+                    new ToolCapabilityRegistry(
+                        new ToolRegistry(
+                            new[] { tool }))),
+                new UniversalVerificationEvidenceAdapters(),
+                new AcceptanceBrowserAgentService(),
+                new AcceptanceCodingVerificationGate());
+
+        var execution = BuildAcceptanceToolExecution(
+            ToolExecutionStatuses.Succeeded,
+            success: true,
+            error: null) with
+        {
+            ToolName = "computer.acceptance.action"
+        };
+
+        var result = collector.CollectAsync(
+                new UniversalVerificationEvidenceCollectionRequest(
+                    BuildAcceptanceRoute(
+                        ExecutionAgentChannels.Computer),
+                    execution,
+                    DesktopVerification: new DesktopVerificationRoutingResult(
+                        DesktopVerificationRoute.GeminiRequired,
+                        0,
+                        "Cần semantic vision.")))
+            .GetAwaiter()
+            .GetResult();
+
+        Require(
+            !result.Collected &&
+            result.Evidence is null &&
+            result.Reason.Contains(
+                "semantic Vision",
+                StringComparison.OrdinalIgnoreCase),
+            "Desktop collector đã bịa evidence thay vì chuyển sang semantic verifier.");
+    }
+
     private static void CheckExecutionPauseResumeStop()
     {
         using var execution = new ComputerOperatorExecutionControl();
@@ -3464,6 +3681,127 @@ public sealed class ComputerOperatorAcceptanceService
                 dpi,
                 scale,
                 scale);
+    }
+
+    private sealed class AcceptanceBrowserAgentService
+        : IBrowserAgentService
+    {
+        public int ObserveCount { get; private set; }
+
+        public BrowserAgentStatusResponse GetStatus() =>
+            new(
+                "acceptance",
+                "acceptance",
+                true,
+                false,
+                false,
+                false,
+                false,
+                1024,
+                8000,
+                30,
+                5,
+                [BrowserAgentCapabilities.PageObserve],
+                Array.Empty<string>());
+
+        public BrowserSessionInfo GetSessionInfo() =>
+            new(
+                "acceptance",
+                true,
+                "https://example.com/",
+                "https://example.com",
+                "Example",
+                200,
+                "text/html",
+                DateTimeOffset.UtcNow,
+                42,
+                1,
+                1);
+
+        public Task<BrowserNavigationResult> NavigateAsync(
+            string url,
+            CancellationToken cancellationToken = default) =>
+            throw new InvalidOperationException(
+                "Acceptance evidence collector không được navigate.");
+
+        public Task<BrowserNavigationResult> OpenLinkAsync(
+            int linkIndex,
+            CancellationToken cancellationToken = default) =>
+            throw new InvalidOperationException(
+                "Acceptance evidence collector không được open link.");
+
+        public BrowserPageObservation ObservePage(
+            int maximumCharacters = BrowserAgentService.MaximumPageTextCharacters,
+            int maximumLinks = BrowserAgentService.MaximumLinks)
+        {
+            ObserveCount++;
+
+            return new(
+                "acceptance",
+                "https://example.com/",
+                "https://example.com",
+                "Example",
+                200,
+                "text/html",
+                DateTimeOffset.UtcNow,
+                "acceptance page content",
+                false,
+                [
+                    new BrowserPageLink(
+                        0,
+                        "Example",
+                        "https://example.com/about",
+                        true)
+                ],
+                1);
+        }
+    }
+
+    private sealed class AcceptanceCodingVerificationGate
+        : ICodingVerificationGate
+    {
+        private readonly bool passed;
+
+        public int CallCount { get; private set; }
+
+        public AcceptanceCodingVerificationGate(
+            bool passed = true)
+        {
+            this.passed = passed;
+        }
+
+        public Task<CodingVerificationReport> VerifyAsync(
+            CodingVerificationRequest request,
+            CancellationToken cancellationToken = default)
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            CallCount++;
+
+            return Task.FromResult(
+                new CodingVerificationReport(
+                    passed,
+                    [
+                        new CodingVerificationStep(
+                            "restore",
+                            true,
+                            "ok"),
+                        new CodingVerificationStep(
+                            "build",
+                            passed,
+                            passed ? "ok" : "failed"),
+                        new CodingVerificationStep(
+                            "test",
+                            passed,
+                            passed ? "ok" : "skipped"),
+                        new CodingVerificationStep(
+                            "diff-review",
+                            passed,
+                            passed ? "ok" : "skipped")
+                    ],
+                    passed
+                        ? "Coding verification gate đã PASS."
+                        : "Coding verification gate chưa đạt."));
+        }
     }
 
     private sealed class AcceptanceUniversalTaskRouter

@@ -146,6 +146,12 @@ public sealed class ComputerOperatorActionExecutor(
             point.DesktopY,
             420);
 
+        RevalidateWindowAtPoint(
+            targetWindow,
+            point.DesktopX,
+            point.DesktopY,
+            "click");
+
         var result = click(
             computer,
             targetWindow.WindowId,
@@ -168,6 +174,12 @@ public sealed class ComputerOperatorActionExecutor(
             point.DesktopY,
             "scroll");
 
+        RevalidateWindowAtPoint(
+            targetWindow,
+            point.DesktopX,
+            point.DesktopY,
+            "scroll");
+
         return computer.Scroll(
             targetWindow.WindowId,
             point.DesktopX,
@@ -180,6 +192,12 @@ public sealed class ComputerOperatorActionExecutor(
         ComputerCoordinatePoint end)
     {
         var targetWindow = RequireWindowAtPoint(
+            start.DesktopX,
+            start.DesktopY,
+            "drag-start");
+
+        RevalidateWindowAtPoint(
+            targetWindow,
             start.DesktopX,
             start.DesktopY,
             "drag-start");
@@ -228,6 +246,31 @@ public sealed class ComputerOperatorActionExecutor(
         }
 
         return window;
+    }
+
+    private void RevalidateWindowAtPoint(
+        ComputerWindowInfo expected,
+        int x,
+        int y,
+        string primitive)
+    {
+        var current = computer.GetWindowAtPoint(x, y)
+            ?? throw new ToolExecutionInputException(
+                $"Cửa sổ đích biến mất ngay trước primitive {primitive} tại ({x}, {y}).");
+
+        if (!current.WindowId.Equals(
+                expected.WindowId,
+                StringComparison.OrdinalIgnoreCase))
+        {
+            throw new ToolExecutionInputException(
+                $"Cửa sổ topmost đã thay đổi ngay trước primitive {primitive}; từ chối gửi input vào target cũ.");
+        }
+
+        if (current.Width <= 0 || current.Height <= 0)
+        {
+            throw new ToolExecutionInputException(
+                $"Cửa sổ đích không còn vùng hiển thị hợp lệ ngay trước primitive {primitive}.");
+        }
     }
 
     private static bool IsClickAction(string action) =>

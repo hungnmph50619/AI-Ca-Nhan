@@ -43,6 +43,8 @@ public sealed class ComputerOperatorTaskService(
     private const double MinimumConfidence = 0.72;
     private static readonly IDesktopVerificationRouter VerificationRouter =
         new DesktopVerificationRouter();
+    private static readonly IDesktopRoiVisionService RoiVision =
+        new DesktopRoiVisionService();
 
     private static readonly string[] SecretTerms =
     [
@@ -775,20 +777,38 @@ public sealed class ComputerOperatorTaskService(
                 }
             }
 
-            var result = await vision.VerifyAsync(
+            var visionFrame = RoiVision.SelectVerificationFrame(
+                decision,
+                previousFrame,
                 after,
-                decision.ExpectedEffect,
-                frameDifference,
-                cancellationToken);
+                frameDifference);
 
-            var verifiedByVision =
-                result.Satisfied &&
-                result.Confidence >= MinimumConfidence;
+            try
+            {
+                progress.Add(
+                    "roi-vision",
+                    $"Gemini verification dùng {visionFrame.Source}: {visionFrame.Frame.Width}x{visionFrame.Frame.Height}; origin=({visionFrame.Frame.Left},{visionFrame.Frame.Top}).",
+                    observation: true);
 
-            return new(
-                verifiedByVision,
-                result.Confidence,
-                $"Gemini Vision: {result.Reason}");
+                var result = await vision.VerifyAsync(
+                    visionFrame.Frame,
+                    decision.ExpectedEffect,
+                    frameDifference,
+                    cancellationToken);
+
+                var verifiedByVision =
+                    result.Satisfied &&
+                    result.Confidence >= MinimumConfidence;
+
+                return new(
+                    verifiedByVision,
+                    result.Confidence,
+                    $"Gemini Vision ({visionFrame.Source}): {result.Reason}");
+            }
+            finally
+            {
+                visionFrame.Clear();
+            }
         }
         finally
         {

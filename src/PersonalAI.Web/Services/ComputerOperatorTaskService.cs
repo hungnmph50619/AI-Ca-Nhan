@@ -33,6 +33,7 @@ public sealed class ComputerOperatorTaskService(
     IComputerDisplayTopologyService displays,
     IComputerSafeTargetingService targeting,
     IDesktopFrameDifferenceService frameDifferences,
+    IComputerOperatorLocalVerificationService localVerifier,
     IDesktopTemporalSceneService temporalScenes,
     IComputerOperatorActionExecutor actionExecutor,
     ILogger<ComputerOperatorTaskService> logger)
@@ -596,7 +597,8 @@ public sealed class ComputerOperatorTaskService(
                 taskHistory.Add(
                     $"STEP {index}: VERIFIED {actionSignature} — {verification.Detail}; EXPECTED: {decision.ExpectedEffect}");
 
-                if (!string.IsNullOrWhiteSpace(decision.ExpectedEffect) &&
+                if (verification.SemanticVerified &&
+                    !string.IsNullOrWhiteSpace(decision.ExpectedEffect) &&
                     verifiedMilestones.Add(decision.ExpectedEffect.Trim()))
                 {
                     taskHistory.Add(
@@ -659,6 +661,8 @@ public sealed class ComputerOperatorTaskService(
 
     private sealed record ActionVerificationResult(
         bool Verified,
+        bool SemanticVerified,
+        bool UsedVision,
         double Confidence,
         string Detail);
 
@@ -677,7 +681,7 @@ public sealed class ComputerOperatorTaskService(
             decision.Confidence);
 
         await Task.Delay(
-            decision.Action == "move-pointer" ? 180 : 550,
+            decision.Action == "move-pointer" ? 100 : 220,
             cancellationToken);
         await execution.WaitIfPausedAsync(cancellationToken);
 
@@ -703,10 +707,12 @@ public sealed class ComputerOperatorTaskService(
 
                 return new(
                     verified,
+                    true,
+                    false,
                     verified ? 1.0 : 0.0,
                     verified
-                        ? $"Đã chụp lại màn hình; con trỏ ở ({actual.X},{actual.Y}), khớp điểm mong đợi ({expected.DesktopX},{expected.DesktopY})."
-                        : $"Đã chụp lại màn hình; con trỏ ở ({actual.X},{actual.Y}), lệch khỏi điểm mong đợi ({expected.DesktopX},{expected.DesktopY}).");
+                        ? $"Local xác nhận con trỏ ở ({actual.X},{actual.Y}), khớp điểm mong đợi ({expected.DesktopX},{expected.DesktopY})."
+                        : $"Local phát hiện con trỏ ở ({actual.X},{actual.Y}), lệch khỏi điểm mong đợi ({expected.DesktopX},{expected.DesktopY}).");
             }
 
             var frameDifference = verificationBaseline is null
@@ -725,6 +731,34 @@ public sealed class ComputerOperatorTaskService(
                     observation: true);
             }
 
+            var local = localVerifier.Verify(
+                decision,
+                verificationBaseline,
+                after,
+                frameDifference);
+
+            if (local.Handled && local.Verified)
+            {
+                progress.Add(
+                    "local-verify",
+                    local.Detail,
+                    "verified-local",
+                    local.Confidence);
+
+                return new(
+                    true,
+                    local.SemanticVerified,
+                    false,
+                    local.Confidence,
+                    local.Detail);
+            }
+
+            progress.Add(
+                "vision-fallback",
+                "Local chưa đủ chắc chắn; chuyển sang Gemini để xác minh ngữ nghĩa của kết quả hành động.",
+                "verify",
+                decision.Confidence);
+
             var result = await vision.VerifyAsync(
                 after,
                 decision.ExpectedEffect,
@@ -737,6 +771,8 @@ public sealed class ComputerOperatorTaskService(
 
             return new(
                 verifiedByVision,
+                verifiedByVision,
+                true,
                 result.Confidence,
                 result.Reason);
         }

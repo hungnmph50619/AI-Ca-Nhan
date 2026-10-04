@@ -15,6 +15,7 @@ public static class UniversalTaskRouterEndpoints
         services.AddSingleton<IUniversalVerificationEvidenceAdapters, UniversalVerificationEvidenceAdapters>();
         services.AddScoped<IUniversalVerificationEvidenceCollectionService, UniversalVerificationEvidenceCollectionService>();
         services.AddScoped<IUniversalPostExecutionVerificationService, UniversalPostExecutionVerificationService>();
+        services.AddSingleton<IUniversalReplanCoordinator, UniversalReplanCoordinator>();
         return services;
     }
 
@@ -143,6 +144,22 @@ public static class UniversalTaskRouterEndpoints
                     await verification.VerifyAsync(
                         request,
                         cancellationToken));
+            }
+            catch (AgentValidationException exception)
+            {
+                return Results.BadRequest(
+                    new ApiError(exception.Message));
+            }
+        });
+
+        app.MapPost("/api/universal-router/decide-continuation", (
+            UniversalReplanRequest request,
+            IUniversalReplanCoordinator coordinator) =>
+        {
+            try
+            {
+                return Results.Ok(
+                    coordinator.Decide(request));
             }
             catch (AgentValidationException exception)
             {

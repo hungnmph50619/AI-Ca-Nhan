@@ -322,7 +322,7 @@ public sealed class ComputerOperatorTaskService(
 
                 if (decision.Action == "complete")
                 {
-                    var successState = actionState.MoveTo(
+                    var completionState = actionState.MoveTo(
                         ComputerOperatorActionState.Success,
                         "Planner xác nhận mục tiêu đã hoàn thành.");
 
@@ -801,7 +801,7 @@ public sealed class ComputerOperatorTaskService(
                         verification.Confidence);
                 }
 
-                var successState = actionState.MoveTo(
+                var actionSuccessState = actionState.MoveTo(
                     ComputerOperatorActionState.Success,
                     "Action đã được xác minh thành công.");
 

@@ -645,6 +645,13 @@ public sealed class ComputerOperatorTaskService(
                     taskHistory.Add(
                         $"STEP {index}: FAILED {actionSignature} — {exception.Message}");
 
+                    RecordOutcomeLoop(
+                        loopGuard,
+                        taskHistory,
+                        decision,
+                        actionSignature,
+                        exception.Message);
+
                     var diagnoseState = actionState.MoveTo(
                         ComputerOperatorActionState.Diagnose,
                         exception.Message);
@@ -717,6 +724,13 @@ public sealed class ComputerOperatorTaskService(
 
                     taskHistory.Add(
                         $"STEP {index}: NOT-APPLIED {actionSignature} — {action.Detail}");
+
+                    RecordOutcomeLoop(
+                        loopGuard,
+                        taskHistory,
+                        decision,
+                        actionSignature,
+                        action.Detail);
 
                     var diagnoseState = actionState.MoveTo(
                         ComputerOperatorActionState.Diagnose,
@@ -842,6 +856,13 @@ public sealed class ComputerOperatorTaskService(
 
                     taskHistory.Add(
                         $"STEP {index}: VERIFY-FAILED {actionSignature} — {verification.Detail}; EXPECTED: {decision.ExpectedEffect}");
+
+                    RecordOutcomeLoop(
+                        loopGuard,
+                        taskHistory,
+                        decision,
+                        actionSignature,
+                        verification.Detail);
 
                     var diagnoseState = actionState.MoveTo(
                         ComputerOperatorActionState.Diagnose,
@@ -1243,6 +1264,31 @@ public sealed class ComputerOperatorTaskService(
         return insideActive
             ? activeAtPlanning
             : null;
+    }
+
+    private void RecordOutcomeLoop(
+        ComputerOperatorLoopGuardSession loopGuard,
+        ICollection<string> taskHistory,
+        DesktopOperatorDecision decision,
+        string actionSignature,
+        string outcome)
+    {
+        var assessment = loopGuard.ObserveOutcome(
+            decision.State,
+            actionSignature,
+            outcome);
+
+        if (!assessment.Detected)
+            return;
+
+        taskHistory.Add(
+            $"ANTI-LOOP {assessment.Kind}: {assessment.Detail}");
+
+        progress.Add(
+            "anti-loop",
+            $"Anti-loop: {assessment.Detail} Cảnh báo tích lũy: {assessment.Occurrences}.",
+            "replan",
+            decision.Confidence);
     }
 
     private static string ClassifyFailureKind(

@@ -10,6 +10,7 @@ public static class UniversalTaskRouterEndpoints
         services.AddScoped<IUniversalTaskRouter, UniversalTaskRouter>();
         services.AddScoped<IUniversalDirectToolPath, UniversalDirectToolPath>();
         services.AddSingleton<IUniversalFallbackPolicy, UniversalFallbackPolicy>();
+        services.AddSingleton<IUniversalOutcomeVerificationService, UniversalOutcomeVerificationService>();
         return services;
     }
 
@@ -90,13 +91,26 @@ public static class UniversalTaskRouterEndpoints
             }
         });
 
+        app.MapPost("/api/universal-router/verify-tool-outcome", (
+            UniversalToolOutcomeVerificationRequest request,
+            IUniversalOutcomeVerificationService verification) =>
+            Results.Ok(
+                verification.VerifyTool(request)));
+
+        app.MapPost("/api/universal-router/verify-agent-outcome", (
+            UniversalAgentOutcomeVerificationRequest request,
+            IUniversalOutcomeVerificationService verification) =>
+            Results.Ok(
+                verification.VerifyAgent(request)));
+
         app.MapPost("/api/universal-router/evaluate-tool-outcome", (
             UniversalFallbackEvaluateRequest request,
             IUniversalFallbackPolicy fallbackPolicy) =>
             Results.Ok(
                 fallbackPolicy.Evaluate(
                     request.Route,
-                    request.Execution)));
+                    request.Execution,
+                    request.Verification)));
 
         return app;
     }

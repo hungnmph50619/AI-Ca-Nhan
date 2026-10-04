@@ -408,6 +408,21 @@ public sealed class ComputerOperatorAcceptanceService
 
         RunCheck(
             checks,
+            "agent outcome verification dùng universal evidence adapter",
+            CheckAgentOutcomeVerificationUsesUniversalEvidenceAdapter);
+
+        RunCheck(
+            checks,
+            "agent outcome chưa verified vẫn bắt buộc verify tiếp",
+            CheckAgentOutcomeVerificationRequiresEvidence);
+
+        RunCheck(
+            checks,
+            "agent contract không hỗ trợ verification không được complete",
+            CheckAgentOutcomeVerificationRejectsUnsupportedContract);
+
+        RunCheck(
+            checks,
             "pause resume stop giữ đúng trạng thái và cancellation",
             CheckExecutionPauseResumeStop);
 
@@ -3163,6 +3178,142 @@ public sealed class ComputerOperatorAcceptanceService
             "Adapter đã bịa universal evidence dù Desktop Verification Router yêu cầu Gemini.");
     }
 
+    private static void CheckAgentOutcomeVerificationUsesUniversalEvidenceAdapter()
+    {
+        var capabilityRegistry =
+            new ToolCapabilityRegistry(
+                Array.Empty<IPersonalAiTool>());
+
+        var agentRegistry =
+            new ExecutionAgentRegistry(
+                new IExecutionAgent[]
+                {
+                    new AcceptanceExecutionAgent(
+                        "execution.browser.acceptance",
+                        ExecutionAgentChannels.Browser)
+                });
+
+        var verifier =
+            new UniversalOutcomeVerificationService(
+                capabilityRegistry,
+                agentRegistry,
+                new AcceptanceVerificationEvidenceAdapters(
+                    new UniversalOutcomeEvidence(
+                        "acceptance-universal-adapter",
+                        Passed: true,
+                        Confidence: 0.91,
+                        "Adapter xác minh độc lập.")));
+
+        var result = verifier.VerifyAgent(
+            new UniversalAgentOutcomeVerificationRequest(
+                "Đọc trang đích",
+                new ExecutionAgentResult(
+                    "execution.browser.acceptance",
+                    AgentExecutionStatuses.Succeeded,
+                    "execution ok",
+                    ["raw-agent-evidence"],
+                    ChangedExternalState: true,
+                    Verified: true,
+                    Provider: "acceptance",
+                    Model: "acceptance")));
+
+        Require(
+            result.Status == UniversalOutcomeStatuses.Verified &&
+            result.GoalAchieved &&
+            result.IndependentlyVerified &&
+            result.Source == "acceptance-universal-adapter" &&
+            Math.Abs(result.Confidence - 0.91) < 0.001,
+            "Agent outcome verifier chưa dùng universal evidence adapter làm nguồn quyết định.");
+    }
+
+    private static void CheckAgentOutcomeVerificationRequiresEvidence()
+    {
+        var capabilityRegistry =
+            new ToolCapabilityRegistry(
+                Array.Empty<IPersonalAiTool>());
+
+        var agentRegistry =
+            new ExecutionAgentRegistry(
+                new IExecutionAgent[]
+                {
+                    new AcceptanceExecutionAgent(
+                        "execution.browser.acceptance",
+                        ExecutionAgentChannels.Browser)
+                });
+
+        var verifier =
+            new UniversalOutcomeVerificationService(
+                capabilityRegistry,
+                agentRegistry,
+                new AcceptanceVerificationEvidenceAdapters(
+                    agentEvidence: null));
+
+        var result = verifier.VerifyAgent(
+            new UniversalAgentOutcomeVerificationRequest(
+                "Đọc trang đích",
+                new ExecutionAgentResult(
+                    "execution.browser.acceptance",
+                    AgentExecutionStatuses.Succeeded,
+                    "execution ok nhưng chưa verified",
+                    ["raw-agent-evidence"],
+                    ChangedExternalState: true,
+                    Verified: false,
+                    Provider: "acceptance",
+                    Model: "acceptance")));
+
+        Require(
+            result.Status == UniversalOutcomeStatuses.NeedsVerification &&
+            !result.GoalAchieved &&
+            !result.IndependentlyVerified,
+            "Agent success chưa có universal evidence nhưng vẫn bị coi là goal success.");
+    }
+
+    private static void CheckAgentOutcomeVerificationRejectsUnsupportedContract()
+    {
+        var capabilityRegistry =
+            new ToolCapabilityRegistry(
+                Array.Empty<IPersonalAiTool>());
+
+        var agentRegistry =
+            new ExecutionAgentRegistry(
+                new IExecutionAgent[]
+                {
+                    new AcceptanceExecutionAgent(
+                        "execution.browser.no-verification",
+                        ExecutionAgentChannels.Browser,
+                        supportsVerification: false)
+                });
+
+        var verifier =
+            new UniversalOutcomeVerificationService(
+                capabilityRegistry,
+                agentRegistry,
+                new AcceptanceVerificationEvidenceAdapters(
+                    new UniversalOutcomeEvidence(
+                        "acceptance-universal-adapter",
+                        Passed: true,
+                        Confidence: 0.99,
+                        "Không được dùng vì contract không hỗ trợ verification.")));
+
+        var result = verifier.VerifyAgent(
+            new UniversalAgentOutcomeVerificationRequest(
+                "Đọc trang đích",
+                new ExecutionAgentResult(
+                    "execution.browser.no-verification",
+                    AgentExecutionStatuses.Succeeded,
+                    "execution ok",
+                    ["raw-agent-evidence"],
+                    ChangedExternalState: true,
+                    Verified: true,
+                    Provider: "acceptance",
+                    Model: "acceptance")));
+
+        Require(
+            result.Status == UniversalOutcomeStatuses.NeedsVerification &&
+            !result.GoalAchieved,
+            "Agent contract không hỗ trợ verification nhưng vẫn được complete.");
+    }
+
     private static void CheckExecutionPauseResumeStop()
     {
         using var execution = new ComputerOperatorExecutionControl();
@@ -3688,7 +3839,8 @@ public sealed class ComputerOperatorAcceptanceService
 
         public AcceptanceExecutionAgent(
             string id,
-            string channel)
+            string channel,
+            bool supportsVerification = true)
         {
             Definition = new ExecutionAgentDefinition(
                 id,
@@ -3698,7 +3850,7 @@ public sealed class ComputerOperatorAcceptanceService
                 [channel],
                 HasSideEffects: true,
                 RequiresExplicitInvocation: true,
-                SupportsVerification: true,
+                SupportsVerification: supportsVerification,
                 SupportsRecovery: false);
         }
 
@@ -3738,6 +3890,27 @@ public sealed class ComputerOperatorAcceptanceService
                     Provider: "acceptance",
                     Model: "acceptance"));
         }
+    }
+
+    private sealed class AcceptanceVerificationEvidenceAdapters(
+        UniversalOutcomeEvidence? agentEvidence)
+        : IUniversalVerificationEvidenceAdapters
+    {
+        public UniversalOutcomeEvidence? FromAgent(
+            ExecutionAgentResult result) =>
+            agentEvidence;
+
+        public UniversalOutcomeEvidence? FromBrowser(
+            BrowserExecutionBackendResult result) =>
+            throw new NotSupportedException();
+
+        public UniversalOutcomeEvidence FromCoding(
+            CodingVerificationReport report) =>
+            throw new NotSupportedException();
+
+        public UniversalOutcomeEvidence? FromDesktop(
+            DesktopVerificationRoutingResult result) =>
+            throw new NotSupportedException();
     }
 
     private sealed class AcceptanceDevelopmentAgentService

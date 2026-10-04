@@ -3163,7 +3163,13 @@ jobs:
           grep -Fq '"id": "pause-resume-stop"' tests/computer-use/v3.4.9-acceptance-scenarios.json
           grep -Fq '"id": "loop-recovery"' tests/computer-use/v3.4.9-acceptance-scenarios.json
           grep -Fq '"id": "multi-step-open-and-type"' tests/computer-use/v3.4.9-acceptance-scenarios.json
-          grep -Fq 'totalCount -lt 79' .github/workflows/desktop-control.yml
+          grep -Fq 'totalCount -lt 82' .github/workflows/desktop-control.yml
+          # v4.0.9 — Verification Evidence Pipeline Integration
+          grep -Fq 'IUniversalVerificationEvidenceAdapters? evidenceAdapters = null' src/PersonalAI.Web/Services/UniversalOutcomeVerification.cs
+          grep -Fq 'evidenceAdapters.FromAgent' src/PersonalAI.Web/Services/UniversalOutcomeVerification.cs
+          grep -Fq 'CheckAgentOutcomeVerificationUsesUniversalEvidenceAdapter' src/PersonalAI.Web/Services/ComputerOperatorAcceptanceService.cs
+          grep -Fq 'CheckAgentOutcomeVerificationRequiresEvidence' src/PersonalAI.Web/Services/ComputerOperatorAcceptanceService.cs
+          grep -Fq 'CheckAgentOutcomeVerificationRejectsUnsupportedContract' src/PersonalAI.Web/Services/ComputerOperatorAcceptanceService.cs
           # v4.0.8 — Verification Evidence Adapters
           grep -Fq 'IUniversalVerificationEvidenceAdapters' src/PersonalAI.Web/Services/UniversalVerificationEvidenceAdapters.cs
           grep -Fq 'FromBrowser(' src/PersonalAI.Web/Services/UniversalVerificationEvidenceAdapters.cs

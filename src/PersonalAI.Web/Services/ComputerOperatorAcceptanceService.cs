@@ -103,6 +103,16 @@ public sealed class ComputerOperatorAcceptanceService
 
         RunCheck(
             checks,
+            "verification router xác minh local khi tín hiệu cấu trúc đủ chắc",
+            CheckVerificationRouterLocalPass);
+
+        RunCheck(
+            checks,
+            "verification router fallback Gemini khi cần hiểu semantic",
+            CheckVerificationRouterGeminiFallback);
+
+        RunCheck(
+            checks,
             "pause resume stop giữ đúng trạng thái và cancellation",
             CheckExecutionPauseResumeStop);
 
@@ -737,6 +747,77 @@ public sealed class ComputerOperatorAcceptanceService
             !result.TargetMissing &&
             !result.TargetLikelyOccluded,
             $"Fast observer bỏ sót tín hiệu: {result.Summary}");
+    }
+
+    private static void CheckVerificationRouterLocalPass()
+    {
+        var router = new DesktopVerificationRouter();
+        var decision = BuildClickDecision(
+            ComputerCoordinateSpaces.ImagePixel) with
+        {
+            Action = "maximize",
+            ExpectedEffect = "Cửa sổ được phóng to"
+        };
+
+        var observation = new DesktopFastObservation(
+            ScreenChanged: true,
+            ChangeRatio: 0.08,
+            ForegroundWindowChanged: false,
+            WindowBoundsChanged: true,
+            CursorMoved: false,
+            MonitorChanged: false,
+            DpiChanged: false,
+            TargetMoved: false,
+            TargetMissing: false,
+            TargetLikelyOccluded: false,
+            Summary: "acceptance");
+
+        var route = router.Route(
+            decision,
+            observation,
+            new DesktopFrameDifference(
+                true, 0.08, 80, 1000,
+                0, 0, 200, 100, 20, "acceptance"));
+
+        Require(
+            route.Route == DesktopVerificationRoute.LocalVerified &&
+            route.Confidence >= 0.9,
+            "Verification Router không xác minh local cho thay đổi cửa sổ chắc chắn.");
+    }
+
+    private static void CheckVerificationRouterGeminiFallback()
+    {
+        var router = new DesktopVerificationRouter();
+        var decision = BuildClickDecision(
+            ComputerCoordinateSpaces.ImagePixel) with
+        {
+            Action = "click-left",
+            ExpectedEffect = "Nội dung semantic cụ thể xuất hiện"
+        };
+
+        var observation = new DesktopFastObservation(
+            ScreenChanged: true,
+            ChangeRatio: 0.15,
+            ForegroundWindowChanged: false,
+            WindowBoundsChanged: false,
+            CursorMoved: true,
+            MonitorChanged: false,
+            DpiChanged: false,
+            TargetMoved: false,
+            TargetMissing: false,
+            TargetLikelyOccluded: false,
+            Summary: "acceptance");
+
+        var route = router.Route(
+            decision,
+            observation,
+            new DesktopFrameDifference(
+                true, 0.15, 150, 1000,
+                20, 20, 300, 200, 30, "acceptance"));
+
+        Require(
+            route.Route == DesktopVerificationRoute.GeminiRequired,
+            "Verification Router đã tự xác minh click semantic chỉ từ frame difference.");
     }
 
     private static void CheckExecutionPauseResumeStop()

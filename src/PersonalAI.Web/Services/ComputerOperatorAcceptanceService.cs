@@ -263,6 +263,16 @@ public sealed class ComputerOperatorAcceptanceService
 
         RunCheck(
             checks,
+            "coding verification gate bắt buộc restore build test diff",
+            CheckCodingVerificationGatePassesAllRequiredSteps);
+
+        RunCheck(
+            checks,
+            "coding verification gate dừng khi build fail",
+            CheckCodingVerificationGateStopsOnBuildFailure);
+
+        RunCheck(
+            checks,
             "pause resume stop giữ đúng trạng thái và cancellation",
             CheckExecutionPauseResumeStop);
 
@@ -1956,6 +1966,61 @@ public sealed class ComputerOperatorAcceptanceService
             "OpenHands backend không giữ đúng conversation/confirmation contract.");
     }
 
+    private static void CheckCodingVerificationGatePassesAllRequiredSteps()
+    {
+        var development = new AcceptanceDevelopmentAgentService();
+        var gate = new CodingVerificationGate(development);
+
+        var report = gate.VerifyAsync(
+                new CodingVerificationRequest(
+                    "src/App/App.csproj",
+                    ".",
+                    "Release"))
+            .GetAwaiter()
+            .GetResult();
+
+        Require(
+            report.Passed &&
+            report.Steps.Select(step => step.Name)
+                .SequenceEqual(
+                    new[]
+                    {
+                        "restore",
+                        "build",
+                        "test",
+                        "diff-review"
+                    }) &&
+            development.RestoreCount == 1 &&
+            development.BuildCount == 1 &&
+            development.TestCount == 1 &&
+            development.DiffCount == 1,
+            "Coding Verification Gate không chạy đủ restore/build/test/diff.");
+    }
+
+    private static void CheckCodingVerificationGateStopsOnBuildFailure()
+    {
+        var development = new AcceptanceDevelopmentAgentService(
+            failBuild: true);
+        var gate = new CodingVerificationGate(development);
+
+        var report = gate.VerifyAsync(
+                new CodingVerificationRequest(
+                    "src/App/App.csproj",
+                    ".",
+                    "Release"))
+            .GetAwaiter()
+            .GetResult();
+
+        Require(
+            !report.Passed &&
+            report.Steps.Count == 2 &&
+            report.Steps[0].Name == "restore" &&
+            report.Steps[1].Name == "build" &&
+            development.TestCount == 0 &&
+            development.DiffCount == 0,
+            "Coding Verification Gate không fail-fast sau build lỗi.");
+    }
+
     private static void CheckExecutionPauseResumeStop()
     {
         using var execution = new ComputerOperatorExecutionControl();
@@ -2257,6 +2322,192 @@ public sealed class ComputerOperatorAcceptanceService
                 dpi,
                 scale,
                 scale);
+    }
+
+    private sealed class AcceptanceDevelopmentAgentService
+        : IDevelopmentAgentService
+    {
+        private readonly bool failBuild;
+
+        public int RestoreCount { get; private set; }
+        public int BuildCount { get; private set; }
+        public int TestCount { get; private set; }
+        public int DiffCount { get; private set; }
+
+        public AcceptanceDevelopmentAgentService(
+            bool failBuild = false)
+        {
+            this.failBuild = failBuild;
+        }
+
+        public DevelopmentStatusResponse GetStatus() =>
+            new(
+                "acceptance",
+                "acceptance",
+                true,
+                true,
+                false,
+                false,
+                true,
+                100,
+                100,
+                1000,
+                Array.Empty<string>(),
+                Array.Empty<string>());
+
+        public DevelopmentWorkspaceInspection InspectWorkspace() =>
+            new(
+                "acceptance",
+                0,
+                false,
+                Array.Empty<DevelopmentProjectEntry>(),
+                Array.Empty<string>(),
+                Array.Empty<string>());
+
+        public Task<DevelopmentSearchResult> SearchTextAsync(
+            string query,
+            bool caseSensitive,
+            int maximumHits,
+            CancellationToken cancellationToken = default) =>
+            Task.FromResult(
+                new DevelopmentSearchResult(
+                    "acceptance",
+                    query,
+                    0,
+                    0,
+                    false,
+                    Array.Empty<DevelopmentSearchHit>()));
+
+        public Task<DevelopmentGitResult> GitStatusAsync(
+            string repositoryPath,
+            CancellationToken cancellationToken = default) =>
+            Task.FromResult(
+                Git("status"));
+
+        public Task<DevelopmentGitResult> GitDiffAsync(
+            string repositoryPath,
+            bool staged,
+            CancellationToken cancellationToken = default)
+        {
+            DiffCount++;
+            return Task.FromResult(
+                Git("diff"));
+        }
+
+        public Task<DevelopmentBranchResult> GetCurrentBranchAsync(
+            string repositoryPath,
+            CancellationToken cancellationToken = default) =>
+            Task.FromResult(
+                new DevelopmentBranchResult(
+                    repositoryPath,
+                    "experiment/acceptance",
+                    true,
+                    1,
+                    string.Empty));
+
+        public Task<DevelopmentBranchResult> CreateExperimentBranchAsync(
+            string repositoryPath,
+            string baseBranch,
+            string experimentBranch,
+            bool confirmed,
+            CancellationToken cancellationToken = default) =>
+            Task.FromResult(
+                new DevelopmentBranchResult(
+                    repositoryPath,
+                    experimentBranch,
+                    true,
+                    1,
+                    string.Empty));
+
+        public Task<DevelopmentProcessResult> DotnetRestoreAsync(
+            string targetPath,
+            CancellationToken cancellationToken = default)
+        {
+            RestoreCount++;
+            return Task.FromResult(
+                Process(
+                    "dotnet restore",
+                    targetPath,
+                    succeeded: true));
+        }
+
+        public Task<DevelopmentProcessResult> DotnetBuildAsync(
+            string targetPath,
+            string configuration,
+            CancellationToken cancellationToken = default)
+        {
+            BuildCount++;
+            return Task.FromResult(
+                Process(
+                    "dotnet build",
+                    targetPath,
+                    succeeded: !failBuild));
+        }
+
+        public Task<DevelopmentProcessResult> DotnetTestAsync(
+            string targetPath,
+            string configuration,
+            CancellationToken cancellationToken = default)
+        {
+            TestCount++;
+            return Task.FromResult(
+                Process(
+                    "dotnet test",
+                    targetPath,
+                    succeeded: true));
+        }
+
+        public Task<DevelopmentPublishResult> DotnetPublishCandidateAsync(
+            string targetPath,
+            string configuration,
+            string deploymentId,
+            CancellationToken cancellationToken = default) =>
+            Task.FromResult(
+                new DevelopmentPublishResult(
+                    deploymentId,
+                    targetPath,
+                    0,
+                    true,
+                    false,
+                    1,
+                    string.Empty,
+                    false,
+                    0,
+                    0));
+
+        public Task<DevelopmentDeploymentRollbackResult> DiscardDeploymentCandidateAsync(
+            string deploymentId,
+            CancellationToken cancellationToken = default) =>
+            Task.FromResult(
+                new DevelopmentDeploymentRollbackResult(
+                    deploymentId,
+                    true,
+                    true,
+                    DateTimeOffset.UtcNow));
+
+        private static DevelopmentProcessResult Process(
+            string tool,
+            string targetPath,
+            bool succeeded) =>
+            new(
+                tool,
+                targetPath,
+                succeeded ? 0 : 1,
+                succeeded,
+                false,
+                1,
+                succeeded ? "ok" : "failed",
+                false);
+
+        private static DevelopmentGitResult Git(
+            string command) =>
+            new(
+                command,
+                0,
+                true,
+                1,
+                "diff",
+                false);
     }
 
     private sealed class AcceptanceOpenHandsAgentServerClient

@@ -3182,7 +3182,8 @@ public sealed class ComputerOperatorAcceptanceService
     {
         var capabilityRegistry =
             new ToolCapabilityRegistry(
-                Array.Empty<IPersonalAiTool>());
+                new ToolRegistry(
+                    Array.Empty<IPersonalAiTool>()));
 
         var agentRegistry =
             new ExecutionAgentRegistry(
@@ -3230,7 +3231,8 @@ public sealed class ComputerOperatorAcceptanceService
     {
         var capabilityRegistry =
             new ToolCapabilityRegistry(
-                Array.Empty<IPersonalAiTool>());
+                new ToolRegistry(
+                    Array.Empty<IPersonalAiTool>()));
 
         var agentRegistry =
             new ExecutionAgentRegistry(
@@ -3272,7 +3274,8 @@ public sealed class ComputerOperatorAcceptanceService
     {
         var capabilityRegistry =
             new ToolCapabilityRegistry(
-                Array.Empty<IPersonalAiTool>());
+                new ToolRegistry(
+                    Array.Empty<IPersonalAiTool>()));
 
         var agentRegistry =
             new ExecutionAgentRegistry(

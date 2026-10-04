@@ -163,6 +163,16 @@ public sealed class ComputerOperatorAcceptanceService
 
         RunCheck(
             checks,
+            "confidence engine cho execute khi scene target action đều đủ chắc",
+            CheckConfidenceEngineAllowsExecution);
+
+        RunCheck(
+            checks,
+            "confidence engine buộc reobserve khi target yếu",
+            CheckConfidenceEngineRejectsWeakTarget);
+
+        RunCheck(
+            checks,
             "pause resume stop giữ đúng trạng thái và cancellation",
             CheckExecutionPauseResumeStop);
 
@@ -1292,6 +1302,92 @@ public sealed class ComputerOperatorAcceptanceService
         Require(
             rejected,
             "Action state machine vẫn cho EXECUTE trước TARGET.");
+    }
+
+    private static void CheckConfidenceEngineAllowsExecution()
+    {
+        var engine = new ComputerOperatorConfidenceEngine();
+        var decision = BuildClickDecision(
+            ComputerCoordinateSpaces.ImagePixel,
+            boxLeft: 300,
+            boxTop: 220,
+            boxWidth: 120,
+            boxHeight: 60) with
+        {
+            Confidence = 0.94,
+            TargetElementId = "save",
+            TargetLabel = "Save",
+            ExpectedEffect = "Dialog lưu được mở"
+        };
+
+        var scene = new[]
+        {
+            new DesktopSceneElement(
+                "save",
+                "button",
+                "Save",
+                string.Empty,
+                300,
+                220,
+                120,
+                60,
+                0.96,
+                Array.Empty<string>())
+        };
+
+        var tracking = new DesktopTargetTrackingResult(
+            decision,
+            false,
+            true,
+            0.97,
+            "stable");
+
+        var result = engine.AssessBeforeExecution(
+            decision,
+            scene,
+            tracking);
+
+        Require(
+            result.Decision == ComputerOperatorConfidenceDecision.Execute &&
+            result.SceneConfidence >= 0.9 &&
+            result.TargetConfidence >= 0.9 &&
+            result.ActionConfidence >= 0.9 &&
+            result.OverallConfidence >= 0.8,
+            $"Confidence Engine từ chối action tốt: {result.Reason}");
+    }
+
+    private static void CheckConfidenceEngineRejectsWeakTarget()
+    {
+        var engine = new ComputerOperatorConfidenceEngine();
+        var decision = BuildClickDecision(
+            ComputerCoordinateSpaces.ImagePixel,
+            boxLeft: 300,
+            boxTop: 220,
+            boxWidth: 120,
+            boxHeight: 60) with
+        {
+            Confidence = 0.66,
+            TargetElementId = "missing-target",
+            TargetLabel = "Unknown",
+            ExpectedEffect = "UI thay đổi"
+        };
+
+        var tracking = new DesktopTargetTrackingResult(
+            decision,
+            false,
+            false,
+            0.0,
+            "target identity lost");
+
+        var result = engine.AssessBeforeExecution(
+            decision,
+            Array.Empty<DesktopSceneElement>(),
+            tracking);
+
+        Require(
+            result.Decision != ComputerOperatorConfidenceDecision.Execute &&
+            result.TargetConfidence < 0.5,
+            $"Confidence Engine vẫn cho execute target yếu: {result.Reason}");
     }
 
     private static void CheckExecutionPauseResumeStop()

@@ -213,6 +213,16 @@ public sealed class ComputerOperatorAcceptanceService
 
         RunCheck(
             checks,
+            "tool capability registry phân loại Computer Operator đúng capability và risk",
+            CheckToolCapabilityRegistryComputerOperator);
+
+        RunCheck(
+            checks,
+            "tool capability registry giữ tool read-only ở low risk",
+            CheckToolCapabilityRegistryReadOnlyTool);
+
+        RunCheck(
+            checks,
             "pause resume stop giữ đúng trạng thái và cancellation",
             CheckExecutionPauseResumeStop);
 
@@ -1611,6 +1621,60 @@ public sealed class ComputerOperatorAcceptanceService
             !status.DirectAutonomousExecutionEnabled &&
             !string.IsNullOrWhiteSpace(status.Version),
             "Microsoft Agent Framework adapter status không giữ đúng boundary an toàn.");
+    }
+
+    private static void CheckToolCapabilityRegistryComputerOperator()
+    {
+        IPersonalAiTool operatorTool =
+            new ComputerOperatorTaskTool(
+                new AcceptanceOperatorTaskService());
+
+        var registry = new ToolCapabilityRegistry(
+            new ToolRegistry(
+                new[] { operatorTool }));
+
+        Require(
+            registry.TryGet(
+                "computer.operator.run-task",
+                out var capability) &&
+            capability is not null,
+            "Capability registry không resolve được Computer Operator tool.");
+
+        Require(
+            capability!.Capabilities.Contains(
+                "computer",
+                StringComparer.OrdinalIgnoreCase) &&
+            capability.Capabilities.Contains(
+                "side-effect",
+                StringComparer.OrdinalIgnoreCase) &&
+            capability.RiskLevel == ToolRiskLevels.High &&
+            capability.RequiresConfirmation &&
+            capability.SupportsVerification,
+            "Computer Operator tool bị phân loại sai capability/risk/verification.");
+    }
+
+    private static void CheckToolCapabilityRegistryReadOnlyTool()
+    {
+        IPersonalAiTool screenTool =
+            new ComputerScreenInfoTool(
+                new AcceptanceComputerUseService());
+
+        var registry = new ToolCapabilityRegistry(
+            new ToolRegistry(
+                new[] { screenTool }));
+
+        var capability = registry.FindByCapability(
+                "read")
+            .Single();
+
+        Require(
+            capability.Name == "computer.screen.info" &&
+            capability.RiskLevel == ToolRiskLevels.Low &&
+            !capability.RequiresConfirmation &&
+            capability.Capabilities.Contains(
+                "computer",
+                StringComparer.OrdinalIgnoreCase),
+            "Read-only computer tool không giữ low-risk/read capability.");
     }
 
     private static void CheckExecutionPauseResumeStop()

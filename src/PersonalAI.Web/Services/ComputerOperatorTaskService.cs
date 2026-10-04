@@ -41,6 +41,8 @@ public sealed class ComputerOperatorTaskService(
 {
     private const int MaximumSteps = 12;
     private const double MinimumConfidence = 0.72;
+    private static readonly IDesktopVerificationRouter VerificationRouter =
+        new DesktopVerificationRouter();
 
     private static readonly string[] SecretTerms =
     [
@@ -742,6 +744,35 @@ public sealed class ComputerOperatorTaskService(
                     "fast-observer",
                     $"Quan sát cục bộ nhanh: {fastObservation.Summary}",
                     observation: true);
+
+                var route = VerificationRouter.Route(
+                    decision,
+                    fastObservation,
+                    frameDifference);
+
+                progress.Add(
+                    "verification-route",
+                    $"Verification Router: {route.Route} — {route.Reason}",
+                    route.Route == DesktopVerificationRoute.GeminiRequired
+                        ? "gemini"
+                        : "local",
+                    route.Confidence);
+
+                if (route.Route == DesktopVerificationRoute.LocalVerified)
+                {
+                    return new(
+                        true,
+                        route.Confidence,
+                        $"Xác minh cục bộ: {route.Reason}");
+                }
+
+                if (route.Route == DesktopVerificationRoute.LocalFailed)
+                {
+                    return new(
+                        false,
+                        route.Confidence,
+                        $"Xác minh cục bộ thất bại: {route.Reason}");
+                }
             }
 
             var result = await vision.VerifyAsync(
@@ -757,7 +788,7 @@ public sealed class ComputerOperatorTaskService(
             return new(
                 verifiedByVision,
                 result.Confidence,
-                result.Reason);
+                $"Gemini Vision: {result.Reason}");
         }
         finally
         {

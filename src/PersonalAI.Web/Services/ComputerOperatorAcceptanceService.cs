@@ -443,6 +443,26 @@ public sealed class ComputerOperatorAcceptanceService
 
         RunCheck(
             checks,
+            "replan coordinator kết thúc khi outcome đã verified",
+            CheckReplanCoordinatorCompletesVerifiedOutcome);
+
+        RunCheck(
+            checks,
+            "replan coordinator giới hạn attempt và reroute",
+            CheckReplanCoordinatorReroutesAtAttemptBudget);
+
+        RunCheck(
+            checks,
+            "replan coordinator anti-loop khi outcome lặp lại",
+            CheckReplanCoordinatorEscalatesRepeatedOutcome);
+
+        RunCheck(
+            checks,
+            "replan coordinator giữ confirmation cho agent fallback",
+            CheckReplanCoordinatorRequiresConfirmationForAgentFallback);
+
+        RunCheck(
+            checks,
             "pause resume stop giữ đúng trạng thái và cancellation",
             CheckExecutionPauseResumeStop);
 
@@ -3608,6 +3628,152 @@ public sealed class ComputerOperatorAcceptanceService
             result.Decision.Action ==
                 UniversalFallbackActions.VerifyOutcome,
             "Post-execution coding thiếu context vẫn bị complete.");
+    }
+
+    private static void CheckReplanCoordinatorCompletesVerifiedOutcome()
+    {
+        var coordinator =
+            new UniversalReplanCoordinator();
+
+        var decision = coordinator.Decide(
+            new UniversalReplanRequest(
+                "Đọc trang",
+                BuildAcceptancePostVerification(
+                    UniversalFallbackActions.Complete),
+                AttemptIndex: 1));
+
+        Require(
+            decision.Action ==
+                UniversalContinuationActions.Complete &&
+            !decision.CanAutoContinuePlanning &&
+            !decision.RequiresExecutionConfirmation,
+            "Replan Coordinator không kết thúc task đã verified.");
+    }
+
+    private static void CheckReplanCoordinatorReroutesAtAttemptBudget()
+    {
+        var coordinator =
+            new UniversalReplanCoordinator();
+
+        var decision = coordinator.Decide(
+            new UniversalReplanRequest(
+                "Đọc trang",
+                BuildAcceptancePostVerification(
+                    UniversalFallbackActions.ReplanGoal),
+                AttemptIndex: 3,
+                RepeatedOutcomeCount: 0,
+                MaximumAttempts: 3));
+
+        Require(
+            decision.Action ==
+                UniversalContinuationActions.Reroute &&
+            decision.CurrentAttempt == 3 &&
+            decision.NextAttempt == 3 &&
+            decision.CanAutoContinuePlanning,
+            "Replan Coordinator vẫn retry sau khi hết attempt budget.");
+    }
+
+    private static void CheckReplanCoordinatorEscalatesRepeatedOutcome()
+    {
+        var coordinator =
+            new UniversalReplanCoordinator();
+
+        var decision = coordinator.Decide(
+            new UniversalReplanRequest(
+                "Đọc trang",
+                BuildAcceptancePostVerification(
+                    UniversalFallbackActions.ReplanGoal),
+                AttemptIndex: 1,
+                RepeatedOutcomeCount: 2,
+                MaximumAttempts: 3));
+
+        Require(
+            decision.Action ==
+                UniversalContinuationActions.Reroute &&
+            decision.Reason.Contains(
+                "cấm retry y hệt",
+                StringComparison.OrdinalIgnoreCase),
+            "Replan Coordinator không anti-loop outcome lặp.");
+    }
+
+    private static void CheckReplanCoordinatorRequiresConfirmationForAgentFallback()
+    {
+        var coordinator =
+            new UniversalReplanCoordinator();
+
+        var decision = coordinator.Decide(
+            new UniversalReplanRequest(
+                "Đọc trang",
+                BuildAcceptancePostVerification(
+                    UniversalFallbackActions.AgentFallback,
+                    allowAgentFallback: true,
+                    fallbackChannel:
+                        ExecutionAgentChannels.Browser),
+                AttemptIndex: 1));
+
+        Require(
+            decision.Action ==
+                UniversalContinuationActions.ProposeAgentFallback &&
+            decision.RequiresExecutionConfirmation &&
+            !decision.CanAutoContinuePlanning &&
+            decision.Channel ==
+                ExecutionAgentChannels.Browser,
+            "Replan Coordinator cho agent fallback chạy mà không confirmation.");
+    }
+
+    private static UniversalPostExecutionVerificationResult BuildAcceptancePostVerification(
+        string fallbackAction,
+        bool allowAgentFallback = false,
+        string? fallbackChannel = null)
+    {
+        var evidenceRoute =
+            new UniversalVerificationEvidenceRoute(
+                UniversalVerificationStrategies.BrowserReadback,
+                ExecutionAgentChannels.Browser,
+                CanVerifyAutomatically: true,
+                RequiresExternalAi: false,
+                RequiresReadback: true,
+                ExpectedSource: "acceptance",
+                Reason: "acceptance");
+
+        var collection =
+            new UniversalVerificationEvidenceCollectionResult(
+                evidenceRoute.Strategy,
+                Collected: true,
+                new UniversalOutcomeEvidence(
+                    "acceptance",
+                    Passed: fallbackAction ==
+                        UniversalFallbackActions.Complete,
+                    Confidence: 0.95,
+                    Summary: "acceptance"),
+                "acceptance");
+
+        var verification =
+            new UniversalOutcomeVerificationResult(
+                fallbackAction ==
+                    UniversalFallbackActions.Complete
+                    ? UniversalOutcomeStatuses.Verified
+                    : UniversalOutcomeStatuses.NotAchieved,
+                ExecutionSucceeded: true,
+                GoalAchieved: fallbackAction ==
+                    UniversalFallbackActions.Complete,
+                IndependentlyVerified: true,
+                Confidence: 0.95,
+                Source: "acceptance",
+                Reason: "acceptance");
+
+        var fallback =
+            new UniversalFallbackDecision(
+                fallbackAction,
+                allowAgentFallback,
+                fallbackChannel,
+                "acceptance");
+
+        return new(
+            evidenceRoute,
+            collection,
+            verification,
+            fallback);
     }
 
     private static void CheckExecutionPauseResumeStop()

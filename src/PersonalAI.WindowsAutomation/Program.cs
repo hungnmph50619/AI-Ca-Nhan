@@ -1162,6 +1162,9 @@ internal static class Program
         if (element.Patterns.ExpandCollapse.IsSupported)
             patterns.Add("ExpandCollapse");
 
+        if (element.Patterns.LegacyIAccessible.IsSupported)
+            patterns.Add("LegacyIAccessible");
+
         return new(
             Token: token,
             ParentToken: parentToken,
@@ -1295,7 +1298,8 @@ internal static class Program
             "structured-toggle" or
             "structured-expand" or
             "structured-collapse" or
-            "structured-set-value";
+            "structured-set-value" or
+            "structured-legacy-default";
 
     private static AutomationResponse ExecuteStructuredPattern(
         UIA3Automation automation,
@@ -1452,6 +1456,16 @@ internal static class Program
 
                     valuePattern.SetValue(
                         request.Text ?? string.Empty);
+                    break;
+
+                case "structured-legacy-default":
+                    if (!target.Patterns.LegacyIAccessible.IsSupported)
+                        return Empty(
+                            request,
+                            "Structured target không hỗ trợ LegacyIAccessiblePattern.");
+
+                    target.Patterns.LegacyIAccessible.Pattern
+                        .DoDefaultAction();
                     break;
 
                 default:

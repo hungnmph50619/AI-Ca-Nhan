@@ -151,6 +151,24 @@ public static class UniversalTaskRouterEndpoints
             Results.Ok(
                 verification.VerifyAgent(request)));
 
+        app.MapGet("/api/universal-router/resilience", (
+            IUniversalResilienceExecutor resilience) =>
+            Results.Ok(new
+            {
+                ten = "Bộ chống lỗi và retry thông minh",
+                mienLoi = resilience.GetStatus().Select(item => new
+                {
+                    mien = item.Domain,
+                    trangThaiMach = item.CircuitState
+                }),
+                nguyenTac = new[]
+                {
+                    "Chỉ retry tự động thao tác read-only/idempotent khi lỗi kỹ thuật tạm thời.",
+                    "Permission/validation denial phải dừng, không được retry.",
+                    "Nếu side effect có thể đã xảy ra thì phải xác minh trước khi thử lại."
+                }
+            }));
+
         app.MapPost("/api/universal-router/fuse-evidence", (
             IReadOnlyList<UniversalEvidenceSignal> signals,
             IUniversalEvidenceFusionEngine fusion) =>

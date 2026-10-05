@@ -46,6 +46,11 @@ public sealed class ComputerOperatorAcceptanceService
             "capture router tự hạ ưu tiên backend bị stale theo đúng target",
             CheckCaptureRouterDeprioritizesStaleBackend);
 
+        RunCheck(
+            checks,
+            "local visual dHash phân biệt frame giống và khác cấu trúc",
+            CheckLocalVisualDifferenceHash);
+
 
 
         RunCheck(
@@ -1035,6 +1040,53 @@ public sealed class ComputerOperatorAcceptanceService
             otherMonitor.First() ==
             DesktopCaptureBackends.WindowsGraphicsCapture,
             "Health penalty của một monitor đã làm ảnh hưởng target monitor khác.");
+    }
+
+    private static void CheckLocalVisualDifferenceHash()
+    {
+        var ascending =
+            new byte[9 * 8];
+        var descending =
+            new byte[9 * 8];
+
+        for (var y = 0; y < 8; y++)
+        {
+            for (var x = 0; x < 9; x++)
+            {
+                ascending[y * 9 + x] =
+                    checked((byte)(x * 20));
+
+                descending[y * 9 + x] =
+                    checked((byte)((8 - x) * 20));
+            }
+        }
+
+        var hashAscending =
+            DesktopLocalVisualSensor.ComputeDifferenceHash(
+                ascending,
+                9,
+                8);
+
+        var hashAscendingAgain =
+            DesktopLocalVisualSensor.ComputeDifferenceHash(
+                ascending,
+                9,
+                8);
+
+        var hashDescending =
+            DesktopLocalVisualSensor.ComputeDifferenceHash(
+                descending,
+                9,
+                8);
+
+        Require(
+            DesktopLocalVisualSensor.HammingDistance(
+                hashAscending,
+                hashAscendingAgain) == 0 &&
+            DesktopLocalVisualSensor.HammingDistance(
+                hashAscending,
+                hashDescending) == 64,
+            "Local visual dHash chưa ổn định hoặc chưa phân biệt được cấu trúc sáng-tối đối nghịch.");
     }
 
     private static void CheckImagePixelWithNegativeVirtualOrigin()

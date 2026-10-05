@@ -61,11 +61,14 @@ public sealed class PersonalMemoryGroundingService(
         }
 
         var groundedMessages = targetMessages.ToArray();
-        groundedMessages[targetUserIndex] = new ChatMessage(
-            "user",
-            BuildMemoryGroundedQuestion(
-                groundedMessages[targetUserIndex].Content,
-                selected));
+        groundedMessages[targetUserIndex] =
+            groundedMessages[targetUserIndex] with
+            {
+                Content =
+                    BuildMemoryGroundedQuestion(
+                        groundedMessages[targetUserIndex].Content,
+                        selected)
+            };
 
         return new PersonalMemoryGroundingResult(groundedMessages, selected);
     }

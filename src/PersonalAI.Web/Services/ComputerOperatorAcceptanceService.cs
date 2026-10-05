@@ -438,6 +438,21 @@ public sealed class ComputerOperatorAcceptanceService
 
         RunCheck(
             checks,
+            "verification continuation browser dùng structured readback",
+            CheckVerificationContinuationBrowserReadback);
+
+        RunCheck(
+            checks,
+            "verification continuation computer dùng observe verify",
+            CheckVerificationContinuationComputerObserveVerify);
+
+        RunCheck(
+            checks,
+            "verified outcome không tạo continuation verification thừa",
+            CheckVerificationContinuationSkipsVerifiedOutcome);
+
+        RunCheck(
+            checks,
             "pause resume stop giữ đúng trạng thái và cancellation",
             CheckExecutionPauseResumeStop);
 
@@ -3473,6 +3488,82 @@ public sealed class ComputerOperatorAcceptanceService
             result.Verification.Status ==
                 UniversalOutcomeStatuses.ExecutionFailed,
             "Execution lifecycle không stop khi execution agent fail.");
+    }
+
+    private static void CheckVerificationContinuationBrowserReadback()
+    {
+        var planner =
+            new UniversalVerificationContinuationPlanner();
+
+        var plan = planner.Plan(
+            BuildAcceptanceRoute(
+                ExecutionAgentChannels.Browser),
+            new UniversalOutcomeVerificationResult(
+                UniversalOutcomeStatuses.NeedsVerification,
+                ExecutionSucceeded: true,
+                GoalAchieved: false,
+                IndependentlyVerified: false,
+                Confidence: 0,
+                Source: "acceptance",
+                Reason: "missing evidence"));
+
+        Require(
+            plan.Required &&
+            plan.Strategy ==
+                UniversalVerificationStrategies.BrowserReadback &&
+            plan.RequiresReadback &&
+            !plan.RequiresExternalAi,
+            "Browser continuation chưa ưu tiên structured readback.");
+    }
+
+    private static void CheckVerificationContinuationComputerObserveVerify()
+    {
+        var planner =
+            new UniversalVerificationContinuationPlanner();
+
+        var plan = planner.Plan(
+            BuildAcceptanceRoute(
+                ExecutionAgentChannels.Computer),
+            new UniversalOutcomeVerificationResult(
+                UniversalOutcomeStatuses.NeedsVerification,
+                ExecutionSucceeded: true,
+                GoalAchieved: false,
+                IndependentlyVerified: false,
+                Confidence: 0,
+                Source: "acceptance",
+                Reason: "missing evidence"));
+
+        Require(
+            plan.Required &&
+            plan.Strategy ==
+                UniversalVerificationStrategies.ComputerOperatorVerifier &&
+            plan.RequiresReadback &&
+            plan.RequiresExternalAi,
+            "Computer continuation chưa route observe-verify đúng.");
+    }
+
+    private static void CheckVerificationContinuationSkipsVerifiedOutcome()
+    {
+        var planner =
+            new UniversalVerificationContinuationPlanner();
+
+        var plan = planner.Plan(
+            BuildAcceptanceRoute(
+                ExecutionAgentChannels.Browser),
+            new UniversalOutcomeVerificationResult(
+                UniversalOutcomeStatuses.Verified,
+                ExecutionSucceeded: true,
+                GoalAchieved: true,
+                IndependentlyVerified: true,
+                Confidence: 0.95,
+                Source: "acceptance",
+                Reason: "verified"));
+
+        Require(
+            !plan.Required &&
+            plan.Strategy ==
+                UniversalVerificationStrategies.None,
+            "Verified outcome vẫn tạo continuation verification thừa.");
     }
 
     private static void CheckExecutionPauseResumeStop()

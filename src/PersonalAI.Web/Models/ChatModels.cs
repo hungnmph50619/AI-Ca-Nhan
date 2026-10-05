@@ -6,7 +6,9 @@ public sealed record ChatAttachmentReference(
     string MimeType,
     long Size,
     string Kind,
-    string Route = "direct");
+    string Route = "direct",
+    Guid? KnowledgeDocumentId = null,
+    int KnowledgeChunkCount = 0);
 
 public sealed record ChatMessage(
     string Role,

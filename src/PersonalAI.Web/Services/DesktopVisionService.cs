@@ -764,6 +764,9 @@ Các field không dùng để chuỗi rỗng hoặc [].
             };
         }
 
+        decision = NormalizeComputerOperatorDecision(
+            decision);
+
         var allowed = new HashSet<string>(
             [
                 "focus-window",
@@ -786,30 +789,23 @@ Các field không dùng để chuỗi rỗng hoặc [].
             ],
             StringComparer.OrdinalIgnoreCase);
 
-        if (!allowed.Contains(decision.Action) ||
-            !double.IsFinite(decision.Confidence) ||
-            decision.Confidence is < 0 or > 1 ||
-            decision.State.Length > 220 ||
-            decision.Plan.Length > 500 ||
-            decision.CurrentSubgoal.Length > 500 ||
-            !double.IsFinite(decision.GoalProgress) ||
-            decision.GoalProgress is < 0 or > 1 ||
-            decision.VerifiedMilestones.Count > 16 ||
-            decision.VerifiedMilestones.Any(item => item.Length > 260) ||
-            decision.Query.Length > 120 ||
-            decision.Text.Length > 1000 ||
-            decision.Key.Length > 20 ||
-            decision.Url.Length > 2048 ||
-            decision.TargetLabel.Length > 160 ||
-            decision.CoordinateSpace.Length > 40 ||
-            decision.CoordinateWindowId.Length > 40 ||
-            decision.ExpectedEffect.Length > 500 ||
-            decision.Reason.Length > 600 ||
-            decision.Keys.Count > 4 ||
-            (decision.SceneElements?.Count ?? 0) > 30 ||
-            decision.TargetElementId.Length > 80)
-            throw new InvalidOperationException(
-                "Desktop Vision trả quyết định Computer Operator không hợp lệ.");
+        if (!allowed.Contains(decision.Action))
+        {
+            decision = decision with
+            {
+                Action = "wait",
+                ExpectedEffect = string.Empty,
+                Reason = LimitDecisionText(
+                    $"Vision đề xuất action không hỗ trợ '{decision.Action}'. Hệ thống chuyển sang wait để quan sát lại.",
+                    600),
+                Plan = LimitDecisionText(
+                    "Quan sát lại màn hình và chọn đúng một action trong capability hiện có.",
+                    500)
+            };
+        }
+
+        ValidateComputerOperatorExecutionFields(
+            decision);
 
         var normalizedSceneElements = NormalizeSceneGraphRelations(
             decision.SceneElements ?? Array.Empty<DesktopSceneElement>());
@@ -938,6 +934,84 @@ Các field không dùng để chuỗi rỗng hoặc [].
         {
             Action = decision.Action.Trim().ToLowerInvariant()
         };
+    }
+
+    private static DesktopOperatorDecision NormalizeComputerOperatorDecision(
+        DesktopOperatorDecision decision)
+    {
+        var confidence = double.IsFinite(decision.Confidence)
+            ? Math.Clamp(decision.Confidence, 0, 1)
+            : 0;
+
+        var goalProgress = double.IsFinite(decision.GoalProgress)
+            ? Math.Clamp(decision.GoalProgress, 0, 1)
+            : 0;
+
+        return decision with
+        {
+            State = LimitDecisionText(decision.State, 220),
+            Plan = LimitDecisionText(decision.Plan, 500),
+            CurrentSubgoal = LimitDecisionText(decision.CurrentSubgoal, 500),
+            GoalProgress = goalProgress,
+            VerifiedMilestones = decision.VerifiedMilestones
+                .Where(item => !string.IsNullOrWhiteSpace(item))
+                .Select(item => LimitDecisionText(item, 260))
+                .Distinct(StringComparer.OrdinalIgnoreCase)
+                .Take(16)
+                .ToArray(),
+            TargetLabel = LimitDecisionText(decision.TargetLabel, 160),
+            ExpectedEffect = LimitDecisionText(decision.ExpectedEffect, 500),
+            Reason = LimitDecisionText(decision.Reason, 600),
+            Confidence = confidence,
+            Keys = decision.Keys
+                .Where(item => !string.IsNullOrWhiteSpace(item))
+                .Take(4)
+                .ToArray()
+        };
+    }
+
+    private static void ValidateComputerOperatorExecutionFields(
+        DesktopOperatorDecision decision)
+    {
+        static InvalidOperationException Invalid(
+            string field,
+            string detail) =>
+            new(
+                $"Desktop Vision trả field '{field}' không hợp lệ: {detail}");
+
+        if (decision.Query.Length > 120)
+            throw Invalid("query", $"dài {decision.Query.Length}, tối đa 120 ký tự.");
+
+        if (decision.Text.Length > 1000)
+            throw Invalid("text", $"dài {decision.Text.Length}, tối đa 1000 ký tự.");
+
+        if (decision.Key.Length > 20)
+            throw Invalid("key", $"dài {decision.Key.Length}, tối đa 20 ký tự.");
+
+        if (decision.Url.Length > 2048)
+            throw Invalid("url", $"dài {decision.Url.Length}, tối đa 2048 ký tự.");
+
+        if (decision.CoordinateSpace.Length > 40)
+            throw Invalid("coordinateSpace", "vượt giới hạn 40 ký tự.");
+
+        if (decision.CoordinateWindowId.Length > 40)
+            throw Invalid("coordinateWindowId", "vượt giới hạn 40 ký tự.");
+
+        if ((decision.SceneElements?.Count ?? 0) > 30)
+            throw Invalid("sceneElements", "vượt quá 30 phần tử.");
+
+        if (decision.TargetElementId.Length > 80)
+            throw Invalid("targetElementId", "vượt giới hạn 80 ký tự.");
+    }
+
+    private static string LimitDecisionText(
+        string? value,
+        int maximum)
+    {
+        var normalized = (value ?? string.Empty).Trim();
+        return normalized.Length <= maximum
+            ? normalized
+            : normalized[..maximum];
     }
 
     private static bool LooksLikeEncodedKeyboardControl(

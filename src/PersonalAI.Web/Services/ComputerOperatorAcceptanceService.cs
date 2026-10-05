@@ -86,6 +86,16 @@ public sealed class ComputerOperatorAcceptanceService
             "visual target persistence chỉ nhận ROI hợp lệ và kích thước giới hạn",
             CheckVisualTargetPersistenceTemplateBounds);
 
+        RunCheck(
+            checks,
+            "local visual fusion tăng confidence khi OCR và OpenCV cùng vùng",
+            CheckLocalVisualFusionAgreesOnSameTarget);
+
+        RunCheck(
+            checks,
+            "local visual fusion từ chối hai nguồn mạnh xung đột vị trí",
+            CheckLocalVisualFusionRejectsConflictingTargets);
+
 
 
         RunCheck(
@@ -1253,7 +1263,8 @@ public sealed class ComputerOperatorAcceptanceService
         var planner =
             new DesktopOcrActionPlanner(
                 new AcceptanceOcrSensor(
-                    observation));
+                    observation),
+                new LocalVisualTargetResolver());
 
         var foreground =
             new ComputerWindowInfo(
@@ -1409,6 +1420,98 @@ public sealed class ComputerOperatorAcceptanceService
                 600,
                 40),
             "Visual target persistence chưa chặn ROI ngoài frame/quá lớn.");
+    }
+
+    private static void CheckLocalVisualFusionAgreesOnSameTarget()
+    {
+        var resolver =
+            new LocalVisualTargetResolver();
+
+        var ocr =
+            new DesktopOcrResolution(
+                DesktopOcrResolutionStatus.Resolved,
+                new DesktopOcrTarget(
+                    "Continue",
+                    100,
+                    100,
+                    80,
+                    30,
+                    120,
+                    "phrase"),
+                Array.Empty<DesktopOcrTarget>(),
+                "acceptance");
+
+        var template =
+            new DesktopVisualTargetRelocation(
+                Available: true,
+                Relocated: true,
+                Ambiguous: false,
+                Confidence: 0.94,
+                Left: 104,
+                Top: 102,
+                Width: 78,
+                Height: 30,
+                Scale: 1.0,
+                Provider: "opencv-template",
+                Reason: "acceptance");
+
+        var result =
+            resolver.Resolve(
+                ocr,
+                template);
+
+        Require(
+            result.Status ==
+                LocalVisualTargetStatus.Resolved &&
+            result.Resolved &&
+            result.Confidence >= 0.94 &&
+            result.Evidence.Count == 2,
+            "Local visual fusion chưa tăng confidence khi OCR/OpenCV đồng thuận.");
+    }
+
+    private static void CheckLocalVisualFusionRejectsConflictingTargets()
+    {
+        var resolver =
+            new LocalVisualTargetResolver();
+
+        var ocr =
+            new DesktopOcrResolution(
+                DesktopOcrResolutionStatus.Resolved,
+                new DesktopOcrTarget(
+                    "Continue",
+                    100,
+                    100,
+                    80,
+                    30,
+                    120,
+                    "phrase"),
+                Array.Empty<DesktopOcrTarget>(),
+                "acceptance");
+
+        var template =
+            new DesktopVisualTargetRelocation(
+                Available: true,
+                Relocated: true,
+                Ambiguous: false,
+                Confidence: 0.95,
+                Left: 500,
+                Top: 300,
+                Width: 80,
+                Height: 30,
+                Scale: 1.0,
+                Provider: "opencv-template",
+                Reason: "acceptance");
+
+        var result =
+            resolver.Resolve(
+                ocr,
+                template);
+
+        Require(
+            result.Status ==
+                LocalVisualTargetStatus.Ambiguous &&
+            !result.Resolved,
+            "Local visual fusion đang chọn bừa khi OCR/OpenCV mạnh nhưng xung đột vị trí.");
     }
 
     private static void CheckLocalVisualDifferenceHash()

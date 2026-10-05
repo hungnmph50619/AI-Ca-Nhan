@@ -38,7 +38,8 @@ public sealed record AdaptiveWaitResult(
     int Samples,
     int ProgressHeartbeats,
     TimeSpan Elapsed,
-    string Reason);
+    string Reason,
+    int EventWakeups = 0);
 
 public interface IAdaptiveVerificationWaitEngine
 {
@@ -48,7 +49,8 @@ public interface IAdaptiveVerificationWaitEngine
         CancellationToken cancellationToken = default);
 }
 
-public sealed class AdaptiveVerificationWaitEngine
+public sealed class AdaptiveVerificationWaitEngine(
+    IAdaptiveObservationWakeSource? wakeSource = null)
     : IAdaptiveVerificationWaitEngine
 {
     public async Task<AdaptiveWaitResult> WaitAsync(
@@ -74,6 +76,7 @@ public sealed class AdaptiveVerificationWaitEngine
         var lastMeaningfulProgress = started;
         var samples = 0;
         var heartbeats = 0;
+        var eventWakeups = 0;
         var lastReason =
             "Chưa có bằng chứng kết quả hoặc tiến triển.";
 
@@ -93,7 +96,8 @@ public sealed class AdaptiveVerificationWaitEngine
                     samples,
                     heartbeats,
                     elapsed,
-                    $"Đã chạm giới hạn chờ tuyệt đối {resolved.AbsoluteTimeout.TotalSeconds:0}s. {lastReason}");
+                    $"Đã chạm giới hạn chờ tuyệt đối {resolved.AbsoluteTimeout.TotalSeconds:0}s. {lastReason}",
+                    eventWakeups);
             }
 
             var sample =
@@ -114,7 +118,8 @@ public sealed class AdaptiveVerificationWaitEngine
                     samples,
                     heartbeats,
                     DateTimeOffset.UtcNow - started,
-                    sample.Reason);
+                    sample.Reason,
+                    eventWakeups);
             }
 
             if (sample.Status.Equals(
@@ -128,7 +133,8 @@ public sealed class AdaptiveVerificationWaitEngine
                     samples,
                     heartbeats,
                     DateTimeOffset.UtcNow - started,
-                    sample.Reason);
+                    sample.Reason,
+                    eventWakeups);
             }
 
             var strongProgress =
@@ -156,12 +162,25 @@ public sealed class AdaptiveVerificationWaitEngine
                     samples,
                     heartbeats,
                     DateTimeOffset.UtcNow - started,
-                    $"Không có tiến triển đủ mạnh trong {resolved.StallTimeout.TotalSeconds:0}s. {sample.Reason}");
+                    $"Không có tiến triển đủ mạnh trong {resolved.StallTimeout.TotalSeconds:0}s. {sample.Reason}",
+                    eventWakeups);
             }
 
-            await Task.Delay(
-                resolved.PollInterval,
-                cancellationToken);
+            if (wakeSource is not null)
+            {
+                var wake = await wakeSource.WaitAsync(
+                    resolved.PollInterval,
+                    cancellationToken);
+
+                if (wake.EventReceived)
+                    eventWakeups++;
+            }
+            else
+            {
+                await Task.Delay(
+                    resolved.PollInterval,
+                    cancellationToken);
+            }
         }
     }
 }

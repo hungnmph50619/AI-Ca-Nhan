@@ -3163,7 +3163,17 @@ jobs:
           grep -Fq '"id": "pause-resume-stop"' tests/computer-use/v3.4.9-acceptance-scenarios.json
           grep -Fq '"id": "loop-recovery"' tests/computer-use/v3.4.9-acceptance-scenarios.json
           grep -Fq '"id": "multi-step-open-and-type"' tests/computer-use/v3.4.9-acceptance-scenarios.json
-          grep -Fq 'totalCount -lt 111' .github/workflows/desktop-control.yml
+          grep -Fq 'totalCount -lt 114' .github/workflows/desktop-control.yml
+          # v4.0.20 — Event-driven Observation
+          grep -Fq 'SetWinEventHook' src/PersonalAI.Web/Services/WindowsDesktopEventWakeSource.cs
+          grep -Fq 'GetMessage' src/PersonalAI.Web/Services/WindowsDesktopEventWakeSource.cs
+          grep -Fq 'IAdaptiveObservationWakeSource' src/PersonalAI.Web/Services/WindowsDesktopEventWakeSource.cs
+          grep -Fq 'wakeSource.WaitAsync' src/PersonalAI.Web/Services/AdaptiveVerificationWaitEngine.cs
+          grep -Fq 'EventWakeups' src/PersonalAI.Web/Services/AdaptiveVerificationWaitEngine.cs
+          grep -Fq 'WindowsDesktopEventWakeSource' src/PersonalAI.Web/Services/ComputerUseEndpoints.cs
+          grep -Fq 'CheckEventDrivenWakeAcceleratesObservation' src/PersonalAI.Web/Services/ComputerOperatorAcceptanceService.cs
+          grep -Fq 'CheckEventWakeDoesNotCreateSuccess' src/PersonalAI.Web/Services/ComputerOperatorAcceptanceService.cs
+          grep -Fq 'CheckEventWakeFallsBackToPolling' src/PersonalAI.Web/Services/ComputerOperatorAcceptanceService.cs
           # v4.0.19 — Evidence Fusion
           grep -Fq 'IUniversalEvidenceFusionEngine' src/PersonalAI.Web/Services/UniversalEvidenceFusionEngine.cs
           grep -Fq 'UniversalEvidenceReliability.Deterministic' src/PersonalAI.Web/Services/UniversalEvidenceFusionEngine.cs

@@ -3163,7 +3163,16 @@ jobs:
           grep -Fq '"id": "pause-resume-stop"' tests/computer-use/v3.4.9-acceptance-scenarios.json
           grep -Fq '"id": "loop-recovery"' tests/computer-use/v3.4.9-acceptance-scenarios.json
           grep -Fq '"id": "multi-step-open-and-type"' tests/computer-use/v3.4.9-acceptance-scenarios.json
-          grep -Fq 'totalCount -lt 143' .github/workflows/desktop-control.yml
+          grep -Fq 'totalCount -lt 146' .github/workflows/desktop-control.yml
+          # v4.0.30 — Performance SLO Report
+          grep -Fq 'IComputerOperatorPerformanceProfileService' src/PersonalAI.Web/Services/ComputerOperatorPerformanceProfile.cs
+          grep -Fq 'ComputerOperatorPerformanceStatuses.Watch' src/PersonalAI.Web/Services/ComputerOperatorPerformanceProfile.cs
+          grep -Fq 'GeminiPlanningCalls' src/PersonalAI.Web/Services/ComputerOperatorPerformanceProfile.cs
+          grep -Fq 'EventWakeRatio' src/PersonalAI.Web/Services/ComputerOperatorPerformanceProfile.cs
+          grep -Fq '/api/computer/operator-performance' src/PersonalAI.Web/Services/ComputerUseEndpoints.cs
+          grep -Fq 'CheckPerformanceSloFlagsSlowLocalStage' src/PersonalAI.Web/Services/ComputerOperatorAcceptanceService.cs
+          grep -Fq 'CheckPerformanceReportCountsGeminiCalls' src/PersonalAI.Web/Services/ComputerOperatorAcceptanceService.cs
+          grep -Fq 'CheckPerformanceReportCalculatesEventWakeRatio' src/PersonalAI.Web/Services/ComputerOperatorAcceptanceService.cs
           # v4.0.29 — Adaptive Screen Stabilization
           grep -Fq 'DesktopAdaptiveStabilizationPolicy' src/PersonalAI.Web/Services/DesktopAdaptiveStabilizationPolicy.cs
           grep -Fq 'RequiredConsecutiveStableComparisons = 2' src/PersonalAI.Web/Services/DesktopAdaptiveStabilizationPolicy.cs

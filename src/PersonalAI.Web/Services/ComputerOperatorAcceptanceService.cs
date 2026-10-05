@@ -76,6 +76,11 @@ public sealed class ComputerOperatorAcceptanceService
             "OCR provider router ưu tiên Windows và chỉ fallback khi cần",
             CheckOcrProviderRouterFallbackOrder);
 
+        RunCheck(
+            checks,
+            "OpenCV template sensor giữ multi-scale nhỏ và ngưỡng confidence an toàn",
+            CheckOpenCvTemplateSensorPolicy);
+
 
 
         RunCheck(
@@ -1345,6 +1350,26 @@ public sealed class ComputerOperatorAcceptanceService
             result.Provider == "paddleocr-onnx" &&
             result.Text == "Continue",
             "OCR provider router chưa ưu tiên Windows hoặc chưa fallback đúng sang PaddleOCR/ONNX.");
+    }
+
+    private static void CheckOpenCvTemplateSensorPolicy()
+    {
+        var scales =
+            OpenCvTemplateMatchingSensor
+                .CandidateScalesForAcceptance();
+
+        Require(
+            scales.Count == 7 &&
+            Math.Abs(scales[0] - 1.0) < 0.001 &&
+            scales.Min() >= 0.85 &&
+            scales.Max() <= 1.15 &&
+            OpenCvTemplateMatchingSensor.AcceptScore(
+                0.90,
+                0.88) &&
+            !OpenCvTemplateMatchingSensor.AcceptScore(
+                0.80,
+                0.88),
+            "OpenCV template sensor policy chưa giữ scale/threshold an toàn.");
     }
 
     private static void CheckLocalVisualDifferenceHash()

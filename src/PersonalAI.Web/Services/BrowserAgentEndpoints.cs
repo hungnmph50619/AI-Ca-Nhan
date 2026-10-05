@@ -8,7 +8,10 @@ public static class BrowserAgentEndpoints
         this IServiceCollection services)
     {
         services.AddSingleton<IBrowserAgentService, BrowserAgentService>();
-        services.AddSingleton<IBrowserExecutionBackend, InternalHttpBrowserExecutionBackend>();
+        services.AddSingleton<IPlaywrightBrowserAdapter, PlaywrightBrowserAdapter>();
+        services.AddSingleton<IPlaywrightBrowserExecutionBackend, PlaywrightBrowserExecutionBackend>();
+        services.AddSingleton<IHttpBrowserExecutionBackend, InternalHttpBrowserExecutionBackend>();
+        services.AddSingleton<IBrowserExecutionBackend, CompositeBrowserExecutionBackend>();
         services.AddSingleton<IExecutionAgent, BrowserExecutionAgent>();
         services.AddSingleton<IPersonalAiTool, BrowserSessionInfoTool>();
         services.AddSingleton<IPersonalAiTool, BrowserNavigateTool>();

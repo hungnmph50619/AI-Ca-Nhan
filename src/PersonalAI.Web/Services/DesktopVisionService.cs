@@ -530,7 +530,7 @@ Mỗi lượt phải:
 4. Với mục tiêu nhiều bước, xác định CURRENT SUBGOAL là mục tiêu con hợp lý nhất ở thời điểm hiện tại; được phép thay đổi subgoal khi trạng thái thực tế khác dự kiến.
 5. Ước lượng GOAL PROGRESS từ 0 đến 1 dựa trên bằng chứng hiện tại; đây chỉ là chỉ báo tiến độ, không phải quyền tự tuyên bố hoàn thành.
 6. VERIFIED MILESTONES chỉ được liệt kê những mốc đã có bằng chứng trên ảnh hiện tại hoặc đã được lịch sử xác minh.
-7. Dựng SCENE ELEMENTS cho các phần tử giao diện quan trọng đang thật sự nhìn thấy: cửa sổ, thanh công cụ, nút, ô nhập liệu, menu, tab, danh sách, taskbar, icon hoặc vùng nội dung. Mỗi phần tử có id ổn định trong lượt này, role, label, parentId, bounding box pixel và các quan hệ ngắn.
+7. Dựng SCENE ELEMENTS chỉ cho các phần tử giao diện quan trọng trực tiếp liên quan tới bước kế tiếp: cửa sổ, nút, ô nhập liệu, menu, tab, taskbar, icon hoặc vùng nội dung đang thật sự nhìn thấy. Tối đa 12 phần tử; label/relations phải ngắn gọn. Mỗi phần tử có id ổn định trong lượt này, role, label, parentId và bounding box pixel.
 8. Đọc TEMPORAL SCENE nếu có để biết phần tử nào ổn định, di chuyển, xuất hiện mới hoặc biến mất so với lượt trước. Không click dựa trên vị trí cũ của phần tử đã di chuyển.
 9. Lập PLAN ngắn cho bước tiếp theo dựa trên affordance, quan hệ scene graph và temporal scene.
 10. Chọn đúng MỘT ACTION.
@@ -573,7 +573,7 @@ Quy tắc an toàn:
 - Không shell, không xóa dữ liệu, không connector.
 - Không nhập mật khẩu, OTP, API key, token, private key hoặc bí mật.
 - Với hành động chuột, chỉ chọn phần tử đang nhìn thấy rõ trên ảnh hiện tại.
-- sceneElements chỉ mô tả phần tử thật sự nhìn thấy. Không tạo phần tử giả, bị che hoàn toàn hoặc ngoài ảnh.
+- sceneElements chỉ mô tả phần tử thật sự nhìn thấy và trực tiếp hữu ích cho bước kế tiếp. Không tạo phần tử giả, bị che hoàn toàn hoặc ngoài ảnh; tối đa 12 phần tử.
 - Bounding box của sceneElements luôn dùng pixel tương đối theo ảnh hiện tại, bất kể action cuối cùng dùng hệ tọa độ nào.
 - parentId phải rỗng hoặc trỏ tới một id khác trong sceneElements; không tạo vòng cha-con.
 - relations chỉ chứa mô tả ngắn như "inside:window-1", "below:toolbar-1", "overlaps:panel-2", "foreground".
@@ -709,7 +709,7 @@ Các field không dùng để chuỗi rỗng hoặc [].
             },
             generationConfig = new
             {
-                maxOutputTokens = 1800,
+                maxOutputTokens = 4096,
                 temperature = 0.0,
                 responseMimeType = "application/json"
             }

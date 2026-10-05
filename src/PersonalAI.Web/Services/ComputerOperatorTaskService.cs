@@ -1839,10 +1839,52 @@ public sealed class ComputerOperatorTaskService(
                 if (structuredResult.Status ==
                     StructuredVerificationStatus.Failed)
                 {
-                    return new(
-                        false,
-                        structuredResult.Confidence,
-                        $"Structured verifier xác minh thất bại: {structuredResult.Reason}");
+                    await Task.Delay(
+                        320,
+                        cancellationToken);
+
+                    await execution.WaitIfPausedAsync(
+                        cancellationToken);
+
+                    var structuredRetryState =
+                        BuildDesktopState(after);
+
+                    var structuredRetry =
+                        structuredVerification.Verify(
+                            decision,
+                            structuredRetryState.StructuredGraph);
+
+                    progress.Add(
+                        "structured-verification-retry",
+                        $"Structured Verification retry: {structuredRetry.Status} — {structuredRetry.Reason}",
+                        structuredRetry.Status ==
+                            StructuredVerificationStatus.Verified
+                                ? "verified"
+                                : structuredRetry.Status ==
+                                  StructuredVerificationStatus.Failed
+                                    ? "failed"
+                                    : "inconclusive",
+                        structuredRetry.Confidence);
+
+                    if (structuredRetry.Status ==
+                        StructuredVerificationStatus.Verified)
+                    {
+                        return new(
+                            true,
+                            structuredRetry.Confidence,
+                            $"Structured verifier xác minh sau lần đọc lại: {structuredRetry.Reason}");
+                    }
+
+                    if (structuredRetry.Status ==
+                        StructuredVerificationStatus.Failed)
+                    {
+                        return new(
+                            false,
+                            structuredRetry.Confidence,
+                            $"Structured verifier xác minh thất bại sau hai lần đọc state: {structuredRetry.Reason}");
+                    }
+
+                    // Retry trở thành inconclusive: tiếp tục event/frame/Gemini.
                 }
 
                 // Inconclusive không phải failure. Tiếp tục event/frame/Gemini.

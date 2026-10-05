@@ -189,6 +189,9 @@ public sealed class PaddleOnnxDesktopOcrProvider(
                     }
             };
 
+        var started =
+            false;
+
         try
         {
             if (!process.Start())
@@ -199,6 +202,9 @@ public sealed class PaddleOnnxDesktopOcrProvider(
                     string.Empty,
                     "Không khởi động được local vision worker.");
             }
+
+            started =
+                true;
 
             var stdoutTask =
                 process.StandardOutput.ReadToEndAsync();
@@ -272,7 +278,8 @@ public sealed class PaddleOnnxDesktopOcrProvider(
         }
         finally
         {
-            if (!process.HasExited)
+            if (started &&
+                !process.HasExited)
             {
                 try
                 {

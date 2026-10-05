@@ -18,7 +18,8 @@ public sealed record UniversalExecutionLifecycleResult(
     UniversalOutcomeVerificationResult Verification,
     string Action,
     bool GoalComplete,
-    string Reason);
+    string Reason,
+    UniversalVerificationContinuationPlan? VerificationPlan = null);
 
 public interface IUniversalExecutionLifecycleCoordinator
 {
@@ -29,9 +30,12 @@ public interface IUniversalExecutionLifecycleCoordinator
 
 public sealed class UniversalExecutionLifecycleCoordinator(
     IUniversalTaskRouter router,
-    IUniversalOutcomeVerificationService verification)
+    IUniversalOutcomeVerificationService verification,
+    IUniversalVerificationContinuationPlanner? continuationPlanner = null)
     : IUniversalExecutionLifecycleCoordinator
 {
+    private readonly IUniversalVerificationContinuationPlanner continuationPlanner =
+        continuationPlanner ?? new UniversalVerificationContinuationPlanner();
     public async Task<UniversalExecutionLifecycleResult> ExecuteAsync(
         UniversalExecutionLifecycleRequest request,
         CancellationToken cancellationToken = default)
@@ -69,6 +73,11 @@ public sealed class UniversalExecutionLifecycleCoordinator(
                 UniversalExecutionLifecycleActions.Stop
         };
 
+        var verificationPlan =
+            continuationPlanner.Plan(
+                execution.Route,
+                verified);
+
         return new(
             execution,
             verified,
@@ -81,13 +90,14 @@ public sealed class UniversalExecutionLifecycleCoordinator(
                     "Execution đã được outcome verifier xác nhận; goal được phép complete.",
 
                 UniversalExecutionLifecycleActions.VerifyOutcome =>
-                    "Execution đã chạy nhưng evidence chưa đủ; chưa được complete.",
+                    $"Execution đã chạy nhưng evidence chưa đủ; continuation={verificationPlan.Strategy}.",
 
                 UniversalExecutionLifecycleActions.ReplanGoal =>
                     "Verifier xác nhận goal chưa đạt; phải replan trước action tiếp theo.",
 
                 _ =>
                     $"Execution lifecycle dừng ở trạng thái verification={verified.Status}."
-            });
+            },
+            verificationPlan);
     }
 }

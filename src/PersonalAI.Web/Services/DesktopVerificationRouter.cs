@@ -40,11 +40,11 @@ public sealed class DesktopVerificationRouter
             .Trim()
             .ToLowerInvariant();
 
-        if (action is
-                "click-left" or
-                "double-click-left" or
-                "press-key" or
-                "press-hotkey" &&
+        if ((action is
+                 "click-left" or
+                 "double-click-left" or
+                 "press-key" or
+                 "press-hotkey") &&
             IsLaunchTransitionExpected(
                 decision))
         {

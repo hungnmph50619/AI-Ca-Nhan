@@ -293,6 +293,11 @@ public sealed class ComputerOperatorAcceptanceService
             "local planner nhường quyền sau loop directive",
             CheckLocalPlannerYieldsAfterLoopDirective);
 
+        RunCheck(
+            checks,
+            "local planner nhường quyền ngay sau Search Enter launch thất bại",
+            CheckLocalPlannerYieldsAfterFailedSearchLaunch);
+
 
         RunCheck(
             checks,
@@ -3218,6 +3223,54 @@ public sealed class ComputerOperatorAcceptanceService
         Require(
             !planned,
             "Local planner vẫn chiếm quyền sau khi loop guard đã bắt buộc đổi chiến lược.");
+    }
+
+    private static void CheckLocalPlannerYieldsAfterFailedSearchLaunch()
+    {
+        var planner =
+            new DesktopLocalActionPlanner();
+
+        var search =
+            new ComputerWindowInfo(
+                "0x300",
+                "Search",
+                "SearchHost",
+                300,
+                true,
+                0,
+                0,
+                1200,
+                900);
+
+        var state =
+            new ComputerOperatorDesktopState(
+                DateTimeOffset.UtcNow,
+                search,
+                [search],
+                0,
+                0,
+                1920,
+                1080,
+                DesktopCaptureScopes.VirtualDesktop,
+                null,
+                false);
+
+        var history =
+            """
+LOCAL-SHELL-TYPED:Demo App
+STEP 2: VERIFY-FAILED press-key|key=enter|effect=windows search khởi chạy ứng dụng phù hợp với từ khóa demo app — không tạo transition.
+""";
+
+        var planned =
+            planner.TryPlan(
+                "Mở Demo App. Vào màn hình tiếp theo.",
+                state,
+                history,
+                out _);
+
+        Require(
+            !planned,
+            "Local planner vẫn lặp Enter sau khi Search launch đã verification-failed.");
     }
 
     private static void CheckStructuredVerifierToggleState()

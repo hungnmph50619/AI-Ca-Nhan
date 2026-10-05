@@ -1491,9 +1491,12 @@ Các field không dùng để chuỗi rỗng hoặc [].
         }
         catch (JsonException exception)
         {
-            if (TryRepairTruncatedJsonObject(
+            var repairAttempted =
+                TryRepairTruncatedJsonObject(
                     rawText,
-                    out var repaired))
+                    out var repaired);
+
+            if (repairAttempted)
             {
                 try
                 {
@@ -1511,13 +1514,71 @@ Các field không dùng để chuỗi rỗng hoặc [].
             }
 
             return CreateSafeWaitDecision(
-                $"Gemini trả JSON chưa hoàn chỉnh hoặc sai cấu trúc (dòng {exception.LineNumber}, vị trí {exception.BytePositionInLine}). Không thực thi action từ payload lỗi; sẽ quan sát lại trạng thái hiện tại.");
+                $"Gemini trả JSON chưa hoàn chỉnh hoặc sai cấu trúc (dòng {exception.LineNumber}, vị trí {exception.BytePositionInLine}); repairAttempted={repairAttempted}; rawPreview={BuildSafeRawPreview(rawText)}. Không thực thi action từ payload lỗi; sẽ quan sát lại trạng thái hiện tại.");
         }
         catch (InvalidOperationException exception)
         {
             return CreateSafeWaitDecision(
-                $"Gemini chưa trả được JSON quyết định hợp lệ: {exception.Message} Không thực thi action; sẽ quan sát lại trạng thái hiện tại.");
+                $"Gemini chưa trả được JSON quyết định hợp lệ: {exception.Message}; rawPreview={BuildSafeRawPreview(rawText)}. Không thực thi action; sẽ quan sát lại trạng thái hiện tại.");
         }
+    }
+
+    internal static string BuildSafeRawPreviewForAcceptance(
+        string rawText) =>
+        BuildSafeRawPreview(
+            rawText);
+
+    private static string BuildSafeRawPreview(
+        string rawText)
+    {
+        if (string.IsNullOrWhiteSpace(
+                rawText))
+        {
+            return "<empty>";
+        }
+
+        var compact =
+            rawText
+                .Replace(
+                    "\r",
+                    " ",
+                    StringComparison.Ordinal)
+                .Replace(
+                    "\n",
+                    " ",
+                    StringComparison.Ordinal)
+                .Trim();
+
+        // Không log image/base64 payload nếu provider vô tình trả kèm.
+        foreach (var marker in new[]
+                 {
+                     "jpegBase64",
+                     "imageBase64",
+                     "data:image"
+                 })
+        {
+            var index =
+                compact.IndexOf(
+                    marker,
+                    StringComparison.OrdinalIgnoreCase);
+
+            if (index >= 0)
+            {
+                compact =
+                    compact[..index] +
+                    marker +
+                    "=<redacted>";
+                break;
+            }
+        }
+
+        const int maximum = 360;
+
+        return compact.Length <=
+               maximum
+            ? compact
+            : compact[..maximum] +
+              "…";
     }
 
     internal static bool TryRepairTruncatedJsonObjectForAcceptance(

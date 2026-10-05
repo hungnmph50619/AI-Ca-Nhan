@@ -9,7 +9,9 @@ public sealed record FlaUiAutomationRequest(
     string? TargetToken = null,
     string? Text = null,
     string? WriteMode = null,
-    int WaitMilliseconds = 0);
+    int WaitMilliseconds = 0,
+    int MaxNodes = 200,
+    int MaxDepth = 6);
 
 public sealed record FlaUiAutomationResponse(
     bool Success,
@@ -25,7 +27,8 @@ public sealed record FlaUiAutomationResponse(
     string? Value,
     string Detail,
     string EventKind = "",
-    string EventWindowId = "");
+    string EventWindowId = "",
+    string StructuredJson = "");
 
 public interface IFlaUiAutomationClient
 {

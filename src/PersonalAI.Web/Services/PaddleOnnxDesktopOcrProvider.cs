@@ -152,6 +152,7 @@ public sealed class PaddleOnnxDesktopOcrProvider(
                 FormatException or
                 OCRException or
                 DllNotFoundException or
+                EntryPointNotFoundException or
                 BadImageFormatException or
                 TypeInitializationException or
                 InvalidOperationException)
@@ -233,6 +234,7 @@ public sealed class PaddleOnnxDesktopOcrProvider(
                 exception is
                     OCRException or
                     DllNotFoundException or
+                    EntryPointNotFoundException or
                     BadImageFormatException or
                     TypeInitializationException or
                     InvalidOperationException)
@@ -342,7 +344,7 @@ public sealed class PaddleOnnxDesktopOcrProvider(
                     directory,
                     file)));
 
-    private static DesktopOcrLine? ToLine(
+    internal static DesktopOcrLine? ToLine(
         JsonResult block)
     {
         var text =

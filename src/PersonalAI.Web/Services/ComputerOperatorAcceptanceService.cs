@@ -88,6 +88,11 @@ public sealed class ComputerOperatorAcceptanceService
 
         RunCheck(
             checks,
+            "local vision warm worker recycle theo request age và idle",
+            CheckLocalVisionWorkerRecyclePolicy);
+
+        RunCheck(
+            checks,
             "local visual provider health cooldown sau failure lặp",
             CheckLocalVisualProviderHealthCooldown);
 
@@ -1502,6 +1507,28 @@ public sealed class ComputerOperatorAcceptanceService
             LocalVisionWorkerClient.NormalizeTimeoutForAcceptance(
                 99999) == 15000,
             "Local vision worker timeout chưa được clamp trong biên 250..15000ms.");
+    }
+
+    private static void CheckLocalVisionWorkerRecyclePolicy()
+    {
+        Require(
+            !LocalVisionWorkerClient.ShouldRecycleForAcceptance(
+                requestCount: 8,
+                age: TimeSpan.FromMinutes(2),
+                idle: TimeSpan.FromSeconds(10)) &&
+            LocalVisionWorkerClient.ShouldRecycleForAcceptance(
+                requestCount: 128,
+                age: TimeSpan.FromMinutes(2),
+                idle: TimeSpan.FromSeconds(10)) &&
+            LocalVisionWorkerClient.ShouldRecycleForAcceptance(
+                requestCount: 8,
+                age: TimeSpan.FromMinutes(30),
+                idle: TimeSpan.FromSeconds(10)) &&
+            LocalVisionWorkerClient.ShouldRecycleForAcceptance(
+                requestCount: 8,
+                age: TimeSpan.FromMinutes(2),
+                idle: TimeSpan.FromMinutes(2)),
+            "Local vision warm worker recycle policy chưa khóa đúng max-request/max-age/idle.");
     }
 
     private static void CheckLocalVisualProviderHealthCooldown()

@@ -34,10 +34,20 @@ public interface IDesktopOcrSensor
         string windowId);
 }
 
+public interface IDesktopOcrProvider
+{
+    string Name { get; }
+
+    DesktopOcrObservation ReadWindow(
+        string windowId);
+}
+
 public sealed class WindowsDesktopOcrSensor(
     IFlaUiAutomationClient sidecar)
-    : IDesktopOcrSensor
+    : IDesktopOcrProvider
 {
+    public string Name => "windows-ocr";
+
     public DesktopOcrObservation ReadWindow(
         string windowId)
     {
@@ -218,4 +228,96 @@ public sealed class WindowsDesktopOcrSensor(
         double Top,
         double Width,
         double Height);
+}
+
+
+public sealed class DesktopOcrSensorRouter(
+    IEnumerable<IDesktopOcrProvider> providers)
+    : IDesktopOcrSensor
+{
+    private readonly IReadOnlyList<IDesktopOcrProvider> orderedProviders =
+        providers
+            .OrderBy(provider =>
+                ProviderPriority(
+                    provider.Name))
+            .ThenBy(provider =>
+                provider.Name,
+                StringComparer.OrdinalIgnoreCase)
+            .ToArray();
+
+    public DesktopOcrObservation ReadWindow(
+        string windowId)
+    {
+        DesktopOcrObservation? last =
+            null;
+
+        foreach (var provider in
+                 orderedProviders)
+        {
+            DesktopOcrObservation result;
+            try
+            {
+                result =
+                    provider.ReadWindow(
+                        windowId);
+            }
+            catch (Exception exception) when (
+                exception is
+                    InvalidOperationException or
+                    IOException or
+                    TimeoutException)
+            {
+                last =
+                    new(
+                        Available: false,
+                        Text: string.Empty,
+                        Language: string.Empty,
+                        Lines:
+                            Array.Empty<DesktopOcrLine>(),
+                        CaptureWidth: 0,
+                        CaptureHeight: 0,
+                        Provider:
+                            provider.Name,
+                        Reason:
+                            $"{provider.Name} lỗi kỹ thuật: {exception.Message}");
+                continue;
+            }
+
+            last =
+                result;
+
+            if (result.Available &&
+                (result.WordCount > 0 ||
+                 !string.IsNullOrWhiteSpace(
+                     result.Text)))
+            {
+                return result;
+            }
+        }
+
+        return last ??
+            new(
+                Available: false,
+                Text: string.Empty,
+                Language: string.Empty,
+                Lines:
+                    Array.Empty<DesktopOcrLine>(),
+                CaptureWidth: 0,
+                CaptureHeight: 0,
+                Provider:
+                    "none",
+                Reason:
+                    "Không có OCR provider khả dụng.");
+    }
+
+    private static int ProviderPriority(
+        string? name) =>
+        (name ?? string.Empty)
+            .Trim()
+            .ToLowerInvariant() switch
+        {
+            "windows-ocr" => 10,
+            "paddleocr-onnx" => 20,
+            _ => 100
+        };
 }

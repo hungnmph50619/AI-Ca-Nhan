@@ -41,6 +41,7 @@ public sealed class ComputerOperatorTaskService(
     IComputerOperatorCheckpointStore checkpoints,
     IComputerOperatorTelemetry telemetry,
     IUniversalReliableOperatorCoordinator reliableOperator,
+    IComputerOperatorGeminiBudgetFactory geminiBudgetFactory,
     ILogger<ComputerOperatorTaskService> logger)
     : IComputerOperatorTaskService
 {
@@ -89,6 +90,9 @@ public sealed class ComputerOperatorTaskService(
         using var taskTelemetry =
             telemetry.Begin(
                 ComputerOperatorTelemetryStages.Task);
+
+        var geminiBudget =
+            geminiBudgetFactory.Create();
 
         control.EnableScopedAutomation(
             maximumActions: 12,
@@ -251,6 +255,35 @@ public sealed class ComputerOperatorTaskService(
                 using var planTelemetry =
                     telemetry.Begin(
                         ComputerOperatorTelemetryStages.GeminiPlan);
+
+                var planningBudget =
+                    geminiBudget.TryReservePlanning(
+                        "Cần Gemini lập bước tiếp theo vì task chưa hoàn thành bằng deterministic/local path.");
+
+                progress.Add(
+                    "gemini-budget",
+                    $"Planning budget: allowed={planningBudget.Allowed}; used={planningBudget.PlanningCalls}; verify={planningBudget.VerificationCalls}; remaining-total={planningBudget.RemainingTotalCalls}. {planningBudget.Reason}",
+                    planningBudget.Allowed
+                        ? "allowed"
+                        : "blocked");
+
+                if (!planningBudget.Allowed)
+                {
+                    planTelemetry.Complete(
+                        success: false,
+                        route: "budget-blocked");
+
+                    MarkCheckpointStatusSafely(
+                        checkpoint,
+                        ComputerOperatorCheckpointStatuses.Blocked);
+
+                    progress.Block(
+                        planningBudget.Reason);
+
+                    return Finish(
+                        false,
+                        $"Gemini Call Budget dừng task an toàn: {planningBudget.Reason}");
+                }
 
                 try
                 {
@@ -1109,6 +1142,7 @@ public sealed class ComputerOperatorTaskService(
                             frame,
                             verificationBaseline,
                             fastObserverBaseline,
+                            geminiBudget,
                             linked.Token);
 
                         verificationTelemetry.Complete(
@@ -1401,6 +1435,7 @@ public sealed class ComputerOperatorTaskService(
         DesktopScreenshotFrame previousFrame,
         DesktopScreenshotFrame? verificationBaseline,
         DesktopFastObserverSample? fastObserverBaseline,
+        IComputerOperatorGeminiBudgetSession geminiBudget,
         CancellationToken cancellationToken)
     {
         progress.Add(
@@ -1611,6 +1646,27 @@ public sealed class ComputerOperatorTaskService(
                     "roi-vision",
                     $"Gemini verification dùng {visionFrame.Source}: {visionFrame.Frame.Width}x{visionFrame.Frame.Height}; origin=({visionFrame.Frame.Left},{visionFrame.Frame.Top}).",
                     observation: true);
+
+                var verificationBudget =
+                    geminiBudget.TryReserveVerification(
+                        decision.Action,
+                        decision.ExpectedEffect,
+                        "Structured/local evidence chưa đủ để xác minh outcome; cần semantic verification.");
+
+                progress.Add(
+                    "gemini-budget",
+                    $"Verification budget: allowed={verificationBudget.Allowed}; plan={verificationBudget.PlanningCalls}; verify={verificationBudget.VerificationCalls}; remaining-total={verificationBudget.RemainingTotalCalls}. {verificationBudget.Reason}",
+                    verificationBudget.Allowed
+                        ? "allowed"
+                        : "blocked");
+
+                if (!verificationBudget.Allowed)
+                {
+                    return new(
+                        false,
+                        0,
+                        $"Gemini verification bị chặn bởi Call Budget: {verificationBudget.Reason}");
+                }
 
                 using var geminiVerifyTelemetry =
                     telemetry.Begin(

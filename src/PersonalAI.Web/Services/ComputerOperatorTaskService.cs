@@ -1034,13 +1034,9 @@ public sealed class ComputerOperatorTaskService(
                     var waitMilliseconds =
                         cycleTrace.RecoveryCode ==
                             "provider-cooldown"
-                            ? Math.Clamp(
-                                (int)Math.Ceiling(
-                                    (plannerBackoffUntil -
-                                     DateTimeOffset.UtcNow)
-                                    .TotalMilliseconds),
-                                900,
-                                5000)
+                            ? CalculateProviderCooldownDelayMilliseconds(
+                                plannerBackoffUntil,
+                                DateTimeOffset.UtcNow)
                             : 900;
 
                     await Task.Delay(
@@ -2921,6 +2917,23 @@ public sealed class ComputerOperatorTaskService(
             after.Clear();
         }
     }
+
+    internal static int CalculateProviderCooldownDelayMillisecondsForAcceptance(
+        DateTimeOffset backoffUntil,
+        DateTimeOffset now) =>
+        CalculateProviderCooldownDelayMilliseconds(
+            backoffUntil,
+            now);
+
+    private static int CalculateProviderCooldownDelayMilliseconds(
+        DateTimeOffset backoffUntil,
+        DateTimeOffset now) =>
+        Math.Clamp(
+            (int)Math.Ceiling(
+                (backoffUntil - now)
+                .TotalMilliseconds),
+            900,
+            5000);
 
     private static bool IsProviderDegradedPlannerDecision(
         DesktopOperatorDecision decision)

@@ -751,6 +751,15 @@ public sealed class ComputerOperatorTaskService(
                 }
 
                 ComputerActionResponse action;
+                using var executionTelemetry =
+                    telemetry.Begin(
+                        decision.Action.Equals(
+                            "type-text",
+                            StringComparison.OrdinalIgnoreCase)
+                            ? ComputerOperatorTelemetryStages.TextEngine
+                            : ComputerOperatorTelemetryStages.Execute,
+                        decision.Action);
+
                 try
                 {
                     var executeState = actionState.MoveTo(
@@ -795,9 +804,22 @@ public sealed class ComputerOperatorTaskService(
                             decision,
                             frame);
                     }
+
+                    executionTelemetry.Complete(
+                        success: action.Applied,
+                        route:
+                            decision.Action.Equals(
+                                "type-text",
+                                StringComparison.OrdinalIgnoreCase)
+                                ? "text-engine"
+                                : "computer");
                 }
                 catch (ToolExecutionInputException exception)
                 {
+                    executionTelemetry.Complete(
+                        success: false,
+                        route: "rejected");
+
                     verificationBaseline?.Clear();
                     logger.LogWarning(
                         "Computer Operator step {Step} rejected: {Reason}",
@@ -1002,6 +1024,11 @@ public sealed class ComputerOperatorTaskService(
                 }
                 else
                 {
+                    using var verificationTelemetry =
+                        telemetry.Begin(
+                            ComputerOperatorTelemetryStages.Verify,
+                            decision.Action);
+
                     try
                     {
                         verification = await VerifyAppliedActionAsync(
@@ -1010,6 +1037,21 @@ public sealed class ComputerOperatorTaskService(
                             verificationBaseline,
                             fastObserverBaseline,
                             linked.Token);
+
+                        verificationTelemetry.Complete(
+                            verification.Verified,
+                            verification.Detail.StartsWith(
+                                "Gemini Vision",
+                                StringComparison.OrdinalIgnoreCase)
+                                ? "semantic"
+                                : "local");
+                    }
+                    catch
+                    {
+                        verificationTelemetry.Complete(
+                            success: false,
+                            route: "error");
+                        throw;
                     }
                     finally
                     {
@@ -1462,11 +1504,31 @@ public sealed class ComputerOperatorTaskService(
                     $"Gemini verification dùng {visionFrame.Source}: {visionFrame.Frame.Width}x{visionFrame.Frame.Height}; origin=({visionFrame.Frame.Left},{visionFrame.Frame.Top}).",
                     observation: true);
 
-                var result = await vision.VerifyAsync(
-                    visionFrame.Frame,
-                    decision.ExpectedEffect,
-                    frameDifference,
-                    cancellationToken);
+                using var geminiVerifyTelemetry =
+                    telemetry.Begin(
+                        ComputerOperatorTelemetryStages.GeminiVerify,
+                        decision.Action);
+
+                DesktopVerificationResult result;
+                try
+                {
+                    result = await vision.VerifyAsync(
+                        visionFrame.Frame,
+                        decision.ExpectedEffect,
+                        frameDifference,
+                        cancellationToken);
+
+                    geminiVerifyTelemetry.Complete(
+                        result.Satisfied,
+                        "gemini");
+                }
+                catch
+                {
+                    geminiVerifyTelemetry.Complete(
+                        success: false,
+                        route: "gemini");
+                    throw;
+                }
 
                 var verifiedByVision =
                     result.Satisfied &&
@@ -1503,6 +1565,11 @@ public sealed class ComputerOperatorTaskService(
             $"Chưa có kết quả cuối cùng. Bắt đầu chờ thích ứng: stall={policy.StallTimeout.TotalSeconds:0}s; tối đa={policy.AbsoluteTimeout.TotalSeconds:0}s. Trong thời gian này KHÔNG thực thi lại action.",
             AdaptiveWaitStatuses.Pending,
             decision.Confidence);
+
+        using var adaptiveWaitTelemetry =
+            telemetry.Begin(
+                ComputerOperatorTelemetryStages.AdaptiveWait,
+                decision.Action);
 
         var result = await adaptiveWait.WaitAsync(
             async token =>
@@ -1571,6 +1638,10 @@ public sealed class ComputerOperatorTaskService(
             },
             policy,
             cancellationToken);
+
+        adaptiveWaitTelemetry.Complete(
+            result.Verified,
+            result.Status);
 
         progress.Add(
             "adaptive-wait-result",

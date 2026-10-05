@@ -143,45 +143,66 @@ public sealed class DesktopLocalVisualSensor(
                     $"Không so được local visual sensor: {regionDelta.Reason}");
         }
 
-        var beforeHash =
-            ComputeHash(
-                before);
-        var afterHash =
-            ComputeHash(
-                after);
+        try
+        {
+            var beforeHash =
+                ComputeHash(
+                    before);
+            var afterHash =
+                ComputeHash(
+                    after);
 
-        var distance =
-            HammingDistance(
-                beforeHash.Value,
-                afterHash.Value);
+            var distance =
+                HammingDistance(
+                    beforeHash.Value,
+                    afterHash.Value);
 
-        var similarity =
-            1.0 -
-            distance /
-            64.0;
+            var similarity =
+                1.0 -
+                distance /
+                64.0;
 
-        var meaningful =
-            distance >=
-                SignificantHashDistance ||
-            regionDelta.HasMeaningfulChange;
+            var meaningful =
+                distance >=
+                    SignificantHashDistance ||
+                regionDelta.HasMeaningfulChange;
 
-        return new(
-            Comparable: true,
-            BeforeHash: beforeHash,
-            AfterHash: afterHash,
-            HashDistance: distance,
-            HashSimilarity:
-                Math.Clamp(
-                    similarity,
-                    0,
-                    1),
-            RegionDelta: regionDelta,
-            MeaningfulVisualChange:
-                meaningful,
-            Reason:
-                meaningful
-                    ? $"Local visual sensor phát hiện thay đổi: dHash distance={distance}/64; region={regionDelta.ChangedRatio * 100:0.00}%."
-                    : $"Local visual sensor coi frame ổn định: dHash distance={distance}/64; region={regionDelta.ChangedRatio * 100:0.00}%.");
+            return new(
+                Comparable: true,
+                BeforeHash: beforeHash,
+                AfterHash: afterHash,
+                HashDistance: distance,
+                HashSimilarity:
+                    Math.Clamp(
+                        similarity,
+                        0,
+                        1),
+                RegionDelta: regionDelta,
+                MeaningfulVisualChange:
+                    meaningful,
+                Reason:
+                    meaningful
+                        ? $"Local visual sensor phát hiện thay đổi: dHash distance={distance}/64; region={regionDelta.ChangedRatio * 100:0.00}%."
+                        : $"Local visual sensor coi frame ổn định: dHash distance={distance}/64; region={regionDelta.ChangedRatio * 100:0.00}%.");
+        }
+        catch (Exception exception) when (
+            exception is
+                PlatformNotSupportedException or
+                ArgumentException or
+                InvalidOperationException)
+        {
+            return new(
+                Comparable: false,
+                BeforeHash: null,
+                AfterHash: null,
+                HashDistance: 64,
+                HashSimilarity: 0,
+                RegionDelta: regionDelta,
+                MeaningfulVisualChange:
+                    regionDelta.HasMeaningfulChange,
+                Reason:
+                    $"Perceptual hash không khả dụng ({exception.GetType().Name}); vẫn giữ region delta làm fallback.");
+        }
     }
 
     internal static ulong ComputeDifferenceHash(

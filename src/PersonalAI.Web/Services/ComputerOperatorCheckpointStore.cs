@@ -406,6 +406,9 @@ public sealed class SqliteComputerOperatorCheckpointStore(
         select.Parameters.AddWithValue(
             "$workspaceId",
             workspace.CurrentWorkspaceId);
+        select.Parameters.AddWithValue(
+            "$running",
+            ComputerOperatorCheckpointStatuses.Running);
 
         var recovered = new List<ComputerOperatorCheckpoint>();
         using (var reader = select.ExecuteReader())

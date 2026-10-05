@@ -154,6 +154,10 @@ public sealed class ComputerOperatorActionExecutor(
                 decision,
                 "structured-set-value"),
 
+            "structured-legacy-default" => ExecuteStructured(
+                decision,
+                "structured-legacy-default"),
+
             _ => throw new ToolExecutionInputException(
                 $"Computer Operator trả hành động không được hỗ trợ: {decision.Action}.")
         };

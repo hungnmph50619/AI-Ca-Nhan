@@ -37,6 +37,7 @@ public sealed class ComputerOperatorTaskService(
     IDesktopTemporalSceneService temporalScenes,
     IComputerOperatorActionExecutor actionExecutor,
     IGenericTextInteractionEngine textInteraction,
+    IAdaptiveVerificationWaitEngine adaptiveWait,
     ILogger<ComputerOperatorTaskService> logger)
     : IComputerOperatorTaskService
 {
@@ -1189,7 +1190,7 @@ public sealed class ComputerOperatorTaskService(
             cancellationToken);
         await execution.WaitIfPausedAsync(cancellationToken);
 
-        var after = await CapturePostActionFrameAsync(
+        DesktopScreenshotFrame after = await CapturePostActionFrameAsync(
             cancellationToken);
 
         try
@@ -1267,7 +1268,51 @@ public sealed class ComputerOperatorTaskService(
                         $"Xác minh cục bộ: {route.Reason}");
                 }
 
-                if (route.Route == DesktopVerificationRoute.LocalFailed)
+                var shouldAdaptiveWait =
+                    ComputerOperatorAdaptiveWaitPolicy.SupportsAdaptiveWaiting(
+                        decision.Action) &&
+                    (route.Route == DesktopVerificationRoute.LocalFailed ||
+                     (route.Route == DesktopVerificationRoute.GeminiRequired &&
+                      !fastObservation.ForegroundWindowChanged &&
+                      !fastObservation.WindowBoundsChanged &&
+                      (frameDifference?.Comparable != true ||
+                       frameDifference.ChangedRatio < 0.01)));
+
+                if (shouldAdaptiveWait)
+                {
+                    var adaptiveResult =
+                        await WaitForAdaptiveTransitionAsync(
+                            decision,
+                            verificationBaseline ?? previousFrame,
+                            fastObserverBaseline ??
+                                fastObserver.CaptureSample(
+                                    verificationBaseline ?? previousFrame),
+                            cancellationToken);
+
+                    if (adaptiveResult is not null)
+                    {
+                        return adaptiveResult;
+                    }
+
+                    // Sau thời gian chờ phải dùng observation mới nhất cho
+                    // semantic verification, tuyệt đối không dùng frame cũ.
+                    after.Clear();
+                    after = await CapturePostActionFrameAsync(
+                        cancellationToken);
+
+                    frameDifference =
+                        (verificationBaseline ?? previousFrame) is { } reference
+                            ? frameDifferences.Compare(
+                                reference,
+                                after)
+                            : null;
+
+                    progress.Add(
+                        "adaptive-wait",
+                        "Bộ chờ thích ứng chưa có bằng chứng cuối cùng; đã chụp trạng thái mới nhất để chuyển sang xác minh ngữ nghĩa.",
+                        "semantic");
+                }
+                else if (route.Route == DesktopVerificationRoute.LocalFailed)
                 {
                     return new(
                         false,
@@ -1342,6 +1387,126 @@ public sealed class ComputerOperatorTaskService(
         {
             after.Clear();
         }
+    }
+
+    private async Task<ActionVerificationResult?> WaitForAdaptiveTransitionAsync(
+        DesktopOperatorDecision decision,
+        DesktopScreenshotFrame referenceFrame,
+        DesktopFastObserverSample referenceSample,
+        CancellationToken cancellationToken)
+    {
+        var policy =
+            ComputerOperatorAdaptiveWaitPolicy.ForAction(
+                decision.Action);
+
+        progress.Add(
+            "adaptive-wait",
+            $"Chưa có kết quả cuối cùng. Bắt đầu chờ thích ứng: stall={policy.StallTimeout.TotalSeconds:0}s; tối đa={policy.AbsoluteTimeout.TotalSeconds:0}s. Trong thời gian này KHÔNG thực thi lại action.",
+            AdaptiveWaitStatuses.Pending,
+            decision.Confidence);
+
+        var result = await adaptiveWait.WaitAsync(
+            async token =>
+            {
+                await execution.WaitIfPausedAsync(token);
+
+                var frame =
+                    await CapturePostActionFrameAsync(token);
+
+                try
+                {
+                    var difference =
+                        frameDifferences.Compare(
+                            referenceFrame,
+                            frame);
+
+                    var currentSample =
+                        fastObserver.CaptureSample(frame);
+
+                    var observation =
+                        fastObserver.Analyze(
+                            referenceSample,
+                            currentSample,
+                            difference);
+
+                    var route =
+                        VerificationRouter.Route(
+                            decision,
+                            observation,
+                            difference);
+
+                    var sample =
+                        ComputerOperatorAdaptiveWaitPolicy
+                            .FromDesktopObservation(
+                                observation,
+                                difference,
+                                route);
+
+                    var trangThai = sample.Status switch
+                    {
+                        AdaptiveWaitStatuses.Verified =>
+                            "Đã xác minh",
+                        AdaptiveWaitStatuses.Progressing =>
+                            "Đang tiến triển",
+                        AdaptiveWaitStatuses.Pending =>
+                            "Đang chờ",
+                        AdaptiveWaitStatuses.Stalled =>
+                            "Bị đình trệ",
+                        AdaptiveWaitStatuses.Failed =>
+                            "Thất bại",
+                        _ => sample.Status
+                    };
+
+                    progress.Add(
+                        "adaptive-wait",
+                        $"{trangThai}: {sample.Reason}",
+                        sample.Status,
+                        sample.Confidence);
+
+                    return sample;
+                }
+                finally
+                {
+                    frame.Clear();
+                }
+            },
+            policy,
+            cancellationToken);
+
+        progress.Add(
+            "adaptive-wait-result",
+            result.Status switch
+            {
+                AdaptiveWaitStatuses.Verified =>
+                    $"Đã xác minh sau {result.Elapsed.TotalSeconds:0.0}s; samples={result.Samples}; heartbeat={result.ProgressHeartbeats}. {result.Reason}",
+                AdaptiveWaitStatuses.Stalled =>
+                    $"Chưa có tiến triển đủ mạnh sau {result.Elapsed.TotalSeconds:0.0}s; chưa kết luận action thất bại. Chuyển sang semantic verifier. {result.Reason}",
+                AdaptiveWaitStatuses.Failed =>
+                    $"Có bằng chứng thất bại rõ ràng sau {result.Elapsed.TotalSeconds:0.0}s. {result.Reason}",
+                _ =>
+                    $"{result.Status}: {result.Reason}"
+            },
+            result.Status);
+
+        if (result.Verified)
+        {
+            return new(
+                true,
+                0.97,
+                $"Adaptive Wait xác minh kết quả mà không replay action: {result.Reason}");
+        }
+
+        if (result.Failed)
+        {
+            return new(
+                false,
+                0.97,
+                $"Adaptive Wait có bằng chứng thất bại rõ ràng: {result.Reason}");
+        }
+
+        // Stalled/Pending không đồng nghĩa Failed. Caller sẽ dùng frame mới
+        // nhất và semantic verifier trước khi được phép replan.
+        return null;
     }
 
     private async Task<DesktopScreenshotFrame> CapturePostActionFrameAsync(

@@ -3163,7 +3163,18 @@ jobs:
           grep -Fq '"id": "pause-resume-stop"' tests/computer-use/v3.4.9-acceptance-scenarios.json
           grep -Fq '"id": "loop-recovery"' tests/computer-use/v3.4.9-acceptance-scenarios.json
           grep -Fq '"id": "multi-step-open-and-type"' tests/computer-use/v3.4.9-acceptance-scenarios.json
-          grep -Fq 'totalCount -lt 114' .github/workflows/desktop-control.yml
+          grep -Fq 'totalCount -lt 117' .github/workflows/desktop-control.yml
+          # v4.0.21 — Capability Cache
+          grep -Fq 'IUniversalCapabilityCache' src/PersonalAI.Web/Services/UniversalCapabilityCache.cs
+          grep -Fq 'CachedUniversalCapabilityDiscoveryService' src/PersonalAI.Web/Services/UniversalCapabilityCache.cs
+          grep -Fq 'MarkTemporarilyUnavailable' src/PersonalAI.Web/Services/UniversalCapabilityCache.cs
+          grep -Fq 'IRawUniversalCapabilityDiscoveryService' src/PersonalAI.Web/Services/UniversalCapabilityDiscoveryService.cs
+          grep -Fq '/api/universal-router/capability-cache' src/PersonalAI.Web/Services/UniversalTaskRouterEndpoints.cs
+          grep -Fq 'desktop.flaui-uia3' src/PersonalAI.Web/Services/FlaUiTextAccessibilityBackend.cs
+          grep -Fq 'browser.playwright-dom' src/PersonalAI.Web/Services/PlaywrightBrowserAdapter.cs
+          grep -Fq 'CheckCapabilityCacheAvoidsRepeatedDiscovery' src/PersonalAI.Web/Services/ComputerOperatorAcceptanceService.cs
+          grep -Fq 'CheckCapabilityCacheInvalidationForcesRefresh' src/PersonalAI.Web/Services/ComputerOperatorAcceptanceService.cs
+          grep -Fq 'CheckCapabilityCacheHealthOverride' src/PersonalAI.Web/Services/ComputerOperatorAcceptanceService.cs
           # v4.0.20 — Event-driven Observation
           grep -Fq 'SetWinEventHook' src/PersonalAI.Web/Services/WindowsDesktopEventWakeSource.cs
           grep -Fq 'GetMessage' src/PersonalAI.Web/Services/WindowsDesktopEventWakeSource.cs

@@ -21,6 +21,7 @@ public interface IToolRegistry
 public sealed class ToolRegistry : IToolRegistry
 {
     public const int MaximumToolTimeoutMs = 180_000;
+    public const int MaximumLongRunningToolTimeoutMs = 1_800_000;
 
     private static readonly Regex ValidName = new(
         @"^[a-z][a-z0-9_-]*(\.[a-z][a-z0-9_-]*)+$",
@@ -77,11 +78,17 @@ public sealed class ToolRegistry : IToolRegistry
                 $"Công cụ {definition.Name} phải có mô tả.");
         }
 
+        var maximumTimeoutMs = definition.LongRunning
+            ? MaximumLongRunningToolTimeoutMs
+            : MaximumToolTimeoutMs;
+
         if (definition.TimeoutMs < 100
-            || definition.TimeoutMs > MaximumToolTimeoutMs)
+            || definition.TimeoutMs > maximumTimeoutMs)
         {
             throw new InvalidOperationException(
-                $"Thời gian chờ của công cụ {definition.Name} phải từ 100 đến {MaximumToolTimeoutMs} mili giây.");
+                definition.LongRunning
+                    ? $"Thời gian chờ của công cụ dài hạn {definition.Name} phải từ 100 đến {MaximumLongRunningToolTimeoutMs} mili giây."
+                    : $"Thời gian chờ của công cụ {definition.Name} phải từ 100 đến {MaximumToolTimeoutMs} mili giây.");
         }
 
         if (definition.InputSchema.ValueKind != System.Text.Json.JsonValueKind.Object)

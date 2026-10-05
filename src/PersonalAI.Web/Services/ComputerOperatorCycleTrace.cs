@@ -1,3 +1,4 @@
+using PersonalAI.Web.Models;
 using System.Text;
 
 namespace PersonalAI.Web.Services;

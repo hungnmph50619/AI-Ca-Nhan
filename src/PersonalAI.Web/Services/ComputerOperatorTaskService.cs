@@ -1193,6 +1193,31 @@ public sealed class ComputerOperatorTaskService(
                     }
                 }
 
+                if (!verification.Verified &&
+                    verification.Inconclusive)
+                {
+                    taskHistory.Add(
+                        $"STEP {index}: VERIFY-INCONCLUSIVE {actionSignature} — {verification.Detail}");
+
+                    taskHistory.Add(
+                        "CHỈ DẪN: Không replay side effect vừa thực hiện chỉ vì hết Gemini budget. Phải quan sát lại trạng thái hiện tại, ưu tiên structured/local evidence hoặc đổi chiến lược.");
+
+                    progress.Add(
+                        "replan",
+                        $"Verification chưa kết luận: {verification.Detail} Hệ thống sẽ quan sát lại, không coi action là thất bại.",
+                        "inconclusive",
+                        verification.Confidence);
+
+                    _ = actionState.MoveTo(
+                        ComputerOperatorActionState.Replan,
+                        "Verification inconclusive; re-observe trước action mới.");
+
+                    await Task.Delay(
+                        250,
+                        linked.Token);
+                    continue;
+                }
+
                 if (!verification.Verified)
                 {
                     if (IsKeyboardAction(decision.Action))
@@ -1428,7 +1453,8 @@ public sealed class ComputerOperatorTaskService(
     private sealed record ActionVerificationResult(
         bool Verified,
         double Confidence,
-        string Detail);
+        string Detail,
+        bool Inconclusive = false);
 
     private async Task<ActionVerificationResult> VerifyAppliedActionAsync(
         DesktopOperatorDecision decision,
@@ -1663,9 +1689,11 @@ public sealed class ComputerOperatorTaskService(
                 if (!verificationBudget.Allowed)
                 {
                     return new(
-                        false,
-                        0,
-                        $"Gemini verification bị chặn bởi Call Budget: {verificationBudget.Reason}");
+                        Verified: false,
+                        Confidence: 0,
+                        Detail:
+                            $"Chưa thể xác minh vì Gemini Call Budget đã chặn semantic verification: {verificationBudget.Reason}",
+                        Inconclusive: true);
                 }
 
                 using var geminiVerifyTelemetry =

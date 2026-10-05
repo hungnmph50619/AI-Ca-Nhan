@@ -921,8 +921,21 @@ function normalizeChatAttachment(value) {
   const size = Math.max(0, Number(value.size) || 0);
   const kind = typeof value.kind === "string" ? value.kind : "document";
   const route = typeof value.route === "string" ? value.route : "direct";
+  const knowledgeDocumentId = typeof value.knowledgeDocumentId === "string"
+    ? value.knowledgeDocumentId
+    : null;
+  const knowledgeChunkCount = Math.max(0, Number(value.knowledgeChunkCount) || 0);
   if (!id || !fileName || !mimeType || size <= 0) return null;
-  return { id, fileName, mimeType, size, kind, route };
+  return {
+    id,
+    fileName,
+    mimeType,
+    size,
+    kind,
+    route,
+    knowledgeDocumentId,
+    knowledgeChunkCount
+  };
 }
 
 function normalizeChatAttachments(value) {
@@ -1049,7 +1062,7 @@ function renderChatAttachmentPreview() {
       ? `Lỗi · ${item.error}`
       : item.uploading
         ? "Đang tải lên…"
-        : formatAttachmentSize(item.size);
+        : `${formatAttachmentSize(item.size)} · ${item.attachment?.route === "knowledge" ? "Dùng RAG" : "Gửi trực tiếp"}`;
     const size = documentElement("span", "chat-attachment-size", status);
     meta.append(name, size);
 
@@ -1232,7 +1245,7 @@ function createMessageAttachmentsNode(attachments) {
     const size = documentElement(
       "span",
       "message-attachment-size",
-      `${formatAttachmentSize(attachment.size)} · ${attachment.kind === "image" ? "Ảnh" : "Tệp"}`);
+      `${formatAttachmentSize(attachment.size)} · ${attachment.route === "knowledge" ? "RAG" : attachment.kind === "image" ? "Ảnh" : "Trực tiếp"}`);
 
     meta.append(name, size);
     card.append(icon, meta);

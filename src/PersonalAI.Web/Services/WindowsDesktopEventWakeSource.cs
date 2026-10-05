@@ -12,6 +12,9 @@ public static class DesktopSystemEventKinds
     public const string WindowHidden = "window-hidden";
     public const string WindowMovedOrResized = "window-moved-or-resized";
     public const string WindowNameChanged = "window-name-changed";
+    public const string FocusChanged = "focus-changed";
+    public const string SelectionChanged = "selection-changed";
+    public const string ValueChanged = "value-changed";
 }
 
 public sealed record DesktopSystemEvent(
@@ -46,6 +49,14 @@ public interface IAdaptiveObservationWakeSource
     Task<DesktopObservationWakeResult> WaitAsync(
         TimeSpan fallbackDelay,
         CancellationToken cancellationToken = default);
+
+    Task<DesktopObservationWakeResult> WaitForWindowAsync(
+        string? windowId,
+        TimeSpan fallbackDelay,
+        CancellationToken cancellationToken = default) =>
+        WaitAsync(
+            fallbackDelay,
+            cancellationToken);
 }
 
 public sealed class WindowsDesktopEventWakeSource
@@ -56,8 +67,13 @@ public sealed class WindowsDesktopEventWakeSource
     private const uint EventObjectDestroy = 0x8001;
     private const uint EventObjectShow = 0x8002;
     private const uint EventObjectHide = 0x8003;
+    private const uint EventObjectFocus = 0x8005;
+    private const uint EventObjectSelection = 0x8006;
+    private const uint EventObjectSelectionAdd = 0x8007;
+    private const uint EventObjectSelectionRemove = 0x8008;
     private const uint EventObjectLocationChange = 0x800B;
     private const uint EventObjectNameChange = 0x800C;
+    private const uint EventObjectValueChange = 0x800E;
     private const uint WineventOutofcontext = 0x0000;
     private const uint WineventSkipownprocess = 0x0002;
     private const int ObjidWindow = 0;
@@ -119,7 +135,25 @@ public sealed class WindowsDesktopEventWakeSource
             Volatile.Read(ref lastEvent));
 
 
-    public async Task<DesktopObservationWakeResult> WaitAsync(
+    public Task<DesktopObservationWakeResult> WaitAsync(
+        TimeSpan fallbackDelay,
+        CancellationToken cancellationToken = default) =>
+        WaitCoreAsync(
+            targetWindowId: null,
+            fallbackDelay,
+            cancellationToken);
+
+    public Task<DesktopObservationWakeResult> WaitForWindowAsync(
+        string? windowId,
+        TimeSpan fallbackDelay,
+        CancellationToken cancellationToken = default) =>
+        WaitCoreAsync(
+            windowId,
+            fallbackDelay,
+            cancellationToken);
+
+    private async Task<DesktopObservationWakeResult> WaitCoreAsync(
+        string? targetWindowId,
         TimeSpan fallbackDelay,
         CancellationToken cancellationToken = default)
     {
@@ -146,7 +180,9 @@ public sealed class WindowsDesktopEventWakeSource
                 "WinEventHook chưa khả dụng; đã dùng polling fallback.");
         }
 
-        if (TryDequeueLatest(out var queued))
+        if (TryDequeueLatest(
+                targetWindowId,
+                out var queued))
         {
             Interlocked.Increment(
                 ref deliveredWakeups);
@@ -179,6 +215,7 @@ public sealed class WindowsDesktopEventWakeSource
             await eventTask;
 
             if (TryDequeueLatest(
+                    targetWindowId,
                     out var received))
             {
                 Interlocked.Increment(
@@ -203,6 +240,7 @@ public sealed class WindowsDesktopEventWakeSource
     }
 
     private bool TryDequeueLatest(
+        string? targetWindowId,
         out DesktopSystemEvent? result)
     {
         result = null;
@@ -212,7 +250,13 @@ public sealed class WindowsDesktopEventWakeSource
         {
             _ = Interlocked.Decrement(
                 ref queuedEvents);
-            result = item;
+
+            if (IsRelevantForTarget(
+                    item,
+                    targetWindowId))
+            {
+                result = item;
+            }
         }
 
         if (result is not null)
@@ -226,6 +270,32 @@ public sealed class WindowsDesktopEventWakeSource
         return result is not null;
     }
 
+    private static bool IsRelevantForTarget(
+        DesktopSystemEvent item,
+        string? targetWindowId)
+    {
+        var target =
+            (targetWindowId ?? string.Empty)
+                .Trim();
+
+        if (target.Length == 0 ||
+            item.WindowId.Equals(
+                target,
+                StringComparison.OrdinalIgnoreCase))
+        {
+            return true;
+        }
+
+        // Các thay đổi top-level vẫn có thể là kết quả mong đợi của action
+        // (mở/đóng/chuyển app), nên không lọc chúng theo target cũ.
+        return item.Kind is
+            DesktopSystemEventKinds.ForegroundChanged or
+            DesktopSystemEventKinds.WindowCreated or
+            DesktopSystemEventKinds.WindowDestroyed or
+            DesktopSystemEventKinds.WindowShown or
+            DesktopSystemEventKinds.WindowHidden;
+    }
+
     private void HookLoop()
     {
         hookThreadId =
@@ -235,7 +305,7 @@ public sealed class WindowsDesktopEventWakeSource
 
         hook = SetWinEventHook(
             EventSystemForeground,
-            EventObjectNameChange,
+            EventObjectValueChange,
             nint.Zero,
             callback,
             0,
@@ -277,10 +347,30 @@ public sealed class WindowsDesktopEventWakeSource
         if (window == nint.Zero)
             return;
 
+        var topLevelEvent =
+            nativeEvent is
+                EventSystemForeground or
+                EventObjectCreate or
+                EventObjectDestroy or
+                EventObjectShow or
+                EventObjectHide or
+                EventObjectLocationChange or
+                EventObjectNameChange;
+
+        var accessibilityEvent =
+            nativeEvent is
+                EventObjectFocus or
+                EventObjectSelection or
+                EventObjectSelectionAdd or
+                EventObjectSelectionRemove or
+                EventObjectValueChange;
+
         var relevantObject =
             nativeEvent == EventSystemForeground ||
-            (objectId == ObjidWindow &&
-             childId == 0);
+            (topLevelEvent &&
+             objectId == ObjidWindow &&
+             childId == 0) ||
+            accessibilityEvent;
 
         if (!relevantObject)
             return;
@@ -298,10 +388,18 @@ public sealed class WindowsDesktopEventWakeSource
                     DesktopSystemEventKinds.WindowShown,
                 EventObjectHide =>
                     DesktopSystemEventKinds.WindowHidden,
+                EventObjectFocus =>
+                    DesktopSystemEventKinds.FocusChanged,
+                EventObjectSelection or
+                EventObjectSelectionAdd or
+                EventObjectSelectionRemove =>
+                    DesktopSystemEventKinds.SelectionChanged,
                 EventObjectLocationChange =>
                     DesktopSystemEventKinds.WindowMovedOrResized,
                 EventObjectNameChange =>
                     DesktopSystemEventKinds.WindowNameChanged,
+                EventObjectValueChange =>
+                    DesktopSystemEventKinds.ValueChanged,
                 _ => string.Empty
             };
 
@@ -325,6 +423,12 @@ public sealed class WindowsDesktopEventWakeSource
                     "Cửa sổ vừa di chuyển hoặc đổi kích thước.",
                 DesktopSystemEventKinds.WindowNameChanged =>
                     "Tên/tiêu đề cửa sổ vừa thay đổi.",
+                DesktopSystemEventKinds.FocusChanged =>
+                    "Phần tử accessibility đang focus vừa thay đổi.",
+                DesktopSystemEventKinds.SelectionChanged =>
+                    "Lựa chọn accessibility vừa thay đổi.",
+                DesktopSystemEventKinds.ValueChanged =>
+                    "Giá trị accessibility vừa thay đổi.",
                 _ =>
                     "Windows UI state vừa thay đổi."
             };

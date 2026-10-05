@@ -171,6 +171,9 @@ public sealed class ComputerOperatorTaskService(
         new ComputerOperatorFailureRecoveryEngine();
     private static readonly IDesktopLocalActionPlanner LocalPlanner =
         new DesktopLocalActionPlanner();
+    private static readonly StructuredTargetRevalidator StructuredTargetRevalidator =
+        new();
+
 
     private static readonly string[] SecretTerms =
     [
@@ -1122,6 +1125,63 @@ public sealed class ComputerOperatorTaskService(
                         "execute");
 
                     await execution.WaitIfPausedAsync(linked.Token);
+
+                    if ((decision.Action ?? string.Empty)
+                            .StartsWith(
+                                "structured-",
+                                StringComparison.OrdinalIgnoreCase))
+                    {
+                        var activeForStructured =
+                            computer.GetActiveWindow()
+                            ?? throw new ToolExecutionInputException(
+                                "Không xác định được foreground trước structured target revalidation.");
+
+                        var freshSnapshot =
+                            structuredDesktop.CaptureWindow(
+                                activeForStructured.WindowId,
+                                maximumNodes: 240,
+                                maximumDepth: 7);
+
+                        var freshGraph =
+                            UnifiedStructuredSceneGraphBuilder.Build(
+                                freshSnapshot,
+                                activeForStructured,
+                                desktopState.FrameLeft,
+                                desktopState.FrameTop,
+                                desktopState.FrameWidth,
+                                desktopState.FrameHeight);
+
+                        var revalidated =
+                            StructuredTargetRevalidator.Revalidate(
+                                decision,
+                                freshGraph,
+                                DateTimeOffset.UtcNow);
+
+                        progress.Add(
+                            "structured-revalidate",
+                            $"Structured target revalidation: {revalidated.Status} — {revalidated.Reason}",
+                            revalidated.Status ==
+                                StructuredTargetRevalidationStatus.Remapped
+                                    ? "remapped"
+                                    : revalidated.Status ==
+                                      StructuredTargetRevalidationStatus.Valid
+                                        ? "valid"
+                                        : "rejected",
+                            revalidated.Confidence);
+
+                        progress.AddDiagnostic(
+                            "structured-target",
+                            $"cycle={index}; status={revalidated.Status}; action={decision.Action}; oldTarget={LimitDiagnostic(decision.TargetElementId, 80)}; newTarget={LimitDiagnostic(revalidated.Decision.TargetElementId, 80)}; confidence={revalidated.Confidence:0.000}; sceneAgeMs={(freshGraph is null ? -1 : Math.Max(0, (DateTimeOffset.UtcNow - freshGraph.CapturedAtUtc).TotalMilliseconds)):0}.");
+
+                        if (!revalidated.SafeToExecute)
+                        {
+                            throw new ToolExecutionInputException(
+                                revalidated.Reason);
+                        }
+
+                        decision =
+                            revalidated.Decision;
+                    }
 
                     if (decision.Action.Equals(
                             "type-text",

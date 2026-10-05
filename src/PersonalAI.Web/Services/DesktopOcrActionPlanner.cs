@@ -139,11 +139,11 @@ public sealed class DesktopOcrActionPlanner(
         decision =
             new DesktopOperatorDecision(
                 State:
-                    $"Windows OCR thấy duy nhất text '{requestedText}' trong foreground window.",
+                    $"{observation.Provider} thấy duy nhất text '{requestedText}' trong foreground window.",
                 Plan:
                     $"Click một lần vào bounding box OCR của '{requestedText}', sau đó quan sát lại trước hành động tiếp theo.",
                 CurrentSubgoal:
-                    $"Tương tác với text '{requestedText}' bằng local OCR fallback.",
+                    $"Tương tác với text '{requestedText}' bằng OCR-local ({observation.Provider}).",
                 GoalProgress: 0,
                 VerifiedMilestones:
                     Array.Empty<string>(),
@@ -190,7 +190,7 @@ public sealed class DesktopOcrActionPlanner(
                 Confidence:
                     confidence,
                 Reason:
-                    $"Structured/local planner không tìm được target; Local Visual Evidence Fusion xác định '{requestedText}' bằng OCR-local. {fused.Reason}",
+                    $"Structured/local planner không tìm được target; Local Visual Evidence Fusion xác định '{requestedText}' bằng OCR-local provider={observation.Provider}. {fused.Reason}",
                 SceneElements:
                     Array.Empty<DesktopSceneElement>(),
                 TargetElementId:

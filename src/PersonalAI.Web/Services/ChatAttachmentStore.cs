@@ -30,6 +30,12 @@ public interface IChatAttachmentStore
 public sealed class ChatAttachmentStore(
     IWorkspaceStoragePathResolver storagePaths) : IChatAttachmentStore
 {
+    private static readonly JsonSerializerOptions JsonOptions =
+        new(JsonSerializerDefaults.Web)
+        {
+            WriteIndented = true
+        };
+
     public const long MaximumFileSize =
         10 * 1024 * 1024;
 
@@ -116,27 +122,9 @@ public sealed class ChatAttachmentStore(
         var workspaceId =
             storagePaths.CurrentWorkspaceId;
 
-        var localData =
-            Environment.GetFolderPath(
-                Environment.SpecialFolder.LocalApplicationData);
-
-        if (string.IsNullOrWhiteSpace(
-                localData))
-        {
-            localData =
-                Path.Combine(
-                    Environment.GetFolderPath(
-                        Environment.SpecialFolder.UserProfile),
-                    ".personalai");
-        }
-
         var directory =
-            Path.Combine(
-                localData,
-                "PersonalAI",
-                "Workspaces",
-                workspaceId,
-                "ChatAttachments");
+            GetAttachmentDirectory(
+                workspaceId);
 
         Directory.CreateDirectory(
             directory);
@@ -179,6 +167,18 @@ public sealed class ChatAttachmentStore(
                 storedPath,
                 DateTimeOffset.UtcNow);
 
+        var metadataPath =
+            GetMetadataPath(
+                directory,
+                id);
+
+        await File.WriteAllTextAsync(
+            metadataPath,
+            JsonSerializer.Serialize(
+                item,
+                JsonOptions),
+            cancellationToken);
+
         lock (_gate)
         {
             _items[id] =
@@ -206,6 +206,48 @@ public sealed class ChatAttachmentStore(
                 out item);
         }
 
+        if (item is null)
+        {
+            var directory =
+                GetAttachmentDirectory(
+                    storagePaths.CurrentWorkspaceId);
+
+            var metadataPath =
+                GetMetadataPath(
+                    directory,
+                    id);
+
+            if (File.Exists(
+                    metadataPath))
+            {
+                try
+                {
+                    item =
+                        JsonSerializer.Deserialize<StoredChatAttachment>(
+                            File.ReadAllText(
+                                metadataPath),
+                            JsonOptions);
+
+                    if (item is not null)
+                    {
+                        lock (_gate)
+                        {
+                            _items[id] =
+                                item;
+                        }
+                    }
+                }
+                catch (Exception exception) when (
+                    exception is IOException or
+                    UnauthorizedAccessException or
+                    JsonException)
+                {
+                    item =
+                        null;
+                }
+            }
+        }
+
         if (item is null ||
             !item.WorkspaceId.Equals(
                 storagePaths.CurrentWorkspaceId,
@@ -230,6 +272,38 @@ public sealed class ChatAttachmentStore(
         return File.ReadAllBytes(
             item.Path);
     }
+
+    private static string GetAttachmentDirectory(
+        string workspaceId)
+    {
+        var localData =
+            Environment.GetFolderPath(
+                Environment.SpecialFolder.LocalApplicationData);
+
+        if (string.IsNullOrWhiteSpace(
+                localData))
+        {
+            localData =
+                Path.Combine(
+                    Environment.GetFolderPath(
+                        Environment.SpecialFolder.UserProfile),
+                    ".personalai");
+        }
+
+        return Path.Combine(
+            localData,
+            "PersonalAI",
+            "Workspaces",
+            workspaceId,
+            "ChatAttachments");
+    }
+
+    private static string GetMetadataPath(
+        string directory,
+        Guid id) =>
+        Path.Combine(
+            directory,
+            $"{id:N}.json");
 
     private static string GuessMimeType(
         string extension) =>

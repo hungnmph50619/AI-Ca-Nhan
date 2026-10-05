@@ -59,8 +59,27 @@ public sealed class ChatAttachmentStore(
                 "text/plain",
                 "text/markdown",
                 "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+                "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+                "application/vnd.openxmlformats-officedocument.presentationml.presentation",
+                "text/csv",
+                "application/csv",
+                "application/json",
+                "text/json",
+                "application/xml",
+                "text/xml",
+                "application/x-yaml",
+                "text/yaml",
+                "text/x-yaml",
+                "text/x-python",
+                "text/javascript",
+                "application/javascript",
+                "text/css",
+                "text/html",
+                "application/sql",
+                "text/x-sql",
                 "application/zip",
-                "application/x-zip-compressed"
+                "application/x-zip-compressed",
+                "application/octet-stream"
             ],
             StringComparer.OrdinalIgnoreCase);
 
@@ -74,7 +93,21 @@ public sealed class ChatAttachmentStore(
                 ".pdf",
                 ".txt",
                 ".md",
-                ".docx"
+                ".docx",
+                ".xlsx",
+                ".pptx",
+                ".csv",
+                ".json",
+                ".xml",
+                ".yaml",
+                ".yml",
+                ".sql",
+                ".cs",
+                ".js",
+                ".ts",
+                ".py",
+                ".html",
+                ".css"
             ],
             StringComparer.OrdinalIgnoreCase);
 
@@ -116,7 +149,7 @@ public sealed class ChatAttachmentStore(
                 mimeType))
         {
             throw new ChatValidationException(
-                "Hiện tại chat hỗ trợ PNG, JPG, WEBP, PDF, DOCX, TXT và Markdown.");
+                "Chat hỗ trợ ảnh, PDF, Word, Excel, PowerPoint, TXT/Markdown, CSV/JSON và các tệp mã nguồn phổ biến.");
         }
 
         var kind =
@@ -124,12 +157,8 @@ public sealed class ChatAttachmentStore(
                 "image/",
                 StringComparison.OrdinalIgnoreCase)
                 ? "image"
-                : extension.Equals(
-                    ".txt",
-                    StringComparison.OrdinalIgnoreCase) ||
-                  extension.Equals(
-                    ".md",
-                    StringComparison.OrdinalIgnoreCase)
+                : IsTextExtension(
+                    extension)
                     ? "text"
                     : "document";
 
@@ -363,6 +392,12 @@ public sealed class ChatAttachmentStore(
 
         if (extension.Equals(
                 ".docx",
+                StringComparison.OrdinalIgnoreCase) ||
+            extension.Equals(
+                ".xlsx",
+                StringComparison.OrdinalIgnoreCase) ||
+            extension.Equals(
+                ".pptx",
                 StringComparison.OrdinalIgnoreCase))
         {
             return "knowledge";
@@ -425,6 +460,35 @@ public sealed class ChatAttachmentStore(
             ".md" => "text/markdown",
             ".txt" => "text/plain",
             ".docx" => "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+            ".xlsx" => "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+            ".pptx" => "application/vnd.openxmlformats-officedocument.presentationml.presentation",
+            ".csv" => "text/csv",
+            ".json" => "application/json",
+            ".xml" => "application/xml",
+            ".yaml" or ".yml" => "text/yaml",
+            ".js" => "text/javascript",
+            ".css" => "text/css",
+            ".html" => "text/html",
+            ".py" => "text/x-python",
+            ".sql" => "text/x-sql",
+            ".cs" or ".ts" => "text/plain",
             _ => "application/octet-stream"
         };
+
+    private static bool IsTextExtension(
+        string extension) =>
+        extension.Equals(".txt", StringComparison.OrdinalIgnoreCase) ||
+        extension.Equals(".md", StringComparison.OrdinalIgnoreCase) ||
+        extension.Equals(".csv", StringComparison.OrdinalIgnoreCase) ||
+        extension.Equals(".json", StringComparison.OrdinalIgnoreCase) ||
+        extension.Equals(".xml", StringComparison.OrdinalIgnoreCase) ||
+        extension.Equals(".yaml", StringComparison.OrdinalIgnoreCase) ||
+        extension.Equals(".yml", StringComparison.OrdinalIgnoreCase) ||
+        extension.Equals(".sql", StringComparison.OrdinalIgnoreCase) ||
+        extension.Equals(".cs", StringComparison.OrdinalIgnoreCase) ||
+        extension.Equals(".js", StringComparison.OrdinalIgnoreCase) ||
+        extension.Equals(".ts", StringComparison.OrdinalIgnoreCase) ||
+        extension.Equals(".py", StringComparison.OrdinalIgnoreCase) ||
+        extension.Equals(".html", StringComparison.OrdinalIgnoreCase) ||
+        extension.Equals(".css", StringComparison.OrdinalIgnoreCase);
 }

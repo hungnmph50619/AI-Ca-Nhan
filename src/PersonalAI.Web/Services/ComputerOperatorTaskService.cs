@@ -22,6 +22,51 @@ public sealed record ComputerOperatorTaskResult(
     string Provider,
     string Model);
 
+public sealed record VerificationCaptureContext(
+    string CaptureScope,
+    string? WindowId,
+    string? MonitorDevice,
+    int Left,
+    int Top,
+    int Width,
+    int Height,
+    uint DpiX,
+    uint DpiY)
+{
+    public static VerificationCaptureContext From(
+        DesktopScreenshotFrame frame) =>
+        new(
+            frame.CaptureScope,
+            frame.WindowId,
+            frame.MonitorDevice,
+            frame.Left,
+            frame.Top,
+            frame.Width,
+            frame.Height,
+            frame.MonitorDpiX,
+            frame.MonitorDpiY);
+
+    public bool Matches(
+        DesktopScreenshotFrame frame) =>
+        CaptureScope.Equals(
+            frame.CaptureScope,
+            StringComparison.OrdinalIgnoreCase) &&
+        string.Equals(
+            WindowId,
+            frame.WindowId,
+            StringComparison.OrdinalIgnoreCase) &&
+        string.Equals(
+            MonitorDevice,
+            frame.MonitorDevice,
+            StringComparison.OrdinalIgnoreCase) &&
+        Left == frame.Left &&
+        Top == frame.Top &&
+        Width == frame.Width &&
+        Height == frame.Height &&
+        DpiX == frame.MonitorDpiX &&
+        DpiY == frame.MonitorDpiY;
+}
+
 public sealed record ComputerOperatorDesktopState(
     DateTimeOffset CapturedAtUtc,
     ComputerWindowInfo? ForegroundWindow,
@@ -300,6 +345,8 @@ public sealed class ComputerOperatorTaskService(
                 }
 
                 var desktopState = BuildDesktopState(frame);
+                var sceneFingerprint =
+                    BuildDesktopSceneFingerprint(desktopState);
                 var windowsContext = desktopState.ToPromptSummary();
                 var active = desktopState.ForegroundWindow;
 
@@ -431,7 +478,7 @@ public sealed class ComputerOperatorTaskService(
                 var loopStrategy =
                     decision.Action is "complete" or "blocked" or "wait"
                         ? string.Empty
-                        : BuildActionSignature(decision);
+                        : BuildSemanticActionSignature(decision);
 
                 var loopAssessment = loopGuard.Observe(
                     decision.State,
@@ -654,10 +701,10 @@ public sealed class ComputerOperatorTaskService(
                         $"STEP {index}: REJECTED {decision.Action} — thiếu EXPECTED EFFECT để xác minh.");
 
                     recovery.RecordFailure(
-                        BuildActionSignature(decision),
+                        BuildSemanticActionSignature(decision),
                         decision.Action,
                         ComputerOperatorFailureKinds.MissingExpectedEffect,
-                        decision.State,
+                        sceneFingerprint,
                         "Thiếu kết quả mong đợi để xác minh hành động.",
                         decision.ExpectedEffect,
                         decision.Confidence);
@@ -697,10 +744,10 @@ public sealed class ComputerOperatorTaskService(
                         $"CONFIDENCE-REPLAN: {confidenceAssessment.Reason}");
 
                     recovery.RecordFailure(
-                        BuildActionSignature(decision),
+                        BuildSemanticActionSignature(decision),
                         decision.Action,
                         ComputerOperatorFailureKinds.LowConfidence,
-                        decision.State,
+                        sceneFingerprint,
                         confidenceAssessment.Reason,
                         decision.ExpectedEffect,
                         confidenceAssessment.OverallConfidence);
@@ -736,7 +783,7 @@ public sealed class ComputerOperatorTaskService(
 
                 lowConfidenceCount = 0;
 
-                var actionSignature = BuildActionSignature(decision);
+                var actionSignature = BuildSemanticActionSignature(decision);
 
                 if (keyboardResetRequired)
                 {
@@ -782,7 +829,7 @@ public sealed class ComputerOperatorTaskService(
 
                 if (recovery.ShouldAvoidRepeatedStrategy(
                         actionSignature,
-                        decision.State,
+                        sceneFingerprint,
                         out var avoidReason))
                 {
                     taskHistory.Add(
@@ -809,6 +856,7 @@ public sealed class ComputerOperatorTaskService(
                     decision.Confidence);
 
                 DesktopScreenshotFrame? verificationBaseline = null;
+                VerificationCaptureContext? verificationCaptureContext = null;
                 DesktopFastObserverSample? fastObserverBaseline = null;
                 TextInteractionResult? textInteractionResult = null;
 
@@ -819,10 +867,13 @@ public sealed class ComputerOperatorTaskService(
                     try
                     {
                         verificationBaseline = await CapturePostActionFrameAsync(linked.Token);
+                        verificationCaptureContext =
+                            VerificationCaptureContext.From(
+                                verificationBaseline);
                         fastObserverBaseline = fastObserver.CaptureSample(verificationBaseline);
                         progress.Add(
                             "frame-baseline",
-                            $"Đã chụp baseline trước hành động {verificationBaseline.Width}x{verificationBaseline.Height}; scope={verificationBaseline.CaptureScope}.",
+                            $"Đã khóa Verification Capture Context: scope={verificationCaptureContext.CaptureScope}; window={verificationCaptureContext.WindowId ?? "-"}; monitor={verificationCaptureContext.MonitorDevice ?? "-"}; origin=({verificationCaptureContext.Left},{verificationCaptureContext.Top}); size={verificationCaptureContext.Width}x{verificationCaptureContext.Height}; dpi={verificationCaptureContext.DpiX}x{verificationCaptureContext.DpiY}.",
                             observation: true);
                     }
                     catch (Exception exception) when (
@@ -977,7 +1028,7 @@ public sealed class ComputerOperatorTaskService(
                         actionSignature,
                         decision.Action,
                         ComputerOperatorFailureKinds.ActionRejected,
-                        decision.State,
+                        sceneFingerprint,
                         exception.Message,
                         decision.ExpectedEffect,
                         decision.Confidence);
@@ -1057,7 +1108,7 @@ public sealed class ComputerOperatorTaskService(
                         actionSignature,
                         decision.Action,
                         ComputerOperatorFailureKinds.NotApplied,
-                        decision.State,
+                        sceneFingerprint,
                         action.Detail,
                         decision.ExpectedEffect,
                         decision.Confidence);
@@ -1182,6 +1233,7 @@ public sealed class ComputerOperatorTaskService(
                             decision,
                             frame,
                             verificationBaseline,
+                            verificationCaptureContext,
                             fastObserverBaseline,
                             linked.Token);
 
@@ -1284,7 +1336,7 @@ public sealed class ComputerOperatorTaskService(
                         actionSignature,
                         decision.Action,
                         ComputerOperatorFailureKinds.VerificationFailed,
-                        decision.State,
+                        sceneFingerprint,
                         verification.Detail,
                         decision.ExpectedEffect,
                         verification.Confidence);
@@ -1500,6 +1552,7 @@ public sealed class ComputerOperatorTaskService(
         DesktopOperatorDecision decision,
         DesktopScreenshotFrame previousFrame,
         DesktopScreenshotFrame? verificationBaseline,
+        VerificationCaptureContext? verificationCaptureContext,
         DesktopFastObserverSample? fastObserverBaseline,
         CancellationToken cancellationToken)
     {
@@ -1516,8 +1569,10 @@ public sealed class ComputerOperatorTaskService(
             cancellationToken);
         await execution.WaitIfPausedAsync(cancellationToken);
 
-        DesktopScreenshotFrame after = await CapturePostActionFrameAsync(
-            cancellationToken);
+        DesktopScreenshotFrame after =
+            await CapturePostActionFrameAsync(
+                verificationCaptureContext,
+                cancellationToken);
 
         try
         {
@@ -1544,11 +1599,26 @@ public sealed class ComputerOperatorTaskService(
                         : $"Đã chụp lại màn hình; con trỏ ở ({actual.X},{actual.Y}), lệch khỏi điểm mong đợi ({expected.DesktopX},{expected.DesktopY}).");
             }
 
-            var frameDifference = verificationBaseline is null
-                ? null
-                : frameDifferences.Compare(
-                    verificationBaseline,
-                    after);
+            var verificationContextChanged =
+                verificationCaptureContext is not null &&
+                !verificationCaptureContext.Matches(after);
+
+            if (verificationContextChanged)
+            {
+                progress.Add(
+                    "capture-context-changed",
+                    $"Verification Capture Context đã thay đổi sau action: trước={verificationCaptureContext!.CaptureScope}/{verificationCaptureContext.Width}x{verificationCaptureContext.Height}/window={verificationCaptureContext.WindowId ?? "-"}; sau={after.CaptureScope}/{after.Width}x{after.Height}/window={after.WindowId ?? "-"}. Không so sánh pixel giữa hai context khác nhau; coi đây là transition evidence và tiếp tục structured/semantic verification.",
+                    "transition",
+                    observation: true);
+            }
+
+            var frameDifference =
+                verificationBaseline is null ||
+                verificationContextChanged
+                    ? null
+                    : frameDifferences.Compare(
+                        verificationBaseline,
+                        after);
 
             if (frameDifference is not null)
             {
@@ -1647,14 +1717,30 @@ public sealed class ComputerOperatorTaskService(
                     // semantic verification, tuyệt đối không dùng frame cũ.
                     after.Clear();
                     after = await CapturePostActionFrameAsync(
+                        verificationCaptureContext,
                         cancellationToken);
 
+                    verificationContextChanged =
+                        verificationCaptureContext is not null &&
+                        !verificationCaptureContext.Matches(after);
+
                     frameDifference =
-                        (verificationBaseline ?? previousFrame) is { } reference
-                            ? frameDifferences.Compare(
-                                reference,
-                                after)
-                            : null;
+                        verificationContextChanged
+                            ? null
+                            : (verificationBaseline ?? previousFrame) is { } reference
+                                ? frameDifferences.Compare(
+                                    reference,
+                                    after)
+                                : null;
+
+                    if (verificationContextChanged)
+                    {
+                        progress.Add(
+                            "capture-context-changed",
+                            "Context capture đã thay đổi trong lúc chờ thích ứng; bỏ pixel diff cũ và chuyển sang xác minh trạng thái mới.",
+                            "transition",
+                            observation: true);
+                    }
 
                     progress.Add(
                         "adaptive-wait",
@@ -1946,6 +2032,59 @@ public sealed class ComputerOperatorTaskService(
         // Stalled/Pending không đồng nghĩa Failed. Caller sẽ dùng frame mới
         // nhất và semantic verifier trước khi được phép replan.
         return null;
+    }
+
+    private async Task<DesktopScreenshotFrame> CapturePostActionFrameAsync(
+        VerificationCaptureContext? context,
+        CancellationToken cancellationToken)
+    {
+        if (context is null)
+            return await CapturePostActionFrameAsync(cancellationToken);
+
+        try
+        {
+            if (context.CaptureScope.Equals(
+                    "window",
+                    StringComparison.OrdinalIgnoreCase) &&
+                !string.IsNullOrWhiteSpace(context.WindowId))
+            {
+                return await screenshots.CaptureStableWindowAsync(
+                    context.WindowId,
+                    maximumWaitMs: 5000,
+                    cancellationToken);
+            }
+
+            if (context.CaptureScope.Equals(
+                    "monitor",
+                    StringComparison.OrdinalIgnoreCase) &&
+                !string.IsNullOrWhiteSpace(context.MonitorDevice))
+            {
+                return await screenshots.CaptureStableMonitorAsync(
+                    context.MonitorDevice,
+                    maximumWaitMs: 5000,
+                    cancellationToken);
+            }
+
+            if (context.CaptureScope.Equals(
+                    "virtual-desktop",
+                    StringComparison.OrdinalIgnoreCase))
+            {
+                return await screenshots.CaptureStableVirtualScreenAsync(
+                    maximumWaitMs: 5000,
+                    cancellationToken);
+            }
+        }
+        catch (Exception exception) when (
+            exception is ToolExecutionInputException or
+            InvalidOperationException)
+        {
+            logger.LogDebug(
+                exception,
+                "Không giữ được Verification Capture Context; fallback về capture động rồi đánh dấu context changed.");
+        }
+
+        return await CapturePostActionFrameAsync(
+            cancellationToken);
     }
 
     private async Task<DesktopScreenshotFrame> CapturePostActionFrameAsync(
@@ -2478,34 +2617,94 @@ public sealed class ComputerOperatorTaskService(
             recovery.BuildContext();
     }
 
-    private static string BuildActionSignature(
+    private static string BuildSemanticActionSignature(
         DesktopOperatorDecision decision)
     {
-        static string Clip(string value, int length) =>
-            string.IsNullOrWhiteSpace(value)
-                ? string.Empty
-                : value.Trim().Length <= length
-                    ? value.Trim()
-                    : value.Trim()[..length];
-
-        return decision.Action switch
+        static string Clip(string? value, int length)
         {
-            "move-pointer" or
+            var normalized = string.Join(
+                " ",
+                (value ?? string.Empty)
+                    .Trim()
+                    .ToLowerInvariant()
+                    .Split(
+                        [' ', '\t', '\r', '\n', '.', ',', ';', ':'],
+                        StringSplitOptions.RemoveEmptyEntries));
+
+            return normalized.Length <= length
+                ? normalized
+                : normalized[..length];
+        }
+
+        var action = (decision.Action ?? string.Empty)
+            .Trim()
+            .ToLowerInvariant();
+
+        var targetIdentity =
+            !string.IsNullOrWhiteSpace(decision.TargetElementId)
+                ? $"id={Clip(decision.TargetElementId, 80)}"
+                : !string.IsNullOrWhiteSpace(decision.TargetLabel)
+                    ? $"label={Clip(decision.TargetLabel, 120)}"
+                    : $"coarse={CoarseCoordinateSignature(decision)}";
+
+        var expected =
+            Clip(decision.ExpectedEffect, 180);
+
+        return action switch
+        {
             "click-left" or
             "double-click-left" or
             "click-right" =>
-                $"{decision.Action}:{CoordinateSignature(decision, false)}:{Clip(decision.TargetLabel, 80)}",
+                $"{action}|{targetIdentity}|effect={expected}",
+
             "scroll" =>
-                $"scroll:{CoordinateSignature(decision, false)}:{decision.ScrollDelta}",
+                $"scroll|target={targetIdentity}|direction={Math.Sign(decision.ScrollDelta)}|effect={expected}",
+
             "drag-left" =>
-                $"drag-left:{CoordinateSignature(decision, false)}->{CoordinateSignature(decision, true)}",
-            "focus-window" => $"focus-window:{Clip(decision.Query, 80)}",
-            "type-text" => $"type-text:{Clip(decision.Text, 80)}",
-            "press-key" => $"press-key:{Clip(decision.Key, 20)}",
-            "press-hotkey" => $"press-hotkey:{string.Join("+", decision.Keys)}",
-            "open-browser" => $"open-browser:{Clip(decision.Url, 120)}",
-            _ => decision.Action
+                $"drag-left|target={targetIdentity}|effect={expected}",
+
+            "focus-window" =>
+                $"focus-window|query={Clip(decision.Query, 100)}|effect={expected}",
+
+            "type-text" =>
+                $"type-text|target={targetIdentity}|effect={expected}",
+
+            "press-key" =>
+                $"press-key|key={Clip(decision.Key, 24)}|effect={expected}",
+
+            "press-hotkey" =>
+                $"press-hotkey|keys={string.Join("+", decision.Keys.Select(key => Clip(key, 24)))}|effect={expected}",
+
+            "open-browser" =>
+                $"open-browser|url={Clip(decision.Url, 120)}|effect={expected}",
+
+            "move-pointer" =>
+                $"move-pointer|{targetIdentity}",
+
+            _ => $"{action}|{targetIdentity}|effect={expected}"
         };
+    }
+
+    private static string CoarseCoordinateSignature(
+        DesktopOperatorDecision decision)
+    {
+        var x = Math.Clamp(
+            decision.NormalizedX > 0
+                ? decision.NormalizedX
+                : decision.ImageX / 1920.0,
+            0,
+            1);
+        var y = Math.Clamp(
+            decision.NormalizedY > 0
+                ? decision.NormalizedY
+                : decision.ImageY / 1080.0,
+            0,
+            1);
+
+        var bucketX = (int)Math.Floor(x * 8);
+        var bucketY = (int)Math.Floor(y * 6);
+
+        return $"{Math.Clamp(bucketX, 0, 7)},{Math.Clamp(bucketY, 0, 5)}";
     }
 
     private static string CoordinateSignature(
@@ -2535,6 +2734,57 @@ public sealed class ComputerOperatorTaskService(
             : $"{space}:{x:0.0000},{y:0.0000}";
     }
 
+
+    private static string BuildDesktopSceneFingerprint(
+        ComputerOperatorDesktopState state)
+    {
+        var foreground = state.ForegroundWindow is null
+            ? "foreground:none"
+            : $"foreground:{NormalizeSceneToken(state.ForegroundWindow.ProcessName)}|{NormalizeSceneToken(state.ForegroundWindow.Title)}|{Quantize(state.ForegroundWindow.Left, 32)},{Quantize(state.ForegroundWindow.Top, 32)},{Quantize(state.ForegroundWindow.Width, 32)},{Quantize(state.ForegroundWindow.Height, 32)}";
+
+        var visible = state.Windows
+            .Where(window => window.Width > 0 && window.Height > 0)
+            .OrderBy(window => window.ProcessName ?? string.Empty, StringComparer.OrdinalIgnoreCase)
+            .ThenBy(window => window.Title, StringComparer.OrdinalIgnoreCase)
+            .Take(16)
+            .Select(window =>
+                $"{NormalizeSceneToken(window.ProcessName)}:{NormalizeSceneToken(window.Title)}:{Quantize(window.Left, 64)},{Quantize(window.Top, 64)},{Quantize(window.Width, 64)},{Quantize(window.Height, 64)}");
+
+        return string.Join(
+            "|",
+            new[]
+            {
+                foreground,
+                $"frame:{state.CaptureScope}:{Quantize(state.FrameLeft, 32)},{Quantize(state.FrameTop, 32)},{Quantize(state.FrameWidth, 32)},{Quantize(state.FrameHeight, 32)}",
+                $"windows:{string.Join(";", visible)}"
+            });
+    }
+
+    private static string NormalizeSceneToken(
+        string? value)
+    {
+        var normalized = string.Join(
+            " ",
+            (value ?? string.Empty)
+                .Trim()
+                .ToLowerInvariant()
+                .Split(
+                    [' ', '\t', '\r', '\n'],
+                    StringSplitOptions.RemoveEmptyEntries));
+
+        return normalized.Length <= 80
+            ? normalized
+            : normalized[..80];
+    }
+
+    private static int Quantize(
+        int value,
+        int quantum) =>
+        quantum <= 1
+            ? value
+            : (int)Math.Round(
+                value / (double)quantum,
+                MidpointRounding.AwayFromZero) * quantum;
 
     private ComputerOperatorDesktopState BuildDesktopState(
         DesktopScreenshotFrame frame)

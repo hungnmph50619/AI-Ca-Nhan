@@ -33,6 +33,7 @@ public static class ComputerUseEndpoints
         services.AddSingleton<IComputerOperatorCheckpointStore, SqliteComputerOperatorCheckpointStore>();
         services.AddSingleton<IComputerOperatorTelemetry, ComputerOperatorTelemetry>();
         services.AddSingleton<IUniversalReliableOperatorCoordinator, UniversalReliableOperatorCoordinator>();
+        services.AddSingleton<IComputerBackendBenchmarkService, ComputerBackendBenchmarkService>();
         services.AddSingleton<IComputerOperatorTaskService, ComputerOperatorTaskService>();
         services.AddSingleton<IExecutionAgent, ComputerOperatorExecutionAgent>();
         services.AddSingleton<IExecutionAgentRegistry, ExecutionAgentRegistry>();
@@ -150,6 +151,41 @@ public static class ComputerUseEndpoints
                 message =
                     "Đã xóa telemetry hiệu năng trong bộ nhớ. Không có nội dung task hoặc ảnh màn hình được lưu."
             });
+        });
+
+        app.MapGet("/api/computer/backend-benchmark/status", (
+            HttpContext context,
+            IComputerBackendBenchmarkService benchmark) =>
+        {
+            if (!IsLocalRequest(context))
+                return Results.StatusCode(StatusCodes.Status403Forbidden);
+
+            return Results.Ok(benchmark.GetStatus());
+        });
+
+        app.MapPost("/api/computer/backend-benchmark/ufo2/run", async (
+            HttpContext context,
+            ComputerBackendBenchmarkRequest request,
+            IComputerBackendBenchmarkService benchmark,
+            CancellationToken cancellationToken) =>
+        {
+            if (!IsLocalRequest(context) ||
+                context.Request.Headers["X-PersonalAI-Manual-Approval"] != "dong-y")
+                return Results.StatusCode(StatusCodes.Status403Forbidden);
+
+            try
+            {
+                var result = await benchmark.RunUfo2Async(
+                    request,
+                    cancellationToken);
+
+                return Results.Ok(result);
+            }
+            catch (ToolExecutionInputException exception)
+            {
+                return Results.BadRequest(
+                    new ApiError(exception.Message));
+            }
         });
 
         app.MapGet("/api/computer/operator-runtime", (

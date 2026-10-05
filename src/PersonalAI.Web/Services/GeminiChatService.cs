@@ -195,6 +195,13 @@ Function calling is disabled in this continuation. Produce only the final user-f
 
         foreach (var reference in message.Attachments)
         {
+            if (!reference.Route.Equals(
+                    "direct",
+                    StringComparison.OrdinalIgnoreCase))
+            {
+                continue;
+            }
+
             var stored =
                 _attachmentStore.GetRequired(
                     reference.Id);

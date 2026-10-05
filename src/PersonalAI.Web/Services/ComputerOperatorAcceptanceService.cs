@@ -451,6 +451,12 @@ public sealed class ComputerOperatorAcceptanceService
             "event correlation dùng expected effect để tăng độ liên quan",
             CheckEventRelevanceUsesExpectedEffect);
 
+        RunCheck(
+            checks,
+            "event source fusion tăng confidence khi WinEvent và UIA3 xác nhận nhau",
+            CheckEventSourceFusionConfidence);
+
+
 
 
 
@@ -3667,6 +3673,44 @@ public sealed class ComputerOperatorAcceptanceService
             withEffect > withoutEffect &&
             withEffect >= 0.9,
             "Expected effect chưa tăng độ ưu tiên cho event phù hợp.");
+    }
+
+    private static void CheckEventSourceFusionConfidence()
+    {
+        var singleSource =
+            new DesktopSystemEvent(
+                DesktopSystemEventKinds.ValueChanged,
+                "0x1",
+                DateTimeOffset.UtcNow,
+                0,
+                "single source",
+                Source: "uia3",
+                SourceConfidence: 0.75,
+                Corroborated: false);
+
+        var corroborated =
+            singleSource with
+            {
+                SourceConfidence = 0.90,
+                Corroborated = true
+            };
+
+        var singleScore =
+            ComputerOperatorEventRelevance.Score(
+                "type-text",
+                "text được nhập",
+                singleSource);
+
+        var fusedScore =
+            ComputerOperatorEventRelevance.Score(
+                "type-text",
+                "text được nhập",
+                corroborated);
+
+        Require(
+            fusedScore > singleScore &&
+            fusedScore >= 0.90,
+            "Event source fusion chưa tăng độ tin cậy khi có hai nguồn độc lập xác nhận.");
     }
 
     private static void CheckCapabilityCacheAvoidsRepeatedDiscovery()

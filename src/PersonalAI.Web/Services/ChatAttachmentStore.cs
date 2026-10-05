@@ -378,6 +378,15 @@ public sealed class ChatAttachmentStore(
             updated.KnowledgeChunkCount);
     }
 
+    internal static string SelectRouteForAcceptance(
+        string extension,
+        string kind,
+        long size) =>
+        SelectRoute(
+            extension,
+            kind,
+            size);
+
     private static string SelectRoute(
         string extension,
         string kind,

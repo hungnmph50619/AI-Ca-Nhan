@@ -18,6 +18,8 @@ public sealed record DesktopOcrObservation(
     string Text,
     string Language,
     IReadOnlyList<DesktopOcrLine> Lines,
+    int CaptureWidth,
+    int CaptureHeight,
     string Provider,
     string Reason)
 {
@@ -109,6 +111,10 @@ public sealed class WindowsDesktopOcrSensor(
                     string.Empty,
                 Lines:
                     lines,
+                CaptureWidth:
+                    response.CaptureWidth,
+                CaptureHeight:
+                    response.CaptureHeight,
                 Provider:
                     "windows-ocr",
                 Reason:
@@ -162,6 +168,8 @@ public sealed class WindowsDesktopOcrSensor(
                 payload.Language ??
                     string.Empty,
                 lines,
+                0,
+                0,
                 "windows-ocr",
                 "acceptance");
         }
@@ -180,6 +188,8 @@ public sealed class WindowsDesktopOcrSensor(
             Language: string.Empty,
             Lines:
                 Array.Empty<DesktopOcrLine>(),
+            CaptureWidth: 0,
+            CaptureHeight: 0,
             Provider:
                 "windows-ocr",
             Reason:

@@ -58,9 +58,9 @@ public sealed class DesktopCaptureBackendRouter(
             DesktopCaptureBackends.DxgiDesktopDuplication,
             2,
             Available: dxgi?.Available == true,
-            [DesktopCaptureScopes.Monitor],
+            [DesktopCaptureScopes.VirtualDesktop, DesktopCaptureScopes.Monitor],
             dxgi?.Available == true
-                ? "DXGI Desktop Duplication sẵn sàng làm fallback monitor capture."
+                ? "DXGI Desktop Duplication sẵn sàng cho virtual desktop và fallback monitor capture."
                 : "DXGI Desktop Duplication chưa khả dụng; router sẽ dùng backend dự phòng."),
         new(
             DesktopCaptureBackends.PrintWindow,

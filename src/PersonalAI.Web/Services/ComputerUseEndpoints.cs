@@ -228,6 +228,38 @@ public static class ComputerUseEndpoints
             });
         });
 
+        app.MapGet("/api/computer/event-observation", (
+            HttpContext context,
+            IAdaptiveObservationWakeSource wakeSource) =>
+        {
+            if (!IsLocalRequest(context))
+                return Results.StatusCode(StatusCodes.Status403Forbidden);
+
+            var snapshot =
+                wakeSource.GetSnapshot();
+
+            return Results.Ok(new
+            {
+                phienBan = PersonalAiRelease.Version,
+                eventDriven = snapshot.EventDrivenAvailable,
+                daNhan = snapshot.ReceivedEvents,
+                daGop = snapshot.CoalescedEvents,
+                daLoai = snapshot.DroppedEvents,
+                daDanhThuc = snapshot.DeliveredWakeups,
+                pollingFallback = snapshot.PollFallbacks,
+                dangCho = snapshot.QueuedEvents,
+                suKienGanNhat = snapshot.LastEvent is null
+                    ? null
+                    : new
+                    {
+                        loai = snapshot.LastEvent.Kind,
+                        cuaSo = snapshot.LastEvent.WindowId,
+                        lucUtc = snapshot.LastEvent.OccurredAtUtc,
+                        lyDo = snapshot.LastEvent.Reason
+                    }
+            });
+        });
+
         app.MapGet("/api/computer/operator-runtime", (
             HttpContext context,
             IUniversalReliableOperatorCoordinator reliableOperator) =>

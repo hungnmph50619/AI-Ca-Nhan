@@ -129,15 +129,19 @@ public sealed class WindowsDesktopEventWakeSource
 
         cancellationToken.ThrowIfCancellationRequested();
 
-        if (completed == eventTask &&
-            await eventTask &&
-            TryDequeueLatest(out var received))
+        if (completed == eventTask)
         {
-            return new(
-                EventReceived: true,
-                received,
-                DateTimeOffset.UtcNow - started,
-                $"WinEventHook đánh thức verifier: {received!.Reason}");
+            await eventTask;
+
+            if (TryDequeueLatest(
+                    out var received))
+            {
+                return new(
+                    EventReceived: true,
+                    received,
+                    DateTimeOffset.UtcNow - started,
+                    $"WinEventHook đánh thức verifier: {received!.Reason}");
+            }
         }
 
         return new(

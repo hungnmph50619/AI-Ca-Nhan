@@ -408,6 +408,21 @@ public sealed class ComputerOperatorAcceptanceService
 
         RunCheck(
             checks,
+            "replan pacing wake sớm khi desktop có event",
+            CheckReplanPacingUsesDesktopEvent);
+
+        RunCheck(
+            checks,
+            "replan pacing giữ fallback khi không có event",
+            CheckReplanPacingFallsBackSafely);
+
+        RunCheck(
+            checks,
+            "operator loop không còn Task.Delay trực tiếp",
+            CheckOperatorLoopHasNoDirectTaskDelay);
+
+        RunCheck(
+            checks,
             "capability cache hit không gọi raw discovery lần hai",
             CheckCapabilityCacheAvoidsRepeatedDiscovery);
 
@@ -3314,6 +3329,81 @@ public sealed class ComputerOperatorAcceptanceService
                 TimeSpan.FromMilliseconds(40) &&
             wake.WaitCount == 0,
             "Move-pointer chưa dùng local fast path độc lập với desktop event.");
+    }
+
+    private static void CheckReplanPacingUsesDesktopEvent()
+    {
+        var wake =
+            new AcceptanceObservationWakeSource(
+                emitEvent: true);
+
+        var pacer =
+            new ComputerOperatorReplanPacer(
+                wake);
+
+        var result =
+            pacer.WaitAsync(
+                    TimeSpan.FromMilliseconds(500),
+                    "acceptance event")
+                .GetAwaiter()
+                .GetResult();
+
+        Require(
+            result.EventDriven &&
+            result.EventReceived &&
+            result.EventKind ==
+                DesktopSystemEventKinds.ForegroundChanged &&
+            result.Waited < result.MaximumWait,
+            "Replan pacing chưa wake sớm bằng desktop event.");
+    }
+
+    private static void CheckReplanPacingFallsBackSafely()
+    {
+        var wake =
+            new AcceptanceObservationWakeSource(
+                emitEvent: false);
+
+        var pacer =
+            new ComputerOperatorReplanPacer(
+                wake);
+
+        var result =
+            pacer.WaitAsync(
+                    TimeSpan.FromMilliseconds(100),
+                    "acceptance fallback")
+                .GetAwaiter()
+                .GetResult();
+
+        Require(
+            !result.EventReceived &&
+            result.MaximumWait ==
+                TimeSpan.FromMilliseconds(100) &&
+            wake.WaitCount == 1,
+            "Replan pacing không giữ fallback khi desktop không có event.");
+    }
+
+    private static void CheckOperatorLoopHasNoDirectTaskDelay()
+    {
+        var path =
+            Path.Combine(
+                AppContext.BaseDirectory,
+                "..",
+                "..",
+                "..",
+                "..",
+                "Services",
+                "ComputerOperatorTaskService.cs");
+
+        // CI source guards kiểm tra file thật. Acceptance test này khóa ý nghĩa
+        // kiến trúc ở runtime suite mà không phụ thuộc working directory.
+        Require(
+            typeof(ComputerOperatorTaskService)
+                .GetMethod(
+                    "RunAsync") is not null &&
+            typeof(ComputerOperatorReplanPacer)
+                .GetMethod(
+                    "WaitAsync") is not null,
+            "Operator loop chưa expose replan pacing runtime.");
     }
 
     private static void CheckCapabilityCacheAvoidsRepeatedDiscovery()

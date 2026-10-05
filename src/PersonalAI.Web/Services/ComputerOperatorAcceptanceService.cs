@@ -169,6 +169,11 @@ public sealed class ComputerOperatorAcceptanceService
             "structured-first planner chọn UIA target duy nhất trước Vision",
             CheckStructuredFirstPlannerUsesUiaTarget);
 
+        RunCheck(
+            checks,
+            "structured-first planner dùng ValuePattern cho field rõ ràng",
+            CheckStructuredFirstPlannerUsesValuePattern);
+
 
         RunCheck(
             checks,
@@ -1930,6 +1935,76 @@ public sealed class ComputerOperatorAcceptanceService
                 "Windows Search",
                 StringComparison.OrdinalIgnoreCase),
             "Local planner không chọn Windows Search generic cho intent mở ứng dụng.");
+    }
+
+    private static void CheckStructuredFirstPlannerUsesValuePattern()
+    {
+        var planner = new DesktopLocalActionPlanner();
+        var foreground = new ComputerWindowInfo(
+            "0x1234",
+            "Acceptance App",
+            "acceptance",
+            10,
+            true,
+            100,
+            80,
+            900,
+            700);
+
+        var node = new StructuredDesktopNode(
+            Token: "root:name",
+            ParentToken: "root",
+            Depth: 2,
+            Role: "Edit",
+            Name: "Name",
+            AutomationId: "nameField",
+            ClassName: "Edit",
+            IsEnabled: true,
+            IsFocused: false,
+            IsOffscreen: false,
+            Left: 320,
+            Top: 220,
+            Width: 240,
+            Height: 40,
+            Patterns: ["Value"]);
+
+        var structured = new StructuredDesktopSnapshot(
+            WindowId: foreground.WindowId,
+            RootToken: "root",
+            CapturedAtUtc: DateTimeOffset.UtcNow,
+            NodeCount: 1,
+            MaximumNodes: 240,
+            MaximumDepth: 7,
+            Nodes: [node],
+            Source: "flaui-uia3",
+            Detail: "acceptance");
+
+        var state = new ComputerOperatorDesktopState(
+            DateTimeOffset.UtcNow,
+            foreground,
+            [foreground],
+            FrameLeft: 100,
+            FrameTop: 80,
+            FrameWidth: 900,
+            FrameHeight: 700,
+            CaptureScope: DesktopCaptureScopes.Window,
+            CaptureWindowId: foreground.WindowId,
+            CaptureWindowWasForeground: true,
+            StructuredScene: structured);
+
+        var planned = planner.TryPlan(
+            "Nhập Alice vào ô Name",
+            state,
+            string.Empty,
+            out var decision);
+
+        Require(
+            planned &&
+            decision.Action == "structured-set-value" &&
+            decision.Text == "Alice" &&
+            decision.TargetElementId == "root:name" &&
+            decision.CoordinateWindowId == foreground.WindowId,
+            "Structured-first planner chưa dùng ValuePattern cho field rõ ràng.");
     }
 
     private static void CheckStructuredFirstPlannerUsesUiaTarget()

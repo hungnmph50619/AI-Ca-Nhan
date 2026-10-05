@@ -52,6 +52,7 @@ public static class ComputerUseEndpoints
         services.AddSingleton<ILocalVisualVerificationService, LocalVisualVerificationService>();
         services.AddSingleton<ILocalVisualProviderHealthRegistry, LocalVisualProviderHealthRegistry>();
         services.AddSingleton<ILocalVisualSensorBudgetPolicy, LocalVisualSensorBudgetPolicy>();
+        services.AddSingleton<ILocalVisionWorkerClient, LocalVisionWorkerClient>();
         services.AddSingleton<IDesktopOcrProvider, WindowsDesktopOcrSensor>();
         services.AddSingleton<IDesktopOcrProvider, PaddleOnnxDesktopOcrProvider>();
         services.AddSingleton<IDesktopOcrSensor, DesktopOcrSensorRouter>();

@@ -19,6 +19,8 @@
     <PackageReference Include="Polly" Version="8.8.0" />
     <PackageReference Include="OpenCvSharp4" Version="4.13.0.20260627" />
     <PackageReference Include="OpenCvSharp4.runtime.win" Version="4.13.0.20260627" />
+    <PackageReference Include="CoreOCROnnx.SDK" Version="4.2.1" />
+    <PackageReference Include="CoreOCRRuntime.Onnx.CPU.win-x64" Version="4.2.1" />
     <PackageReference Include="PdfPig" Version="0.1.12" />
     <PackageReference Include="System.Drawing.Common" Version="8.0.11" />
   </ItemGroup>

@@ -145,8 +145,7 @@ public sealed class DesktopLocalActionPlanner
     {
         decision = Empty();
 
-        if (state.StructuredScene is null ||
-            state.ForegroundWindow is null ||
+        if (state.ForegroundWindow is null ||
             !TryExtractStructuredClickTarget(
                 goal,
                 out var requestedTarget))
@@ -154,18 +153,28 @@ public sealed class DesktopLocalActionPlanner
             return false;
         }
 
+        var graph =
+            state.StructuredGraph ??
+            UnifiedStructuredSceneGraphBuilder.Build(
+                state.StructuredScene,
+                state.ForegroundWindow,
+                state.FrameLeft,
+                state.FrameTop,
+                state.FrameWidth,
+                state.FrameHeight);
+
+        if (graph is null)
+            return false;
+
         var candidates =
-            state.StructuredScene.Nodes
+            graph.Nodes
                 .Where(node =>
-                    !node.IsOffscreen &&
-                    node.IsEnabled &&
-                    node.Width > 3 &&
-                    node.Height > 3 &&
-                    node.Patterns.Any(pattern =>
-                        pattern.Equals("Invoke", StringComparison.OrdinalIgnoreCase) ||
-                        pattern.Equals("SelectionItem", StringComparison.OrdinalIgnoreCase) ||
-                        pattern.Equals("Toggle", StringComparison.OrdinalIgnoreCase) ||
-                        pattern.Equals("ExpandCollapse", StringComparison.OrdinalIgnoreCase)))
+                    node.Interactive &&
+                    node.Capabilities.Any(capability =>
+                        capability.Equals("Invoke", StringComparison.OrdinalIgnoreCase) ||
+                        capability.Equals("SelectionItem", StringComparison.OrdinalIgnoreCase) ||
+                        capability.Equals("Toggle", StringComparison.OrdinalIgnoreCase) ||
+                        capability.Equals("ExpandCollapse", StringComparison.OrdinalIgnoreCase)))
                 .Select(node => new
                 {
                     Node = node,
@@ -189,42 +198,40 @@ public sealed class DesktopLocalActionPlanner
         }
 
         var node = best.Node;
-        var boxLeft = node.Left - state.FrameLeft;
-        var boxTop = node.Top - state.FrameTop;
 
-        if (boxLeft < 0 ||
-            boxTop < 0 ||
-            boxLeft + node.Width > state.FrameWidth ||
-            boxTop + node.Height > state.FrameHeight)
+        if (node.FrameLeft < 0 ||
+            node.FrameTop < 0 ||
+            node.FrameLeft + node.Width > state.FrameWidth ||
+            node.FrameTop + node.Height > state.FrameHeight)
         {
             return false;
         }
 
-        var actionPattern =
-            node.Patterns.FirstOrDefault(pattern =>
-                pattern.Equals("Invoke", StringComparison.OrdinalIgnoreCase) ||
-                pattern.Equals("SelectionItem", StringComparison.OrdinalIgnoreCase) ||
-                pattern.Equals("Toggle", StringComparison.OrdinalIgnoreCase) ||
-                pattern.Equals("ExpandCollapse", StringComparison.OrdinalIgnoreCase))
+        var actionCapability =
+            node.Capabilities.FirstOrDefault(capability =>
+                capability.Equals("Invoke", StringComparison.OrdinalIgnoreCase) ||
+                capability.Equals("SelectionItem", StringComparison.OrdinalIgnoreCase) ||
+                capability.Equals("Toggle", StringComparison.OrdinalIgnoreCase) ||
+                capability.Equals("ExpandCollapse", StringComparison.OrdinalIgnoreCase))
             ?? "UIA";
 
         decision = Build(
             action: "click-left",
             currentSubgoal:
-                $"Tương tác với phần tử '{DisplayNode(node)}' bằng structured UI.",
+                $"Tương tác với phần tử '{DisplayNode(node)}' bằng Unified Structured Scene Graph.",
             expectedEffect:
-                $"Phần tử '{DisplayNode(node)}' phản hồi sau thao tác {actionPattern}.",
+                $"Phần tử '{DisplayNode(node)}' phản hồi sau thao tác {actionCapability}.",
             reason:
-                $"Structured-first planner tìm thấy duy nhất một phần tử UIA phù hợp với mục tiêu '{requestedTarget}' (score={best.Score}, pattern={actionPattern}); không cần gửi toàn màn hình cho Vision/Gemini.",
+                $"Structured-first planner tìm thấy duy nhất một node trong scene graph phù hợp với mục tiêu '{requestedTarget}' (score={best.Score}, capability={actionCapability}); không cần gửi toàn màn hình cho Vision/Gemini.",
             plan:
-                $"Dùng bounding box UIA của '{DisplayNode(node)}' để click an toàn rồi quan sát lại trước hành động tiếp theo.",
+                $"Dùng bounding box đã chuẩn hóa trong scene graph của '{DisplayNode(node)}' để click an toàn rồi quan sát lại.",
             targetLabel: DisplayNode(node),
-            targetElementId: node.Token,
-            coordinateWindowId: state.ForegroundWindow.WindowId,
-            imageX: boxLeft + node.Width / 2,
-            imageY: boxTop + node.Height / 2,
-            boxLeft: boxLeft,
-            boxTop: boxTop,
+            targetElementId: node.Id,
+            coordinateWindowId: graph.WindowId,
+            imageX: node.FrameLeft + node.Width / 2,
+            imageY: node.FrameTop + node.Height / 2,
+            boxLeft: node.FrameLeft,
+            boxTop: node.FrameTop,
             boxWidth: node.Width,
             boxHeight: node.Height,
             confidence: best.Score >= 100 ? 0.99 : 0.94);
@@ -311,7 +318,7 @@ public sealed class DesktopLocalActionPlanner
     }
 
     private static int ScoreStructuredTarget(
-        StructuredDesktopNode node,
+        UnifiedStructuredSceneNode node,
         string requestedTarget)
     {
         var target = Normalize(requestedTarget);
@@ -353,7 +360,7 @@ public sealed class DesktopLocalActionPlanner
     }
 
     private static string DisplayNode(
-        StructuredDesktopNode node) =>
+        UnifiedStructuredSceneNode node) =>
         !string.IsNullOrWhiteSpace(node.Name)
             ? node.Name.Trim()
             : !string.IsNullOrWhiteSpace(node.AutomationId)

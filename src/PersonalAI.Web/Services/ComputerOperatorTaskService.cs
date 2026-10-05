@@ -1,3 +1,6 @@
+using System.Diagnostics;
+using System.Security.Cryptography;
+using System.Text;
 using PersonalAI.Web.Models;
 
 namespace PersonalAI.Web.Services;
@@ -284,6 +287,10 @@ public sealed class ComputerOperatorTaskService(
                         "safety-lease",
                         "Safety lease đã hết nhưng task vẫn còn hiệu lực; đã cấp lease mới trước khi tiếp tục. Đây không phải task timeout.",
                         "renewed");
+
+                    progress.AddDiagnostic(
+                        "lifecycle",
+                        $"cycle={index}; event=safety-lease-renewed; taskContinues=true; remainingActions={gateAfterRenewal.RemainingActions}; expiresAt={gateAfterRenewal.ExpiresAt:O}.");
                 }
 
                 await execution.WaitIfPausedAsync(linked.Token);
@@ -355,7 +362,15 @@ public sealed class ComputerOperatorTaskService(
                     $"Unified Desktop State: foreground={active?.Title ?? "không xác định"}; windows={desktopState.Windows.Count}; frame={desktopState.CaptureScope}/{desktopState.FrameWidth}x{desktopState.FrameHeight}.",
                     observation: true);
 
+                var sceneDiagnosticId =
+                    BuildDiagnosticId(sceneFingerprint);
+
+                progress.AddDiagnostic(
+                    "cycle",
+                    $"cycle={index}; scene={sceneDiagnosticId}; foreground={active?.ProcessName ?? "?"}/{active?.Title ?? "không xác định"}; windows={desktopState.Windows.Count}; frame={desktopState.CaptureScope}; origin=({desktopState.FrameLeft},{desktopState.FrameTop}); size={desktopState.FrameWidth}x{desktopState.FrameHeight}.");
+
                 DesktopOperatorDecision decision;
+                var plannerStopwatch = Stopwatch.StartNew();
                 using var planTelemetry =
                     telemetry.Begin(
                         ComputerOperatorTelemetryStages.GeminiPlan);
@@ -379,9 +394,14 @@ public sealed class ComputerOperatorTaskService(
                         temporalSceneContext,
                         linked.Token);
 
+                    plannerStopwatch.Stop();
                     planTelemetry.Complete(
                         success: true,
                         route: "gemini");
+
+                    progress.AddDiagnostic(
+                        "provider",
+                        $"provider=Gemini; purpose=plan; cycle={index}; latencyMs={plannerStopwatch.ElapsedMilliseconds}; action={decision.Action}; confidence={decision.Confidence:0.000}; payload=parsed.");
                 }
                 catch
                 {
@@ -784,6 +804,19 @@ public sealed class ComputerOperatorTaskService(
                 lowConfidenceCount = 0;
 
                 var actionSignature = BuildSemanticActionSignature(decision);
+                var strategyDiagnosticId =
+                    BuildDiagnosticId(actionSignature);
+                var previousStrategyFailures =
+                    recovery.Attempts.Count(item =>
+                        item.ActionSignature.Equals(
+                            actionSignature,
+                            StringComparison.OrdinalIgnoreCase));
+
+                progress.AddDiagnostic(
+                    "strategy",
+                    $"cycle={index}; scene={sceneDiagnosticId}; strategy={strategyDiagnosticId}; previousFailures={previousStrategyFailures}; action={decision.Action}; targetLabel={LimitDiagnostic(decision.TargetLabel, 100)}; elementId={LimitDiagnostic(decision.TargetElementId, 80)}; bbox=({decision.BoxLeft},{decision.BoxTop},{decision.BoxWidth},{decision.BoxHeight}); plannerPoint=({decision.ImageX},{decision.ImageY}); coordinateSpace={decision.CoordinateSpace}; expectedEffect={LimitDiagnostic(decision.ExpectedEffect, 180)}; semantic={LimitDiagnostic(actionSignature, 220)}.",
+                    decision.Action,
+                    decision.Confidence);
 
                 if (keyboardResetRequired)
                 {
@@ -841,6 +874,12 @@ public sealed class ComputerOperatorTaskService(
                         decision.Action,
                         decision.Confidence);
 
+                    progress.AddDiagnostic(
+                        "recovery",
+                        $"cycle={index}; scene={sceneDiagnosticId}; strategy={strategyDiagnosticId}; decision=REJECT-BEFORE-EXECUTE; reason={LimitDiagnostic(avoidReason, 260)}.",
+                        decision.Action,
+                        decision.Confidence);
+
                     _ = actionState.MoveTo(
                         ComputerOperatorActionState.Replan,
                         "Recovery memory yêu cầu chiến lược khác.");
@@ -875,6 +914,10 @@ public sealed class ComputerOperatorTaskService(
                             "frame-baseline",
                             $"Đã khóa Verification Capture Context: scope={verificationCaptureContext.CaptureScope}; window={verificationCaptureContext.WindowId ?? "-"}; monitor={verificationCaptureContext.MonitorDevice ?? "-"}; origin=({verificationCaptureContext.Left},{verificationCaptureContext.Top}); size={verificationCaptureContext.Width}x{verificationCaptureContext.Height}; dpi={verificationCaptureContext.DpiX}x{verificationCaptureContext.DpiY}.",
                             observation: true);
+
+                        progress.AddDiagnostic(
+                            "capture",
+                            $"cycle={index}; phase=before-action; scene={sceneDiagnosticId}; strategy={strategyDiagnosticId}; scope={verificationCaptureContext.CaptureScope}; window={verificationCaptureContext.WindowId ?? "-"}; monitor={verificationCaptureContext.MonitorDevice ?? "-"}; origin=({verificationCaptureContext.Left},{verificationCaptureContext.Top}); size={verificationCaptureContext.Width}x{verificationCaptureContext.Height}; dpi={verificationCaptureContext.DpiX}x{verificationCaptureContext.DpiY}.");
                     }
                     catch (Exception exception) when (
                         exception is ToolExecutionInputException or
@@ -1287,6 +1330,12 @@ public sealed class ComputerOperatorTaskService(
                     }
                 }
 
+                progress.AddDiagnostic(
+                    "evidence",
+                    $"cycle={index}; scene={sceneDiagnosticId}; strategy={strategyDiagnosticId}; verified={verification.Verified}; inconclusive={verification.Inconclusive}; confidence={verification.Confidence:0.000}; detail={LimitDiagnostic(verification.Detail, 300)}.",
+                    decision.Action,
+                    verification.Confidence);
+
                 if (!verification.Verified &&
                     verification.Inconclusive)
                 {
@@ -1385,6 +1434,12 @@ public sealed class ComputerOperatorTaskService(
 
                     taskHistory.Add(
                         $"RECOVERY-PLAN: {recoveryPlan.PrimaryAction}; {recoveryPlan.Reason}");
+
+                    progress.AddDiagnostic(
+                        "recovery",
+                        $"cycle={index}; scene={sceneDiagnosticId}; strategy={strategyDiagnosticId}; failureKind={ClassifyFailureKind(decision.Action, verification.Detail, actionApplied: true, verificationFailed: true)}; failures={failures}; retrySame={recoveryPlan.AllowSameStrategyRetry}; primary={recoveryPlan.PrimaryAction}; fallbacks={string.Join(",", recoveryPlan.Fallbacks)}; reason={LimitDiagnostic(recoveryPlan.Reason, 240)}.",
+                        decision.Action,
+                        verification.Confidence);
 
                     progress.Add(
                         "recovery",
@@ -2757,6 +2812,32 @@ public sealed class ComputerOperatorTaskService(
             : $"{space}:{x:0.0000},{y:0.0000}";
     }
 
+
+    private static string BuildDiagnosticId(
+        string value)
+    {
+        var bytes = SHA256.HashData(
+            Encoding.UTF8.GetBytes(
+                value ?? string.Empty));
+
+        return Convert.ToHexString(bytes)[..12];
+    }
+
+    private static string LimitDiagnostic(
+        string? value,
+        int maximum)
+    {
+        var normalized = string.Join(
+            " ",
+            (value ?? string.Empty)
+                .Split(
+                    [' ', '\t', '\r', '\n'],
+                    StringSplitOptions.RemoveEmptyEntries));
+
+        return normalized.Length <= maximum
+            ? normalized
+            : normalized[..Math.Max(1, maximum - 1)] + "…";
+    }
 
     private static string BuildDesktopSceneFingerprint(
         ComputerOperatorDesktopState state)

@@ -145,10 +145,8 @@ public sealed class LocalVisionWorkerClient
             process.StandardInput.Close();
 
             var timeout =
-                Math.Clamp(
-                    timeoutMilliseconds,
-                    250,
-                    15000);
+                NormalizeTimeout(
+                    timeoutMilliseconds);
 
             if (!process.WaitForExit(
                     timeout))
@@ -252,6 +250,18 @@ public sealed class LocalVisionWorkerClient
             }
         }
     }
+
+    internal static int NormalizeTimeoutForAcceptance(
+        int timeoutMilliseconds) =>
+        NormalizeTimeout(
+            timeoutMilliseconds);
+
+    private static int NormalizeTimeout(
+        int timeoutMilliseconds) =>
+        Math.Clamp(
+            timeoutMilliseconds,
+            250,
+            15000);
 
     private static WorkerLaunch? ResolveWorker()
     {

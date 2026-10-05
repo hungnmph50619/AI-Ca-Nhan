@@ -143,6 +143,17 @@ public sealed class ComputerOperatorAcceptanceService
 
         RunCheck(
             checks,
+            "adaptive Gemini bỏ qua model khi keyboard transition có hai bằng chứng local",
+            CheckAdaptiveGeminiSkipsKeyboardTransition);
+
+        RunCheck(
+            checks,
+            "local planner dùng Windows Search generic khi provider degraded",
+            CheckLocalPlannerUsesGenericWindowsSearch);
+
+
+        RunCheck(
+            checks,
             "dynamic target tracker remap bbox khi cửa sổ di chuyển",
             CheckDynamicTargetTrackerMovesWithWindow);
 
@@ -1654,6 +1665,93 @@ public sealed class ComputerOperatorAcceptanceService
         Require(
             result.Decision == AdaptiveGeminiDecision.CallGemini,
             "Adaptive Gemini bỏ qua model dù foreground/context vừa thay đổi.");
+    }
+
+    private static void CheckAdaptiveGeminiSkipsKeyboardTransition()
+    {
+        var policy = new AdaptiveGeminiCallPolicy();
+        var decision = BuildClickDecision(
+            ComputerCoordinateSpaces.ImagePixel) with
+        {
+            Action = "press-key",
+            Key = "WIN",
+            ExpectedEffect = "Windows shell xuất hiện"
+        };
+
+        var observation = new DesktopFastObservation(
+            ScreenChanged: true,
+            ChangeRatio: 0.11,
+            ForegroundWindowChanged: true,
+            WindowBoundsChanged: true,
+            CursorMoved: false,
+            MonitorChanged: false,
+            DpiChanged: false,
+            TargetMoved: false,
+            TargetMissing: true,
+            TargetLikelyOccluded: true,
+            Summary: "acceptance");
+
+        var result = policy.EvaluateVerification(
+            decision,
+            observation,
+            new DesktopFrameDifference(
+                true,
+                0.11,
+                110,
+                1000,
+                0,
+                0,
+                500,
+                400,
+                18,
+                "acceptance"));
+
+        Require(
+            result.Decision == AdaptiveGeminiDecision.SkipAndPass &&
+            result.Confidence >= 0.9,
+            "Adaptive Gemini vẫn gọi model dù keyboard transition có foreground + frame evidence mạnh.");
+    }
+
+    private static void CheckLocalPlannerUsesGenericWindowsSearch()
+    {
+        var planner = new DesktopLocalActionPlanner();
+        var foreground = new ComputerWindowInfo(
+            "0x100",
+            "Trình duyệt",
+            "msedge",
+            100,
+            true,
+            0,
+            0,
+            1280,
+            720);
+
+        var state = new ComputerOperatorDesktopState(
+            DateTimeOffset.UtcNow,
+            foreground,
+            [foreground],
+            0,
+            0,
+            1920,
+            1080,
+            DesktopCaptureScopes.VirtualDesktop,
+            null,
+            false);
+
+        var planned = planner.TryPlan(
+            "Mở Calculator, sau đó dừng lại.",
+            state,
+            string.Empty,
+            out var decision);
+
+        Require(
+            planned &&
+            decision.Action == "press-hotkey" &&
+            decision.Keys.SequenceEqual(["WIN", "S"]) &&
+            decision.ExpectedEffect.Contains(
+                "Windows Search",
+                StringComparison.OrdinalIgnoreCase),
+            "Local planner không chọn Windows Search generic cho intent mở ứng dụng.");
     }
 
     private static void CheckDynamicTargetTrackerMovesWithWindow()

@@ -32,6 +32,22 @@ public static class ChatRequestRules
             return "Nội dung hội thoại không hợp lệ.";
         }
 
+        if (request.Messages.Any(message =>
+            (message.Attachments?.Count ?? 0) >
+                ChatAttachmentStore.MaximumAttachmentsPerMessage))
+        {
+            return $"Mỗi tin nhắn chỉ được đính kèm tối đa {ChatAttachmentStore.MaximumAttachmentsPerMessage} tệp.";
+        }
+
+        if (request.Messages.Any(message =>
+            message.Role.Equals(
+                "assistant",
+                StringComparison.OrdinalIgnoreCase) &&
+            (message.Attachments?.Count ?? 0) > 0))
+        {
+            return "Chỉ tin nhắn người dùng mới được chứa tệp đính kèm.";
+        }
+
         var knowledgeMode = NormalizeKnowledgeMode(request.KnowledgeMode);
         if (knowledgeMode is not ("normal" or "documents-only"))
         {
@@ -68,6 +84,7 @@ public sealed class ChatTurnService(
     IContextManagerService contextManager,
     IToolOrchestrationService toolOrchestration,
     IToolExecutionService toolExecution,
+    IChatAttachmentStore attachmentStore,
     IAuditRecorder audit) : IChatTurnService
 {
     public async Task<ChatResponse> ExecuteAsync(
@@ -88,11 +105,21 @@ public sealed class ChatTurnService(
             ChatRequestRules.NormalizeKnowledgeMode(
                 request.KnowledgeMode);
 
+        var canonicalMessages =
+            CanonicalizeAttachments(
+                request.Messages,
+                attachmentStore);
+
+        var hasAttachments =
+            canonicalMessages.Any(message =>
+                (message.Attachments?.Count ?? 0) > 0);
+
         if (allowToolProposal
             && request.UseTools
+            && !hasAttachments
             && knowledgeMode == "normal"
             && IsDirectLeaguePracticeCommand(
-                request.Messages.Last().Content))
+                canonicalMessages.Last().Content))
         {
             using var argumentsDocument =
                 System.Text.Json.JsonDocument.Parse("{}");
@@ -130,10 +157,11 @@ public sealed class ChatTurnService(
 
         if (allowToolProposal
             && request.UseTools
+            && !hasAttachments
             && knowledgeMode == "normal")
         {
             var proposal = await toolOrchestration.ProposeAsync(
-                request.Messages,
+                canonicalMessages,
                 cancellationToken);
             if (proposal is not null)
             {
@@ -155,7 +183,7 @@ public sealed class ChatTurnService(
         }
 
         var managedContext = await contextManager.BuildAsync(
-            request.Messages,
+            canonicalMessages,
             request.UseKnowledge,
             knowledgeMode,
             request.UseMemory,
@@ -205,6 +233,48 @@ public sealed class ChatTurnService(
             null,
             managedContext.Report);
     }
+    private static IReadOnlyList<ChatMessage> CanonicalizeAttachments(
+        IReadOnlyList<ChatMessage> messages,
+        IChatAttachmentStore attachmentStore)
+    {
+        return messages
+            .Select(message =>
+            {
+                if (message.Attachments is not
+                    {
+                        Count: > 0
+                    })
+                {
+                    return message;
+                }
+
+                var attachments =
+                    message.Attachments
+                        .Select(reference =>
+                        {
+                            var stored =
+                                attachmentStore.GetRequired(
+                                    reference.Id);
+
+                            return new ChatAttachmentReference(
+                                stored.Id,
+                                stored.FileName,
+                                stored.MimeType,
+                                stored.Size,
+                                stored.Kind,
+                                stored.Route);
+                        })
+                        .ToArray();
+
+                return message with
+                {
+                    Attachments =
+                        attachments
+                };
+            })
+            .ToArray();
+    }
+
     private static bool IsDirectLeaguePracticeCommand(
         string value)
     {

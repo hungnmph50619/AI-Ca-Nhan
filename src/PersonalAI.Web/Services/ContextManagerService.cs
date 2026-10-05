@@ -207,15 +207,18 @@ public sealed class ContextManagerService(
         }
 
         var groundedMessages = messages.ToArray();
-        groundedMessages[lastUserIndex] = new ChatMessage(
-            "user",
-            BuildManagedQuestion(
-                question,
-                documents,
-                memories,
-                taskContexts,
-                lifeSelections,
-                normalizedMode));
+        groundedMessages[lastUserIndex] =
+            groundedMessages[lastUserIndex] with
+            {
+                Content =
+                    BuildManagedQuestion(
+                        question,
+                        documents,
+                        memories,
+                        taskContexts,
+                        lifeSelections,
+                        normalizedMode)
+            };
 
         return new ContextManagerResult(
             groundedMessages,

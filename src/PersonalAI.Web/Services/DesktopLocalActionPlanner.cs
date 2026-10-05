@@ -202,16 +202,13 @@ public sealed class DesktopLocalActionPlanner
 
         var node = resolution.Node;
 
-        if (!CanSafelyApplyRequestedStructuredState(
-                node,
-                requestedCapability,
-                desiredState,
-                out var alreadySatisfied))
-        {
+        if (node.IsSensitive)
             return false;
-        }
 
-        if (alreadySatisfied)
+        if (node.Value is not null &&
+            node.Value.Equals(
+                text,
+                StringComparison.Ordinal))
         {
             if (HasAdditionalGoalSteps(goal))
                 return false;
@@ -219,12 +216,12 @@ public sealed class DesktopLocalActionPlanner
             decision = Build(
                 action: "complete",
                 currentSubgoal:
-                    $"Trạng thái của '{DisplayNode(node)}' đã đúng yêu cầu.",
+                    $"Giá trị của '{DisplayNode(node)}' đã đúng yêu cầu.",
                 expectedEffect: string.Empty,
                 reason:
-                    $"Structured state evidence xác nhận '{DisplayNode(node)}' đã ở trạng thái {desiredState}; không thực hiện action dư thừa.",
+                    $"Structured ValuePattern readback xác nhận '{DisplayNode(node)}' đã có đúng giá trị yêu cầu; không thực hiện write dư thừa.",
                 plan:
-                    "Không gửi input vì mục tiêu structured đã được thỏa mãn.",
+                    "Không gửi input vì structured ValuePattern đã ở trạng thái mong muốn.",
                 targetLabel: DisplayNode(node),
                 targetElementId: node.Id,
                 coordinateWindowId: graph.WindowId,

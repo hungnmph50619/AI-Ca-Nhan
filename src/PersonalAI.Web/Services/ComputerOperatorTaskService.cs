@@ -42,6 +42,7 @@ public sealed class ComputerOperatorTaskService(
     IComputerOperatorTelemetry telemetry,
     IUniversalReliableOperatorCoordinator reliableOperator,
     IComputerOperatorGeminiBudgetFactory geminiBudgetFactory,
+    IComputerOperatorFastReobserveGate fastReobserve,
     ILogger<ComputerOperatorTaskService> logger)
     : IComputerOperatorTaskService
 {
@@ -1446,9 +1447,41 @@ public sealed class ComputerOperatorTaskService(
             decision.Action,
             decision.Confidence);
 
-        await Task.Delay(
-            decision.Action == "move-pointer" ? 180 : 550,
-            cancellationToken);
+        using var reobserveTelemetry =
+            telemetry.Begin(
+                ComputerOperatorTelemetryStages.FastReobserve,
+                decision.Action);
+
+        FastReobserveResult reobserve;
+        try
+        {
+            reobserve =
+                await fastReobserve.WaitBeforeVerificationAsync(
+                    decision.Action,
+                    cancellationToken);
+
+            reobserveTelemetry.Complete(
+                success: true,
+                route:
+                    reobserve.EventReceived
+                        ? "event"
+                        : "timeout");
+        }
+        catch
+        {
+            reobserveTelemetry.Complete(
+                success: false,
+                route: "error");
+            throw;
+        }
+
+        progress.Add(
+            "fast-reobserve",
+            $"Fast Reobserve: waited={reobserve.Waited.TotalMilliseconds:0}ms; max={reobserve.MaximumWait.TotalMilliseconds:0}ms; event={reobserve.EventReceived}; kind={reobserve.EventKind}. {reobserve.Reason}",
+            reobserve.EventReceived
+                ? "event"
+                : "timeout");
+
         await execution.WaitIfPausedAsync(cancellationToken);
 
         DesktopScreenshotFrame after = await CapturePostActionFrameAsync(

@@ -393,6 +393,21 @@ public sealed class ComputerOperatorAcceptanceService
 
         RunCheck(
             checks,
+            "capability cache hit không gọi raw discovery lần hai",
+            CheckCapabilityCacheAvoidsRepeatedDiscovery);
+
+        RunCheck(
+            checks,
+            "capability cache invalidate buộc refresh",
+            CheckCapabilityCacheInvalidationForcesRefresh);
+
+        RunCheck(
+            checks,
+            "capability health override tạm ngừng adapter lỗi",
+            CheckCapabilityCacheHealthOverride);
+
+        RunCheck(
+            checks,
             "capability first router phát hiện direct tool an toàn",
             CheckUniversalRouterDetectsDirectToolOpportunity);
 
@@ -3134,6 +3149,90 @@ public sealed class ComputerOperatorAcceptanceService
             "Không có event nhưng polling fallback chưa hoạt động.");
     }
 
+    private static void CheckCapabilityCacheAvoidsRepeatedDiscovery()
+    {
+        var raw =
+            new AcceptanceRawCapabilityDiscoveryService();
+
+        var cache =
+            new UniversalCapabilityCache();
+
+        var cached =
+            new CachedUniversalCapabilityDiscoveryService(
+                raw,
+                cache);
+
+        _ = cached.Discover();
+        _ = cached.Discover();
+
+        var status =
+            cache.GetStatus();
+
+        Require(
+            raw.DiscoverCount == 1 &&
+            status.Hits >= 1 &&
+            status.RuntimeSnapshotCached,
+            "Capability cache chưa tránh repeated raw discovery.");
+    }
+
+    private static void CheckCapabilityCacheInvalidationForcesRefresh()
+    {
+        var raw =
+            new AcceptanceRawCapabilityDiscoveryService();
+
+        var cache =
+            new UniversalCapabilityCache();
+
+        var cached =
+            new CachedUniversalCapabilityDiscoveryService(
+                raw,
+                cache);
+
+        _ = cached.Discover();
+        cache.InvalidateRuntime(
+            "acceptance state changed");
+        _ = cached.Discover();
+
+        Require(
+            raw.DiscoverCount == 2 &&
+            cache.GetStatus().Generation >= 1,
+            "Capability cache invalidate chưa buộc refresh.");
+    }
+
+    private static void CheckCapabilityCacheHealthOverride()
+    {
+        var raw =
+            new AcceptanceRawCapabilityDiscoveryService();
+
+        var cache =
+            new UniversalCapabilityCache();
+
+        var cached =
+            new CachedUniversalCapabilityDiscoveryService(
+                raw,
+                cache);
+
+        cache.MarkTemporarilyUnavailable(
+            "browser.playwright-dom",
+            TimeSpan.FromSeconds(5),
+            "acceptance failure");
+
+        var snapshot =
+            cached.Discover();
+
+        var playwright =
+            snapshot.Signals.Single(item =>
+                item.Key ==
+                    "browser.playwright-dom");
+
+        Require(
+            !playwright.Available &&
+            playwright.ConfidenceBonus == 0 &&
+            cache.GetStatus()
+                .TemporaryUnavailabilityCount >= 1,
+            "Capability health override chưa tạm ngừng adapter lỗi.");
+    }
+
     private static void CheckUniversalRouterDetectsDirectToolOpportunity()
     {
         IPersonalAiTool browserTool =
@@ -5339,6 +5438,32 @@ public sealed class ComputerOperatorAcceptanceService
                     Verified: verifiedResult,
                     Provider: "acceptance",
                     Model: "acceptance"));
+        }
+    }
+
+    private sealed class AcceptanceRawCapabilityDiscoveryService
+        : IRawUniversalCapabilityDiscoveryService
+    {
+        public int DiscoverCount { get; private set; }
+
+        public UniversalCapabilitySnapshot Discover()
+        {
+            DiscoverCount++;
+
+            return new(
+                PersonalAiRelease.Version,
+                DateTimeOffset.UtcNow,
+                [
+                    new UniversalCapabilitySignal(
+                        "browser.playwright-dom",
+                        ExecutionAgentChannels.Browser,
+                        "Playwright + Microsoft Edge",
+                        Available: true,
+                        UniversalCapabilityReliability.Structured,
+                        0.05,
+                        Priority: 1,
+                        "acceptance")
+                ]);
         }
     }
 

@@ -4,6 +4,14 @@ namespace PersonalAI.Web.Services;
 /// Quyền điều khiển có thời hạn và ngân sách thao tác; khởi động luôn khóa.
 /// Chỉ chặn thao tác của dịch vụ này, không phải dừng khẩn cấp toàn Windows.
 /// </summary>
+public static class ComputerControlPauseReasons
+{
+    public const string None = "none";
+    public const string ManualStop = "manual-stop";
+    public const string HotkeyUnavailable = "hotkey-unavailable";
+    public const string LeaseExpired = "lease-expired";
+}
+
 public sealed class ComputerControlGate
 {
     public const int MaximumActionsPerSession = 5;
@@ -16,6 +24,8 @@ public sealed class ComputerControlGate
     private bool _stopHotkeyAvailable;
     private DateTimeOffset? _expiresAt;
     private int _remainingActions;
+    private string _pauseReason = ComputerControlPauseReasons.None;
+    private bool _scopedAutomation;
 
     public bool Paused
     {
@@ -38,7 +48,9 @@ public sealed class ComputerControlGate
                 _paused,
                 _paused ? null : _expiresAt,
                 _paused ? 0 : _remainingActions,
-                _stopHotkeyAvailable);
+                _stopHotkeyAvailable,
+                _pauseReason,
+                _scopedAutomation);
         }
     }
 
@@ -52,7 +64,7 @@ public sealed class ComputerControlGate
         {
             _stopHotkeyAvailable = available;
             if (!available)
-                PauseInternal();
+                PauseInternal(ComputerControlPauseReasons.HotkeyUnavailable);
         }
     }
 
@@ -60,7 +72,7 @@ public sealed class ComputerControlGate
     {
         lock (_synchronization)
         {
-            PauseInternal();
+            PauseInternal(ComputerControlPauseReasons.ManualStop);
         }
     }
 
@@ -72,11 +84,15 @@ public sealed class ComputerControlGate
                 throw new ToolExecutionInputException(
                     "Không thể cho phép điều khiển: phím dừng Ctrl + Shift + F12 chưa sẵn sàng. Hãy chạy ứng dụng trong phiên Windows đang tương tác.");
             _paused = false;
+            _pauseReason = ComputerControlPauseReasons.None;
+            _scopedAutomation = false;
             _expiresAt = DateTimeOffset.UtcNow + SessionDuration;
             _remainingActions = MaximumActionsPerSession;
             return new ComputerControlSessionStatus(
                 false, _expiresAt, _remainingActions,
-                _stopHotkeyAvailable);
+                _stopHotkeyAvailable,
+                _pauseReason,
+                _scopedAutomation);
         }
     }
 
@@ -93,13 +109,63 @@ public sealed class ComputerControlGate
             var actions = Math.Clamp(maximumActions, 1, 16);
             var seconds = Math.Clamp(maximumSeconds, 15, 300);
             _paused = false;
+            _pauseReason = ComputerControlPauseReasons.None;
+            _scopedAutomation = true;
             _expiresAt = DateTimeOffset.UtcNow + TimeSpan.FromSeconds(seconds);
             _remainingActions = actions;
             return new ComputerControlSessionStatus(
                 false,
                 _expiresAt,
                 _remainingActions,
-                _stopHotkeyAvailable);
+                _stopHotkeyAvailable,
+                _pauseReason,
+                _scopedAutomation);
+        }
+    }
+
+    internal bool EnsureScopedAutomationLease(
+        int maximumActions,
+        int maximumSeconds,
+        int minimumRemainingSeconds = 20)
+    {
+        lock (_synchronization)
+        {
+            ExpireIfNeeded();
+
+            if (!_stopHotkeyAvailable)
+            {
+                PauseInternal(ComputerControlPauseReasons.HotkeyUnavailable);
+                return false;
+            }
+
+            if (_pauseReason is
+                ComputerControlPauseReasons.ManualStop or
+                ComputerControlPauseReasons.HotkeyUnavailable)
+            {
+                return false;
+            }
+
+            var now = DateTimeOffset.UtcNow;
+            var shouldRenew =
+                _paused ||
+                !_scopedAutomation ||
+                !_expiresAt.HasValue ||
+                _remainingActions <= 1 ||
+                (_expiresAt.Value - now).TotalSeconds <=
+                    Math.Max(5, minimumRemainingSeconds);
+
+            if (!shouldRenew)
+                return true;
+
+            var actions = Math.Clamp(maximumActions, 1, 16);
+            var seconds = Math.Clamp(maximumSeconds, 15, 300);
+
+            _paused = false;
+            _pauseReason = ComputerControlPauseReasons.None;
+            _scopedAutomation = true;
+            _expiresAt = now + TimeSpan.FromSeconds(seconds);
+            _remainingActions = actions;
+            return true;
         }
     }
 
@@ -131,7 +197,7 @@ public sealed class ComputerControlGate
                 if (_remainingActions <= 0
                     || DateTimeOffset.UtcNow >= _expiresAt!.Value)
                 {
-                    PauseInternal();
+                    PauseInternal(ComputerControlPauseReasons.LeaseExpired);
                 }
             }
         }
@@ -143,13 +209,15 @@ public sealed class ComputerControlGate
             (_remainingActions <= 0 || !_expiresAt.HasValue
                 || DateTimeOffset.UtcNow >= _expiresAt.Value))
         {
-            PauseInternal();
+            PauseInternal(ComputerControlPauseReasons.LeaseExpired);
         }
     }
 
-    private void PauseInternal()
+    private void PauseInternal(
+        string reason)
     {
         _paused = true;
+        _pauseReason = reason;
         _expiresAt = null;
         _remainingActions = 0;
     }
@@ -159,4 +227,6 @@ public sealed record ComputerControlSessionStatus(
     bool Paused,
     DateTimeOffset? ExpiresAt,
     int RemainingActions,
-    bool StopHotkeyAvailable = false);
+    bool StopHotkeyAvailable = false,
+    string PauseReason = ComputerControlPauseReasons.None,
+    bool ScopedAutomation = false);

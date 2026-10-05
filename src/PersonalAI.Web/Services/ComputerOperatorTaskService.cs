@@ -831,6 +831,18 @@ public sealed class ComputerOperatorTaskService(
                             ComputerOperatorActionState.Replan,
                             "Loop guard yêu cầu đổi chiến lược.");
 
+                        cycleTrace.RecoveryCode =
+                            "strategy-repeated";
+                        cycleTrace.RecoveryDetail =
+                            loopAssessment.Detail;
+                        cycleTrace.Result =
+                            "replan";
+                        cycleTrace.Next =
+                            "change-strategy";
+                        EmitCycleForensicSummary(
+                            progress,
+                            cycleTrace);
+
                         await Task.Delay(250, linked.Token);
                         continue;
                     }
@@ -870,6 +882,19 @@ public sealed class ComputerOperatorTaskService(
                     taskTelemetry.Complete(
                         success: true,
                         route: "verified");
+
+                    cycleTrace.Result =
+                        "complete";
+                    cycleTrace.Next =
+                        "stop-success";
+                    cycleTrace.Verification =
+                        "Planner xác nhận mục tiêu đã hoàn thành.";
+                    cycleTrace.VerificationConfidence =
+                        decision.Confidence;
+                    EmitCycleForensicSummary(
+                        progress,
+                        cycleTrace);
+
                     return Finish(
                         true,
                         steps.Count == 0
@@ -898,6 +923,18 @@ public sealed class ComputerOperatorTaskService(
                             ComputerOperatorActionState.Replan,
                             "Blocked tạm thời; cần quan sát và thử chiến lược khác.");
 
+                        cycleTrace.RecoveryCode =
+                            "blocked-candidate";
+                        cycleTrace.RecoveryDetail =
+                            decision.Reason;
+                        cycleTrace.Result =
+                            "replan";
+                        cycleTrace.Next =
+                            "observe-alternate-strategy";
+                        EmitCycleForensicSummary(
+                            progress,
+                            cycleTrace);
+
                         await Task.Delay(350, linked.Token);
                         continue;
                     }
@@ -921,6 +958,19 @@ public sealed class ComputerOperatorTaskService(
                     taskTelemetry.Complete(
                         success: false,
                         route: "blocked");
+
+                    cycleTrace.RecoveryCode =
+                        "blocked";
+                    cycleTrace.RecoveryDetail =
+                        decision.Reason;
+                    cycleTrace.Result =
+                        "blocked-final";
+                    cycleTrace.Next =
+                        "stop";
+                    EmitCycleForensicSummary(
+                        progress,
+                        cycleTrace);
+
                     return Finish(
                         false,
                         $"Vision dừng an toàn sau nhiều lần thử lại: {decision.Reason}");
@@ -941,6 +991,22 @@ public sealed class ComputerOperatorTaskService(
                     _ = actionState.MoveTo(
                         ComputerOperatorActionState.Replan,
                         "Chờ UI ổn định rồi quan sát lại.");
+
+                    cycleTrace.RecoveryCode =
+                        decision.Reason.Contains(
+                            "cooldown",
+                            StringComparison.OrdinalIgnoreCase)
+                            ? "provider-cooldown"
+                            : "waiting";
+                    cycleTrace.RecoveryDetail =
+                        decision.Reason;
+                    cycleTrace.Result =
+                        "wait";
+                    cycleTrace.Next =
+                        "observe";
+                    EmitCycleForensicSummary(
+                        progress,
+                        cycleTrace);
 
                     await Task.Delay(900, linked.Token);
                     continue;
@@ -1605,7 +1671,7 @@ public sealed class ComputerOperatorTaskService(
                             "Failure policy yêu cầu chờ và quan sát lại.");
 
                         cycleTrace.RecoveryCode =
-                            failurePolicy.Category;
+                            failurePolicy.Category.ToString();
                         cycleTrace.RecoveryDetail =
                             failurePolicy.Reason;
                         cycleTrace.Result =

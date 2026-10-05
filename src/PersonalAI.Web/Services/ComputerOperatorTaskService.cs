@@ -1863,6 +1863,7 @@ public sealed class ComputerOperatorTaskService(
                         decision.Action);
 
                 DesktopVisionVerification result;
+                var verifierStopwatch = Stopwatch.StartNew();
                 try
                 {
                     result = await vision.VerifyAsync(
@@ -1871,13 +1872,23 @@ public sealed class ComputerOperatorTaskService(
                         frameDifference,
                         cancellationToken);
 
+                    verifierStopwatch.Stop();
                     geminiVerifyTelemetry.Complete(
                         result.Satisfied,
                         "gemini");
+
+                    progress.AddDiagnostic(
+                        "provider",
+                        $"provider=Gemini; purpose=verify; latencyMs={verifierStopwatch.ElapsedMilliseconds}; satisfied={result.Satisfied}; confidence={result.Confidence:0.000}; route={visionFrame.Source}.");
                 }
                 catch (HttpRequestException exception)
                     when (IsTransientVisionFailure(exception))
                 {
+                    verifierStopwatch.Stop();
+                    progress.AddDiagnostic(
+                        "provider",
+                        $"provider=Gemini; purpose=verify; latencyMs={verifierStopwatch.ElapsedMilliseconds}; result=transient-error; http={(int?)exception.StatusCode ?? 0}; replaySideEffect=false.");
+
                     progress.Add(
                         "vision-transient",
                         $"Gemini Vision tạm thời không khả dụng ({(int?)exception.StatusCode ?? 0}). Chờ ngắn rồi thử xác minh lại một lần; không replay action.",

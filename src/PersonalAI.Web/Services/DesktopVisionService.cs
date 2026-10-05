@@ -742,8 +742,7 @@ Các field không dùng để chuỗi rỗng hoặc [].
             throw new InvalidOperationException(
                 "Desktop Vision không trả kết quả.");
 
-        var decision = ParseDesktopOperatorDecision(
-            ExtractJsonObject(text));
+        var decision = ParseDesktopOperatorDecisionOrWait(text);
 
         if (decision.Action.Equals(
                 "type-text",
@@ -1440,6 +1439,48 @@ Các field không dùng để chuỗi rỗng hoặc [].
 
         number = 0;
         return false;
+    }
+
+    private static DesktopOperatorDecision ParseDesktopOperatorDecisionOrWait(
+        string rawText)
+    {
+        try
+        {
+            return ParseDesktopOperatorDecision(
+                ExtractJsonObject(rawText));
+        }
+        catch (JsonException exception)
+        {
+            return CreateSafeWaitDecision(
+                $"Gemini trả JSON chưa hoàn chỉnh hoặc sai cấu trúc (dòng {exception.LineNumber}, vị trí {exception.BytePositionInLine}). Không thực thi action từ payload lỗi; sẽ quan sát lại trạng thái hiện tại.");
+        }
+        catch (InvalidOperationException exception)
+        {
+            return CreateSafeWaitDecision(
+                $"Gemini chưa trả được JSON quyết định hợp lệ: {exception.Message} Không thực thi action; sẽ quan sát lại trạng thái hiện tại.");
+        }
+    }
+
+    private static DesktopOperatorDecision CreateSafeWaitDecision(
+        string reason)
+    {
+        var safeJson = JsonSerializer.Serialize(
+            new
+            {
+                state = "Kết quả suy luận chưa đủ tin cậy vì payload quyết định không hợp lệ.",
+                plan = "Quan sát lại trạng thái desktop hiện tại và yêu cầu quyết định mới trước khi thực thi bất kỳ side effect nào.",
+                currentSubgoal = string.Empty,
+                goalProgress = 0.0,
+                verifiedMilestones = Array.Empty<string>(),
+                sceneElements = Array.Empty<object>(),
+                targetElementId = string.Empty,
+                action = "wait",
+                expectedEffect = string.Empty,
+                confidence = 0.0,
+                reason
+            });
+
+        return ParseDesktopOperatorDecision(safeJson);
     }
 
     private static DesktopOperatorDecision ParseDesktopOperatorDecision(

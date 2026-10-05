@@ -198,9 +198,9 @@ public static class ComputerOperatorAdaptiveWaitPolicy
             "double-click-left" =>
                 new(
                     TimeSpan.FromMilliseconds(500),
-                    TimeSpan.FromSeconds(8),
+                    TimeSpan.FromSeconds(20),
                     TimeSpan.FromSeconds(120),
-                    0.65),
+                    0.70),
 
             "focus-window" or
             "restore" or
@@ -276,9 +276,9 @@ public static class ComputerOperatorAdaptiveWaitPolicy
         {
             return new(
                 AdaptiveWaitStatuses.Progressing,
-                0.78,
-                $"Frame thay đổi {difference!.ChangedRatio * 100:0.00}%; coi là progress heartbeat.",
-                MeaningfulProgress: true);
+                0.60,
+                $"Frame thay đổi {difference!.ChangedRatio * 100:0.00}%; ghi nhận thay đổi nhưng chưa đủ chắc để gia hạn stall timer.",
+                MeaningfulProgress: false);
         }
 
         if (mediumVisualProgress)

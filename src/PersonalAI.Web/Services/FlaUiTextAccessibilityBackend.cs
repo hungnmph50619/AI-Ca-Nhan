@@ -26,6 +26,8 @@ public sealed record FlaUiAutomationResponse(
     string TargetToken,
     string? Value,
     string Detail,
+    int CaptureWidth = 0,
+    int CaptureHeight = 0,
     string EventKind = "",
     string EventWindowId = "",
     string StructuredJson = "",

@@ -3163,7 +3163,20 @@ jobs:
           grep -Fq '"id": "pause-resume-stop"' tests/computer-use/v3.4.9-acceptance-scenarios.json
           grep -Fq '"id": "loop-recovery"' tests/computer-use/v3.4.9-acceptance-scenarios.json
           grep -Fq '"id": "multi-step-open-and-type"' tests/computer-use/v3.4.9-acceptance-scenarios.json
-          grep -Fq 'totalCount -lt 127' .github/workflows/desktop-control.yml
+          grep -Fq 'totalCount -lt 131' .github/workflows/desktop-control.yml
+          # v4.0.25 — Universal Reliable Operator
+          grep -Fq 'IUniversalReliableOperatorCoordinator' src/PersonalAI.Web/Services/UniversalReliableOperatorCoordinator.cs
+          grep -Fq 'EvaluateLocalVerification' src/PersonalAI.Web/Services/UniversalReliableOperatorCoordinator.cs
+          grep -Fq 'EvaluateSemanticVerification' src/PersonalAI.Web/Services/UniversalReliableOperatorCoordinator.cs
+          grep -Fq 'semantic-fallback' src/PersonalAI.Web/Services/UniversalReliableOperatorCoordinator.cs
+          grep -Fq 'IUniversalReliableOperatorCoordinator reliableOperator' src/PersonalAI.Web/Services/ComputerOperatorTaskService.cs
+          grep -Fq 'Evidence Fusion local' src/PersonalAI.Web/Services/ComputerOperatorTaskService.cs
+          grep -Fq 'Universal failure policy' src/PersonalAI.Web/Services/ComputerOperatorTaskService.cs
+          grep -Fq '/api/computer/operator-runtime' src/PersonalAI.Web/Services/ComputerUseEndpoints.cs
+          grep -Fq 'CheckReliableOperatorRuntimeReadiness' src/PersonalAI.Web/Services/ComputerOperatorAcceptanceService.cs
+          grep -Fq 'CheckReliableOperatorRuntimeNotReady' src/PersonalAI.Web/Services/ComputerOperatorAcceptanceService.cs
+          grep -Fq 'CheckReliableOperatorAcceptsDeterministicWindowVerification' src/PersonalAI.Web/Services/ComputerOperatorAcceptanceService.cs
+          grep -Fq 'CheckReliableOperatorRequiresSemanticForStrongLocal' src/PersonalAI.Web/Services/ComputerOperatorAcceptanceService.cs
           # v4.0.24 — Telemetry & Performance Profiling
           grep -Fq 'ActivitySource' src/PersonalAI.Web/Services/ComputerOperatorTelemetry.cs
           grep -Fq 'Meter.CreateHistogram' src/PersonalAI.Web/Services/ComputerOperatorTelemetry.cs

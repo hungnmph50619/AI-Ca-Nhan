@@ -362,6 +362,28 @@ public sealed class DesktopLocalActionPlanner
                 requestedTarget,
                 preferredCapabilities);
 
+        if ((!resolution.Resolved ||
+             resolution.Node is null) &&
+            requestedCapability.Equals(
+                "Invoke",
+                StringComparison.OrdinalIgnoreCase))
+        {
+            resolution =
+                StructuredResolver.ResolveInteractiveTarget(
+                    graph,
+                    requestedTarget,
+                    new HashSet<string>(
+                        ["LegacyIAccessible"],
+                        StringComparer.OrdinalIgnoreCase));
+
+            if (resolution.Resolved &&
+                resolution.Node is not null)
+            {
+                requestedCapability = "LegacyIAccessible";
+                requestedAction = "structured-legacy-default";
+            }
+        }
+
         if (!resolution.Resolved ||
             resolution.Node is null)
         {

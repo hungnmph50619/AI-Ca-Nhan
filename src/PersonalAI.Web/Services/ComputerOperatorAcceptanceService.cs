@@ -764,11 +764,10 @@ public sealed class ComputerOperatorAcceptanceService
         Require(
             monitorCandidates.SequenceEqual(
                 [
-                    DesktopCaptureBackends.WindowsGraphicsCapture,
                     DesktopCaptureBackends.DxgiDesktopDuplication,
                     DesktopCaptureBackends.CopyFromScreen
                 ]),
-            "Capture router không giữ đúng thứ tự ưu tiên backend cho monitor.");
+            "Capture router không giữ đúng thứ tự ưu tiên backend cho monitor khi WGC monitor chưa được kích hoạt.");
     }
 
     private static void CheckCaptureBackendRouterAvailableFallback()

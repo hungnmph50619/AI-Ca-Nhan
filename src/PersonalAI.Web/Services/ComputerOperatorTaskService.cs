@@ -36,6 +36,7 @@ public sealed class ComputerOperatorTaskService(
     IDesktopLocalFastObserver fastObserver,
     IDesktopTemporalSceneService temporalScenes,
     IComputerOperatorActionExecutor actionExecutor,
+    IGenericTextInteractionEngine textInteraction,
     ILogger<ComputerOperatorTaskService> logger)
     : IComputerOperatorTaskService
 {
@@ -637,22 +638,36 @@ public sealed class ComputerOperatorTaskService(
 
                 DesktopScreenshotFrame? verificationBaseline = null;
                 DesktopFastObserverSample? fastObserverBaseline = null;
-                try
+                TextInteractionResult? textInteractionResult = null;
+
+                if (!decision.Action.Equals(
+                        "type-text",
+                        StringComparison.OrdinalIgnoreCase))
                 {
-                    verificationBaseline = await CapturePostActionFrameAsync(linked.Token);
-                    fastObserverBaseline = fastObserver.CaptureSample(verificationBaseline);
-                    progress.Add(
-                        "frame-baseline",
-                        $"Đã chụp baseline trước hành động {verificationBaseline.Width}x{verificationBaseline.Height}; scope={verificationBaseline.CaptureScope}.",
-                        observation: true);
+                    try
+                    {
+                        verificationBaseline = await CapturePostActionFrameAsync(linked.Token);
+                        fastObserverBaseline = fastObserver.CaptureSample(verificationBaseline);
+                        progress.Add(
+                            "frame-baseline",
+                            $"Đã chụp baseline trước hành động {verificationBaseline.Width}x{verificationBaseline.Height}; scope={verificationBaseline.CaptureScope}.",
+                            observation: true);
+                    }
+                    catch (Exception exception) when (
+                        exception is ToolExecutionInputException or
+                        InvalidOperationException)
+                    {
+                        logger.LogDebug(
+                            exception,
+                            "Không chụp được baseline frame difference; tiếp tục xác minh bằng ảnh hậu hành động.");
+                    }
                 }
-                catch (Exception exception) when (
-                    exception is ToolExecutionInputException or
-                    InvalidOperationException)
+                else
                 {
-                    logger.LogDebug(
-                        exception,
-                        "Không chụp được baseline frame difference; tiếp tục xác minh bằng ảnh hậu hành động.");
+                    progress.Add(
+                        "text-engine",
+                        "Type-text dùng Generic Text Interaction Engine; bỏ baseline Vision để ưu tiên local write/readback.",
+                        "local");
                 }
 
                 ComputerActionResponse action;
@@ -668,7 +683,38 @@ public sealed class ComputerOperatorTaskService(
                         "execute");
 
                     await execution.WaitIfPausedAsync(linked.Token);
-                    action = actionExecutor.Execute(decision, frame);
+
+                    if (decision.Action.Equals(
+                            "type-text",
+                            StringComparison.OrdinalIgnoreCase))
+                    {
+                        var activeForText = computer.GetActiveWindow()
+                            ?? throw new ToolExecutionInputException(
+                                "Không xác định được foreground window cho Text Engine.");
+
+                        textInteractionResult = textInteraction.Execute(
+                            new TextInteractionRequest(
+                                activeForText.WindowId,
+                                RequireValue(decision.Text, "text"),
+                                TextInteractionWriteModes.ReplaceAll));
+
+                        action = new ComputerActionResponse(
+                            ComputerUseCapabilities.TypeText,
+                            textInteractionResult.Applied || textInteractionResult.Verified,
+                            textInteractionResult.Detail);
+
+                        progress.Add(
+                            "text-engine",
+                            $"Text Engine: strategy={textInteractionResult.Strategy}; verified={textInteractionResult.Verified}; repair={textInteractionResult.RepairAttempted}; rollback={textInteractionResult.RolledBack}.",
+                            textInteractionResult.Verified ? "verified" : "fallback",
+                            textInteractionResult.Verified ? 1.0 : null);
+                    }
+                    else
+                    {
+                        action = actionExecutor.Execute(
+                            decision,
+                            frame);
+                    }
                 }
                 catch (ToolExecutionInputException exception)
                 {
@@ -847,45 +893,75 @@ public sealed class ComputerOperatorTaskService(
                     "verify");
 
                 ActionVerificationResult verification;
-                try
-                {
-                    verification = await VerifyAppliedActionAsync(
-                        decision,
-                        frame,
-                        verificationBaseline,
-                        fastObserverBaseline,
-                        linked.Token);
-                }
-                finally
+                var authoritativeLocalText =
+                    textInteractionResult is
+                    {
+                        Verified: true,
+                        ActualText: not null
+                    };
+
+                if (authoritativeLocalText)
                 {
                     verificationBaseline?.Clear();
+                    verification = new(
+                        true,
+                        1.0,
+                        $"Local Text Verifier: {textInteractionResult!.Detail}");
+
+                    progress.Add(
+                        "verification-route",
+                        "Text verification hoàn tất cục bộ; không gọi screenshot/Gemini.",
+                        "local",
+                        1.0);
+
+                    progress.Add(
+                        "confidence-verify",
+                        "Local exact text readback là bằng chứng xác định; bỏ composite Vision confidence.",
+                        "verified",
+                        1.0);
                 }
-
-                var verificationAssessment =
-                    ConfidenceEngine.AssessVerification(
-                        decision,
-                        observation: null,
-                        verification.Confidence,
-                        verification.Detail.StartsWith(
-                            "Gemini Vision",
-                            StringComparison.OrdinalIgnoreCase));
-
-                progress.Add(
-                    "confidence-verify",
-                    $"Verification confidence: {verificationAssessment.Reason}",
-                    verificationAssessment.Decision.ToString().ToLowerInvariant(),
-                    verificationAssessment.OverallConfidence);
-
-                if (verification.Verified &&
-                    verificationAssessment.OverallConfidence < MinimumConfidence)
+                else
                 {
-                    verification = verification with
+                    try
                     {
-                        Verified = false,
-                        Confidence = verificationAssessment.OverallConfidence,
-                        Detail =
-                            $"Composite confidence chưa đủ để chấp nhận verification. {verificationAssessment.Reason}"
-                    };
+                        verification = await VerifyAppliedActionAsync(
+                            decision,
+                            frame,
+                            verificationBaseline,
+                            fastObserverBaseline,
+                            linked.Token);
+                    }
+                    finally
+                    {
+                        verificationBaseline?.Clear();
+                    }
+
+                    var verificationAssessment =
+                        ConfidenceEngine.AssessVerification(
+                            decision,
+                            observation: null,
+                            verification.Confidence,
+                            verification.Detail.StartsWith(
+                                "Gemini Vision",
+                                StringComparison.OrdinalIgnoreCase));
+
+                    progress.Add(
+                        "confidence-verify",
+                        $"Verification confidence: {verificationAssessment.Reason}",
+                        verificationAssessment.Decision.ToString().ToLowerInvariant(),
+                        verificationAssessment.OverallConfidence);
+
+                    if (verification.Verified &&
+                        verificationAssessment.OverallConfidence < MinimumConfidence)
+                    {
+                        verification = verification with
+                        {
+                            Verified = false,
+                            Confidence = verificationAssessment.OverallConfidence,
+                            Detail =
+                                $"Composite confidence chưa đủ để chấp nhận verification. {verificationAssessment.Reason}"
+                        };
+                    }
                 }
 
                 if (!verification.Verified)

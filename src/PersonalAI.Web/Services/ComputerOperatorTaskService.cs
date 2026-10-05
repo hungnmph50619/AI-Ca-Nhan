@@ -2258,6 +2258,7 @@ public sealed class ComputerOperatorTaskService(
                 }
             },
             policy,
+            verificationCaptureContext?.WindowId,
             cancellationToken);
 
         adaptiveWaitTelemetry.Complete(

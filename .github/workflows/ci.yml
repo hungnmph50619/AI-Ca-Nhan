@@ -3163,7 +3163,17 @@ jobs:
           grep -Fq '"id": "pause-resume-stop"' tests/computer-use/v3.4.9-acceptance-scenarios.json
           grep -Fq '"id": "loop-recovery"' tests/computer-use/v3.4.9-acceptance-scenarios.json
           grep -Fq '"id": "multi-step-open-and-type"' tests/computer-use/v3.4.9-acceptance-scenarios.json
-          grep -Fq 'totalCount -lt 102' .github/workflows/desktop-control.yml
+          grep -Fq 'totalCount -lt 105' .github/workflows/desktop-control.yml
+          # v4.0.17 — Capability Discovery Router
+          grep -Fq 'IUniversalCapabilityDiscoveryService' src/PersonalAI.Web/Services/UniversalCapabilityDiscoveryService.cs
+          grep -Fq 'desktop.flaui-uia3' src/PersonalAI.Web/Services/UniversalCapabilityDiscoveryService.cs
+          grep -Fq 'browser.playwright-dom' src/PersonalAI.Web/Services/UniversalCapabilityDiscoveryService.cs
+          grep -Fq 'runtimeCapabilities' src/PersonalAI.Web/Services/UniversalTaskRouter.cs
+          grep -Fq 'ConfidenceBonusFor' src/PersonalAI.Web/Services/UniversalTaskRouter.cs
+          grep -Fq '/api/universal-router/capabilities' src/PersonalAI.Web/Services/UniversalTaskRouterEndpoints.cs
+          grep -Fq 'CheckUniversalRouterUsesPlaywrightCapability' src/PersonalAI.Web/Services/ComputerOperatorAcceptanceService.cs
+          grep -Fq 'CheckUniversalRouterUsesFlaUiCapability' src/PersonalAI.Web/Services/ComputerOperatorAcceptanceService.cs
+          grep -Fq 'CheckUniversalRouterIgnoresUnavailableCapability' src/PersonalAI.Web/Services/ComputerOperatorAcceptanceService.cs
           # v4.0.16 — Playwright Verification Adapter
           grep -Fq 'Microsoft.Playwright' src/PersonalAI.Web/PersonalAI.Web.csproj
           grep -Fq 'IPlaywrightBrowserAdapter' src/PersonalAI.Web/Services/PlaywrightBrowserAdapter.cs

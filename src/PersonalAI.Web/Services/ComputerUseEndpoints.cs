@@ -39,6 +39,7 @@ public static class ComputerUseEndpoints
         services.AddSingleton<IMicrosoftAgentFrameworkAdapter, MicrosoftAgentFrameworkAdapter>();
         services.AddSingleton<IWindowsGraphicsCaptureClient, WindowsGraphicsCaptureClient>();
         services.AddSingleton<IDxgiDesktopDuplicationClient, DxgiDesktopDuplicationClient>();
+        services.AddSingleton<IDesktopCaptureHealthTracker, DesktopCaptureHealthTracker>();
         services.AddSingleton<IDesktopCaptureBackendRouter, DesktopCaptureBackendRouter>();
         services.AddSingleton<IDesktopScreenshotService, WindowsDesktopScreenshotService>();
         services.AddSingleton<IDesktopFrameDifferenceService, DesktopFrameDifferenceService>();
@@ -109,6 +110,55 @@ public static class ComputerUseEndpoints
                     chiTiet = item.Detail
                 }),
                 uuTienTheoPhamVi = snapshot.PreferredBackendByScope
+            });
+        });
+
+        app.MapGet("/api/computer/capture-health", (
+            HttpContext context,
+            IDesktopCaptureHealthTracker captureHealth) =>
+        {
+            if (!IsLocalRequest(context))
+                return Results.StatusCode(StatusCodes.Status403Forbidden);
+
+            var snapshot =
+                captureHealth.GetSnapshot();
+
+            return Results.Ok(new
+            {
+                phienBan = snapshot.Version,
+                taoLucUtc = snapshot.GeneratedAtUtc,
+                nguon = snapshot.Entries.Select(item => new
+                {
+                    phamVi = item.Scope,
+                    mucTieu = item.Target,
+                    backend = item.Backend,
+                    thanhCong = item.SuccessCount,
+                    thatBai = item.FailureCount,
+                    fallback = item.FallbackCount,
+                    lanCuoiMs = Math.Round(item.LastLatencyMs, 1),
+                    trungBinhMs = Math.Round(item.AverageLatencyMs, 1),
+                    frameLienTiepKhongDoi = item.ConsecutiveUnchangedFrames,
+                    nghiNgoFrameCu = item.StaleSuspected,
+                    capNhatLucUtc = item.LastUpdatedUtc,
+                    lyDoFallbackGanNhat = item.LastFallbackReason
+                })
+            });
+        });
+
+        app.MapPost("/api/computer/capture-health/reset", (
+            HttpContext context,
+            IDesktopCaptureHealthTracker captureHealth) =>
+        {
+            if (!IsLocalRequest(context))
+                return Results.StatusCode(StatusCodes.Status403Forbidden);
+
+            captureHealth.Reset();
+
+            return Results.Ok(new
+            {
+                daXoa = true,
+                message =
+                    "Đã xóa capture health telemetry trong bộ nhớ."
             });
         });
 

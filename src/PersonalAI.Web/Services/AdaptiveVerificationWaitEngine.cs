@@ -47,16 +47,33 @@ public interface IAdaptiveVerificationWaitEngine
         Func<CancellationToken, Task<AdaptiveProgressSample>> sampleProvider,
         AdaptiveWaitPolicy? policy = null,
         CancellationToken cancellationToken = default);
+
+    Task<AdaptiveWaitResult> WaitAsync(
+        Func<CancellationToken, Task<AdaptiveProgressSample>> sampleProvider,
+        AdaptiveWaitPolicy? policy,
+        string? targetWindowId,
+        CancellationToken cancellationToken);
 }
 
 public sealed class AdaptiveVerificationWaitEngine(
     IAdaptiveObservationWakeSource? wakeSource = null)
     : IAdaptiveVerificationWaitEngine
 {
-    public async Task<AdaptiveWaitResult> WaitAsync(
+    public Task<AdaptiveWaitResult> WaitAsync(
         Func<CancellationToken, Task<AdaptiveProgressSample>> sampleProvider,
         AdaptiveWaitPolicy? policy = null,
-        CancellationToken cancellationToken = default)
+        CancellationToken cancellationToken = default) =>
+        WaitAsync(
+            sampleProvider,
+            policy,
+            targetWindowId: null,
+            cancellationToken);
+
+    public async Task<AdaptiveWaitResult> WaitAsync(
+        Func<CancellationToken, Task<AdaptiveProgressSample>> sampleProvider,
+        AdaptiveWaitPolicy? policy,
+        string? targetWindowId,
+        CancellationToken cancellationToken)
     {
         ArgumentNullException.ThrowIfNull(sampleProvider);
 
@@ -168,7 +185,8 @@ public sealed class AdaptiveVerificationWaitEngine(
 
             if (wakeSource is not null)
             {
-                var wake = await wakeSource.WaitAsync(
+                var wake = await wakeSource.WaitForWindowAsync(
+                    targetWindowId,
                     resolved.PollInterval,
                     cancellationToken);
 

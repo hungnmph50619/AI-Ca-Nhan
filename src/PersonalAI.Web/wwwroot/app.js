@@ -6,6 +6,8 @@ const MAX_STORED_MESSAGES = 40;
 const MAX_TITLE_LENGTH = 42;
 const CUSTOM_MODEL_VALUE = "__custom__";
 const USE_TOOLS_STORAGE_KEY = "personal-ai-v0.8.5-use-tools";
+const MAX_CHAT_ATTACHMENTS = 4;
+const MAX_CHAT_ATTACHMENT_BYTES = 10 * 1024 * 1024;
 const DEFAULT_MODELS = {
   Gemini: "gemini-3.1-flash-lite",
   OpenAI: "gpt-5.6-luna"
@@ -24,6 +26,7 @@ const state = {
   knowledgeBusy: false,
   knowledgeSearchBusy: false,
   knowledgeDocuments: [],
+  pendingAttachments: [],
   configured: false,
   provider: "",
   model: ""
@@ -33,6 +36,9 @@ const elements = {
   form: document.querySelector("#chatForm"),
   input: document.querySelector("#messageInput"),
   send: document.querySelector("#sendButton"),
+  attachmentButton: document.querySelector("#attachmentButton"),
+  attachmentInput: document.querySelector("#chatAttachmentInput"),
+  attachmentPreview: document.querySelector("#chatAttachmentPreview"),
   messages: document.querySelector("#messages"),
   welcome: document.querySelector("#welcome"),
   statusDot: document.querySelector("#statusDot"),
@@ -96,6 +102,39 @@ async function initialize() {
 
 function bindEvents() {
   elements.form.addEventListener("submit", sendCurrentMessage);
+  elements.attachmentButton?.addEventListener("click", () => {
+    if (!state.busy) elements.attachmentInput?.click();
+  });
+  elements.attachmentInput?.addEventListener("change", () => {
+    const files = Array.from(elements.attachmentInput.files || []);
+    if (files.length > 0) queueChatAttachments(files);
+    elements.attachmentInput.value = "";
+  });
+  ["dragenter", "dragover"].forEach(eventName => {
+    elements.form.addEventListener(eventName, event => {
+      if (!event.dataTransfer?.types?.includes("Files")) return;
+      event.preventDefault();
+      if (!state.busy) elements.form.classList.add("dragging");
+    });
+  });
+  ["dragleave", "drop"].forEach(eventName => {
+    elements.form.addEventListener(eventName, event => {
+      if (eventName === "drop") event.preventDefault();
+      elements.form.classList.remove("dragging");
+    });
+  });
+  elements.form.addEventListener("drop", event => {
+    const files = Array.from(event.dataTransfer?.files || []);
+    if (files.length > 0 && !state.busy) queueChatAttachments(files);
+  });
+  elements.input.addEventListener("paste", event => {
+    const files = Array.from(event.clipboardData?.files || [])
+      .filter(file => file.type.startsWith("image/"));
+    if (files.length > 0 && !state.busy) {
+      event.preventDefault();
+      queueChatAttachments(files);
+    }
+  });
   elements.input.addEventListener("input", resizeInput);
   elements.input.addEventListener("keydown", event => {
     if (event.key === "Enter" && !event.shiftKey) {

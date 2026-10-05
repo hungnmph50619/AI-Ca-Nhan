@@ -604,7 +604,7 @@ public sealed class KnowledgeDocumentExtractor
     }
 
     private static string GetParagraphText(Paragraph paragraph) =>
-        string.Concat(paragraph.Descendants<Text>().Select(text => text.Text)).Trim();
+        string.Concat(paragraph.Descendants<DocumentFormat.OpenXml.Wordprocessing.Text>().Select(text => text.Text)).Trim();
 
     private static IEnumerable<string> SplitParagraphs(string text)
     {

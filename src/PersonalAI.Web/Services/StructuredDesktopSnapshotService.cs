@@ -20,7 +20,9 @@ public sealed record StructuredDesktopNode(
     IReadOnlyList<string> Patterns,
     string ToggleState = "",
     string ExpandCollapseState = "",
-    bool? IsSelected = null);
+    bool? IsSelected = null,
+    string? Value = null,
+    bool IsSensitive = false);
 
 public sealed record StructuredDesktopSnapshot(
     string WindowId,
@@ -117,7 +119,9 @@ public sealed class StructuredDesktopSnapshotService(
                         node.Patterns ?? Array.Empty<string>(),
                         node.ToggleState ?? string.Empty,
                         node.ExpandCollapseState ?? string.Empty,
-                        node.IsSelected))
+                        node.IsSelected,
+                        node.Value,
+                        node.IsSensitive))
                 .ToArray();
 
         return new(
@@ -165,5 +169,7 @@ public sealed class StructuredDesktopSnapshotService(
         string[]? Patterns,
         string? ToggleState = null,
         string? ExpandCollapseState = null,
-        bool? IsSelected = null);
+        bool? IsSelected = null,
+        string? Value = null,
+        bool IsSensitive = false);
 }

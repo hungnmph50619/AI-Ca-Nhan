@@ -872,7 +872,6 @@ internal static class Program
                         ));
                 },
                 automation.PropertyLibrary.Element.Name,
-                automation.PropertyLibrary.Element.HasKeyboardFocus,
                 automation.PropertyLibrary.Value.Value);
 
         var structureHandler =

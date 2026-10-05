@@ -20,6 +20,7 @@ public static class ComputerUseEndpoints
         services.AddSingleton<IWin32TextAccessibilityBackend, WindowsTextAccessibilityBackend>();
         services.AddSingleton<IFlaUiAutomationClient, FlaUiAutomationClient>();
         services.AddSingleton<IStructuredDesktopSnapshotService, StructuredDesktopSnapshotService>();
+        services.AddSingleton<IStructuredDesktopVerificationService, StructuredDesktopVerificationService>();
         services.AddSingleton<IFlaUiTextAccessibilityBackend, FlaUiTextAccessibilityBackend>();
         services.AddSingleton<ITextAccessibilityBackend, CompositeTextAccessibilityBackend>();
         services.AddSingleton<ITextClipboardWriter, WindowsTextClipboardWriter>();

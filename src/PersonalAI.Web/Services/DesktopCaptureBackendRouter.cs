@@ -32,15 +32,21 @@ public sealed record DesktopCaptureBackendRouterSnapshot(
 
 public interface IDesktopCaptureBackendRouter
 {
-    IReadOnlyList<string> GetOrderedCandidates(string scope);
+    IReadOnlyList<string> GetOrderedCandidates(
+        string scope,
+        string? target = null);
 
-    string GetPreferredAvailableBackend(string scope);
+    string GetPreferredAvailableBackend(
+        string scope,
+        string? target = null);
 
     DesktopCaptureBackendRouterSnapshot GetSnapshot();
 }
 
 public sealed class DesktopCaptureBackendRouter(
-    IWindowsGraphicsCaptureClient? wgc = null)
+    IWindowsGraphicsCaptureClient? wgc = null,
+    IDxgiDesktopDuplicationClient? dxgi = null,
+    IDesktopCaptureHealthTracker? health = null)
     : IDesktopCaptureBackendRouter
 {
     private IReadOnlyList<DesktopCaptureBackendStatus> Backends =>
@@ -49,16 +55,18 @@ public sealed class DesktopCaptureBackendRouter(
             DesktopCaptureBackends.WindowsGraphicsCapture,
             1,
             Available: wgc?.Available == true,
-            [DesktopCaptureScopes.Window],
+            [DesktopCaptureScopes.Window, DesktopCaptureScopes.Monitor],
             wgc?.Available == true
-                ? "Windows Graphics Capture sẵn sàng cho window capture."
+                ? "Windows Graphics Capture sẵn sàng cho window và monitor capture."
                 : "Windows Graphics Capture chưa khả dụng; router sẽ dùng backend dự phòng."),
         new(
             DesktopCaptureBackends.DxgiDesktopDuplication,
             2,
-            Available: false,
-            [DesktopCaptureScopes.VirtualDesktop, DesktopCaptureScopes.Monitor, DesktopCaptureScopes.Region],
-            "Adapter DXGI Desktop Duplication chưa được kích hoạt trong bước nền tảng router."),
+            Available: dxgi?.Available == true,
+            [DesktopCaptureScopes.VirtualDesktop, DesktopCaptureScopes.Monitor],
+            dxgi?.Available == true
+                ? "DXGI Desktop Duplication sẵn sàng cho virtual desktop và fallback monitor capture."
+                : "DXGI Desktop Duplication chưa khả dụng; router sẽ dùng backend dự phòng."),
         new(
             DesktopCaptureBackends.PrintWindow,
             3,
@@ -78,23 +86,42 @@ public sealed class DesktopCaptureBackendRouter(
             "Backend fallback ổn định hiện tại dựa trên Graphics.CopyFromScreen.")
     ];
 
-    public IReadOnlyList<string> GetOrderedCandidates(string scope)
+    public IReadOnlyList<string> GetOrderedCandidates(
+        string scope,
+        string? target = null)
     {
         var normalized = NormalizeScope(scope);
+        var normalizedTarget =
+            string.IsNullOrWhiteSpace(target)
+                ? "-"
+                : target.Trim();
 
         return Backends
             .Where(item =>
                 item.Scopes.Contains(
                     normalized,
                     StringComparer.OrdinalIgnoreCase))
-            .OrderBy(item => item.Priority)
+            .OrderBy(item =>
+                item.Priority +
+                GetHealthPenalty(
+                    normalized,
+                    normalizedTarget,
+                    item.Name))
+            .ThenBy(item =>
+                item.Priority)
             .Select(item => item.Name)
             .ToArray();
     }
 
-    public string GetPreferredAvailableBackend(string scope)
+    public string GetPreferredAvailableBackend(
+        string scope,
+        string? target = null)
     {
         var normalized = NormalizeScope(scope);
+        var normalizedTarget =
+            string.IsNullOrWhiteSpace(target)
+                ? "-"
+                : target.Trim();
 
         return Backends
             .Where(item =>
@@ -102,7 +129,14 @@ public sealed class DesktopCaptureBackendRouter(
                 item.Scopes.Contains(
                     normalized,
                     StringComparer.OrdinalIgnoreCase))
-            .OrderBy(item => item.Priority)
+            .OrderBy(item =>
+                item.Priority +
+                GetHealthPenalty(
+                    normalized,
+                    normalizedTarget,
+                    item.Name))
+            .ThenBy(item =>
+                item.Priority)
             .Select(item => item.Name)
             .FirstOrDefault()
             ?? throw new InvalidOperationException(
@@ -124,9 +158,19 @@ public sealed class DesktopCaptureBackendRouter(
             Backends,
             scopes.ToDictionary(
                 scope => scope,
-                GetPreferredAvailableBackend,
+                scope => GetPreferredAvailableBackend(
+                    scope),
                 StringComparer.OrdinalIgnoreCase));
     }
+
+    private int GetHealthPenalty(
+        string scope,
+        string target,
+        string backend) =>
+        health?.GetBackendPenalty(
+            scope,
+            target,
+            backend) ?? 0;
 
     private static string NormalizeScope(string scope)
     {

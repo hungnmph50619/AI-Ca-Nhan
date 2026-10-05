@@ -1,3 +1,4 @@
+using System.Diagnostics;
 using System.Drawing;
 using System.Drawing.Imaging;
 using System.Runtime.InteropServices;
@@ -42,18 +43,46 @@ public sealed class WindowsDesktopScreenshotService(
     IComputerDisplayTopologyService displays,
     IComputerWindowVisibilityService visibility,
     IDesktopCaptureBackendRouter captureRouter,
-    IWindowsGraphicsCaptureClient wgc)
+    IWindowsGraphicsCaptureClient wgc,
+    IDxgiDesktopDuplicationClient dxgi,
+    IDesktopCaptureHealthTracker captureHealth)
     : IDesktopScreenshotService
 {
     public DesktopScreenshotFrame CaptureVirtualScreen()
     {
         EnsureAvailable();
 
-        var left = GetSystemMetrics(76);
-        var top = GetSystemMetrics(77);
-        var width = GetSystemMetrics(78);
-        var height = GetSystemMetrics(79);
-        return CaptureRegion(left, top, width, height);
+        var result =
+            CaptureVirtualBitmap();
+
+        using var bitmap =
+            result.Bitmap;
+
+        var signature =
+            ComputeSignature(bitmap);
+
+        captureHealth.RecordSuccess(
+            DesktopCaptureScopes.VirtualDesktop,
+            "virtual-desktop",
+            result.Backend,
+            result.LatencyMs,
+            signature,
+            result.FallbackReason);
+
+        return EncodeFrame(
+            bitmap,
+            result.Left,
+            result.Top,
+            bitmap.Width,
+            bitmap.Height) with
+        {
+            CaptureScope =
+                DesktopCaptureScopes.VirtualDesktop,
+            CaptureBackend =
+                result.Backend,
+            CaptureFallbackReason =
+                result.FallbackReason
+        };
     }
 
     public async Task<DesktopScreenshotFrame> CaptureStableVirtualScreenAsync(
@@ -184,23 +213,26 @@ public sealed class WindowsDesktopScreenshotService(
     private CaptureSample CaptureMonitorSample(
         ComputerMonitorInfo monitor)
     {
-        EnsureCurrentRegionBackend(
-            DesktopCaptureScopes.Monitor);
+        var result = CaptureMonitorBitmap(
+            monitor);
 
-        using var bitmap = CaptureBitmap(
-            monitor.Left,
-            monitor.Top,
-            monitor.Width,
-            monitor.Height);
-        MaskOperatorConsole(
-            bitmap,
-            monitor.Left,
-            monitor.Top);
+        using var bitmap = result.Bitmap;
+        var signature = ComputeSignature(
+            bitmap);
 
-        var signature = ComputeSignature(bitmap);
+        captureHealth.RecordSuccess(
+            DesktopCaptureScopes.Monitor,
+            monitor.DeviceName,
+            result.Backend,
+            result.LatencyMs,
+            signature,
+            result.FallbackReason);
+
         var frame = EncodeMonitorFrame(
             bitmap,
-            monitor);
+            monitor,
+            result.Backend,
+            result.FallbackReason);
 
         return new(
             frame,
@@ -210,31 +242,184 @@ public sealed class WindowsDesktopScreenshotService(
     private DesktopScreenshotFrame CaptureMonitorFrame(
         ComputerMonitorInfo monitor)
     {
-        EnsureCurrentRegionBackend(
-            DesktopCaptureScopes.Monitor);
+        var result = CaptureMonitorBitmap(
+            monitor);
+
+        using var bitmap = result.Bitmap;
+        var signature = ComputeSignature(
+            bitmap);
+
+        captureHealth.RecordSuccess(
+            DesktopCaptureScopes.Monitor,
+            monitor.DeviceName,
+            result.Backend,
+            result.LatencyMs,
+            signature,
+            result.FallbackReason);
+
+        return EncodeMonitorFrame(
+            bitmap,
+            monitor,
+            result.Backend,
+            result.FallbackReason);
+    }
+
+    private MonitorCaptureBitmap CaptureMonitorBitmap(
+        ComputerMonitorInfo monitor)
+    {
+        var stopwatch = Stopwatch.StartNew();
 
         ValidateRegion(
             monitor.Width,
             monitor.Height);
 
-        using var bitmap = CaptureBitmap(
+        string? wgcReason = null;
+        var candidates =
+            captureRouter.GetOrderedCandidates(
+                DesktopCaptureScopes.Monitor,
+                monitor.DeviceName);
+
+        if (candidates.Contains(
+                DesktopCaptureBackends.WindowsGraphicsCapture,
+                StringComparer.OrdinalIgnoreCase) &&
+            wgc.Available)
+        {
+            var captured =
+                wgc.CaptureMonitor(
+                    monitor.DeviceName);
+
+            if (captured.Success &&
+                TryDecodeJpeg(
+                    captured.Jpeg,
+                    out var wgcBitmap) &&
+                wgcBitmap is not null)
+            {
+                if (wgcBitmap.Width == monitor.Width &&
+                    wgcBitmap.Height == monitor.Height)
+                {
+                    MaskOperatorConsole(
+                        wgcBitmap,
+                        monitor.Left,
+                        monitor.Top);
+
+                    stopwatch.Stop();
+
+                    return new(
+                        wgcBitmap,
+                        DesktopCaptureBackends.WindowsGraphicsCapture,
+                        null,
+                        stopwatch.ElapsedMilliseconds);
+                }
+
+                wgcReason =
+                    $"WGC monitor trả geometry {wgcBitmap.Width}x{wgcBitmap.Height}, khác topology {monitor.Width}x{monitor.Height}.";
+
+                wgcBitmap.Dispose();
+            }
+            else
+            {
+                wgcReason =
+                    captured.Detail;
+
+                captureHealth.RecordFailure(
+                    DesktopCaptureScopes.Monitor,
+                    monitor.DeviceName,
+                    DesktopCaptureBackends.WindowsGraphicsCapture,
+                    0,
+                    captured.Detail);
+            }
+        }
+
+        string? dxgiReason = null;
+
+        if (candidates.Contains(
+                DesktopCaptureBackends.DxgiDesktopDuplication,
+                StringComparer.OrdinalIgnoreCase) &&
+            dxgi.Available)
+        {
+            var captured =
+                dxgi.CaptureMonitor(
+                    monitor.DeviceName);
+
+            if (captured.Success &&
+                TryDecodeJpeg(
+                    captured.Jpeg,
+                    out var dxgiBitmap) &&
+                dxgiBitmap is not null)
+            {
+                if (dxgiBitmap.Width == monitor.Width &&
+                    dxgiBitmap.Height == monitor.Height)
+                {
+                    MaskOperatorConsole(
+                        dxgiBitmap,
+                        monitor.Left,
+                        monitor.Top);
+
+                    stopwatch.Stop();
+
+                    return new(
+                        dxgiBitmap,
+                        DesktopCaptureBackends.DxgiDesktopDuplication,
+                        string.IsNullOrWhiteSpace(wgcReason)
+                            ? null
+                            : $"WGC fallback: {wgcReason}",
+                        stopwatch.ElapsedMilliseconds);
+                }
+
+                dxgiReason =
+                    $"DXGI monitor trả geometry {dxgiBitmap.Width}x{dxgiBitmap.Height}, khác topology {monitor.Width}x{monitor.Height}.";
+
+                dxgiBitmap.Dispose();
+            }
+            else
+            {
+                dxgiReason =
+                    captured.Detail;
+
+                captureHealth.RecordFailure(
+                    DesktopCaptureScopes.Monitor,
+                    monitor.DeviceName,
+                    DesktopCaptureBackends.DxgiDesktopDuplication,
+                    0,
+                    captured.Detail);
+            }
+        }
+
+        var bitmap = CaptureBitmap(
             monitor.Left,
             monitor.Top,
             monitor.Width,
             monitor.Height);
+
         MaskOperatorConsole(
             bitmap,
             monitor.Left,
             monitor.Top);
 
-        return EncodeMonitorFrame(
+        var fallbackReasons = new List<string>();
+
+        if (!string.IsNullOrWhiteSpace(wgcReason))
+            fallbackReasons.Add($"WGC: {wgcReason}");
+
+        if (!string.IsNullOrWhiteSpace(dxgiReason))
+            fallbackReasons.Add($"DXGI: {dxgiReason}");
+
+        stopwatch.Stop();
+
+        return new(
             bitmap,
-            monitor);
+            DesktopCaptureBackends.CopyFromScreen,
+            fallbackReasons.Count == 0
+                ? null
+                : string.Join(" ", fallbackReasons),
+            stopwatch.ElapsedMilliseconds);
     }
 
     private static DesktopScreenshotFrame EncodeMonitorFrame(
         Bitmap bitmap,
-        ComputerMonitorInfo monitor)
+        ComputerMonitorInfo monitor,
+        string backend,
+        string? fallbackReason)
     {
         var frame = EncodeFrame(
             bitmap,
@@ -246,13 +431,20 @@ public sealed class WindowsDesktopScreenshotService(
         return frame with
         {
             CaptureScope = "monitor",
-            CaptureBackend = DesktopCaptureBackends.CopyFromScreen,
+            CaptureBackend = backend,
+            CaptureFallbackReason = fallbackReason,
             MonitorDevice = monitor.DeviceName,
             MonitorWasPrimary = monitor.Primary,
             MonitorDpiX = monitor.DpiX,
             MonitorDpiY = monitor.DpiY
         };
     }
+
+    private sealed record MonitorCaptureBitmap(
+        Bitmap Bitmap,
+        string Backend,
+        string? FallbackReason,
+        long LatencyMs);
 
     private ComputerMonitorInfo ResolveMonitor(
         string deviceName)
@@ -412,6 +604,13 @@ public sealed class WindowsDesktopScreenshotService(
 
             wgcReason =
                 captured.Detail;
+
+            captureHealth.RecordFailure(
+                DesktopCaptureScopes.Window,
+                window.WindowId,
+                DesktopCaptureBackends.WindowsGraphicsCapture,
+                0,
+                captured.Detail);
         }
 
         string? printWindowReason = null;
@@ -793,15 +992,232 @@ public sealed class WindowsDesktopScreenshotService(
 
     private CaptureSample CaptureVirtualSample()
     {
-        EnsureCurrentRegionBackend(
-            DesktopCaptureScopes.VirtualDesktop);
+        var result =
+            CaptureVirtualBitmap();
 
-        var left = GetSystemMetrics(76);
-        var top = GetSystemMetrics(77);
-        var width = GetSystemMetrics(78);
-        var height = GetSystemMetrics(79);
-        return CaptureSampleRegion(left, top, width, height);
+        using var bitmap =
+            result.Bitmap;
+
+        var signature =
+            ComputeSignature(bitmap);
+
+        captureHealth.RecordSuccess(
+            DesktopCaptureScopes.VirtualDesktop,
+            "virtual-desktop",
+            result.Backend,
+            result.LatencyMs,
+            signature,
+            result.FallbackReason);
+
+        var frame =
+            EncodeFrame(
+                bitmap,
+                result.Left,
+                result.Top,
+                bitmap.Width,
+                bitmap.Height) with
+            {
+                CaptureScope =
+                    DesktopCaptureScopes.VirtualDesktop,
+                CaptureBackend =
+                    result.Backend,
+                CaptureFallbackReason =
+                    result.FallbackReason
+            };
+
+        return new(
+            frame,
+            signature);
     }
+
+    private VirtualCaptureBitmap CaptureVirtualBitmap()
+    {
+        var stopwatch =
+            Stopwatch.StartNew();
+
+        var left =
+            GetSystemMetrics(76);
+        var top =
+            GetSystemMetrics(77);
+        var width =
+            GetSystemMetrics(78);
+        var height =
+            GetSystemMetrics(79);
+
+        ValidateRegion(
+            width,
+            height);
+
+        var candidates =
+            captureRouter.GetOrderedCandidates(
+                DesktopCaptureScopes.VirtualDesktop,
+                "virtual-desktop");
+
+        string? dxgiReason = null;
+
+        if (candidates.Contains(
+                DesktopCaptureBackends.DxgiDesktopDuplication,
+                StringComparer.OrdinalIgnoreCase) &&
+            dxgi.Available)
+        {
+            var topology =
+                displays.GetTopology();
+
+            if (topology.Monitors.Count > 0)
+            {
+                var composite =
+                    new Bitmap(
+                        width,
+                        height,
+                        PixelFormat.Format24bppRgb);
+
+                try
+                {
+                    using var graphics =
+                        Graphics.FromImage(
+                            composite);
+
+                    graphics.Clear(
+                        Color.Black);
+
+                    var complete = true;
+                    var reasons =
+                        new List<string>();
+
+                    foreach (var monitor in topology.Monitors)
+                    {
+                        var captured =
+                            dxgi.CaptureMonitor(
+                                monitor.DeviceName);
+
+                        if (!captured.Success ||
+                            !TryDecodeJpeg(
+                                captured.Jpeg,
+                                out var monitorBitmap) ||
+                            monitorBitmap is null)
+                        {
+                            complete = false;
+                            reasons.Add(
+                                $"{monitor.DeviceName}: {captured.Detail}");
+                            break;
+                        }
+
+                        using (monitorBitmap)
+                        {
+                            if (monitorBitmap.Width != monitor.Width ||
+                                monitorBitmap.Height != monitor.Height)
+                            {
+                                complete = false;
+                                reasons.Add(
+                                    $"{monitor.DeviceName}: geometry {monitorBitmap.Width}x{monitorBitmap.Height} != {monitor.Width}x{monitor.Height}.");
+                                break;
+                            }
+
+                            var destinationX =
+                                monitor.Left - left;
+                            var destinationY =
+                                monitor.Top - top;
+
+                            if (destinationX < 0 ||
+                                destinationY < 0 ||
+                                destinationX + monitor.Width > width ||
+                                destinationY + monitor.Height > height)
+                            {
+                                complete = false;
+                                reasons.Add(
+                                    $"{monitor.DeviceName}: topology nằm ngoài virtual desktop hiện tại.");
+                                break;
+                            }
+
+                            graphics.DrawImageUnscaled(
+                                monitorBitmap,
+                                destinationX,
+                                destinationY);
+                        }
+                    }
+
+                    if (complete)
+                    {
+                        MaskOperatorConsole(
+                            composite,
+                            left,
+                            top);
+
+                        stopwatch.Stop();
+
+                        return new(
+                            composite,
+                            left,
+                            top,
+                            DesktopCaptureBackends.DxgiDesktopDuplication,
+                            null,
+                            stopwatch.ElapsedMilliseconds);
+                    }
+
+                    dxgiReason =
+                        reasons.Count == 0
+                            ? "DXGI virtual desktop không ghép đủ monitor."
+                            : string.Join(
+                                " ",
+                                reasons);
+                }
+                catch
+                {
+                    composite.Dispose();
+                    throw;
+                }
+
+                composite.Dispose();
+            }
+            else
+            {
+                dxgiReason =
+                    "Không có monitor trong display topology.";
+            }
+        }
+
+        if (!string.IsNullOrWhiteSpace(dxgiReason))
+        {
+            captureHealth.RecordFailure(
+                DesktopCaptureScopes.VirtualDesktop,
+                "virtual-desktop",
+                DesktopCaptureBackends.DxgiDesktopDuplication,
+                stopwatch.ElapsedMilliseconds,
+                dxgiReason);
+        }
+
+        var fallback =
+            CaptureBitmap(
+                left,
+                top,
+                width,
+                height);
+
+        MaskOperatorConsole(
+            fallback,
+            left,
+            top);
+
+        stopwatch.Stop();
+
+        return new(
+            fallback,
+            left,
+            top,
+            DesktopCaptureBackends.CopyFromScreen,
+            string.IsNullOrWhiteSpace(dxgiReason)
+                ? null
+                : $"DXGI fallback: {dxgiReason}",
+            stopwatch.ElapsedMilliseconds);
+    }
+
+    private sealed record VirtualCaptureBitmap(
+        Bitmap Bitmap,
+        int Left,
+        int Top,
+        string Backend,
+        string? FallbackReason,
+        long LatencyMs);
 
     private CaptureSample CaptureSampleRegion(
         int left,

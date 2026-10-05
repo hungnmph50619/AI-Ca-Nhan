@@ -3,7 +3,7 @@ using System.Text.Json;
 
 namespace PersonalAI.Web.Services;
 
-public sealed record WindowsGraphicsCaptureResponse(
+public sealed record DxgiDesktopDuplicationResponse(
     bool Success,
     string Detail,
     byte[] Jpeg,
@@ -11,59 +11,43 @@ public sealed record WindowsGraphicsCaptureResponse(
     int Height,
     string Backend);
 
-public interface IWindowsGraphicsCaptureClient
+public interface IDxgiDesktopDuplicationClient
 {
     bool Available { get; }
 
-    WindowsGraphicsCaptureResponse CaptureWindow(
-        string windowId);
-
-    WindowsGraphicsCaptureResponse CaptureMonitor(
+    DxgiDesktopDuplicationResponse CaptureMonitor(
         string monitorDevice);
 }
 
-public sealed class WindowsGraphicsCaptureClient(
-    ILogger<WindowsGraphicsCaptureClient> logger)
-    : IWindowsGraphicsCaptureClient
+public sealed class DxgiDesktopDuplicationClient(
+    ILogger<DxgiDesktopDuplicationClient> logger)
+    : IDxgiDesktopDuplicationClient
 {
     private const int MaximumWaitMilliseconds = 5000;
 
     public bool Available =>
         OperatingSystem.IsWindowsVersionAtLeast(
-            10,
-            0,
-            18362) &&
+            6,
+            2) &&
         Environment.UserInteractive &&
         File.Exists(
             ResolveSidecarPath());
 
-    public WindowsGraphicsCaptureResponse CaptureWindow(
-        string windowId) =>
-        Capture(
-            new
-            {
-                operation = "capture-window",
-                windowId
-            });
-
-    public WindowsGraphicsCaptureResponse CaptureMonitor(
-        string monitorDevice) =>
-        Capture(
-            new
-            {
-                operation = "capture-monitor",
-                windowId = "0x0",
-                monitorDevice
-            });
-
-    private WindowsGraphicsCaptureResponse Capture(
-        object request)
+    public DxgiDesktopDuplicationResponse CaptureMonitor(
+        string monitorDevice)
     {
         if (!Available)
         {
             return Unavailable(
-                "Windows Graphics Capture sidecar chưa khả dụng trên máy này.");
+                "DXGI Desktop Duplication sidecar chưa khả dụng trên máy này.");
         }
+
+        var request = new
+        {
+            operation = "capture-monitor-dxgi",
+            windowId = "0x0",
+            monitorDevice
+        };
 
         using var process = new Process
         {
@@ -86,7 +70,7 @@ public sealed class WindowsGraphicsCaptureClient(
             if (!process.Start())
             {
                 return Unavailable(
-                    "Không khởi động được Windows Graphics Capture sidecar.");
+                    "Không khởi động được DXGI sidecar.");
             }
 
             var outputTask =
@@ -115,7 +99,7 @@ public sealed class WindowsGraphicsCaptureClient(
                 }
 
                 return Unavailable(
-                    "Windows Graphics Capture quá thời gian phản hồi.");
+                    "DXGI Desktop Duplication quá thời gian phản hồi.");
             }
 
             var output =
@@ -127,12 +111,12 @@ public sealed class WindowsGraphicsCaptureClient(
             if (string.IsNullOrWhiteSpace(output))
             {
                 logger.LogDebug(
-                    "WGC sidecar không trả JSON. ExitCode={ExitCode}; stderr={Error}",
+                    "DXGI sidecar không trả JSON. ExitCode={ExitCode}; stderr={Error}",
                     process.ExitCode,
                     Limit(error, 400));
 
                 return Unavailable(
-                    "Windows Graphics Capture sidecar không trả kết quả.");
+                    "DXGI sidecar không trả kết quả.");
             }
 
             var response =
@@ -147,7 +131,7 @@ public sealed class WindowsGraphicsCaptureClient(
             {
                 return Unavailable(
                     response?.Detail ??
-                    "Không đọc được phản hồi Windows Graphics Capture.");
+                    "Không đọc được phản hồi DXGI.");
             }
 
             byte[] jpeg;
@@ -159,7 +143,7 @@ public sealed class WindowsGraphicsCaptureClient(
             catch (FormatException)
             {
                 return Unavailable(
-                    "Windows Graphics Capture trả dữ liệu ảnh không hợp lệ.");
+                    "DXGI trả dữ liệu ảnh không hợp lệ.");
             }
 
             if (jpeg.Length is < 24 or > 8 * 1024 * 1024 ||
@@ -172,19 +156,19 @@ public sealed class WindowsGraphicsCaptureClient(
                     jpeg.Length);
 
                 return Unavailable(
-                    "Windows Graphics Capture trả frame có metadata không hợp lệ.");
+                    "DXGI trả frame có metadata không hợp lệ.");
             }
 
             return new(
                 true,
                 response.Detail ??
-                "Windows Graphics Capture thành công.",
+                "DXGI Desktop Duplication thành công.",
                 jpeg,
                 response.CaptureWidth,
                 response.CaptureHeight,
                 string.IsNullOrWhiteSpace(
                     response.CaptureBackend)
-                    ? DesktopCaptureBackends.WindowsGraphicsCapture
+                    ? DesktopCaptureBackends.DxgiDesktopDuplication
                     : response.CaptureBackend);
         }
         catch (Exception exception) when (
@@ -196,10 +180,10 @@ public sealed class WindowsGraphicsCaptureClient(
         {
             logger.LogDebug(
                 exception,
-                "Windows Graphics Capture sidecar không khả dụng.");
+                "DXGI Desktop Duplication sidecar không khả dụng.");
 
             return Unavailable(
-                $"Windows Graphics Capture không khả dụng: {exception.Message}");
+                $"DXGI Desktop Duplication không khả dụng: {exception.Message}");
         }
     }
 
@@ -209,7 +193,7 @@ public sealed class WindowsGraphicsCaptureClient(
             "windows-automation",
             "PersonalAI.WindowsAutomation.dll");
 
-    private static WindowsGraphicsCaptureResponse Unavailable(
+    private static DxgiDesktopDuplicationResponse Unavailable(
         string detail) =>
         new(
             false,
@@ -217,7 +201,7 @@ public sealed class WindowsGraphicsCaptureClient(
             Array.Empty<byte>(),
             0,
             0,
-            DesktopCaptureBackends.WindowsGraphicsCapture);
+            DesktopCaptureBackends.DxgiDesktopDuplication);
 
     private static JsonSerializerOptions JsonOptions() =>
         new(JsonSerializerDefaults.Web)

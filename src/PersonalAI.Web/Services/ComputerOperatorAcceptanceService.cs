@@ -38,6 +38,18 @@ public sealed class ComputerOperatorAcceptanceService
 
         RunCheck(
             checks,
+            "capture health phát hiện chuỗi frame lặp và giữ latency telemetry",
+            CheckCaptureHealthDetectsRepeatedFrames);
+
+        RunCheck(
+            checks,
+            "capture router tự hạ ưu tiên backend bị stale theo đúng target",
+            CheckCaptureRouterDeprioritizesStaleBackend);
+
+
+
+        RunCheck(
+            checks,
             "tọa độ pixel trên desktop ảo có gốc âm",
             CheckImagePixelWithNegativeVirtualOrigin);
 
@@ -764,10 +776,23 @@ public sealed class ComputerOperatorAcceptanceService
         Require(
             monitorCandidates.SequenceEqual(
                 [
+                    DesktopCaptureBackends.WindowsGraphicsCapture,
                     DesktopCaptureBackends.DxgiDesktopDuplication,
                     DesktopCaptureBackends.CopyFromScreen
                 ]),
-            "Capture router không giữ đúng thứ tự ưu tiên backend cho monitor khi WGC monitor chưa được kích hoạt.");
+            "Capture router không giữ đúng thứ tự ưu tiên WGC → DXGI → CopyFromScreen cho monitor.");
+
+        var virtualCandidates =
+            router.GetOrderedCandidates(
+                DesktopCaptureScopes.VirtualDesktop);
+
+        Require(
+            virtualCandidates.SequenceEqual(
+                [
+                    DesktopCaptureBackends.DxgiDesktopDuplication,
+                    DesktopCaptureBackends.CopyFromScreen
+                ]),
+            "Capture router không giữ đúng thứ tự ưu tiên DXGI → CopyFromScreen cho virtual desktop.");
     }
 
     private static void CheckCaptureBackendRouterAvailableFallback()
@@ -791,6 +816,97 @@ public sealed class ComputerOperatorAcceptanceService
                 DesktopCaptureScopes.VirtualDesktop) ==
             DesktopCaptureBackends.CopyFromScreen,
             "Virtual desktop chưa fallback CopyFromScreen khi DXGI chưa kích hoạt.");
+    }
+
+    private static void CheckCaptureHealthDetectsRepeatedFrames()
+    {
+        var tracker =
+            new DesktopCaptureHealthTracker();
+
+        var signature =
+            new byte[] { 10, 20, 30, 40 };
+
+        for (var index = 0; index < 5; index++)
+        {
+            tracker.RecordSuccess(
+                DesktopCaptureScopes.Monitor,
+                @"\\.\DISPLAY1",
+                DesktopCaptureBackends.WindowsGraphicsCapture,
+                10 + index,
+                signature,
+                index == 0
+                    ? null
+                    : "acceptance fallback marker");
+        }
+
+        var snapshot =
+            tracker.GetSnapshot();
+
+        var entry =
+            snapshot.Entries.Single();
+
+        Require(
+            entry.SuccessCount == 5 &&
+            entry.ConsecutiveUnchangedFrames == 4 &&
+            entry.StaleSuspected &&
+            entry.AverageLatencyMs > 0 &&
+            entry.FallbackCount == 4,
+            "Capture health chưa phát hiện đúng chuỗi frame lặp hoặc telemetry latency/fallback.");
+
+        tracker.Reset();
+
+        Require(
+            tracker.GetSnapshot().Entries.Count == 0,
+            "Capture health reset chưa xóa telemetry trong bộ nhớ.");
+    }
+
+    private static void CheckCaptureRouterDeprioritizesStaleBackend()
+    {
+        var health =
+            new DesktopCaptureHealthTracker();
+
+        var signature =
+            new byte[] { 1, 2, 3, 4 };
+
+        for (var index = 0; index < 5; index++)
+        {
+            health.RecordSuccess(
+                DesktopCaptureScopes.Monitor,
+                @"\\.\DISPLAY1",
+                DesktopCaptureBackends.WindowsGraphicsCapture,
+                20,
+                signature);
+        }
+
+        var router =
+            new DesktopCaptureBackendRouter(
+                wgc: null,
+                dxgi: null,
+                health);
+
+        var candidates =
+            router.GetOrderedCandidates(
+                DesktopCaptureScopes.Monitor,
+                @"\\.\DISPLAY1");
+
+        Require(
+            candidates.SequenceEqual(
+                [
+                    DesktopCaptureBackends.DxgiDesktopDuplication,
+                    DesktopCaptureBackends.CopyFromScreen,
+                    DesktopCaptureBackends.WindowsGraphicsCapture
+                ]),
+            "Capture router chưa hạ ưu tiên WGC khi backend bị stale trên đúng monitor target.");
+
+        var otherMonitor =
+            router.GetOrderedCandidates(
+                DesktopCaptureScopes.Monitor,
+                @"\\.\DISPLAY2");
+
+        Require(
+            otherMonitor.First() ==
+            DesktopCaptureBackends.WindowsGraphicsCapture,
+            "Health penalty của một monitor đã làm ảnh hưởng target monitor khác.");
     }
 
     private static void CheckImagePixelWithNegativeVirtualOrigin()

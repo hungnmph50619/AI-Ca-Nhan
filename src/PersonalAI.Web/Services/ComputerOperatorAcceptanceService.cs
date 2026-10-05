@@ -493,6 +493,21 @@ public sealed class ComputerOperatorAcceptanceService
 
         RunCheck(
             checks,
+            "FlaUI được ưu tiên khi có bằng chứng cấu trúc",
+            CheckFlaUiCompositePrefersStructuredBackend);
+
+        RunCheck(
+            checks,
+            "FlaUI thiếu capability thì fallback Win32",
+            CheckFlaUiCompositeFallsBackToWin32);
+
+        RunCheck(
+            checks,
+            "FlaUI phát hiện trường nhạy cảm thì không fallback",
+            CheckFlaUiCompositePreservesSensitiveDetection);
+
+        RunCheck(
+            checks,
             "pause resume stop giữ đúng trạng thái và cancellation",
             CheckExecutionPauseResumeStop);
 
@@ -3981,6 +3996,143 @@ public sealed class ComputerOperatorAcceptanceService
             "Generic Text Engine chưa chặn sensitive/password target.");
     }
 
+    private static void CheckFlaUiCompositePrefersStructuredBackend()
+    {
+        var structured =
+            new AcceptanceStructuredTextBackend(
+                new TextTargetCapabilities(
+                    AcceptanceComputerUseService.WindowId,
+                    new nint(11),
+                    "Edit",
+                    IsFocused: true,
+                    CanRead: true,
+                    CanDirectSet: true,
+                    SupportsSelection: false,
+                    IsReadOnly: false,
+                    IsSensitive: false,
+                    "flaui-uia3",
+                    "structured-token"));
+
+        var fallback =
+            new AcceptanceWin32TextBackend(
+                new TextTargetCapabilities(
+                    AcceptanceComputerUseService.WindowId,
+                    new nint(22),
+                    "Edit",
+                    IsFocused: true,
+                    CanRead: true,
+                    CanDirectSet: true,
+                    SupportsSelection: true,
+                    IsReadOnly: false,
+                    IsSensitive: false,
+                    "win32-accessibility"));
+
+        var composite =
+            new CompositeTextAccessibilityBackend(
+                structured,
+                fallback);
+
+        var result = composite.Probe(
+            AcceptanceComputerUseService.WindowId);
+
+        Require(
+            result.Backend == "flaui-uia3" &&
+            structured.ProbeCount == 1 &&
+            fallback.ProbeCount == 0,
+            "Composite chưa ưu tiên FlaUI khi structured evidence đủ mạnh.");
+    }
+
+    private static void CheckFlaUiCompositeFallsBackToWin32()
+    {
+        var structured =
+            new AcceptanceStructuredTextBackend(
+                new TextTargetCapabilities(
+                    AcceptanceComputerUseService.WindowId,
+                    nint.Zero,
+                    string.Empty,
+                    IsFocused: true,
+                    CanRead: false,
+                    CanDirectSet: false,
+                    SupportsSelection: false,
+                    IsReadOnly: false,
+                    IsSensitive: false,
+                    "flaui-uia3"));
+
+        var fallback =
+            new AcceptanceWin32TextBackend(
+                new TextTargetCapabilities(
+                    AcceptanceComputerUseService.WindowId,
+                    new nint(22),
+                    "Edit",
+                    IsFocused: true,
+                    CanRead: true,
+                    CanDirectSet: true,
+                    SupportsSelection: true,
+                    IsReadOnly: false,
+                    IsSensitive: false,
+                    "win32-accessibility"));
+
+        var composite =
+            new CompositeTextAccessibilityBackend(
+                structured,
+                fallback);
+
+        var result = composite.Probe(
+            AcceptanceComputerUseService.WindowId);
+
+        Require(
+            result.Backend == "win32-accessibility" &&
+            structured.ProbeCount == 1 &&
+            fallback.ProbeCount == 1,
+            "Composite chưa fallback Win32 khi FlaUI thiếu capability.");
+    }
+
+    private static void CheckFlaUiCompositePreservesSensitiveDetection()
+    {
+        var structured =
+            new AcceptanceStructuredTextBackend(
+                new TextTargetCapabilities(
+                    AcceptanceComputerUseService.WindowId,
+                    new nint(11),
+                    "PasswordBox",
+                    IsFocused: true,
+                    CanRead: false,
+                    CanDirectSet: false,
+                    SupportsSelection: false,
+                    IsReadOnly: false,
+                    IsSensitive: true,
+                    "flaui-uia3",
+                    "sensitive-token"));
+
+        var fallback =
+            new AcceptanceWin32TextBackend(
+                new TextTargetCapabilities(
+                    AcceptanceComputerUseService.WindowId,
+                    new nint(22),
+                    "Edit",
+                    IsFocused: true,
+                    CanRead: true,
+                    CanDirectSet: true,
+                    SupportsSelection: true,
+                    IsReadOnly: false,
+                    IsSensitive: false,
+                    "win32-accessibility"));
+
+        var composite =
+            new CompositeTextAccessibilityBackend(
+                structured,
+                fallback);
+
+        var result = composite.Probe(
+            AcceptanceComputerUseService.WindowId);
+
+        Require(
+            result.IsSensitive &&
+            result.Backend == "flaui-uia3" &&
+            fallback.ProbeCount == 0,
+            "Composite đã làm mất sensitive evidence hoặc fallback không an toàn.");
+    }
+
     private static void CheckExecutionPauseResumeStop()
     {
         using var execution = new ComputerOperatorExecutionControl();
@@ -4565,6 +4717,68 @@ public sealed class ComputerOperatorAcceptanceService
                     Provider: "acceptance",
                     Model: "acceptance"));
         }
+    }
+
+    private sealed class AcceptanceStructuredTextBackend(
+        TextTargetCapabilities capabilities)
+        : IFlaUiTextAccessibilityBackend
+    {
+        public int ProbeCount { get; private set; }
+
+        public TextTargetCapabilities Probe(
+            string windowId)
+        {
+            ProbeCount++;
+            return capabilities with
+            {
+                WindowId = windowId
+            };
+        }
+
+        public string? TryRead(
+            TextTargetCapabilities target) =>
+            "structured";
+
+        public bool TryDirectSet(
+            TextTargetCapabilities target,
+            string text,
+            string writeMode) =>
+            true;
+
+        public bool IsSameFocusedTarget(
+            TextTargetCapabilities target) =>
+            true;
+    }
+
+    private sealed class AcceptanceWin32TextBackend(
+        TextTargetCapabilities capabilities)
+        : IWin32TextAccessibilityBackend
+    {
+        public int ProbeCount { get; private set; }
+
+        public TextTargetCapabilities Probe(
+            string windowId)
+        {
+            ProbeCount++;
+            return capabilities with
+            {
+                WindowId = windowId
+            };
+        }
+
+        public string? TryRead(
+            TextTargetCapabilities target) =>
+            "win32";
+
+        public bool TryDirectSet(
+            TextTargetCapabilities target,
+            string text,
+            string writeMode) =>
+            true;
+
+        public bool IsSameFocusedTarget(
+            TextTargetCapabilities target) =>
+            true;
     }
 
     private sealed class AcceptanceTextAccessibilityBackend(

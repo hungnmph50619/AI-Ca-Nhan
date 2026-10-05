@@ -113,9 +113,15 @@ public sealed class ChatTurnService(
                 request.Messages,
                 attachmentStore);
 
+        var latestUserMessage =
+            canonicalMessages
+                .LastOrDefault(message =>
+                    message.Role.Equals(
+                        "user",
+                        StringComparison.OrdinalIgnoreCase));
+
         var hasAttachments =
-            canonicalMessages.Any(message =>
-                (message.Attachments?.Count ?? 0) > 0);
+            (latestUserMessage?.Attachments?.Count ?? 0) > 0;
 
         if (allowToolProposal
             && request.UseTools

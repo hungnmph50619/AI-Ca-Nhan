@@ -204,8 +204,27 @@ public sealed class DesktopLocalActionPlanner
                 capability.Equals("ExpandCollapse", StringComparison.OrdinalIgnoreCase))
             ?? "UIA";
 
+        var structuredAction =
+            actionCapability.Equals(
+                "Invoke",
+                StringComparison.OrdinalIgnoreCase)
+                ? "structured-invoke"
+                : actionCapability.Equals(
+                    "SelectionItem",
+                    StringComparison.OrdinalIgnoreCase)
+                    ? "structured-select"
+                    : actionCapability.Equals(
+                        "Toggle",
+                        StringComparison.OrdinalIgnoreCase)
+                        ? "structured-toggle"
+                        : actionCapability.Equals(
+                            "ExpandCollapse",
+                            StringComparison.OrdinalIgnoreCase)
+                            ? "structured-expand"
+                            : "click-left";
+
         decision = Build(
-            action: "click-left",
+            action: structuredAction,
             currentSubgoal:
                 $"Tương tác với phần tử '{DisplayNode(node)}' bằng Unified Structured Scene Graph.",
             expectedEffect:
@@ -213,7 +232,9 @@ public sealed class DesktopLocalActionPlanner
             reason:
                 $"Structured resolver đã ánh xạ mục tiêu '{requestedTarget}' thành node '{node.Id}' (score={resolution.Score}, capability={actionCapability}); không cần gửi toàn màn hình cho Vision/Gemini.",
             plan:
-                $"Dùng bounding box đã chuẩn hóa trong scene graph của '{DisplayNode(node)}' để click an toàn rồi quan sát lại.",
+                structuredAction.StartsWith("structured-", StringComparison.Ordinal)
+                    ? $"Thực thi {structuredAction} trực tiếp bằng UIA target token '{node.Id}', sau đó quan sát lại trước hành động tiếp theo."
+                    : $"Dùng bounding box đã chuẩn hóa trong scene graph của '{DisplayNode(node)}' để click an toàn rồi quan sát lại.",
             targetLabel: DisplayNode(node),
             targetElementId: node.Id,
             coordinateWindowId: graph.WindowId,

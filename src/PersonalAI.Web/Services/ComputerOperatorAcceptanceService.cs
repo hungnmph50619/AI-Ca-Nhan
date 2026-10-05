@@ -1995,7 +1995,7 @@ public sealed class ComputerOperatorAcceptanceService
 
         Require(
             planned &&
-            decision.Action == "click-left" &&
+            decision.Action == "structured-invoke" &&
             decision.TargetElementId == "root:save" &&
             decision.TargetLabel == "Save" &&
             decision.CoordinateWindowId == foreground.WindowId &&
@@ -2004,7 +2004,7 @@ public sealed class ComputerOperatorAcceptanceService
             decision.BoxWidth == 120 &&
             decision.BoxHeight == 44 &&
             decision.Confidence >= 0.94,
-            "Structured-first planner chưa chuyển UIA target thành click có bounding box an toàn.");
+            "Structured-first planner chưa chuyển UIA target thành structured Invoke action theo token.");
     }
 
     private static void CheckDynamicTargetTrackerMovesWithWindow()

@@ -45,6 +45,7 @@ public static class ComputerUseEndpoints
         services.AddSingleton<IDesktopCaptureBackendRouter, DesktopCaptureBackendRouter>();
         services.AddSingleton<IDesktopScreenshotService, WindowsDesktopScreenshotService>();
         services.AddSingleton<IDesktopFrameDifferenceService, DesktopFrameDifferenceService>();
+        services.AddSingleton<IDesktopLocalVisualSensor, DesktopLocalVisualSensor>();
         services.AddSingleton<IDesktopLocalFastObserver, DesktopLocalFastObserver>();
         services.AddSingleton<IComputerWindowVisibilityService, ComputerWindowVisibilityService>();
         services.AddSingleton<IDesktopTemporalSceneService, DesktopTemporalSceneService>();

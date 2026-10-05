@@ -145,6 +145,7 @@ public sealed class ComputerOperatorTaskService(
     IGenericTextInteractionEngine textInteraction,
     IAdaptiveVerificationWaitEngine adaptiveWait,
     IStructuredDesktopSnapshotService structuredDesktop,
+    IStructuredDesktopVerificationService structuredVerification,
     IComputerOperatorCheckpointStore checkpoints,
     IComputerOperatorTelemetry telemetry,
     IUniversalReliableOperatorCoordinator reliableOperator,
@@ -1799,6 +1800,52 @@ public sealed class ComputerOperatorTaskService(
                     verified
                         ? $"Đã chụp lại màn hình; con trỏ ở ({actual.X},{actual.Y}), khớp điểm mong đợi ({expected.DesktopX},{expected.DesktopY})."
                         : $"Đã chụp lại màn hình; con trỏ ở ({actual.X},{actual.Y}), lệch khỏi điểm mong đợi ({expected.DesktopX},{expected.DesktopY}).");
+            }
+
+            if ((decision.Action ?? string.Empty)
+                    .StartsWith(
+                        "structured-",
+                        StringComparison.OrdinalIgnoreCase))
+            {
+                var structuredAfter =
+                    BuildDesktopState(after);
+
+                var structuredResult =
+                    structuredVerification.Verify(
+                        decision,
+                        structuredAfter.StructuredGraph);
+
+                progress.Add(
+                    "structured-verification",
+                    $"Structured Verification: {structuredResult.Status} — {structuredResult.Reason}",
+                    structuredResult.Status ==
+                        StructuredVerificationStatus.Verified
+                            ? "verified"
+                            : structuredResult.Status ==
+                              StructuredVerificationStatus.Failed
+                                ? "failed"
+                                : "inconclusive",
+                    structuredResult.Confidence);
+
+                if (structuredResult.Status ==
+                    StructuredVerificationStatus.Verified)
+                {
+                    return new(
+                        true,
+                        structuredResult.Confidence,
+                        $"Structured verifier xác minh thành công: {structuredResult.Reason}");
+                }
+
+                if (structuredResult.Status ==
+                    StructuredVerificationStatus.Failed)
+                {
+                    return new(
+                        false,
+                        structuredResult.Confidence,
+                        $"Structured verifier xác minh thất bại: {structuredResult.Reason}");
+                }
+
+                // Inconclusive không phải failure. Tiếp tục event/frame/Gemini.
             }
 
             var verificationContextChanged =

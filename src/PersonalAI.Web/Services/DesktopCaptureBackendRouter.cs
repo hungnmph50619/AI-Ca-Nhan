@@ -158,7 +158,8 @@ public sealed class DesktopCaptureBackendRouter(
             Backends,
             scopes.ToDictionary(
                 scope => scope,
-                GetPreferredAvailableBackend,
+                scope => GetPreferredAvailableBackend(
+                    scope),
                 StringComparer.OrdinalIgnoreCase));
     }
 

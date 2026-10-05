@@ -40,6 +40,7 @@ public sealed class ComputerOperatorTaskService(
     IAdaptiveVerificationWaitEngine adaptiveWait,
     IComputerOperatorCheckpointStore checkpoints,
     IComputerOperatorTelemetry telemetry,
+    IUniversalReliableOperatorCoordinator reliableOperator,
     ILogger<ComputerOperatorTaskService> logger)
     : IComputerOperatorTaskService
 {
@@ -100,6 +101,27 @@ public sealed class ComputerOperatorTaskService(
 
         progress.Start(
             $"Bắt đầu tác vụ: {normalizedGoal}");
+
+        var reliableRuntime =
+            reliableOperator.GetRuntimeSnapshot();
+
+        if (!reliableRuntime.Ready)
+        {
+            taskTelemetry.Complete(
+                success: false,
+                route: "runtime-not-ready");
+
+            progress.Block(
+                reliableRuntime.Reason);
+
+            throw new ToolExecutionInputException(
+                reliableRuntime.Reason);
+        }
+
+        progress.Add(
+            "reliable-runtime",
+            $"Universal Reliable Operator: {reliableRuntime.Reason}",
+            "ready");
 
         var resumableCheckpoint =
             checkpoints.FindResumable(
@@ -835,6 +857,48 @@ public sealed class ComputerOperatorTaskService(
                         index,
                         exception.Message);
 
+                    var failurePolicy =
+                        reliableOperator.ClassifyFailure(
+                            exception.Message,
+                            sideEffectMayHaveOccurred: false);
+
+                    progress.Add(
+                        "failure-policy",
+                        $"Universal failure policy: {failurePolicy.Action} / {failurePolicy.Category} — {failurePolicy.Reason}",
+                        failurePolicy.Action,
+                        decision.Confidence);
+
+                    taskHistory.Add(
+                        $"FAILURE-POLICY: {failurePolicy.Action}; {failurePolicy.Category}; {failurePolicy.Reason}");
+
+                    if (failurePolicy.Action ==
+                        UniversalFailureActions.Stop)
+                    {
+                        MarkCheckpointStatusSafely(
+                            checkpoint,
+                            ComputerOperatorCheckpointStatuses.Blocked);
+
+                        progress.Block(
+                            $"Dừng theo failure policy: {failurePolicy.Reason}");
+
+                        return Finish(
+                            false,
+                            $"Computer Operator dừng an toàn: {failurePolicy.Reason}");
+                    }
+
+                    if (failurePolicy.Action ==
+                        UniversalFailureActions.Wait)
+                    {
+                        _ = actionState.MoveTo(
+                            ComputerOperatorActionState.Replan,
+                            "Failure policy yêu cầu chờ và quan sát lại.");
+
+                        await Task.Delay(
+                            750,
+                            linked.Token);
+                        continue;
+                    }
+
                     var failures = recovery.RecordFailure(
                         actionSignature,
                         decision.Action,
@@ -1396,6 +1460,8 @@ public sealed class ComputerOperatorTaskService(
                     observation: true);
             }
 
+            DesktopVerificationRoutingResult? localRouteForFusion = null;
+
             if (fastObserverBaseline is not null)
             {
                 var fastAfter = fastObserver.CaptureSample(after);
@@ -1424,10 +1490,31 @@ public sealed class ComputerOperatorTaskService(
 
                 if (route.Route == DesktopVerificationRoute.LocalVerified)
                 {
-                    return new(
-                        true,
-                        route.Confidence,
-                        $"Xác minh cục bộ: {route.Reason}");
+                    localRouteForFusion = route;
+
+                    var localDecision =
+                        reliableOperator.EvaluateLocalVerification(
+                            decision,
+                            route);
+
+                    progress.Add(
+                        "evidence-fusion",
+                        $"Evidence Fusion local: {localDecision.Source} — {localDecision.Reason}",
+                        localDecision.Verified
+                            ? "verified"
+                            : "semantic-required",
+                        localDecision.Confidence);
+
+                    if (localDecision.Verified)
+                    {
+                        return new(
+                            true,
+                            localDecision.Confidence,
+                            $"Universal Reliable Operator xác minh local: {localDecision.Reason}");
+                    }
+
+                    // Một strong-local source đơn lẻ (ví dụ scroll/frame)
+                    // không được tự complete. Tiếp tục semantic verification.
                 }
 
                 var shouldAdaptiveWait =
@@ -1551,14 +1638,26 @@ public sealed class ComputerOperatorTaskService(
                     throw;
                 }
 
-                var verifiedByVision =
-                    result.Satisfied &&
-                    result.Confidence >= MinimumConfidence;
+                var reliableVerification =
+                    reliableOperator.EvaluateSemanticVerification(
+                        decision,
+                        localRouteForFusion,
+                        result.Satisfied,
+                        result.Confidence,
+                        result.Reason);
+
+                progress.Add(
+                    "evidence-fusion",
+                    $"Evidence Fusion semantic: {reliableVerification.Source} — {reliableVerification.Reason}",
+                    reliableVerification.Verified
+                        ? "verified"
+                        : "not-verified",
+                    reliableVerification.Confidence);
 
                 return new(
-                    verifiedByVision,
-                    result.Confidence,
-                    $"Gemini Vision ({visionFrame.Source}): {result.Reason}");
+                    reliableVerification.Verified,
+                    reliableVerification.Confidence,
+                    $"Universal Reliable Operator ({visionFrame.Source}): {reliableVerification.Reason}");
             }
             finally
             {

@@ -441,6 +441,12 @@ public sealed class ComputerOperatorAcceptanceService
             "adaptive wait truyền đúng window target cho event wake",
             CheckAdaptiveWaitUsesTargetAwareWake);
 
+        RunCheck(
+            checks,
+            "event relevance ưu tiên tín hiệu phù hợp với action",
+            CheckEventRelevancePrioritizesExpectedSignals);
+
+
 
 
         RunCheck(
@@ -3588,6 +3594,46 @@ public sealed class ComputerOperatorAcceptanceService
             wake.WaitCount > 0 &&
             result.EventWakeups > 0,
             "Adaptive wait chưa truyền đúng target window vào event wake source.");
+    }
+
+    private static void CheckEventRelevancePrioritizesExpectedSignals()
+    {
+        var valueEvent =
+            new DesktopSystemEvent(
+                DesktopSystemEventKinds.ValueChanged,
+                "0x1",
+                DateTimeOffset.UtcNow,
+                0,
+                "acceptance value changed");
+
+        var moveEvent =
+            new DesktopSystemEvent(
+                DesktopSystemEventKinds.WindowMovedOrResized,
+                "0x1",
+                DateTimeOffset.UtcNow,
+                0,
+                "acceptance moved");
+
+        var typeValue =
+            ComputerOperatorEventRelevance.Score(
+                "type-text",
+                valueEvent);
+
+        var typeMove =
+            ComputerOperatorEventRelevance.Score(
+                "type-text",
+                moveEvent);
+
+        var maximizeMove =
+            ComputerOperatorEventRelevance.Score(
+                "maximize",
+                moveEvent);
+
+        Require(
+            typeValue >= 0.9 &&
+            typeMove < 0.55 &&
+            maximizeMove >= 0.9,
+            "Event relevance chưa phân biệt đúng tín hiệu theo action.");
     }
 
     private static void CheckCapabilityCacheAvoidsRepeatedDiscovery()

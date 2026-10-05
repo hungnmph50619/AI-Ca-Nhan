@@ -37,6 +37,7 @@ public static class ComputerUseEndpoints
         services.AddSingleton<IExecutionAgent, ComputerOperatorExecutionAgent>();
         services.AddSingleton<IExecutionAgentRegistry, ExecutionAgentRegistry>();
         services.AddSingleton<IMicrosoftAgentFrameworkAdapter, MicrosoftAgentFrameworkAdapter>();
+        services.AddSingleton<IDesktopCaptureBackendRouter, DesktopCaptureBackendRouter>();
         services.AddSingleton<IDesktopScreenshotService, WindowsDesktopScreenshotService>();
         services.AddSingleton<IDesktopFrameDifferenceService, DesktopFrameDifferenceService>();
         services.AddSingleton<IDesktopLocalFastObserver, DesktopLocalFastObserver>();
@@ -85,6 +86,29 @@ public static class ComputerUseEndpoints
         app.MapGet("/api/computer/operator-progress", (
             ComputerOperatorProgressStore progress) =>
             Results.Ok(progress.Get()));
+
+        app.MapGet("/api/computer/capture-backends", (
+            HttpContext context,
+            IDesktopCaptureBackendRouter captureRouter) =>
+        {
+            if (!IsLocalRequest(context))
+                return Results.StatusCode(StatusCodes.Status403Forbidden);
+
+            var snapshot = captureRouter.GetSnapshot();
+            return Results.Ok(new
+            {
+                phienBan = snapshot.Version,
+                backend = snapshot.Backends.Select(item => new
+                {
+                    ten = item.Name,
+                    uuTien = item.Priority,
+                    khaDung = item.Available,
+                    phamVi = item.Scopes,
+                    chiTiet = item.Detail
+                }),
+                uuTienTheoPhamVi = snapshot.PreferredBackendByScope
+            });
+        });
 
         app.MapGet("/api/computer/operator-telemetry", (
             HttpContext context,

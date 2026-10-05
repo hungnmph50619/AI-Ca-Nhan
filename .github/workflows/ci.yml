@@ -3356,7 +3356,9 @@ jobs:
           ! grep -Fq '"computer.keyboard' src/PersonalAI.Web/Services/ComputerUseTools.cs
           grep -Fq 'control.RunAllowed(() => ClickLeftCore' src/PersonalAI.Web/Services/ComputerUseService.cs
           grep -Fq 'SendInput((uint)inputs.Length, inputs' src/PersonalAI.Web/Services/ComputerUseService.cs
-          grep -Fq 'target != GetForegroundWindow()' src/PersonalAI.Web/Services/ComputerUseService.cs
+          grep -Fq 'GetRootWindowAtPoint' src/PersonalAI.Web/Services/ComputerUseService.cs
+          grep -Fq 'WindowFromPoint' src/PersonalAI.Web/Services/ComputerUseService.cs
+          grep -Fq 'GetAncestor' src/PersonalAI.Web/Services/ComputerUseService.cs
           grep -Fq 'ComputerClickLeftTool' src/PersonalAI.Web/Services/ComputerUseEndpoints.cs
           grep -Fq 'TypeNotepadTextCore' src/PersonalAI.Web/Services/ComputerUseService.cs
           grep -Fq 'MaximumNotepadTextLength = 32' src/PersonalAI.Web/Services/ComputerUseService.cs

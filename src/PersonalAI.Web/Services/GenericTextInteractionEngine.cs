@@ -29,7 +29,8 @@ public sealed record TextTargetCapabilities(
     bool SupportsSelection,
     bool IsReadOnly,
     bool IsSensitive,
-    string Backend);
+    string Backend,
+    string TargetToken = "");
 
 public sealed record TextInteractionRequest(
     string WindowId,

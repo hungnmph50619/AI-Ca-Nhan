@@ -556,6 +556,8 @@ app.MapPost("/api/context/preview", async (
 app.MapPost("/api/chat/attachments", async (
     HttpRequest request,
     IChatAttachmentStore attachmentStore,
+    IKnowledgeDocumentStore knowledgeStore,
+    IKnowledgeEmbeddingIndex embeddingIndex,
     CancellationToken cancellationToken) =>
 {
     if (!request.HasFormContentType)
@@ -584,6 +586,26 @@ app.MapPost("/api/chat/attachments", async (
                 file,
                 cancellationToken);
 
+        if (attachment.Route.Equals(
+                "knowledge",
+                StringComparison.OrdinalIgnoreCase))
+        {
+            var document =
+                await knowledgeStore.AddAsync(
+                    file,
+                    cancellationToken);
+
+            await embeddingIndex.IndexDocumentAsync(
+                document.Id,
+                cancellationToken);
+
+            attachment =
+                attachmentStore.MarkKnowledgeDocument(
+                    attachment.Id,
+                    document.Id,
+                    document.ChunkCount);
+        }
+
         return Results.Created(
             $"/api/chat/attachments/{attachment.Id:D}",
             attachment);
@@ -599,6 +621,19 @@ app.MapPost("/api/chat/attachments", async (
     {
         return Results.BadRequest(
             new ApiError(exception.Message));
+    }
+    catch (KnowledgeDocumentValidationException exception)
+    {
+        return Results.BadRequest(
+            new ApiError(exception.Message));
+    }
+    catch (DuplicateKnowledgeDocumentException exception)
+    {
+        return Results.Json(
+            new ApiError(
+                $"Tệp này đã có trong Kho dữ liệu: {exception.Message}"),
+            statusCode:
+                StatusCodes.Status409Conflict);
     }
 });
 

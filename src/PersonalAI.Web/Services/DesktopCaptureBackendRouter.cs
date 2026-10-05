@@ -39,17 +39,20 @@ public interface IDesktopCaptureBackendRouter
     DesktopCaptureBackendRouterSnapshot GetSnapshot();
 }
 
-public sealed class DesktopCaptureBackendRouter
+public sealed class DesktopCaptureBackendRouter(
+    IWindowsGraphicsCaptureClient? wgc = null)
     : IDesktopCaptureBackendRouter
 {
-    private static readonly DesktopCaptureBackendStatus[] Backends =
+    private IReadOnlyList<DesktopCaptureBackendStatus> Backends =>
     [
         new(
             DesktopCaptureBackends.WindowsGraphicsCapture,
             1,
-            Available: false,
-            [DesktopCaptureScopes.Window, DesktopCaptureScopes.Monitor],
-            "Adapter Windows Graphics Capture chưa được kích hoạt trong bước nền tảng router."),
+            Available: wgc?.Available == true,
+            [DesktopCaptureScopes.Window],
+            wgc?.Available == true
+                ? "Windows Graphics Capture sẵn sàng cho window capture."
+                : "Windows Graphics Capture chưa khả dụng; router sẽ dùng backend dự phòng."),
         new(
             DesktopCaptureBackends.DxgiDesktopDuplication,
             2,

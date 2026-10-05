@@ -153,8 +153,32 @@ public sealed class StructuredDesktopVerificationService
 
         if (action == "structured-set-value")
         {
-            return Inconclusive(
-                "ValuePattern write đã có sidecar readback khi execute; structured snapshot hiện chưa mang value để verify lần hai.");
+            if (node.IsSensitive)
+            {
+                return Inconclusive(
+                    "Từ chối đọc lại value của target nhạy cảm/password.");
+            }
+
+            if (node.Value is null)
+            {
+                return Inconclusive(
+                    "ValuePattern không expose giá trị hậu hành động.");
+            }
+
+            var expectedValue =
+                decision.Text ?? string.Empty;
+
+            return node.Value.Equals(
+                    expectedValue,
+                    StringComparison.Ordinal)
+                ? new(
+                    StructuredVerificationStatus.Verified,
+                    1.0,
+                    "UIA ValuePattern readback khớp chính xác giá trị yêu cầu.")
+                : new(
+                    StructuredVerificationStatus.Failed,
+                    0.99,
+                    "UIA ValuePattern readback không khớp giá trị yêu cầu.");
         }
 
         if (action == "structured-focus")

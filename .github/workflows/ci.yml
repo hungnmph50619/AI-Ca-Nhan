@@ -3163,7 +3163,15 @@ jobs:
           grep -Fq '"id": "pause-resume-stop"' tests/computer-use/v3.4.9-acceptance-scenarios.json
           grep -Fq '"id": "loop-recovery"' tests/computer-use/v3.4.9-acceptance-scenarios.json
           grep -Fq '"id": "multi-step-open-and-type"' tests/computer-use/v3.4.9-acceptance-scenarios.json
-          grep -Fq 'totalCount -lt 88' .github/workflows/desktop-control.yml
+          grep -Fq 'totalCount -lt 91' .github/workflows/desktop-control.yml
+          # v4.0.12 — Safe Verification Continuation Executor
+          grep -Fq 'IUniversalVerificationContinuationExecutor' src/PersonalAI.Web/Services/UniversalVerificationContinuationExecutor.cs
+          grep -Fq 'BrowserReadback' src/PersonalAI.Web/Services/UniversalVerificationContinuationExecutor.cs
+          grep -Fq 'request.Evidence ??' src/PersonalAI.Web/Services/UniversalOutcomeVerification.cs
+          grep -Fq 'ContinuationExecution' src/PersonalAI.Web/Services/UniversalExecutionLifecycle.cs
+          grep -Fq 'CheckSafeBrowserContinuationCompletesAfterReadback' src/PersonalAI.Web/Services/ComputerOperatorAcceptanceService.cs
+          grep -Fq 'CheckSafeBrowserContinuationMismatchReplans' src/PersonalAI.Web/Services/ComputerOperatorAcceptanceService.cs
+          grep -Fq 'CheckSafeCodingContinuationStaysPending' src/PersonalAI.Web/Services/ComputerOperatorAcceptanceService.cs
           # v4.0.11 — Verification Continuation Planner
           grep -Fq 'IUniversalVerificationContinuationPlanner' src/PersonalAI.Web/Services/UniversalVerificationContinuationPlanner.cs
           grep -Fq 'BrowserReadback' src/PersonalAI.Web/Services/UniversalVerificationContinuationPlanner.cs

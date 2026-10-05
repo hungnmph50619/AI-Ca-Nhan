@@ -78,6 +78,16 @@ public sealed class ComputerOperatorAcceptanceService
 
         RunCheck(
             checks,
+            "local visual provider health cooldown sau failure lặp",
+            CheckLocalVisualProviderHealthCooldown);
+
+        RunCheck(
+            checks,
+            "local visual provider health reset sau success",
+            CheckLocalVisualProviderHealthResetsOnSuccess);
+
+        RunCheck(
+            checks,
             "OpenCV template sensor giữ multi-scale nhỏ và ngưỡng confidence an toàn",
             CheckOpenCvTemplateSensorPolicy);
 
@@ -1363,7 +1373,8 @@ public sealed class ComputerOperatorAcceptanceService
 
         var router =
             new DesktopOcrSensorRouter(
-                [paddle, windows]);
+                [paddle, windows],
+                new LocalVisualProviderHealthRegistry());
 
         var result =
             router.ReadWindow(
@@ -1376,6 +1387,65 @@ public sealed class ComputerOperatorAcceptanceService
             result.Provider == "paddleocr-onnx" &&
             result.Text == "Continue",
             "OCR provider router chưa ưu tiên Windows hoặc chưa fallback đúng sang PaddleOCR/ONNX.");
+    }
+
+    private static void CheckLocalVisualProviderHealthCooldown()
+    {
+        var health =
+            new LocalVisualProviderHealthRegistry();
+
+        for (var i = 0; i < 3; i++)
+        {
+            health.RecordFailure(
+                "windows-ocr",
+                100,
+                "acceptance failure");
+        }
+
+        var skip =
+            health.ShouldSkip(
+                "windows-ocr",
+                DateTimeOffset.UtcNow,
+                out var reason);
+
+        var snapshot =
+            health.Get(
+                "windows-ocr");
+
+        Require(
+            skip &&
+            snapshot.State ==
+                LocalVisualProviderHealthState.Unavailable &&
+            snapshot.ConsecutiveFailures == 3 &&
+            !string.IsNullOrWhiteSpace(reason),
+            "Local visual provider health chưa cooldown sau 3 failure liên tiếp.");
+    }
+
+    private static void CheckLocalVisualProviderHealthResetsOnSuccess()
+    {
+        var health =
+            new LocalVisualProviderHealthRegistry();
+
+        health.RecordFailure(
+            "windows-ocr",
+            100,
+            "acceptance failure");
+
+        health.RecordSuccess(
+            "windows-ocr",
+            40,
+            "acceptance success");
+
+        var snapshot =
+            health.Get(
+                "windows-ocr");
+
+        Require(
+            snapshot.State ==
+                LocalVisualProviderHealthState.Healthy &&
+            snapshot.ConsecutiveFailures == 0 &&
+            snapshot.LastLatencyMilliseconds == 40,
+            "Local visual provider health chưa reset sau success.");
     }
 
     private static void CheckOpenCvTemplateSensorPolicy()

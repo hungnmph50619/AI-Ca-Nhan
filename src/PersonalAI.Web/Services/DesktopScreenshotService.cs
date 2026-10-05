@@ -40,7 +40,8 @@ public sealed class WindowsDesktopScreenshotService(
     WindowsAiOperatorConsoleService operatorConsole,
     IComputerUseService computer,
     IComputerDisplayTopologyService displays,
-    IComputerWindowVisibilityService visibility)
+    IComputerWindowVisibilityService visibility,
+    IDesktopCaptureBackendRouter captureRouter)
     : IDesktopScreenshotService
 {
     public DesktopScreenshotFrame CaptureVirtualScreen()
@@ -182,6 +183,9 @@ public sealed class WindowsDesktopScreenshotService(
     private CaptureSample CaptureMonitorSample(
         ComputerMonitorInfo monitor)
     {
+        EnsureCurrentRegionBackend(
+            DesktopCaptureScopes.Monitor);
+
         using var bitmap = CaptureBitmap(
             monitor.Left,
             monitor.Top,
@@ -205,6 +209,9 @@ public sealed class WindowsDesktopScreenshotService(
     private DesktopScreenshotFrame CaptureMonitorFrame(
         ComputerMonitorInfo monitor)
     {
+        EnsureCurrentRegionBackend(
+            DesktopCaptureScopes.Monitor);
+
         ValidateRegion(
             monitor.Width,
             monitor.Height);
@@ -238,7 +245,7 @@ public sealed class WindowsDesktopScreenshotService(
         return frame with
         {
             CaptureScope = "monitor",
-            CaptureBackend = "copy-from-screen",
+            CaptureBackend = DesktopCaptureBackends.CopyFromScreen,
             MonitorDevice = monitor.DeviceName,
             MonitorWasPrimary = monitor.Primary,
             MonitorDpiX = monitor.DpiX,
@@ -379,8 +386,16 @@ public sealed class WindowsDesktopScreenshotService(
         Bitmap? printWindowBitmap = null;
         var canUseFullWindowCapture =
             CanUseFullWindowCapture(window);
+        var candidates =
+            captureRouter.GetOrderedCandidates(
+                DesktopCaptureScopes.Window);
+        var allowPrintWindow =
+            candidates.Contains(
+                DesktopCaptureBackends.PrintWindow,
+                StringComparer.OrdinalIgnoreCase);
 
-        if (canUseFullWindowCapture &&
+        if (allowPrintWindow &&
+            canUseFullWindowCapture &&
             TryCaptureWithPrintWindow(
                 window,
                 out printWindowBitmap,
@@ -390,7 +405,7 @@ public sealed class WindowsDesktopScreenshotService(
                 printWindowBitmap!,
                 window.Left,
                 window.Top,
-                "print-window",
+                DesktopCaptureBackends.PrintWindow,
                 null);
         }
 
@@ -413,7 +428,7 @@ public sealed class WindowsDesktopScreenshotService(
             screenBitmap,
             region.Left,
             region.Top,
-            "copy-from-screen",
+            DesktopCaptureBackends.CopyFromScreen,
             string.IsNullOrWhiteSpace(printWindowReason)
                 ? fallbackReason
                 : $"{fallbackReason} {printWindowReason}");
@@ -691,6 +706,9 @@ public sealed class WindowsDesktopScreenshotService(
 
     private CaptureSample CaptureVirtualSample()
     {
+        EnsureCurrentRegionBackend(
+            DesktopCaptureScopes.VirtualDesktop);
+
         var left = GetSystemMetrics(76);
         var top = GetSystemMetrics(77);
         var width = GetSystemMetrics(78);
@@ -772,6 +790,17 @@ public sealed class WindowsDesktopScreenshotService(
         EnsureAvailable();
         ValidateRegion(width, height);
 
+        var backend =
+            captureRouter.GetPreferredAvailableBackend(
+                DesktopCaptureScopes.Region);
+        if (!backend.Equals(
+                DesktopCaptureBackends.CopyFromScreen,
+                StringComparison.OrdinalIgnoreCase))
+        {
+            throw new InvalidOperationException(
+                $"Backend {backend} chưa có adapter capture region.");
+        }
+
         using var bitmap = CaptureBitmap(
             left,
             top,
@@ -785,7 +814,7 @@ public sealed class WindowsDesktopScreenshotService(
             width,
             height) with
         {
-            CaptureBackend = "copy-from-screen"
+            CaptureBackend = backend
         };
     }
 
@@ -827,6 +856,21 @@ public sealed class WindowsDesktopScreenshotService(
             localY,
             localWidth,
             localHeight);
+    }
+
+    private void EnsureCurrentRegionBackend(
+        string scope)
+    {
+        var backend =
+            captureRouter.GetPreferredAvailableBackend(scope);
+
+        if (!backend.Equals(
+                DesktopCaptureBackends.CopyFromScreen,
+                StringComparison.OrdinalIgnoreCase))
+        {
+            throw new InvalidOperationException(
+                $"Backend {backend} đã được chọn cho {scope} nhưng adapter chưa được nối vào WindowsDesktopScreenshotService.");
+        }
     }
 
     private static void ValidateRegion(

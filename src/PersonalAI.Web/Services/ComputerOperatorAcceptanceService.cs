@@ -81,6 +81,11 @@ public sealed class ComputerOperatorAcceptanceService
             "OpenCV template sensor giữ multi-scale nhỏ và ngưỡng confidence an toàn",
             CheckOpenCvTemplateSensorPolicy);
 
+        RunCheck(
+            checks,
+            "visual target persistence chỉ nhận ROI hợp lệ và kích thước giới hạn",
+            CheckVisualTargetPersistenceTemplateBounds);
+
 
 
         RunCheck(
@@ -1370,6 +1375,40 @@ public sealed class ComputerOperatorAcceptanceService
                 0.80,
                 0.88),
             "OpenCV template sensor policy chưa giữ scale/threshold an toàn.");
+    }
+
+    private static void CheckVisualTargetPersistenceTemplateBounds()
+    {
+        Require(
+            DesktopVisualTargetPersistenceService.IsSafeTemplateBox(
+                1920,
+                1080,
+                100,
+                100,
+                80,
+                40) &&
+            !DesktopVisualTargetPersistenceService.IsSafeTemplateBox(
+                1920,
+                1080,
+                -1,
+                100,
+                80,
+                40) &&
+            !DesktopVisualTargetPersistenceService.IsSafeTemplateBox(
+                1920,
+                1080,
+                1900,
+                100,
+                80,
+                40) &&
+            !DesktopVisualTargetPersistenceService.IsSafeTemplateBox(
+                1920,
+                1080,
+                100,
+                100,
+                600,
+                40),
+            "Visual target persistence chưa chặn ROI ngoài frame/quá lớn.");
     }
 
     private static void CheckLocalVisualDifferenceHash()

@@ -184,23 +184,17 @@ public sealed class WindowsDesktopScreenshotService(
     private CaptureSample CaptureMonitorSample(
         ComputerMonitorInfo monitor)
     {
-        EnsureCurrentRegionBackend(
-            DesktopCaptureScopes.Monitor);
+        var result = CaptureMonitorBitmap(
+            monitor);
 
-        using var bitmap = CaptureBitmap(
-            monitor.Left,
-            monitor.Top,
-            monitor.Width,
-            monitor.Height);
-        MaskOperatorConsole(
-            bitmap,
-            monitor.Left,
-            monitor.Top);
-
-        var signature = ComputeSignature(bitmap);
+        using var bitmap = result.Bitmap;
+        var signature = ComputeSignature(
+            bitmap);
         var frame = EncodeMonitorFrame(
             bitmap,
-            monitor);
+            monitor,
+            result.Backend,
+            result.FallbackReason);
 
         return new(
             frame,
@@ -210,31 +204,95 @@ public sealed class WindowsDesktopScreenshotService(
     private DesktopScreenshotFrame CaptureMonitorFrame(
         ComputerMonitorInfo monitor)
     {
-        EnsureCurrentRegionBackend(
-            DesktopCaptureScopes.Monitor);
+        var result = CaptureMonitorBitmap(
+            monitor);
 
+        using var bitmap = result.Bitmap;
+
+        return EncodeMonitorFrame(
+            bitmap,
+            monitor,
+            result.Backend,
+            result.FallbackReason);
+    }
+
+    private MonitorCaptureBitmap CaptureMonitorBitmap(
+        ComputerMonitorInfo monitor)
+    {
         ValidateRegion(
             monitor.Width,
             monitor.Height);
 
-        using var bitmap = CaptureBitmap(
+        string? wgcReason = null;
+        var candidates =
+            captureRouter.GetOrderedCandidates(
+                DesktopCaptureScopes.Monitor);
+
+        if (candidates.Contains(
+                DesktopCaptureBackends.WindowsGraphicsCapture,
+                StringComparer.OrdinalIgnoreCase) &&
+            wgc.Available)
+        {
+            var captured =
+                wgc.CaptureMonitor(
+                    monitor.DeviceName);
+
+            if (captured.Success &&
+                TryDecodeJpeg(
+                    captured.Jpeg,
+                    out var wgcBitmap) &&
+                wgcBitmap is not null)
+            {
+                if (wgcBitmap.Width == monitor.Width &&
+                    wgcBitmap.Height == monitor.Height)
+                {
+                    MaskOperatorConsole(
+                        wgcBitmap,
+                        monitor.Left,
+                        monitor.Top);
+
+                    return new(
+                        wgcBitmap,
+                        DesktopCaptureBackends.WindowsGraphicsCapture,
+                        null);
+                }
+
+                wgcReason =
+                    $"WGC monitor trả geometry {wgcBitmap.Width}x{wgcBitmap.Height}, khác topology {monitor.Width}x{monitor.Height}.";
+
+                wgcBitmap.Dispose();
+            }
+            else
+            {
+                wgcReason =
+                    captured.Detail;
+            }
+        }
+
+        var bitmap = CaptureBitmap(
             monitor.Left,
             monitor.Top,
             monitor.Width,
             monitor.Height);
+
         MaskOperatorConsole(
             bitmap,
             monitor.Left,
             monitor.Top);
 
-        return EncodeMonitorFrame(
+        return new(
             bitmap,
-            monitor);
+            DesktopCaptureBackends.CopyFromScreen,
+            string.IsNullOrWhiteSpace(wgcReason)
+                ? null
+                : $"WGC fallback: {wgcReason}");
     }
 
     private static DesktopScreenshotFrame EncodeMonitorFrame(
         Bitmap bitmap,
-        ComputerMonitorInfo monitor)
+        ComputerMonitorInfo monitor,
+        string backend,
+        string? fallbackReason)
     {
         var frame = EncodeFrame(
             bitmap,
@@ -246,13 +304,19 @@ public sealed class WindowsDesktopScreenshotService(
         return frame with
         {
             CaptureScope = "monitor",
-            CaptureBackend = DesktopCaptureBackends.CopyFromScreen,
+            CaptureBackend = backend,
+            CaptureFallbackReason = fallbackReason,
             MonitorDevice = monitor.DeviceName,
             MonitorWasPrimary = monitor.Primary,
             MonitorDpiX = monitor.DpiX,
             MonitorDpiY = monitor.DpiY
         };
     }
+
+    private sealed record MonitorCaptureBitmap(
+        Bitmap Bitmap,
+        string Backend,
+        string? FallbackReason);
 
     private ComputerMonitorInfo ResolveMonitor(
         string deviceName)

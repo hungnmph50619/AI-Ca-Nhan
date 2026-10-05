@@ -456,6 +456,12 @@ public sealed class ComputerOperatorAcceptanceService
             "event source fusion tăng confidence khi WinEvent và UIA3 xác nhận nhau",
             CheckEventSourceFusionConfidence);
 
+        RunCheck(
+            checks,
+            "event burst gom tín hiệu dồn dập thành một transaction UI",
+            CheckEventBurstGrouping);
+
+
 
 
 
@@ -3711,6 +3717,47 @@ public sealed class ComputerOperatorAcceptanceService
             fusedScore > singleScore &&
             fusedScore >= 0.90,
             "Event source fusion chưa tăng độ tin cậy khi có hai nguồn độc lập xác nhận.");
+    }
+
+    private static void CheckEventBurstGrouping()
+    {
+        var started =
+            DateTimeOffset.UtcNow;
+
+        var first =
+            new DesktopSystemEvent(
+                DesktopSystemEventKinds.FocusChanged,
+                "0xBEEF",
+                started,
+                0,
+                "first");
+
+        var second =
+            new DesktopSystemEvent(
+                DesktopSystemEventKinds.ValueChanged,
+                "0xBEEF",
+                started.AddMilliseconds(80),
+                0,
+                "second");
+
+        var later =
+            new DesktopSystemEvent(
+                DesktopSystemEventKinds.ValueChanged,
+                "0xBEEF",
+                started.AddMilliseconds(250),
+                0,
+                "later");
+
+        Require(
+            DesktopEventBurstPolicy.BelongsToSameBurst(
+                first,
+                second,
+                TimeSpan.FromMilliseconds(120)) &&
+            !DesktopEventBurstPolicy.BelongsToSameBurst(
+                second,
+                later,
+                TimeSpan.FromMilliseconds(120)),
+            "Event burst policy chưa gom đúng các event dồn dập theo cửa sổ và thời gian.");
     }
 
     private static void CheckCapabilityCacheAvoidsRepeatedDiscovery()

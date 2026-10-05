@@ -925,8 +925,7 @@ internal static class Program
         {
             try
             {
-                automation.UnregisterFocusChangedEvent(
-                    focusHandler);
+                focusHandler.Dispose();
             }
             catch
             {
@@ -934,8 +933,7 @@ internal static class Program
 
             try
             {
-                root.UnregisterPropertyChangedEventHandler(
-                    propertyHandler);
+                propertyHandler.Dispose();
             }
             catch
             {
@@ -943,8 +941,7 @@ internal static class Program
 
             try
             {
-                root.UnregisterStructureChangedEventHandler(
-                    structureHandler);
+                structureHandler.Dispose();
             }
             catch
             {

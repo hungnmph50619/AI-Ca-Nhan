@@ -59,6 +59,9 @@ public sealed class WindowsAiOperatorConsoleService
     private const int IdClose = 4104;
     private const int IdDetails = 4105;
     private const int IdLog = 4106;
+    private const int IdCopy = 4107;
+    private const uint CfUnicodeText = 13;
+    private const uint GmemMoveable = 0x0002;
 
     private readonly object _sync = new();
     private readonly WindowProcedure _windowProcedure;
@@ -71,6 +74,7 @@ public sealed class WindowsAiOperatorConsoleService
     private IntPtr _stopButton;
     private IntPtr _closeButton;
     private IntPtr _detailsButton;
+    private IntPtr _copyButton;
     private IntPtr _blackBrush;
     private string _lastText = string.Empty;
     private string? _registeredClass;
@@ -318,8 +322,15 @@ public sealed class WindowsAiOperatorConsoleService
                 14,
                 IdClose,
                 instance);
+            _copyButton = CreateButton(
+                "SAO CHÉP",
+                14 + (ButtonWidth + Gap) * 5,
+                14,
+                IdCopy,
+                instance);
+            ShowWindow(_copyButton, SwHide);
 
-            foreach (var handle in new[] { _text, _pauseButton, _resumeButton, _stopButton, _detailsButton, _closeButton })
+            foreach (var handle in new[] { _text, _pauseButton, _resumeButton, _stopButton, _detailsButton, _closeButton, _copyButton })
             {
                 if (handle != IntPtr.Zero && font != IntPtr.Zero)
                     _ = SendMessage(handle, WmSetFont, font, new IntPtr(1));
@@ -529,6 +540,9 @@ public sealed class WindowsAiOperatorConsoleService
         _ = EnableWindow(
             _closeButton,
             true);
+        _ = EnableWindow(
+            _copyButton,
+            !string.IsNullOrWhiteSpace(_lastText));
 
         if (_detailsButton != IntPtr.Zero)
             _ = SetWindowText(
@@ -588,6 +602,19 @@ public sealed class WindowsAiOperatorConsoleService
                     _followTail = true;
                     _lastText = string.Empty;
                     ApplyConsoleLayout();
+                    return IntPtr.Zero;
+
+                case IdCopy:
+                    if (TryCopyTextToClipboard(_lastText))
+                    {
+                        logger.LogInformation(
+                            "Đã sao chép toàn bộ AI Operator Console vào Clipboard.");
+                    }
+                    else
+                    {
+                        logger.LogWarning(
+                            "Không sao chép được AI Operator Console vào Clipboard.");
+                    }
                     return IntPtr.Zero;
 
                 case IdClose:
@@ -931,6 +958,11 @@ Ctrl + Shift + F12 để dừng khẩn cấp.
             height,
             0x0010 | 0x0002);
 
+        if (_copyButton != IntPtr.Zero)
+            ShowWindow(
+                _copyButton,
+                _expanded ? SwShowNoActivate : SwHide);
+
         if (_followTail)
             ScrollLogToEnd();
     }
@@ -980,6 +1012,61 @@ Ctrl + Shift + F12 để dừng khẩn cấp.
         return normalized.Length <= maximum
             ? normalized
             : normalized[..Math.Max(1, maximum - 1)] + "…";
+    }
+
+    private static bool TryCopyTextToClipboard(
+        string text)
+    {
+        if (string.IsNullOrEmpty(text))
+            return false;
+
+        if (!OpenClipboard(IntPtr.Zero))
+            return false;
+
+        IntPtr memory = IntPtr.Zero;
+        try
+        {
+            if (!EmptyClipboard())
+                return false;
+
+            var characters = (text + "\0").ToCharArray();
+            var byteCount = characters.Length * sizeof(char);
+            memory = GlobalAlloc(
+                GmemMoveable,
+                new UIntPtr((uint)byteCount));
+            if (memory == IntPtr.Zero)
+                return false;
+
+            var target = GlobalLock(memory);
+            if (target == IntPtr.Zero)
+                return false;
+
+            try
+            {
+                Marshal.Copy(
+                    characters,
+                    0,
+                    target,
+                    characters.Length);
+            }
+            finally
+            {
+                _ = GlobalUnlock(memory);
+            }
+
+            if (SetClipboardData(CfUnicodeText, memory) == IntPtr.Zero)
+                return false;
+
+            // Clipboard sở hữu HGLOBAL sau SetClipboardData thành công.
+            memory = IntPtr.Zero;
+            return true;
+        }
+        finally
+        {
+            _ = CloseClipboard();
+            if (memory != IntPtr.Zero)
+                _ = GlobalFree(memory);
+        }
     }
 
     private static void PumpMessages()
@@ -1046,6 +1133,34 @@ Ctrl + Shift + F12 để dừng khẩn cấp.
         public int Y;
         public uint Private;
     }
+
+    [DllImport("user32.dll", SetLastError = true)]
+    private static extern bool OpenClipboard(IntPtr newOwner);
+
+    [DllImport("user32.dll", SetLastError = true)]
+    private static extern bool CloseClipboard();
+
+    [DllImport("user32.dll", SetLastError = true)]
+    private static extern bool EmptyClipboard();
+
+    [DllImport("user32.dll", SetLastError = true)]
+    private static extern IntPtr SetClipboardData(
+        uint format,
+        IntPtr memory);
+
+    [DllImport("kernel32.dll", SetLastError = true)]
+    private static extern IntPtr GlobalAlloc(
+        uint flags,
+        UIntPtr bytes);
+
+    [DllImport("kernel32.dll", SetLastError = true)]
+    private static extern IntPtr GlobalLock(IntPtr memory);
+
+    [DllImport("kernel32.dll", SetLastError = true)]
+    private static extern bool GlobalUnlock(IntPtr memory);
+
+    [DllImport("kernel32.dll", SetLastError = true)]
+    private static extern IntPtr GlobalFree(IntPtr memory);
 
     [DllImport("user32.dll", CharSet = CharSet.Unicode, SetLastError = true)]
     private static extern ushort RegisterClassEx(

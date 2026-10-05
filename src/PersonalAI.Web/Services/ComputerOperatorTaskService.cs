@@ -81,7 +81,8 @@ public sealed record ComputerOperatorDesktopState(
     string CaptureScope,
     string? CaptureWindowId,
     bool CaptureWindowWasForeground,
-    StructuredDesktopSnapshot? StructuredScene = null)
+    StructuredDesktopSnapshot? StructuredScene = null,
+    UnifiedStructuredSceneGraph? StructuredGraph = null)
 {
     public string ToPromptSummary()
     {
@@ -100,22 +101,27 @@ public sealed record ComputerOperatorDesktopState(
                 $"- id={window.WindowId}; title={window.Title}; process={window.ProcessName ?? "?"}; foreground={window.IsForeground}; rect={window.Left},{window.Top},{window.Width},{window.Height}");
         }
 
-        if (StructuredScene is not null)
+        if (StructuredGraph is not null)
         {
             lines.Add(
-                $"Structured UIA scene: source={StructuredScene.Source}; nodes={StructuredScene.NodeCount}; root={StructuredScene.RootToken}.");
+                $"Unified structured scene graph: source={StructuredGraph.Source}; nodes={StructuredGraph.NodeCount}; interactive={StructuredGraph.InteractiveNodeCount}; root={StructuredGraph.RootId}; window={StructuredGraph.WindowTitle}.");
 
-            foreach (var node in StructuredScene.Nodes
+            foreach (var node in StructuredGraph.Nodes
                          .Where(node =>
-                             !node.IsOffscreen &&
+                             node.IsVisible &&
                              (node.IsFocused ||
-                              node.Patterns.Count > 0 ||
+                              node.Interactive ||
                               !string.IsNullOrWhiteSpace(node.Name)))
                          .Take(40))
             {
                 lines.Add(
-                    $"- UIA depth={node.Depth}; role={node.Role}; name={node.Name}; automationId={node.AutomationId}; enabled={node.IsEnabled}; focused={node.IsFocused}; rect={node.Left},{node.Top},{node.Width},{node.Height}; patterns={string.Join(",", node.Patterns)}");
+                    $"- node={node.Id}; parent={node.ParentId}; depth={node.Depth}; role={node.Role}; name={node.Name}; automationId={node.AutomationId}; enabled={node.IsEnabled}; focused={node.IsFocused}; frameRect={node.FrameLeft},{node.FrameTop},{node.Width},{node.Height}; capabilities={string.Join(",", node.Capabilities)}; children={node.Children.Count}");
             }
+        }
+        else if (StructuredScene is not null)
+        {
+            lines.Add(
+                $"Structured UIA scene: source={StructuredScene.Source}; nodes={StructuredScene.NodeCount}; root={StructuredScene.RootToken}.");
         }
 
         return string.Join("\n", lines);
@@ -384,7 +390,7 @@ public sealed class ComputerOperatorTaskService(
 
                 progress.Add(
                     "desktop-state",
-                    $"Unified Desktop State: foreground={active?.Title ?? "không xác định"}; windows={desktopState.Windows.Count}; structuredNodes={desktopState.StructuredScene?.NodeCount ?? 0}; frame={desktopState.CaptureScope}/{desktopState.FrameWidth}x{desktopState.FrameHeight}.",
+                    $"Unified Desktop State: foreground={active?.Title ?? "không xác định"}; windows={desktopState.Windows.Count}; structuredNodes={desktopState.StructuredScene?.NodeCount ?? 0}; graphNodes={desktopState.StructuredGraph?.NodeCount ?? 0}; interactive={desktopState.StructuredGraph?.InteractiveNodeCount ?? 0}; frame={desktopState.CaptureScope}/{desktopState.FrameWidth}x{desktopState.FrameHeight}.",
                     observation: true);
 
                 var sceneDiagnosticId =
@@ -392,7 +398,7 @@ public sealed class ComputerOperatorTaskService(
 
                 progress.AddDiagnostic(
                     "cycle",
-                    $"cycle={index}; scene={sceneDiagnosticId}; foreground={active?.ProcessName ?? "?"}/{active?.Title ?? "không xác định"}; windows={desktopState.Windows.Count}; structuredNodes={desktopState.StructuredScene?.NodeCount ?? 0}; frame={desktopState.CaptureScope}; origin=({desktopState.FrameLeft},{desktopState.FrameTop}); size={desktopState.FrameWidth}x{desktopState.FrameHeight}.");
+                    $"cycle={index}; scene={sceneDiagnosticId}; foreground={active?.ProcessName ?? "?"}/{active?.Title ?? "không xác định"}; windows={desktopState.Windows.Count}; structuredNodes={desktopState.StructuredScene?.NodeCount ?? 0}; graphNodes={desktopState.StructuredGraph?.NodeCount ?? 0}; interactive={desktopState.StructuredGraph?.InteractiveNodeCount ?? 0}; frame={desktopState.CaptureScope}; origin=({desktopState.FrameLeft},{desktopState.FrameTop}); size={desktopState.FrameWidth}x{desktopState.FrameHeight}.");
 
                 DesktopOperatorDecision decision;
                 var plannerStopwatch = Stopwatch.StartNew();
@@ -3140,6 +3146,15 @@ public sealed class ComputerOperatorTaskService(
                     maximumDepth: 7);
         }
 
+        var structuredGraph =
+            UnifiedStructuredSceneGraphBuilder.Build(
+                structuredScene,
+                active,
+                frame.Left,
+                frame.Top,
+                frame.Width,
+                frame.Height);
+
         return new ComputerOperatorDesktopState(
             frame.CapturedAtUtc,
             active,
@@ -3151,7 +3166,8 @@ public sealed class ComputerOperatorTaskService(
             frame.CaptureScope,
             frame.WindowId,
             frame.WindowWasForeground,
-            structuredScene);
+            structuredScene,
+            structuredGraph);
     }
 
     private static string RequireActive(

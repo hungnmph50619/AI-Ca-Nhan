@@ -711,7 +711,9 @@ Các field không dùng để chuỗi rỗng hoặc [].
             {
                 maxOutputTokens = 4096,
                 temperature = 0.0,
-                responseMimeType = "application/json"
+                responseMimeType = "application/json",
+                responseJsonSchema =
+                    CreateDesktopOperatorResponseJsonSchema()
             }
         };
 
@@ -1479,6 +1481,123 @@ Các field không dùng để chuỗi rỗng hoặc [].
 
         number = 0;
         return false;
+    }
+
+    internal static JsonElement CreateDesktopOperatorResponseJsonSchemaForAcceptance() =>
+        CreateDesktopOperatorResponseJsonSchema();
+
+    private static JsonElement CreateDesktopOperatorResponseJsonSchema()
+    {
+        using var document =
+            JsonDocument.Parse(
+                """
+{
+  "type": "object",
+  "additionalProperties": false,
+  "properties": {
+    "state": { "type": "string" },
+    "plan": { "type": "string" },
+    "currentSubgoal": { "type": "string" },
+    "goalProgress": { "type": "number", "minimum": 0, "maximum": 1 },
+    "verifiedMilestones": {
+      "type": "array",
+      "items": { "type": "string" },
+      "maxItems": 12
+    },
+    "sceneElements": {
+      "type": "array",
+      "maxItems": 12,
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "id": { "type": "string" },
+          "role": { "type": "string" },
+          "label": { "type": "string" },
+          "parentId": { "type": "string" },
+          "boxLeft": { "type": "integer" },
+          "boxTop": { "type": "integer" },
+          "boxWidth": { "type": "integer" },
+          "boxHeight": { "type": "integer" },
+          "confidence": { "type": "number", "minimum": 0, "maximum": 1 },
+          "relations": {
+            "type": "array",
+            "items": { "type": "string" },
+            "maxItems": 8
+          }
+        },
+        "required": [
+          "id", "role", "label", "parentId",
+          "boxLeft", "boxTop", "boxWidth", "boxHeight",
+          "confidence", "relations"
+        ]
+      }
+    },
+    "targetElementId": { "type": "string" },
+    "action": {
+      "type": "string",
+      "enum": [
+        "move-pointer", "click-left", "double-click-left", "click-right",
+        "scroll", "drag-left", "focus-window", "minimize", "maximize",
+        "restore", "type-text", "press-key", "press-hotkey", "open-browser",
+        "wait", "complete", "blocked"
+      ]
+    },
+    "query": { "type": "string" },
+    "text": { "type": "string" },
+    "key": { "type": "string" },
+    "keys": {
+      "type": "array",
+      "items": { "type": "string" },
+      "maxItems": 8
+    },
+    "url": { "type": "string" },
+    "targetLabel": { "type": "string" },
+    "coordinateSpace": {
+      "type": "string",
+      "enum": [
+        "image-pixel", "image-normalized",
+        "window-normalized", "virtual-desktop-normalized"
+      ]
+    },
+    "coordinateWindowId": { "type": "string" },
+    "x": { "type": "integer" },
+    "y": { "type": "integer" },
+    "endX": { "type": "integer" },
+    "endY": { "type": "integer" },
+    "normalizedX": { "type": "number" },
+    "normalizedY": { "type": "number" },
+    "endNormalizedX": { "type": "number" },
+    "endNormalizedY": { "type": "number" },
+    "boxLeft": { "type": "integer" },
+    "boxTop": { "type": "integer" },
+    "boxWidth": { "type": "integer" },
+    "boxHeight": { "type": "integer" },
+    "boxNormalizedLeft": { "type": "number" },
+    "boxNormalizedTop": { "type": "number" },
+    "boxNormalizedWidth": { "type": "number" },
+    "boxNormalizedHeight": { "type": "number" },
+    "scrollDelta": { "type": "integer" },
+    "expectedEffect": { "type": "string" },
+    "confidence": { "type": "number", "minimum": 0, "maximum": 1 },
+    "reason": { "type": "string" }
+  },
+  "required": [
+    "state", "plan", "currentSubgoal", "goalProgress",
+    "verifiedMilestones", "sceneElements", "targetElementId", "action",
+    "query", "text", "key", "keys", "url", "targetLabel",
+    "coordinateSpace", "coordinateWindowId",
+    "x", "y", "endX", "endY",
+    "normalizedX", "normalizedY", "endNormalizedX", "endNormalizedY",
+    "boxLeft", "boxTop", "boxWidth", "boxHeight",
+    "boxNormalizedLeft", "boxNormalizedTop",
+    "boxNormalizedWidth", "boxNormalizedHeight",
+    "scrollDelta", "expectedEffect", "confidence", "reason"
+  ]
+}
+""");
+
+        return document.RootElement.Clone();
     }
 
     private static DesktopOperatorDecision ParseDesktopOperatorDecisionOrWait(

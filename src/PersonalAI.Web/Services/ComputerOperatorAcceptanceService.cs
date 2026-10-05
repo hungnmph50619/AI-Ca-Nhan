@@ -478,6 +478,21 @@ public sealed class ComputerOperatorAcceptanceService
 
         RunCheck(
             checks,
+            "generic text engine direct set và local verify",
+            CheckGenericTextEngineDirectSetAndVerify);
+
+        RunCheck(
+            checks,
+            "generic text engine repair tối đa một lần",
+            CheckGenericTextEngineRepairsOnce);
+
+        RunCheck(
+            checks,
+            "generic text engine chặn trường nhạy cảm",
+            CheckGenericTextEngineRejectsSensitiveTarget);
+
+        RunCheck(
+            checks,
             "pause resume stop giữ đúng trạng thái và cancellation",
             CheckExecutionPauseResumeStop);
 
@@ -3878,6 +3893,94 @@ public sealed class ComputerOperatorAcceptanceService
             "Coding context FAIL không dừng đúng gate hoặc chưa buộc replan.");
     }
 
+    private static void CheckGenericTextEngineDirectSetAndVerify()
+    {
+        var backend =
+            new AcceptanceTextAccessibilityBackend(
+                initialValue: "old",
+                failFirstSet: false,
+                sensitive: false);
+
+        var engine =
+            new GenericTextInteractionEngine(
+                backend,
+                new AcceptanceTextClipboardWriter(),
+                new AcceptanceComputerUseService());
+
+        var result = engine.Execute(
+            new TextInteractionRequest(
+                AcceptanceComputerUseService.WindowId,
+                "Xin chào"));
+
+        Require(
+            result.Verified &&
+            result.Strategy ==
+                TextInteractionStrategies.AccessibilityDirect &&
+            result.ActualText == "Xin chào" &&
+            backend.SetCount == 1,
+            "Generic Text Engine chưa direct-set + local verify đúng.");
+    }
+
+    private static void CheckGenericTextEngineRepairsOnce()
+    {
+        var backend =
+            new AcceptanceTextAccessibilityBackend(
+                initialValue: "old",
+                failFirstSet: true,
+                sensitive: false);
+
+        var engine =
+            new GenericTextInteractionEngine(
+                backend,
+                new AcceptanceTextClipboardWriter(),
+                new AcceptanceComputerUseService());
+
+        var result = engine.Execute(
+            new TextInteractionRequest(
+                AcceptanceComputerUseService.WindowId,
+                "Nội dung cuối cùng"));
+
+        Require(
+            result.Verified &&
+            result.RepairAttempted &&
+            backend.SetCount == 2 &&
+            result.ActualText == "Nội dung cuối cùng",
+            "Generic Text Engine chưa giới hạn repair về đúng một lần.");
+    }
+
+    private static void CheckGenericTextEngineRejectsSensitiveTarget()
+    {
+        var backend =
+            new AcceptanceTextAccessibilityBackend(
+                initialValue: string.Empty,
+                failFirstSet: false,
+                sensitive: true);
+
+        var engine =
+            new GenericTextInteractionEngine(
+                backend,
+                new AcceptanceTextClipboardWriter(),
+                new AcceptanceComputerUseService());
+
+        var rejected = false;
+        try
+        {
+            _ = engine.Execute(
+                new TextInteractionRequest(
+                    AcceptanceComputerUseService.WindowId,
+                    "secret"));
+        }
+        catch (ToolExecutionInputException)
+        {
+            rejected = true;
+        }
+
+        Require(
+            rejected &&
+            backend.SetCount == 0,
+            "Generic Text Engine chưa chặn sensitive/password target.");
+    }
+
     private static void CheckExecutionPauseResumeStop()
     {
         using var execution = new ComputerOperatorExecutionControl();
@@ -4461,6 +4564,78 @@ public sealed class ComputerOperatorAcceptanceService
                     Verified: verifiedResult,
                     Provider: "acceptance",
                     Model: "acceptance"));
+        }
+    }
+
+    private sealed class AcceptanceTextAccessibilityBackend(
+        string initialValue,
+        bool failFirstSet,
+        bool sensitive)
+        : ITextAccessibilityBackend
+    {
+        private string value = initialValue;
+
+        public int SetCount { get; private set; }
+
+        public TextTargetCapabilities Probe(
+            string windowId) =>
+            new(
+                windowId,
+                new nint(1),
+                "Edit",
+                IsFocused: true,
+                CanRead: true,
+                CanDirectSet: true,
+                SupportsSelection: true,
+                IsReadOnly: false,
+                IsSensitive: sensitive,
+                "acceptance-accessibility");
+
+        public string? TryRead(
+            TextTargetCapabilities target) =>
+            value;
+
+        public bool TryDirectSet(
+            TextTargetCapabilities target,
+            string text,
+            string writeMode)
+        {
+            SetCount++;
+
+            if (failFirstSet &&
+                SetCount == 1)
+            {
+                value = text + "!";
+                return true;
+            }
+
+            value = text;
+            return true;
+        }
+
+        public bool IsSameFocusedTarget(
+            TextTargetCapabilities target) =>
+            true;
+    }
+
+    private sealed class AcceptanceTextClipboardWriter
+        : ITextClipboardWriter
+    {
+        public bool CanUseSafely(
+            out string reason)
+        {
+            reason = "acceptance";
+            return false;
+        }
+
+        public bool TryPaste(
+            TextTargetCapabilities target,
+            string text,
+            string writeMode,
+            out string detail)
+        {
+            detail = "acceptance";
+            return false;
         }
     }
 

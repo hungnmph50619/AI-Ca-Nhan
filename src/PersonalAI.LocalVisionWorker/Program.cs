@@ -1,5 +1,6 @@
 using System.Text.Json;
 using CoreOCROnnx.SDK;
+using OpenCvSharp;
 
 var jsonOptions =
     new JsonSerializerOptions(JsonSerializerDefaults.Web)
@@ -17,20 +18,62 @@ try
             input,
             jsonOptions);
 
-    if (request is null ||
-        !request.Operation.Equals(
-            "paddle-ocr",
-            StringComparison.OrdinalIgnoreCase) ||
-        string.IsNullOrWhiteSpace(
-            request.JpegBase64))
+    if (request is null)
     {
         Write(
-            new WorkerResponse(
-                false,
-                "Request worker không hợp lệ.",
-                string.Empty,
-                Array.Empty<WorkerLine>()));
+            Fail(
+                "Request worker không hợp lệ."));
         return;
+    }
+
+    if (request.Operation.Equals(
+            "paddle-ocr",
+            StringComparison.OrdinalIgnoreCase))
+    {
+        Write(
+            RunPaddleOcr(
+                request));
+        return;
+    }
+
+    if (request.Operation.Equals(
+            "opencv-template",
+            StringComparison.OrdinalIgnoreCase))
+    {
+        Write(
+            RunOpenCvTemplate(
+                request));
+        return;
+    }
+
+    Write(
+        Fail(
+            $"Worker operation không hỗ trợ: {request.Operation}."));
+}
+catch (Exception exception)
+{
+    Write(
+        Fail(
+            $"{exception.GetType().Name}: {exception.Message}"));
+}
+
+void Write(
+    WorkerResponse response)
+{
+    Console.Out.Write(
+        JsonSerializer.Serialize(
+            response,
+            jsonOptions));
+}
+
+WorkerResponse RunPaddleOcr(
+    WorkerRequest request)
+{
+    if (string.IsNullOrWhiteSpace(
+            request.JpegBase64))
+    {
+        return Fail(
+            "PaddleOCR request thiếu JPEG.");
     }
 
     var modelDirectory =
@@ -39,13 +82,8 @@ try
 
     if (modelDirectory is null)
     {
-        Write(
-            new WorkerResponse(
-                false,
-                "Không tìm thấy bộ model PP-OCRv6 trong local vision worker output.",
-                string.Empty,
-                Array.Empty<WorkerLine>()));
-        return;
+        return Fail(
+            "Không tìm thấy bộ model PP-OCRv6 trong local vision worker output.");
     }
 
     using var engine =
@@ -63,13 +101,8 @@ try
             "success",
             StringComparison.OrdinalIgnoreCase))
     {
-        Write(
-            new WorkerResponse(
-                false,
-                $"Khởi tạo CoreOCROnnx thất bại: {init}",
-                string.Empty,
-                Array.Empty<WorkerLine>()));
-        return;
+        return Fail(
+            $"Khởi tạo CoreOCROnnx thất bại: {init}");
     }
 
     var image =
@@ -101,30 +134,300 @@ try
                     line.Text))
             : result.StrRes.Trim();
 
-    Write(
-        new WorkerResponse(
-            true,
-            $"CoreOCROnnx đọc được {lines.Length} block; detect={result.DbNetTime:0.0}ms; recognize={result.DetectTime:0.0}ms.",
-            text,
-            lines));
-}
-catch (Exception exception)
-{
-    Write(
-        new WorkerResponse(
-            false,
-            $"{exception.GetType().Name}: {exception.Message}",
-            string.Empty,
-            Array.Empty<WorkerLine>()));
+    return new(
+        true,
+        $"CoreOCROnnx đọc được {lines.Length} block; detect={result.DbNetTime:0.0}ms; recognize={result.DetectTime:0.0}ms.",
+        text,
+        lines,
+        null);
 }
 
-void Write(
-    WorkerResponse response)
+WorkerResponse RunOpenCvTemplate(
+    WorkerRequest request)
 {
-    Console.Out.Write(
-        JsonSerializer.Serialize(
-            response,
-            jsonOptions));
+    if (string.IsNullOrWhiteSpace(
+            request.JpegBase64) ||
+        string.IsNullOrWhiteSpace(
+            request.TemplateBase64))
+    {
+        return Fail(
+            "OpenCV request thiếu frame/template.");
+    }
+
+    var frame =
+        Convert.FromBase64String(
+            request.JpegBase64);
+    var templateBytes =
+        Convert.FromBase64String(
+            request.TemplateBase64);
+
+    using var source =
+        Cv2.ImDecode(
+            frame,
+            ImreadModes.Grayscale);
+    using var template =
+        Cv2.ImDecode(
+            templateBytes,
+            ImreadModes.Grayscale);
+
+    if (source.Empty() ||
+        template.Empty())
+    {
+        return Fail(
+            "OpenCV không decode được frame/template.");
+    }
+
+    var minimumScore =
+        Math.Clamp(
+            request.MinimumScore <= 0
+                ? 0.88
+                : request.MinimumScore,
+            0.50,
+            0.999);
+
+    var scaleCandidates =
+        new[]
+        {
+            1.00,
+            0.95,
+            1.05,
+            0.90,
+            1.10,
+            0.85,
+            1.15
+        };
+
+    var candidates =
+        new List<MatchCandidate>();
+
+    foreach (var scale in
+             scaleCandidates)
+    {
+        var width =
+            Math.Max(
+                2,
+                (int)Math.Round(
+                    template.Width *
+                    scale));
+        var height =
+            Math.Max(
+                2,
+                (int)Math.Round(
+                    template.Height *
+                    scale));
+
+        if (width >
+                source.Width ||
+            height >
+                source.Height)
+        {
+            continue;
+        }
+
+        using var scaled =
+            new Mat();
+
+        Cv2.Resize(
+            template,
+            scaled,
+            new Size(
+                width,
+                height),
+            interpolation:
+                scale < 1.0
+                    ? InterpolationFlags.Area
+                    : InterpolationFlags.Linear);
+
+        using var result =
+            new Mat();
+
+        Cv2.MatchTemplate(
+            source,
+            scaled,
+            result,
+            TemplateMatchModes.CCoeffNormed);
+
+        Cv2.MinMaxLoc(
+            result,
+            out _,
+            out var maxValue,
+            out _,
+            out var maxLocation);
+
+        var best =
+            new MatchCandidate(
+                maxValue,
+                maxLocation.X,
+                maxLocation.Y,
+                width,
+                height,
+                scale);
+
+        candidates.Add(
+            best);
+
+        using var suppressed =
+            result.Clone();
+
+        var suppressLeft =
+            Math.Max(
+                0,
+                maxLocation.X -
+                width / 2);
+        var suppressTop =
+            Math.Max(
+                0,
+                maxLocation.Y -
+                height / 2);
+        var suppressWidth =
+            Math.Min(
+                suppressed.Width -
+                suppressLeft,
+                Math.Max(
+                    1,
+                    width * 2));
+        var suppressHeight =
+            Math.Min(
+                suppressed.Height -
+                suppressTop,
+                Math.Max(
+                    1,
+                    height * 2));
+
+        Cv2.Rectangle(
+            suppressed,
+            new Rect(
+                suppressLeft,
+                suppressTop,
+                suppressWidth,
+                suppressHeight),
+            Scalar.All(-1),
+            thickness: -1);
+
+        Cv2.MinMaxLoc(
+            suppressed,
+            out _,
+            out var secondValue,
+            out _,
+            out var secondLocation);
+
+        candidates.Add(
+            new MatchCandidate(
+                secondValue,
+                secondLocation.X,
+                secondLocation.Y,
+                width,
+                height,
+                scale));
+    }
+
+    if (candidates.Count == 0)
+    {
+        return Fail(
+            "Không có scale template hợp lệ trong frame.");
+    }
+
+    var ordered =
+        candidates
+            .OrderByDescending(candidate =>
+                candidate.Score)
+            .ToArray();
+
+    var first =
+        ordered[0];
+
+    var second =
+        ordered
+            .Skip(1)
+            .FirstOrDefault(candidate =>
+                IsSpatiallyDistinct(
+                    first,
+                    candidate));
+
+    var secondScore =
+        second?.Score ??
+        -1.0;
+
+    const double minimumUniquenessMargin = 0.04;
+
+    var ambiguous =
+        first.Score >=
+            minimumScore &&
+        second is not null &&
+        second.Score >=
+            minimumScore &&
+        first.Score -
+            second.Score <
+            minimumUniquenessMargin;
+
+    var matched =
+        first.Score >=
+            minimumScore &&
+        !ambiguous;
+
+    var detail =
+        ambiguous
+            ? $"OpenCV có hai match gần ngang nhau: best={first.Score:0.000}; second={secondScore:0.000}; từ chối đoán."
+            : matched
+                ? $"OpenCV template match đạt {first.Score:0.000}, second={secondScore:0.000}, scale={first.Scale:0.00}."
+                : $"OpenCV template match tốt nhất {first.Score:0.000} thấp hơn ngưỡng {minimumScore:0.000}.";
+
+    return new(
+        true,
+        detail,
+        string.Empty,
+        Array.Empty<WorkerLine>(),
+        new WorkerMatch(
+            matched,
+            ambiguous,
+            Math.Clamp(
+                first.Score,
+                -1,
+                1),
+            Math.Clamp(
+                secondScore,
+                -1,
+                1),
+            first.Left,
+            first.Top,
+            first.Width,
+            first.Height,
+            first.Scale));
+}
+
+static bool IsSpatiallyDistinct(
+    MatchCandidate left,
+    MatchCandidate right)
+{
+    var leftCenterX =
+        left.Left +
+        left.Width / 2.0;
+    var leftCenterY =
+        left.Top +
+        left.Height / 2.0;
+    var rightCenterX =
+        right.Left +
+        right.Width / 2.0;
+    var rightCenterY =
+        right.Top +
+        right.Height / 2.0;
+
+    var threshold =
+        Math.Max(
+            8.0,
+            Math.Min(
+                left.Width,
+                left.Height) *
+            0.5);
+
+    return Math.Abs(
+               leftCenterX -
+               rightCenterX) >
+               threshold ||
+           Math.Abs(
+               leftCenterY -
+               rightCenterY) >
+               threshold;
 }
 
 static WorkerLine? ToLine(
@@ -176,6 +479,15 @@ static WorkerLine? ToLine(
                     bottom - top))
         ]);
 }
+
+static WorkerResponse Fail(
+    string detail) =>
+    new(
+        false,
+        detail,
+        string.Empty,
+        Array.Empty<WorkerLine>(),
+        null);
 
 static string? FindModelDirectory(
     string baseDirectory)
@@ -261,13 +573,27 @@ static string? FindModelDirectory(
 
 sealed record WorkerRequest(
     string Operation,
-    string JpegBase64);
+    string? JpegBase64,
+    string? TemplateBase64,
+    double MinimumScore);
 
 sealed record WorkerResponse(
     bool Success,
     string Detail,
     string Text,
-    WorkerLine[] Lines);
+    WorkerLine[] Lines,
+    WorkerMatch? Match);
+
+sealed record WorkerMatch(
+    bool Matched,
+    bool Ambiguous,
+    double Score,
+    double SecondBestScore,
+    int Left,
+    int Top,
+    int Width,
+    int Height,
+    double Scale);
 
 sealed record WorkerLine(
     string Text,
@@ -279,6 +605,14 @@ sealed record WorkerWord(
     double Top,
     double Width,
     double Height);
+
+sealed record MatchCandidate(
+    double Score,
+    int Left,
+    int Top,
+    int Width,
+    int Height,
+    double Scale);
 
 sealed class EngineLease(
     OCRService service)

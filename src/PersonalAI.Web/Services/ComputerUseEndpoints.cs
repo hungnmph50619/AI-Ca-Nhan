@@ -260,6 +260,38 @@ public static class ComputerUseEndpoints
             });
         });
 
+        app.MapGet("/api/computer/uia-events/wait", (
+            HttpContext context,
+            string windowId,
+            int? waitMs,
+            IFlaUiAutomationClient flaUi) =>
+        {
+            if (!IsLocalRequest(context))
+                return Results.StatusCode(StatusCodes.Status403Forbidden);
+
+            var resolvedWait =
+                Math.Clamp(
+                    waitMs ?? 500,
+                    100,
+                    3000);
+
+            var response =
+                flaUi.Invoke(
+                    new FlaUiAutomationRequest(
+                        "wait-uia-event",
+                        windowId,
+                        WaitMilliseconds: resolvedWait));
+
+            return Results.Ok(new
+            {
+                phienBan = PersonalAiRelease.Version,
+                thanhCong = response.Success,
+                loaiSuKien = response.EventKind,
+                cuaSo = response.EventWindowId,
+                chiTiet = response.Detail
+            });
+        });
+
         app.MapGet("/api/computer/operator-runtime", (
             HttpContext context,
             IUniversalReliableOperatorCoordinator reliableOperator) =>

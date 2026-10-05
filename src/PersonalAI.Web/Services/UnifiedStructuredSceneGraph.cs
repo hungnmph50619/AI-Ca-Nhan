@@ -23,7 +23,9 @@ public sealed record UnifiedStructuredSceneNode(
     IReadOnlyList<string> Children,
     string ToggleState = "",
     string ExpandCollapseState = "",
-    bool? IsSelected = null)
+    bool? IsSelected = null,
+    string? Value = null,
+    bool IsSensitive = false)
 {
     public bool Interactive =>
         IsVisible &&
@@ -154,7 +156,9 @@ public static class UnifiedStructuredSceneGraphBuilder
                                 : Array.Empty<string>(),
                         ToggleState: node.ToggleState,
                         ExpandCollapseState: node.ExpandCollapseState,
-                        IsSelected: node.IsSelected);
+                        IsSelected: node.IsSelected,
+                        Value: node.Value,
+                        IsSensitive: node.IsSensitive);
                 })
                 .ToArray();
 

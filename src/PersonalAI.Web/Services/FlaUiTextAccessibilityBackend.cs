@@ -190,7 +190,7 @@ public sealed class FlaUiAutomationClient(
 
 public sealed class FlaUiTextAccessibilityBackend(
     IFlaUiAutomationClient client)
-    : ITextAccessibilityBackend
+    : IFlaUiTextAccessibilityBackend
 {
     private const string BackendName = "flaui-uia3";
 
@@ -285,8 +285,8 @@ public sealed class FlaUiTextAccessibilityBackend(
 }
 
 public sealed class CompositeTextAccessibilityBackend(
-    FlaUiTextAccessibilityBackend flaUi,
-    WindowsTextAccessibilityBackend win32)
+    IFlaUiTextAccessibilityBackend flaUi,
+    IWin32TextAccessibilityBackend win32)
     : ITextAccessibilityBackend
 {
     public TextTargetCapabilities Probe(

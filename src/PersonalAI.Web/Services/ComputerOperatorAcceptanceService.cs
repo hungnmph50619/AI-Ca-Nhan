@@ -93,6 +93,11 @@ public sealed class ComputerOperatorAcceptanceService
 
         RunCheck(
             checks,
+            "provider cooldown không chụp lặp quá nhanh trên cùng scene",
+            CheckProviderCooldownDelayBounds);
+
+        RunCheck(
+            checks,
             "local visual provider health cooldown sau failure lặp",
             CheckLocalVisualProviderHealthCooldown);
 
@@ -1529,6 +1534,24 @@ public sealed class ComputerOperatorAcceptanceService
                 age: TimeSpan.FromMinutes(2),
                 idle: TimeSpan.FromMinutes(2)),
             "Local vision warm worker recycle policy chưa khóa đúng max-request/max-age/idle.");
+    }
+
+    private static void CheckProviderCooldownDelayBounds()
+    {
+        var now =
+            DateTimeOffset.UtcNow;
+
+        Require(
+            ComputerOperatorTaskService.CalculateProviderCooldownDelayMillisecondsForAcceptance(
+                now.AddMilliseconds(100),
+                now) == 900 &&
+            ComputerOperatorTaskService.CalculateProviderCooldownDelayMillisecondsForAcceptance(
+                now.AddMilliseconds(2500),
+                now) == 2500 &&
+            ComputerOperatorTaskService.CalculateProviderCooldownDelayMillisecondsForAcceptance(
+                now.AddSeconds(12),
+                now) == 5000,
+            "Provider cooldown delay chưa clamp đúng trong biên 900..5000ms.");
     }
 
     private static void CheckLocalVisualProviderHealthCooldown()

@@ -809,6 +809,7 @@ Ctrl + Shift + F12 để dừng khẩn cấp.
         }
 
         builder.AppendLine("Ctrl + Shift + F12 hoặc DỪNG NGAY để hủy; ĐÓNG chỉ ẩn bảng theo dõi.");
+        builder.AppendLine("Chẩn đoán sâu: BẬT trong mục CHI TIẾT; nút SAO CHÉP sẽ sao chép cả log chẩn đoán.");
         builder.AppendLine(new string('─', 66));
 
         foreach (var entry in snapshot.Entries.TakeLast(160))
@@ -897,6 +898,14 @@ Ctrl + Shift + F12 để dừng khẩn cấp.
             "blocked" => "BỊ CHẶN",
             "completed" => "HOÀN TẤT",
             "stopped" => "ĐÃ DỪNG",
+            "diagnostic-cycle" => "CHẨN ĐOÁN · CYCLE",
+            "diagnostic-scene" => "CHẨN ĐOÁN · SCENE",
+            "diagnostic-strategy" => "CHẨN ĐOÁN · STRATEGY",
+            "diagnostic-capture" => "CHẨN ĐOÁN · CAPTURE",
+            "diagnostic-evidence" => "CHẨN ĐOÁN · EVIDENCE",
+            "diagnostic-provider" => "CHẨN ĐOÁN · PROVIDER",
+            "diagnostic-recovery" => "CHẨN ĐOÁN · RECOVERY",
+            "diagnostic-lifecycle" => "CHẨN ĐOÁN · LIFECYCLE",
             _ => string.IsNullOrWhiteSpace(normalized)
                 ? "ĐANG XỬ LÝ"
                 : normalized.Replace('-', ' ').ToUpperInvariant()

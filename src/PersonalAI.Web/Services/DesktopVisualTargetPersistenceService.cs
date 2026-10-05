@@ -1,4 +1,5 @@
-using OpenCvSharp;
+using System.Drawing;
+using System.Drawing.Imaging;
 using PersonalAI.Web.Models;
 
 namespace PersonalAI.Web.Services;
@@ -73,45 +74,58 @@ public sealed class DesktopVisualTargetPersistenceService(
         if (!OperatingSystem.IsWindows())
         {
             return UnavailableTemplate(
-                "Visual target template dùng OpenCV native hiện chỉ bật trên Windows.");
+                "Visual target template hiện chỉ bật trên Windows.");
+        }
+
+        if (frame.Jpeg is null ||
+            frame.Jpeg.Length == 0)
+        {
+            return UnavailableTemplate(
+                "Frame không có JPEG để tạo visual target template.");
         }
 
         try
         {
-            using var source =
-                Cv2.ImDecode(
+            using var stream =
+                new MemoryStream(
                     frame.Jpeg,
-                    ImreadModes.Color);
+                    writable: false);
+            using var source =
+                new Bitmap(
+                    stream);
 
-            if (source.Empty() ||
-                source.Width !=
+            if (source.Width !=
                     frame.Width ||
                 source.Height !=
                     frame.Height)
             {
                 return UnavailableTemplate(
-                    "OpenCV không decode được frame đúng geometry.");
+                    "JPEG frame không khớp geometry đã quan sát.");
             }
 
             using var roi =
-                new Mat(
-                    source,
-                    new Rect(
+                source.Clone(
+                    new Rectangle(
                         left,
                         top,
                         width,
-                        height));
+                        height),
+                    source.PixelFormat);
 
-            Cv2.ImEncode(
-                ".png",
-                roi,
-                out var encoded);
+            using var output =
+                new MemoryStream();
 
-            if (encoded is null ||
-                encoded.Length == 0)
+            roi.Save(
+                output,
+                ImageFormat.Png);
+
+            var encoded =
+                output.ToArray();
+
+            if (encoded.Length == 0)
             {
                 return UnavailableTemplate(
-                    "OpenCV không encode được target template.");
+                    "Không encode được target template.");
             }
 
             return new(
@@ -131,14 +145,14 @@ public sealed class DesktopVisualTargetPersistenceService(
                 Provider:
                     "opencv-template",
                 Reason:
-                    "Đã lưu visual target template từ ROI đã xác minh.");
+                    "Đã lưu visual target template từ ROI đã xác minh; OpenCV native chỉ chạy trong worker.");
         }
         catch (Exception exception) when (
             exception is
-                OpenCVException or
-                DllNotFoundException or
-                TypeInitializationException or
-                BadImageFormatException)
+                ArgumentException or
+                InvalidOperationException or
+                ExternalException or
+                PlatformNotSupportedException)
         {
             return UnavailableTemplate(
                 $"Không tạo được visual template: {exception.GetType().Name}: {exception.Message}");

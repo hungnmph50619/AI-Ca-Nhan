@@ -257,7 +257,6 @@ internal static class Program
             frame?.Dispose();
             session?.Dispose();
             framePool?.Dispose();
-            item?.Dispose();
         }
     }
 

@@ -453,6 +453,21 @@ public sealed class ComputerOperatorAcceptanceService
 
         RunCheck(
             checks,
+            "safe browser continuation có thể complete sau structured readback",
+            CheckSafeBrowserContinuationCompletesAfterReadback);
+
+        RunCheck(
+            checks,
+            "safe browser continuation sai URL buộc replan",
+            CheckSafeBrowserContinuationMismatchReplans);
+
+        RunCheck(
+            checks,
+            "coding continuation thiếu context giữ pending không replay",
+            CheckSafeCodingContinuationStaysPending);
+
+        RunCheck(
+            checks,
             "pause resume stop giữ đúng trạng thái và cancellation",
             CheckExecutionPauseResumeStop);
 
@@ -3566,6 +3581,156 @@ public sealed class ComputerOperatorAcceptanceService
             "Verified outcome vẫn tạo continuation verification thừa.");
     }
 
+    private static void CheckSafeBrowserContinuationCompletesAfterReadback()
+    {
+        var agents =
+            new ExecutionAgentRegistry(
+                new IExecutionAgent[]
+                {
+                    new AcceptanceExecutionAgent(
+                        "execution.browser.safe-continuation",
+                        ExecutionAgentChannels.Browser,
+                        verifiedResult: false)
+                });
+
+        var router =
+            new UniversalTaskRouter(
+                agents,
+                new ExecutionGateway(agents));
+
+        var verifier =
+            new UniversalOutcomeVerificationService(
+                new ToolCapabilityRegistry(
+                    new ToolRegistry(
+                        Array.Empty<IPersonalAiTool>())),
+                agents);
+
+        var lifecycle =
+            new UniversalExecutionLifecycleCoordinator(
+                router,
+                verifier,
+                new UniversalVerificationContinuationPlanner(),
+                new UniversalVerificationContinuationExecutor(
+                    new AcceptanceBrowserAgentService(
+                        "https://example.com",
+                        "Example",
+                        "Readable content")));
+
+        var result = lifecycle.ExecuteAsync(
+                new UniversalExecutionLifecycleRequest(
+                    "Mở https://example.com",
+                    PreferredChannel:
+                        ExecutionAgentChannels.Browser,
+                    ConfirmExecution: true))
+            .GetAwaiter()
+            .GetResult();
+
+        Require(
+            result.GoalComplete &&
+            result.Action ==
+                UniversalExecutionLifecycleActions.Complete &&
+            result.Verification.Status ==
+                UniversalOutcomeStatuses.Verified &&
+            result.ContinuationExecution?.Evidence?.Source ==
+                "browser-structured-readback",
+            "Safe browser continuation chưa đưa lifecycle tới complete sau structured readback hợp lệ.");
+    }
+
+    private static void CheckSafeBrowserContinuationMismatchReplans()
+    {
+        var agents =
+            new ExecutionAgentRegistry(
+                new IExecutionAgent[]
+                {
+                    new AcceptanceExecutionAgent(
+                        "execution.browser.safe-mismatch",
+                        ExecutionAgentChannels.Browser,
+                        verifiedResult: false)
+                });
+
+        var router =
+            new UniversalTaskRouter(
+                agents,
+                new ExecutionGateway(agents));
+
+        var verifier =
+            new UniversalOutcomeVerificationService(
+                new ToolCapabilityRegistry(
+                    new ToolRegistry(
+                        Array.Empty<IPersonalAiTool>())),
+                agents);
+
+        var lifecycle =
+            new UniversalExecutionLifecycleCoordinator(
+                router,
+                verifier,
+                new UniversalVerificationContinuationPlanner(),
+                new UniversalVerificationContinuationExecutor(
+                    new AcceptanceBrowserAgentService(
+                        "https://wrong.example.com",
+                        "Wrong",
+                        "Wrong page")));
+
+        var result = lifecycle.ExecuteAsync(
+                new UniversalExecutionLifecycleRequest(
+                    "Mở https://example.com",
+                    PreferredChannel:
+                        ExecutionAgentChannels.Browser,
+                    ConfirmExecution: true))
+            .GetAwaiter()
+            .GetResult();
+
+        Require(
+            !result.GoalComplete &&
+            result.Action ==
+                UniversalExecutionLifecycleActions.ReplanGoal &&
+            result.Verification.Status ==
+                UniversalOutcomeStatuses.NotAchieved &&
+            result.ContinuationExecution?.Evidence?.Passed == false,
+            "Browser readback sai URL không buộc replan goal.");
+    }
+
+    private static void CheckSafeCodingContinuationStaysPending()
+    {
+        var executor =
+            new UniversalVerificationContinuationExecutor(
+                new AcceptanceBrowserAgentService(
+                    "https://example.com",
+                    "Example",
+                    "Readable content"));
+
+        var plan =
+            new UniversalVerificationContinuationPlan(
+                UniversalVerificationStrategies.CodingVerificationGate,
+                ExecutionAgentChannels.Coding,
+                Required: true,
+                RequiresReadback: true,
+                RequiresExternalAi: false,
+                "acceptance");
+
+        var result = executor.ExecuteAsync(
+                plan,
+                BuildAcceptanceRoute(
+                    ExecutionAgentChannels.Coding),
+                new ExecutionAgentResult(
+                    "execution.coding.acceptance",
+                    AgentExecutionStatuses.Succeeded,
+                    "acceptance",
+                    ["acceptance"],
+                    ChangedExternalState: true,
+                    Verified: false,
+                    Provider: "acceptance",
+                    Model: "acceptance"))
+            .GetAwaiter()
+            .GetResult();
+
+        Require(
+            result.Status ==
+                UniversalVerificationContinuationStatuses.Pending &&
+            result.Evidence is null,
+            "Coding continuation thiếu target/repository context nhưng vẫn tự chạy verifier hoặc bịa evidence.");
+    }
+
     private static void CheckExecutionPauseResumeStop()
     {
         using var execution = new ComputerOperatorExecutionControl();
@@ -4478,6 +4643,69 @@ public sealed class ComputerOperatorAcceptanceService
                     Verified: true,
                     Engine));
         }
+    }
+
+    private sealed class AcceptanceBrowserAgentService(
+        string url,
+        string title,
+        string text)
+        : IBrowserAgentService
+    {
+        public BrowserAgentStatusResponse GetStatus() =>
+            new(
+                PersonalAiRelease.Version,
+                "acceptance",
+                Supported: true,
+                JavaScriptEnabled: false,
+                CookiesEnabled: false,
+                DownloadsEnabled: false,
+                FormSubmissionEnabled: false,
+                MaximumResponseBytes: 1024,
+                MaximumPageTextCharacters: 8000,
+                MaximumLinks: 30,
+                MaximumRedirects: 0,
+                [BrowserAgentCapabilities.PageObserve],
+                []);
+
+        public BrowserSessionInfo GetSessionInfo() =>
+            new(
+                "acceptance",
+                HasPage: true,
+                url,
+                "https://example.com",
+                title,
+                200,
+                "text/html",
+                DateTimeOffset.UtcNow,
+                text.Length,
+                0,
+                1);
+
+        public Task<BrowserNavigationResult> NavigateAsync(
+            string targetUrl,
+            CancellationToken cancellationToken = default) =>
+            throw new NotSupportedException();
+
+        public Task<BrowserNavigationResult> OpenLinkAsync(
+            int linkIndex,
+            CancellationToken cancellationToken = default) =>
+            throw new NotSupportedException();
+
+        public BrowserPageObservation ObservePage(
+            int maximumCharacters = BrowserAgentService.MaximumPageTextCharacters,
+            int maximumLinks = BrowserAgentService.MaximumLinks) =>
+            new(
+                "acceptance",
+                url,
+                "https://example.com",
+                title,
+                200,
+                "text/html",
+                DateTimeOffset.UtcNow,
+                text,
+                TextTruncated: false,
+                [],
+                1);
     }
 
     private sealed class AcceptanceBrowserExecutionBackend

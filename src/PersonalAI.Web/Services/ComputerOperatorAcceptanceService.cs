@@ -41,6 +41,12 @@ public sealed class ComputerOperatorAcceptanceService
             "capture health phát hiện chuỗi frame lặp và giữ latency telemetry",
             CheckCaptureHealthDetectsRepeatedFrames);
 
+        RunCheck(
+            checks,
+            "capture router tự hạ ưu tiên backend bị stale theo đúng target",
+            CheckCaptureRouterDeprioritizesStaleBackend);
+
+
 
         RunCheck(
             checks,
@@ -852,6 +858,55 @@ public sealed class ComputerOperatorAcceptanceService
         Require(
             tracker.GetSnapshot().Entries.Count == 0,
             "Capture health reset chưa xóa telemetry trong bộ nhớ.");
+    }
+
+    private static void CheckCaptureRouterDeprioritizesStaleBackend()
+    {
+        var health =
+            new DesktopCaptureHealthTracker();
+
+        var signature =
+            new byte[] { 1, 2, 3, 4 };
+
+        for (var index = 0; index < 5; index++)
+        {
+            health.RecordSuccess(
+                DesktopCaptureScopes.Monitor,
+                @"\\.\DISPLAY1",
+                DesktopCaptureBackends.WindowsGraphicsCapture,
+                20,
+                signature);
+        }
+
+        var router =
+            new DesktopCaptureBackendRouter(
+                wgc: null,
+                dxgi: null,
+                health);
+
+        var candidates =
+            router.GetOrderedCandidates(
+                DesktopCaptureScopes.Monitor,
+                @"\\.\DISPLAY1");
+
+        Require(
+            candidates.SequenceEqual(
+                [
+                    DesktopCaptureBackends.DxgiDesktopDuplication,
+                    DesktopCaptureBackends.CopyFromScreen,
+                    DesktopCaptureBackends.WindowsGraphicsCapture
+                ]),
+            "Capture router chưa hạ ưu tiên WGC khi backend bị stale trên đúng monitor target.");
+
+        var otherMonitor =
+            router.GetOrderedCandidates(
+                DesktopCaptureScopes.Monitor,
+                @"\\.\DISPLAY2");
+
+        Require(
+            otherMonitor.First() ==
+            DesktopCaptureBackends.WindowsGraphicsCapture,
+            "Health penalty của một monitor đã làm ảnh hưởng target monitor khác.");
     }
 
     private static void CheckImagePixelWithNegativeVirtualOrigin()

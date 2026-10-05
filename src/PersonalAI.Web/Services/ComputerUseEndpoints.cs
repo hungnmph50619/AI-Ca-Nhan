@@ -32,6 +32,7 @@ public static class ComputerUseEndpoints
         services.AddSingleton<IComputerOperatorAcceptanceService, ComputerOperatorAcceptanceService>();
         services.AddSingleton<IComputerOperatorCheckpointStore, SqliteComputerOperatorCheckpointStore>();
         services.AddSingleton<IComputerOperatorTelemetry, ComputerOperatorTelemetry>();
+        services.AddSingleton<IComputerOperatorGeminiBudgetFactory, ComputerOperatorGeminiBudgetFactory>();
         services.AddSingleton<IUniversalReliableOperatorCoordinator, UniversalReliableOperatorCoordinator>();
         services.AddSingleton<IComputerOperatorTaskService, ComputerOperatorTaskService>();
         services.AddSingleton<IExecutionAgent, ComputerOperatorExecutionAgent>();

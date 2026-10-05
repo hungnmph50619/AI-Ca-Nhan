@@ -71,6 +71,11 @@ public sealed class ComputerOperatorAcceptanceService
             "OCR planner map capture box sang frame đúng tỉ lệ",
             CheckOcrPlannerMapsCaptureBoxToFrame);
 
+        RunCheck(
+            checks,
+            "OCR provider router ưu tiên Windows và chỉ fallback khi cần",
+            CheckOcrProviderRouterFallbackOrder);
+
 
 
         RunCheck(
@@ -1282,6 +1287,64 @@ public sealed class ComputerOperatorAcceptanceService
             decision.ImageX == 350 &&
             decision.ImageY == 160,
             $"OCR planner map sai capture→frame: box=({decision.BoxLeft},{decision.BoxTop},{decision.BoxWidth},{decision.BoxHeight}), point=({decision.ImageX},{decision.ImageY}).");
+    }
+
+    private static void CheckOcrProviderRouterFallbackOrder()
+    {
+        var windows =
+            new AcceptanceOcrProvider(
+                "windows-ocr",
+                new DesktopOcrObservation(
+                    Available: false,
+                    Text: string.Empty,
+                    Language: string.Empty,
+                    Lines:
+                        Array.Empty<DesktopOcrLine>(),
+                    CaptureWidth: 0,
+                    CaptureHeight: 0,
+                    Provider: "windows-ocr",
+                    Reason: "unavailable"));
+
+        var paddle =
+            new AcceptanceOcrProvider(
+                "paddleocr-onnx",
+                new DesktopOcrObservation(
+                    Available: true,
+                    Text: "Continue",
+                    Language: "en",
+                    Lines:
+                    [
+                        new DesktopOcrLine(
+                            "Continue",
+                            [
+                                new DesktopOcrWord(
+                                    "Continue",
+                                    10,
+                                    10,
+                                    60,
+                                    20)
+                            ])
+                    ],
+                    CaptureWidth: 800,
+                    CaptureHeight: 600,
+                    Provider: "paddleocr-onnx",
+                    Reason: "acceptance"));
+
+        var router =
+            new DesktopOcrSensorRouter(
+                [paddle, windows]);
+
+        var result =
+            router.ReadWindow(
+                "0x1234");
+
+        Require(
+            windows.CallCount == 1 &&
+            paddle.CallCount == 1 &&
+            result.Available &&
+            result.Provider == "paddleocr-onnx" &&
+            result.Text == "Continue",
+            "OCR provider router chưa ưu tiên Windows hoặc chưa fallback đúng sang PaddleOCR/ONNX.");
     }
 
     private static void CheckLocalVisualDifferenceHash()
@@ -7729,6 +7792,24 @@ public sealed class ComputerOperatorAcceptanceService
         if (!condition)
             throw new InvalidOperationException(
                 message);
+    }
+
+    private sealed class AcceptanceOcrProvider(
+        string name,
+        DesktopOcrObservation observation)
+        : IDesktopOcrProvider
+    {
+        public int CallCount { get; private set; }
+
+        public string Name { get; } =
+            name;
+
+        public DesktopOcrObservation ReadWindow(
+            string windowId)
+        {
+            CallCount++;
+            return observation;
+        }
     }
 
     private sealed class AcceptanceOcrSensor(

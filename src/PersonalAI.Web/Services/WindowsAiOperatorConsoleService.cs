@@ -11,12 +11,14 @@ public sealed class WindowsAiOperatorConsoleService
     private readonly ComputerOperatorExecutionControl execution;
     private readonly ComputerControlGate control;
     private readonly ILogger<WindowsAiOperatorConsoleService> logger;
-    private const int ConsoleWidth = 680;
-    private const int ConsoleHeight = 560;
+    private const int CompactWidth = 460;
+    private const int CompactHeight = 190;
+    private const int DetailWidth = 680;
+    private const int DetailHeight = 560;
     private const int Margin = 18;
     private const int ButtonHeight = 30;
-    private const int ButtonWidth = 116;
-    private const int Gap = 8;
+    private const int ButtonWidth = 82;
+    private const int Gap = 7;
 
     private const uint WsPopup = 0x80000000;
     private const uint WsVisible = 0x10000000;
@@ -55,7 +57,7 @@ public sealed class WindowsAiOperatorConsoleService
     private const int IdResume = 4102;
     private const int IdStop = 4103;
     private const int IdClose = 4104;
-    private const int IdTail = 4105;
+    private const int IdDetails = 4105;
     private const int IdLog = 4106;
 
     private readonly object _sync = new();
@@ -68,7 +70,7 @@ public sealed class WindowsAiOperatorConsoleService
     private IntPtr _resumeButton;
     private IntPtr _stopButton;
     private IntPtr _closeButton;
-    private IntPtr _tailButton;
+    private IntPtr _detailsButton;
     private IntPtr _blackBrush;
     private string _lastText = string.Empty;
     private string? _registeredClass;
@@ -82,6 +84,7 @@ public sealed class WindowsAiOperatorConsoleService
     private volatile bool _userHidden;
     private volatile bool _followTail = true;
     private volatile bool _programmaticLogScroll;
+    private volatile bool _expanded;
 
     public object GetDiagnosticStatus()
     {
@@ -241,8 +244,8 @@ public sealed class WindowsAiOperatorConsoleService
                 WsPopup | WsVisible,
                 0,
                 0,
-                ConsoleWidth,
-                ConsoleHeight,
+                CompactWidth,
+                CompactHeight,
                 IntPtr.Zero,
                 IntPtr.Zero,
                 instance,
@@ -278,8 +281,8 @@ public sealed class WindowsAiOperatorConsoleService
                 WsChild | WsVisible | WsVScroll | EsMultiline | EsAutoVScroll | EsReadOnly | EsNoHideSel,
                 14,
                 54,
-                ConsoleWidth - 28,
-                ConsoleHeight - 68,
+                CompactWidth - 28,
+                CompactHeight - 68,
                 _window,
                 new IntPtr(IdLog),
                 instance,
@@ -298,16 +301,16 @@ public sealed class WindowsAiOperatorConsoleService
                 IdResume,
                 instance);
             _stopButton = CreateButton(
-                "DỪNG NGAY ■",
+                "DỪNG ■",
                 14 + (ButtonWidth + Gap) * 2,
                 14,
                 IdStop,
                 instance);
-            _tailButton = CreateButton(
-                "VỀ CUỐI ↓",
+            _detailsButton = CreateButton(
+                "CHI TIẾT",
                 14 + (ButtonWidth + Gap) * 3,
                 14,
-                IdTail,
+                IdDetails,
                 instance);
             _closeButton = CreateButton(
                 "ĐÓNG",
@@ -316,7 +319,7 @@ public sealed class WindowsAiOperatorConsoleService
                 IdClose,
                 instance);
 
-            foreach (var handle in new[] { _text, _pauseButton, _resumeButton, _stopButton, _tailButton, _closeButton })
+            foreach (var handle in new[] { _text, _pauseButton, _resumeButton, _stopButton, _detailsButton, _closeButton })
             {
                 if (handle != IntPtr.Zero && font != IntPtr.Zero)
                     _ = SendMessage(handle, WmSetFont, font, new IntPtr(1));
@@ -385,10 +388,16 @@ public sealed class WindowsAiOperatorConsoleService
                 if (shouldShow)
                 {
                     var text = testVisible && !selectedActive
-                        ? BuildTestText()
+                        ? (_expanded
+                            ? BuildTestText()
+                            : BuildCompactTestText())
                         : useOperator
-                            ? BuildOperatorText(operatorSnapshot)
-                            : BuildLeagueText(leagueSnapshot);
+                            ? (_expanded
+                                ? BuildOperatorText(operatorSnapshot)
+                                : BuildOperatorHudText(operatorSnapshot))
+                            : (_expanded
+                                ? BuildLeagueText(leagueSnapshot)
+                                : BuildLeagueHudText(leagueSnapshot));
 
                     if (!string.Equals(text, _lastText, StringComparison.Ordinal))
                     {
@@ -400,8 +409,19 @@ public sealed class WindowsAiOperatorConsoleService
                                 IntPtr.Zero).ToInt32()
                             : 0;
 
-                        SetWindowText(_text, text);
-                        _lastText = text;
+                        // SetWindowText trên EDIT có thể tự phát sinh EN_VSCROLL.
+                        // Đánh dấu đây là scroll do chương trình để không làm mất chế độ
+                        // auto-follow đúng lúc task chuyển active -> blocked/completed.
+                        _programmaticLogScroll = true;
+                        try
+                        {
+                            SetWindowText(_text, text);
+                            _lastText = text;
+                        }
+                        finally
+                        {
+                            _programmaticLogScroll = false;
+                        }
 
                         if (_followTail)
                         {
@@ -426,6 +446,7 @@ public sealed class WindowsAiOperatorConsoleService
                     }
 
                     UpdateButtons(operatorSnapshot, leagueSnapshot, useOperator);
+                    ApplyConsoleLayout();
                     PositionConsole(_window);
                     ShowWindow(_window, SwShowNoActivate);
                     _visible = true;
@@ -503,11 +524,16 @@ public sealed class WindowsAiOperatorConsoleService
             _stopButton,
             operatorRunning || leagueSnapshot.Active);
         _ = EnableWindow(
-            _tailButton,
+            _detailsButton,
             true);
         _ = EnableWindow(
             _closeButton,
             true);
+
+        if (_detailsButton != IntPtr.Zero)
+            _ = SetWindowText(
+                _detailsButton,
+                _expanded ? "THU GỌN" : "CHI TIẾT");
     }
 
     private IntPtr WindowProc(
@@ -557,9 +583,11 @@ public sealed class WindowsAiOperatorConsoleService
                         "Người dùng đã dừng Computer Operator từ console nổi.");
                     return IntPtr.Zero;
 
-                case IdTail:
+                case IdDetails:
+                    _expanded = !_expanded;
                     _followTail = true;
-                    ScrollLogToEnd();
+                    _lastText = string.Empty;
+                    ApplyConsoleLayout();
                     return IntPtr.Zero;
 
                 case IdClose:
@@ -605,6 +633,117 @@ Nếu bạn nhìn thấy bảng này thì lớp hiển thị Win32 đã hoạt �
 Bảng chỉ ẩn khi bạn bấm ĐÓNG; tác vụ mới sẽ tự hiện lại.
 Ảnh nội bộ gửi cho thị giác máy tính sẽ che vùng bảng theo dõi.
 """;
+
+    private static string BuildCompactTestText() =>
+        """
+● AI OPERATOR · SẴN SÀNG
+
+HUD nhỏ đang hoạt động.
+Bấm CHI TIẾT để mở nhật ký kỹ thuật.
+
+Ctrl + Shift + F12 để dừng khẩn cấp.
+""";
+
+    private static string BuildOperatorHudText(
+        ComputerOperatorProgressSnapshot snapshot)
+    {
+        var builder = new StringBuilder();
+
+        var heading = snapshot.Status switch
+        {
+            "paused" => "Ⅱ AI ĐANG TẠM DỪNG",
+            "completed" => "✓ AI ĐÃ HOÀN TẤT",
+            "blocked" => "⚠ AI CẦN XỬ LÝ LẠI",
+            "stopped" => "■ AI ĐÃ DỪNG",
+            _ => "● AI ĐANG THỰC HIỆN"
+        };
+
+        builder.AppendLine(heading);
+
+        var latest = snapshot.Entries.LastOrDefault();
+        var stage = TranslateStage(snapshot.CurrentStage);
+        var confidence = latest?.Confidence is double value
+            ? $" · Tin cậy {value * 100:0}%"
+            : string.Empty;
+
+        builder.AppendLine(
+            $"{stage}{confidence} · Quan sát {snapshot.ObservationCount} · Hành động {snapshot.ActionCount}");
+
+        if (latest is not null)
+            builder.AppendLine(Limit(UserFacingMessage(latest.Stage, latest.Message), 108));
+
+        if (snapshot.Stale)
+            builder.AppendLine($"⚠ Chưa có bước mới trong {snapshot.StaleSeconds}s.");
+
+        builder.AppendLine("Ctrl + Shift + F12 để dừng khẩn cấp · CHI TIẾT để xem log.");
+        return builder.ToString();
+    }
+
+    private static string BuildLeagueHudText(
+        LeagueVisualProgressSnapshot snapshot)
+    {
+        var builder = new StringBuilder();
+        builder.AppendLine(
+            snapshot.Active
+                ? "● AI ĐANG THỰC HIỆN"
+                : snapshot.Status == "completed"
+                    ? "✓ AI ĐÃ HOÀN TẤT"
+                    : "⚠ AI ĐÃ DỪNG");
+
+        var latest = snapshot.Entries.LastOrDefault();
+        if (latest is not null)
+        {
+            var confidence = latest.Confidence is double value
+                ? $" · Tin cậy {value * 100:0}%"
+                : string.Empty;
+            builder.AppendLine($"{TranslateStage(latest.Stage)}{confidence}");
+            builder.AppendLine(Limit(UserFacingMessage(latest.Stage, latest.Message), 108));
+        }
+
+        builder.AppendLine(
+            $"Quan sát {snapshot.ObservationCount} · Click {snapshot.ClickCount} · CHI TIẾT để xem log.");
+        return builder.ToString();
+    }
+
+    private static string UserFacingMessage(
+        string stage,
+        string message)
+    {
+        var normalized = (stage ?? string.Empty)
+            .Trim()
+            .ToLowerInvariant();
+
+        return normalized switch
+        {
+            "observe" or "stabilize" =>
+                "Đang quan sát trạng thái màn hình hiện tại.",
+
+            "analyze" or "analyze-retry" or "decide" =>
+                "Đang phân tích và chọn hành động tiếp theo.",
+
+            "act" =>
+                "Đang chuẩn bị thực hiện một hành động.",
+
+            "acted" =>
+                "Đã thực hiện hành động; đang kiểm tra kết quả.",
+
+            "verify" or "verify-result" or "confidence-verify" =>
+                "Đang xác minh hành động vừa rồi có đạt mục tiêu hay không.",
+
+            "recovery" or "recovery-plan" or "replan" =>
+                "Kết quả chưa đúng mong đợi; AI đang thử phương án khác.",
+
+            "blocked" =>
+                "AI chưa thể tiếp tục an toàn với trạng thái hiện tại.",
+
+            "completed" =>
+                "Tác vụ đã hoàn tất và được xác minh.",
+
+            _ => string.IsNullOrWhiteSpace(message)
+                ? "AI đang xử lý bước tiếp theo."
+                : message
+        };
+    }
 
     private static string BuildOperatorText(
         ComputerOperatorProgressSnapshot snapshot)
@@ -762,28 +901,69 @@ Bảng chỉ ẩn khi bạn bấm ĐÓNG; tác vụ mới sẽ tự hiện lại
         }
     }
 
-    private static void PositionConsole(IntPtr handle)
+    private void ApplyConsoleLayout()
     {
+        if (_window == IntPtr.Zero || _text == IntPtr.Zero)
+            return;
+
+        var width = _expanded
+            ? DetailWidth
+            : CompactWidth;
+        var height = _expanded
+            ? DetailHeight
+            : CompactHeight;
+
+        _ = SetWindowPos(
+            _text,
+            IntPtr.Zero,
+            14,
+            54,
+            width - 28,
+            height - 68,
+            0x0004);
+
+        _ = SetWindowPos(
+            _window,
+            new IntPtr(-1),
+            0,
+            0,
+            width,
+            height,
+            0x0010 | 0x0002);
+
+        if (_followTail)
+            ScrollLogToEnd();
+    }
+
+    private void PositionConsole(IntPtr handle)
+    {
+        var width = _expanded
+            ? DetailWidth
+            : CompactWidth;
+        var height = _expanded
+            ? DetailHeight
+            : CompactHeight;
+
         var screenWidth = Math.Max(
-            ConsoleWidth + Margin * 2,
+            width + Margin * 2,
             GetSystemMetrics(SmCxScreen));
         var screenHeight = Math.Max(
-            ConsoleHeight + Margin * 2,
+            height + Margin * 2,
             GetSystemMetrics(SmCyScreen));
         var x = Math.Max(
             Margin,
-            screenWidth - ConsoleWidth - Margin);
+            screenWidth - width - Margin);
         var y = Math.Min(
             Math.Max(Margin, 72),
-            Math.Max(Margin, screenHeight - ConsoleHeight - Margin));
+            Math.Max(Margin, screenHeight - height - Margin));
 
         _ = SetWindowPos(
             handle,
             new IntPtr(-1),
             x,
             y,
-            ConsoleWidth,
-            ConsoleHeight,
+            width,
+            height,
             0x0010);
     }
 

@@ -19,7 +19,8 @@ public sealed record UniversalExecutionLifecycleResult(
     string Action,
     bool GoalComplete,
     string Reason,
-    UniversalVerificationContinuationPlan? VerificationPlan = null);
+    UniversalVerificationContinuationPlan? VerificationPlan = null,
+    UniversalVerificationContinuationExecution? ContinuationExecution = null);
 
 public interface IUniversalExecutionLifecycleCoordinator
 {
@@ -31,11 +32,15 @@ public interface IUniversalExecutionLifecycleCoordinator
 public sealed class UniversalExecutionLifecycleCoordinator(
     IUniversalTaskRouter router,
     IUniversalOutcomeVerificationService verification,
-    IUniversalVerificationContinuationPlanner? continuationPlanner = null)
+    IUniversalVerificationContinuationPlanner? continuationPlanner = null,
+    IUniversalVerificationContinuationExecutor? continuationExecutor = null)
     : IUniversalExecutionLifecycleCoordinator
 {
     private readonly IUniversalVerificationContinuationPlanner continuationPlanner =
         continuationPlanner ?? new UniversalVerificationContinuationPlanner();
+
+    private readonly IUniversalVerificationContinuationExecutor? continuationExecutor =
+        continuationExecutor;
     public async Task<UniversalExecutionLifecycleResult> ExecuteAsync(
         UniversalExecutionLifecycleRequest request,
         CancellationToken cancellationToken = default)
@@ -54,7 +59,76 @@ public sealed class UniversalExecutionLifecycleCoordinator(
                 execution.Route.Goal,
                 execution.Gateway.Result));
 
-        var action = verified.Status switch
+        var action = DetermineAction(
+            verified);
+
+        var verificationPlan =
+            continuationPlanner.Plan(
+                execution.Route,
+                verified);
+
+        UniversalVerificationContinuationExecution? continuationExecution =
+            null;
+
+        if (action ==
+                UniversalExecutionLifecycleActions.VerifyOutcome &&
+            verificationPlan.Required &&
+            continuationExecutor is not null)
+        {
+            continuationExecution =
+                await continuationExecutor.ExecuteAsync(
+                    verificationPlan,
+                    execution.Route,
+                    execution.Gateway.Result,
+                    cancellationToken);
+
+            if (continuationExecution.Evidence is not null)
+            {
+                verified = verification.VerifyAgent(
+                    new UniversalAgentOutcomeVerificationRequest(
+                        execution.Route.Goal,
+                        execution.Gateway.Result,
+                        continuationExecution.Evidence));
+
+                action = DetermineAction(
+                    verified);
+
+                verificationPlan =
+                    continuationPlanner.Plan(
+                        execution.Route,
+                        verified);
+            }
+        }
+
+        return new(
+            execution,
+            verified,
+            action,
+            GoalComplete:
+                action == UniversalExecutionLifecycleActions.Complete,
+            action switch
+            {
+                UniversalExecutionLifecycleActions.Complete =>
+                    "Execution đã được outcome verifier xác nhận; goal được phép complete.",
+
+                UniversalExecutionLifecycleActions.VerifyOutcome =>
+                    continuationExecution is null
+                        ? $"Execution đã chạy nhưng evidence chưa đủ; continuation={verificationPlan.Strategy}."
+                        : $"Continuation verification chưa đủ evidence: {continuationExecution.Reason}",
+
+                UniversalExecutionLifecycleActions.ReplanGoal =>
+                    "Verifier xác nhận goal chưa đạt; phải replan trước action tiếp theo.",
+
+                _ =>
+                    $"Execution lifecycle dừng ở trạng thái verification={verified.Status}."
+            },
+            verificationPlan,
+            continuationExecution);
+    }
+
+    private static string DetermineAction(
+        UniversalOutcomeVerificationResult verified) =>
+        verified.Status switch
         {
             UniversalOutcomeStatuses.Verified
                 when verified.GoalAchieved =>
@@ -72,32 +146,4 @@ public sealed class UniversalExecutionLifecycleCoordinator(
             _ =>
                 UniversalExecutionLifecycleActions.Stop
         };
-
-        var verificationPlan =
-            continuationPlanner.Plan(
-                execution.Route,
-                verified);
-
-        return new(
-            execution,
-            verified,
-            action,
-            GoalComplete:
-                action == UniversalExecutionLifecycleActions.Complete,
-            action switch
-            {
-                UniversalExecutionLifecycleActions.Complete =>
-                    "Execution đã được outcome verifier xác nhận; goal được phép complete.",
-
-                UniversalExecutionLifecycleActions.VerifyOutcome =>
-                    $"Execution đã chạy nhưng evidence chưa đủ; continuation={verificationPlan.Strategy}.",
-
-                UniversalExecutionLifecycleActions.ReplanGoal =>
-                    "Verifier xác nhận goal chưa đạt; phải replan trước action tiếp theo.",
-
-                _ =>
-                    $"Execution lifecycle dừng ở trạng thái verification={verified.Status}."
-            },
-            verificationPlan);
-    }
 }

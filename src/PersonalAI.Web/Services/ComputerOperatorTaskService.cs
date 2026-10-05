@@ -104,6 +104,9 @@ public sealed class ComputerOperatorTaskService(
         var latestGoalProgress = 0.0;
         var lowConfidenceCount = 0;
         var blockedReplanCount = 0;
+        var keyboardRepairFailures = 0;
+        var keyboardResetRequired = false;
+        var keyboardSelectionReady = false;
         IReadOnlyList<DesktopSceneElement> previousScene = Array.Empty<DesktopSceneElement>();
         var temporalSceneContext = string.Empty;
 
@@ -562,6 +565,48 @@ public sealed class ComputerOperatorTaskService(
 
                 var actionSignature = BuildActionSignature(decision);
 
+                if (keyboardResetRequired)
+                {
+                    if (IsFineGrainedKeyboardRepair(decision))
+                    {
+                        taskHistory.Add(
+                            "KEYBOARD-RESET-DIRECTIVE: Không được tiếp tục BACKSPACE/DELETE để vá từng ký tự. Hãy dùng Ctrl+A, xác minh vùng nhập đã được chọn, rồi type-text lại toàn bộ nội dung cuối cùng một lần.");
+
+                        progress.Add(
+                            "replan",
+                            "Đã phát hiện vòng sửa chữ lặp. Không cho phép xóa từng ký tự nữa; AI phải chọn toàn bộ rồi nhập lại nội dung hoàn chỉnh.",
+                            "keyboard-reset",
+                            decision.Confidence);
+
+                        _ = actionState.MoveTo(
+                            ComputerOperatorActionState.Replan,
+                            "Keyboard Reset Mode yêu cầu đổi chiến lược sửa text.");
+
+                        await Task.Delay(220, linked.Token);
+                        continue;
+                    }
+
+                    if (decision.Action == "type-text" &&
+                        !keyboardSelectionReady)
+                    {
+                        taskHistory.Add(
+                            "KEYBOARD-RESET-DIRECTIVE: Trước type-text phải press-hotkey Ctrl+A và xác minh selection. Không được gõ bù vào text đang sai.");
+
+                        progress.Add(
+                            "replan",
+                            "Keyboard Reset Mode: chưa xác minh Ctrl+A; từ chối gõ bù để tránh lặp ký tự.",
+                            "keyboard-reset",
+                            decision.Confidence);
+
+                        _ = actionState.MoveTo(
+                            ComputerOperatorActionState.Replan,
+                            "Chưa có selection an toàn trước khi nhập lại text.");
+
+                        await Task.Delay(220, linked.Token);
+                        continue;
+                    }
+                }
+
                 if (recovery.ShouldAvoidRepeatedStrategy(
                         actionSignature,
                         decision.State,
@@ -845,6 +890,26 @@ public sealed class ComputerOperatorTaskService(
 
                 if (!verification.Verified)
                 {
+                    if (IsKeyboardAction(decision.Action))
+                    {
+                        keyboardRepairFailures++;
+
+                        if (keyboardRepairFailures >= 2)
+                        {
+                            keyboardResetRequired = true;
+                            keyboardSelectionReady = false;
+
+                            taskHistory.Add(
+                                "KEYBOARD-RESET-DIRECTIVE: Đã có ít nhất 2 lần sửa text không đạt. Không sửa từng ký tự nữa. Bắt buộc Ctrl+A -> verify selection -> type-text toàn bộ nội dung đích -> verify.");
+
+                            progress.Add(
+                                "recovery",
+                                "Phát hiện vòng sửa bàn phím lặp. Chuyển sang Keyboard Reset Mode: chọn toàn bộ và nhập lại nội dung hoàn chỉnh.",
+                                "keyboard-reset",
+                                verification.Confidence);
+                        }
+                    }
+
                     var failures = recovery.RecordFailure(
                         actionSignature,
                         decision.Action,
@@ -915,6 +980,39 @@ public sealed class ComputerOperatorTaskService(
 
                     await Task.Delay(350, linked.Token);
                     continue;
+                }
+
+                if (keyboardResetRequired &&
+                    IsSelectAllHotkey(decision))
+                {
+                    keyboardSelectionReady = true;
+                    taskHistory.Add(
+                        "KEYBOARD-RESET: Ctrl+A đã được xác minh; bước tiếp theo phải type-text toàn bộ nội dung cuối cùng.");
+                    progress.Add(
+                        "milestone",
+                        "Đã chọn toàn bộ vùng nhập; sẵn sàng nhập lại nội dung hoàn chỉnh.",
+                        "keyboard-reset",
+                        verification.Confidence);
+                }
+                else if (keyboardResetRequired &&
+                         decision.Action == "type-text" &&
+                         keyboardSelectionReady)
+                {
+                    keyboardRepairFailures = 0;
+                    keyboardResetRequired = false;
+                    keyboardSelectionReady = false;
+                    taskHistory.Add(
+                        "KEYBOARD-RESET: type-text toàn bộ đã được xác minh; thoát Keyboard Reset Mode.");
+                    progress.Add(
+                        "milestone",
+                        "Nội dung nhập lại đã được xác minh; kết thúc chế độ sửa chữ.",
+                        "keyboard-reset",
+                        verification.Confidence);
+                }
+                else if (IsKeyboardAction(decision.Action) &&
+                         !keyboardResetRequired)
+                {
+                    keyboardRepairFailures = 0;
                 }
 
                 taskHistory.Add(
@@ -1349,6 +1447,45 @@ public sealed class ComputerOperatorTaskService(
             return ComputerOperatorFailureTaxonomy.ActionNoEffect;
 
         return ComputerOperatorFailureTaxonomy.Unknown;
+    }
+
+    private static bool IsKeyboardAction(
+        string action) =>
+        action is
+            "type-text" or
+            "press-key" or
+            "press-hotkey";
+
+    private static bool IsFineGrainedKeyboardRepair(
+        DesktopOperatorDecision decision)
+    {
+        if (!decision.Action.Equals(
+                "press-key",
+                StringComparison.OrdinalIgnoreCase))
+            return false;
+
+        var key = (decision.Key ?? string.Empty)
+            .Trim()
+            .ToUpperInvariant();
+
+        return key is "BACKSPACE" or "DELETE";
+    }
+
+    private static bool IsSelectAllHotkey(
+        DesktopOperatorDecision decision)
+    {
+        if (!decision.Action.Equals(
+                "press-hotkey",
+                StringComparison.OrdinalIgnoreCase) ||
+            decision.Keys.Count != 2)
+            return false;
+
+        var keys = decision.Keys
+            .Select(key => (key ?? string.Empty).Trim().ToUpperInvariant())
+            .ToHashSet(StringComparer.OrdinalIgnoreCase);
+
+        return keys.Contains("CTRL") &&
+               keys.Contains("A");
     }
 
     private static bool RequiresExpectedEffect(

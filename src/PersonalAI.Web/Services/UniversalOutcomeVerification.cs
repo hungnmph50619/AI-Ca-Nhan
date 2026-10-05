@@ -23,7 +23,8 @@ public sealed record UniversalToolOutcomeVerificationRequest(
 
 public sealed record UniversalAgentOutcomeVerificationRequest(
     string Goal,
-    ExecutionAgentResult Execution);
+    ExecutionAgentResult Execution,
+    UniversalOutcomeEvidence? Evidence = null);
 
 public sealed record UniversalOutcomeVerificationResult(
     string Status,
@@ -181,6 +182,7 @@ public sealed class UniversalOutcomeVerificationService(
         }
 
         var evidence =
+            request.Evidence ??
             evidenceAdapters.FromAgent(
                 request.Execution);
 

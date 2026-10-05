@@ -12,6 +12,7 @@ public sealed record LocalVisualProviderHealth(
     LocalVisualProviderHealthState State,
     int ConsecutiveFailures,
     long LastLatencyMilliseconds,
+    double AverageLatencyMilliseconds,
     DateTimeOffset UpdatedAtUtc,
     string Reason);
 
@@ -42,6 +43,7 @@ public sealed class LocalVisualProviderHealthRegistry
     private sealed record Entry(
         int ConsecutiveFailures,
         long LastLatencyMilliseconds,
+        double AverageLatencyMilliseconds,
         DateTimeOffset UpdatedAtUtc,
         string Reason);
 
@@ -70,6 +72,7 @@ public sealed class LocalVisualProviderHealthRegistry
                     LocalVisualProviderHealthState.Healthy,
                     0,
                     0,
+                    0,
                     DateTimeOffset.MinValue,
                     "Chưa có failure.");
             }
@@ -92,13 +95,24 @@ public sealed class LocalVisualProviderHealthRegistry
 
         lock (gate)
         {
+            entries.TryGetValue(
+                provider,
+                out var previous);
+
+            var latency =
+                Math.Max(
+                    0,
+                    latencyMilliseconds);
+
             entries[provider] =
                 new(
                     ConsecutiveFailures: 0,
                     LastLatencyMilliseconds:
-                        Math.Max(
-                            0,
-                            latencyMilliseconds),
+                        latency,
+                    AverageLatencyMilliseconds:
+                        ComputeAverageLatency(
+                            previous?.AverageLatencyMilliseconds ?? 0,
+                            latency),
                     UpdatedAtUtc:
                         DateTimeOffset.UtcNow,
                     Reason:
@@ -123,6 +137,11 @@ public sealed class LocalVisualProviderHealthRegistry
                 provider,
                 out var previous);
 
+            var latency =
+                Math.Max(
+                    0,
+                    latencyMilliseconds);
+
             entries[provider] =
                 new(
                     ConsecutiveFailures:
@@ -131,9 +150,11 @@ public sealed class LocalVisualProviderHealthRegistry
                             (previous?.ConsecutiveFailures ?? 0) +
                             1),
                     LastLatencyMilliseconds:
-                        Math.Max(
-                            0,
-                            latencyMilliseconds),
+                        latency,
+                    AverageLatencyMilliseconds:
+                        ComputeAverageLatency(
+                            previous?.AverageLatencyMilliseconds ?? 0,
+                            latency),
                     UpdatedAtUtc:
                         DateTimeOffset.UtcNow,
                     Reason:
@@ -214,8 +235,25 @@ public sealed class LocalVisualProviderHealthRegistry
             state,
             entry.ConsecutiveFailures,
             entry.LastLatencyMilliseconds,
+            entry.AverageLatencyMilliseconds,
             entry.UpdatedAtUtc,
             entry.Reason);
+    }
+
+    private static double ComputeAverageLatency(
+        double previousAverage,
+        long currentLatency)
+    {
+        if (previousAverage <= 0)
+            return currentLatency;
+
+        const double alpha = 0.25;
+
+        return
+            alpha *
+                currentLatency +
+            (1 - alpha) *
+                previousAverage;
     }
 
     private static string Normalize(

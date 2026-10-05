@@ -27,7 +27,7 @@ public interface IBrowserExecutionBackend
 
 public sealed class InternalHttpBrowserExecutionBackend(
     IBrowserAgentService browser)
-    : IBrowserExecutionBackend
+    : IHttpBrowserExecutionBackend
 {
     private static readonly Regex UrlRegex = new(
         @"https?://[^\s]+",

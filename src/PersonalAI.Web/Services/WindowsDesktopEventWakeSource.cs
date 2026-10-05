@@ -158,6 +158,14 @@ public sealed class WindowsDesktopEventWakeSource
             result = item;
         }
 
+        if (result is not null)
+        {
+            while (signal.Wait(0))
+            {
+                // Dọn wake count cũ tương ứng với các event đã coalesce.
+            }
+        }
+
         return result is not null;
     }
 

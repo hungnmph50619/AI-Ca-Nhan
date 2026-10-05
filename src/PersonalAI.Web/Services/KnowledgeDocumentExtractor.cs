@@ -286,11 +286,11 @@ public sealed class KnowledgeDocumentExtractor
                         Heading: currentHeading,
                         Section: currentSection));
                 }
-                else if (element is Table table)
+                else if (element is DocumentFormat.OpenXml.Wordprocessing.Table table)
                 {
-                    foreach (var row in table.Elements<TableRow>())
+                    foreach (var row in table.Elements<DocumentFormat.OpenXml.Wordprocessing.TableRow>())
                     {
-                        var cells = row.Elements<TableCell>()
+                        var cells = row.Elements<DocumentFormat.OpenXml.Wordprocessing.TableCell>()
                             .Select(cell => string.Join(
                                 " ",
                                 cell.Descendants<Paragraph>()

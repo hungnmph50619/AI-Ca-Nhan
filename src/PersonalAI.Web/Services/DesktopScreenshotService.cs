@@ -276,7 +276,8 @@ public sealed class WindowsDesktopScreenshotService(
         string? wgcReason = null;
         var candidates =
             captureRouter.GetOrderedCandidates(
-                DesktopCaptureScopes.Monitor);
+                DesktopCaptureScopes.Monitor,
+                monitor.DeviceName);
 
         if (candidates.Contains(
                 DesktopCaptureBackends.WindowsGraphicsCapture,
@@ -319,6 +320,13 @@ public sealed class WindowsDesktopScreenshotService(
             {
                 wgcReason =
                     captured.Detail;
+
+                captureHealth.RecordFailure(
+                    DesktopCaptureScopes.Monitor,
+                    monitor.DeviceName,
+                    DesktopCaptureBackends.WindowsGraphicsCapture,
+                    0,
+                    captured.Detail);
             }
         }
 
@@ -367,6 +375,13 @@ public sealed class WindowsDesktopScreenshotService(
             {
                 dxgiReason =
                     captured.Detail;
+
+                captureHealth.RecordFailure(
+                    DesktopCaptureScopes.Monitor,
+                    monitor.DeviceName,
+                    DesktopCaptureBackends.DxgiDesktopDuplication,
+                    0,
+                    captured.Detail);
             }
         }
 
@@ -589,6 +604,13 @@ public sealed class WindowsDesktopScreenshotService(
 
             wgcReason =
                 captured.Detail;
+
+            captureHealth.RecordFailure(
+                DesktopCaptureScopes.Window,
+                window.WindowId,
+                DesktopCaptureBackends.WindowsGraphicsCapture,
+                0,
+                captured.Detail);
         }
 
         string? printWindowReason = null;
@@ -1028,7 +1050,8 @@ public sealed class WindowsDesktopScreenshotService(
 
         var candidates =
             captureRouter.GetOrderedCandidates(
-                DesktopCaptureScopes.VirtualDesktop);
+                DesktopCaptureScopes.VirtualDesktop,
+                "virtual-desktop");
 
         string? dxgiReason = null;
 
@@ -1151,6 +1174,16 @@ public sealed class WindowsDesktopScreenshotService(
                 dxgiReason =
                     "Không có monitor trong display topology.";
             }
+        }
+
+        if (!string.IsNullOrWhiteSpace(dxgiReason))
+        {
+            captureHealth.RecordFailure(
+                DesktopCaptureScopes.VirtualDesktop,
+                "virtual-desktop",
+                DesktopCaptureBackends.DxgiDesktopDuplication,
+                stopwatch.ElapsedMilliseconds,
+                dxgiReason);
         }
 
         var fallback =

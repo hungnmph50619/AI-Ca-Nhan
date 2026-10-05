@@ -250,6 +250,11 @@ public sealed class ComputerOperatorAcceptanceService
 
         RunCheck(
             checks,
+            "Gemini malformed preview bị giới hạn và loại base64",
+            CheckGeminiMalformedPreviewIsBoundedAndRedacted);
+
+        RunCheck(
+            checks,
             "ROI Vision ưu tiên target box khi cùng không gian ảnh",
             CheckRoiVisionTargetPriority);
 
@@ -2788,6 +2793,25 @@ public sealed class ComputerOperatorAcceptanceService
                 StringComparison.Ordinal) &&
             !rejected,
             "Gemini JSON repair đang sửa quá mức hoặc không đóng được envelope truncation an toàn.");
+    }
+
+    private static void CheckGeminiMalformedPreviewIsBoundedAndRedacted()
+    {
+        var preview =
+            DesktopVisionService.BuildSafeRawPreviewForAcceptance(
+                "{\"state\":\"x\",\"jpegBase64\":\"" +
+                new string('A', 1000) +
+                "\"}");
+
+        Require(
+            preview.Length <= 380 &&
+            preview.Contains(
+                "<redacted>",
+                StringComparison.Ordinal) &&
+            !preview.Contains(
+                new string('A', 100),
+                StringComparison.Ordinal),
+            "Gemini malformed preview chưa được giới hạn hoặc chưa redact base64.");
     }
 
     private static void CheckRoiVisionTargetPriority()

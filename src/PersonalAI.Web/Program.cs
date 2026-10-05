@@ -637,6 +637,28 @@ app.MapPost("/api/chat/attachments", async (
     }
 });
 
+app.MapGet("/api/chat/attachments/{attachmentId:guid}", (
+    Guid attachmentId,
+    IChatAttachmentStore attachmentStore) =>
+{
+    try
+    {
+        var attachment =
+            attachmentStore.GetRequired(
+                attachmentId);
+
+        return Results.File(
+            attachment.Path,
+            attachment.MimeType,
+            enableRangeProcessing: true);
+    }
+    catch (ChatValidationException exception)
+    {
+        return Results.NotFound(
+            new ApiError(exception.Message));
+    }
+});
+
 app.MapPost("/api/chat", async (
     ChatRequest request,
     IChatTurnService chat,

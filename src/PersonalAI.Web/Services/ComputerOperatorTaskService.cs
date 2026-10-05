@@ -22,6 +22,39 @@ public sealed record ComputerOperatorTaskResult(
     string Provider,
     string Model);
 
+public sealed record ComputerOperatorDesktopState(
+    DateTimeOffset CapturedAtUtc,
+    ComputerWindowInfo? ForegroundWindow,
+    IReadOnlyList<ComputerWindowInfo> Windows,
+    int FrameLeft,
+    int FrameTop,
+    int FrameWidth,
+    int FrameHeight,
+    string CaptureScope,
+    string? CaptureWindowId,
+    bool CaptureWindowWasForeground)
+{
+    public string ToPromptSummary()
+    {
+        var lines = new List<string>
+        {
+            ForegroundWindow is null
+                ? "Foreground: không xác định"
+                : $"Foreground: id={ForegroundWindow.WindowId}; title={ForegroundWindow.Title}; process={ForegroundWindow.ProcessName ?? "?"}; rect={ForegroundWindow.Left},{ForegroundWindow.Top},{ForegroundWindow.Width},{ForegroundWindow.Height}",
+            $"Observation frame: scope={CaptureScope}; origin={FrameLeft},{FrameTop}; size={FrameWidth}x{FrameHeight}; window={CaptureWindowId ?? "-"}; foreground={CaptureWindowWasForeground}",
+            "Cửa sổ đang hiển thị:"
+        };
+
+        foreach (var window in Windows)
+        {
+            lines.Add(
+                $"- id={window.WindowId}; title={window.Title}; process={window.ProcessName ?? "?"}; foreground={window.IsForeground}; rect={window.Left},{window.Top},{window.Width},{window.Height}");
+        }
+
+        return string.Join("\n", lines);
+    }
+}
+
 public sealed class ComputerOperatorTaskService(
     IComputerUseService computer,
     ComputerControlGate control,
@@ -44,7 +77,10 @@ public sealed class ComputerOperatorTaskService(
     ILogger<ComputerOperatorTaskService> logger)
     : IComputerOperatorTaskService
 {
-    private const int MaximumSteps = 12;
+    private const int MaximumSteps = 64;
+    private const int ScopedLeaseActions = 16;
+    private const int ScopedLeaseSeconds = 120;
+    private const int ScopedLeaseRenewalThresholdSeconds = 25;
     private const double MinimumConfidence = 0.72;
     private static readonly IDesktopVerificationRouter VerificationRouter =
         new DesktopVerificationRouter();
@@ -91,8 +127,8 @@ public sealed class ComputerOperatorTaskService(
                 ComputerOperatorTelemetryStages.Task);
 
         control.EnableScopedAutomation(
-            maximumActions: 12,
-            maximumSeconds: 170);
+            maximumActions: ScopedLeaseActions,
+            maximumSeconds: ScopedLeaseSeconds);
 
         var operatorToken = execution.Begin(normalizedGoal);
         using var linked = CancellationTokenSource.CreateLinkedTokenSource(
@@ -175,7 +211,11 @@ public sealed class ComputerOperatorTaskService(
             {
                 linked.Token.ThrowIfCancellationRequested();
 
-                if (control.GetStatus().Paused)
+                var gateBeforeRenewal = control.GetStatus();
+                if (!control.EnsureScopedAutomationLease(
+                        ScopedLeaseActions,
+                        ScopedLeaseSeconds,
+                        ScopedLeaseRenewalThresholdSeconds))
                 {
                     MarkCheckpointStatusSafely(
                         checkpoint,
@@ -185,7 +225,20 @@ public sealed class ComputerOperatorTaskService(
                         route: "control-stop");
                     return Finish(
                         false,
-                        "Computer Operator đã dừng vì phiên điều khiển hết hạn, hết ngân sách hoặc bị dừng khẩn cấp.");
+                        gateBeforeRenewal.PauseReason ==
+                            ComputerControlPauseReasons.HotkeyUnavailable
+                            ? "Computer Operator đã dừng vì phím dừng khẩn cấp không còn khả dụng."
+                            : "Computer Operator đã dừng theo yêu cầu người dùng.");
+                }
+
+                var gateAfterRenewal = control.GetStatus();
+                if (gateBeforeRenewal.Paused &&
+                    !gateAfterRenewal.Paused)
+                {
+                    progress.Add(
+                        "safety-lease",
+                        "Safety lease đã hết nhưng task vẫn còn hiệu lực; đã cấp lease mới trước khi tiếp tục. Đây không phải task timeout.",
+                        "renewed");
                 }
 
                 await execution.WaitIfPausedAsync(linked.Token);
@@ -201,14 +254,13 @@ public sealed class ComputerOperatorTaskService(
                     $"State machine: {stateSnapshot.State} — {stateSnapshot.Detail}",
                     stateSnapshot.State.ToString().ToLowerInvariant());
 
-                var windowsContext = BuildObservation();
-                var active = computer.GetActiveWindow();
+                var activeBeforeObservation = computer.GetActiveWindow();
 
                 progress.Add(
                     "stabilize",
-                    active is null
+                    activeBeforeObservation is null
                         ? "Đang chờ desktop ổn định trước khi quan sát. Foreground chưa xác định."
-                        : $"Đang chờ desktop ổn định trước khi quan sát. Foreground: {active.Title}.");
+                        : $"Đang chờ desktop ổn định trước khi quan sát. Foreground: {activeBeforeObservation.Title}.");
 
                 DesktopScreenshotFrame frame;
                 using var observeTelemetry =
@@ -246,6 +298,15 @@ public sealed class ComputerOperatorTaskService(
                         false,
                         $"Không chụp được desktop: {exception.Message}");
                 }
+
+                var desktopState = BuildDesktopState(frame);
+                var windowsContext = desktopState.ToPromptSummary();
+                var active = desktopState.ForegroundWindow;
+
+                progress.Add(
+                    "desktop-state",
+                    $"Unified Desktop State: foreground={active?.Title ?? "không xác định"}; windows={desktopState.Windows.Count}; frame={desktopState.CaptureScope}/{desktopState.FrameWidth}x{desktopState.FrameHeight}.",
+                    observation: true);
 
                 DesktopOperatorDecision decision;
                 using var planTelemetry =
@@ -779,6 +840,19 @@ public sealed class ComputerOperatorTaskService(
                         "text-engine",
                         "Type-text dùng Generic Text Interaction Engine; bỏ baseline Vision để ưu tiên local write/readback.",
                         "local");
+                }
+
+                if (!control.EnsureScopedAutomationLease(
+                        ScopedLeaseActions,
+                        ScopedLeaseSeconds,
+                        ScopedLeaseRenewalThresholdSeconds))
+                {
+                    verificationBaseline?.Clear();
+                    MarkCheckpointStatusSafely(
+                        checkpoint,
+                        ComputerOperatorCheckpointStatuses.Interrupted);
+                    throw new ToolExecutionStoppedByUserException(
+                        "Safety gate đã bị người dùng khóa hoặc phím dừng không còn khả dụng trước khi execute.");
                 }
 
                 ComputerActionResponse action;
@@ -2462,26 +2536,24 @@ public sealed class ComputerOperatorTaskService(
     }
 
 
-    private string BuildObservation()
+    private ComputerOperatorDesktopState BuildDesktopState(
+        DesktopScreenshotFrame frame)
     {
-        var active = computer.GetActiveWindow();
-        var windows = computer.GetWindows(30).Windows;
+        var windows = computer.GetWindows(50).Windows;
+        var active = windows.FirstOrDefault(window => window.IsForeground)
+            ?? computer.GetActiveWindow();
 
-        var lines = new List<string>
-        {
-            active is null
-                ? "Foreground: không xác định"
-                : $"Foreground: id={active.WindowId}; title={active.Title}; process={active.ProcessName ?? "?"}; rect={active.Left},{active.Top},{active.Width},{active.Height}",
-            "Cửa sổ đang hiển thị:"
-        };
-
-        foreach (var window in windows)
-        {
-            lines.Add(
-                $"- id={window.WindowId}; title={window.Title}; process={window.ProcessName ?? "?"}; foreground={window.IsForeground}; rect={window.Left},{window.Top},{window.Width},{window.Height}");
-        }
-
-        return string.Join("\n", lines);
+        return new ComputerOperatorDesktopState(
+            frame.CapturedAtUtc,
+            active,
+            windows,
+            frame.Left,
+            frame.Top,
+            frame.Width,
+            frame.Height,
+            frame.CaptureScope,
+            frame.WindowId,
+            frame.WindowWasForeground);
     }
 
     private static string RequireActive(

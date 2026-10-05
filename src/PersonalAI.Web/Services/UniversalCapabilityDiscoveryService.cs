@@ -59,7 +59,7 @@ public sealed class UniversalCapabilityDiscoveryService(
     IBrowserAgentService browser,
     IComputerUseService computer,
     DesktopVisionService vision)
-    : IUniversalCapabilityDiscoveryService
+    : IRawUniversalCapabilityDiscoveryService
 {
     public UniversalCapabilitySnapshot Discover()
     {

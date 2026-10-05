@@ -140,6 +140,7 @@ public sealed class ComputerOperatorTaskService(
     IComputerSafeTargetingService targeting,
     IDesktopFrameDifferenceService frameDifferences,
     IDesktopLocalVisualSensor localVisualSensor,
+    IDesktopOcrActionPlanner ocrActionPlanner,
     IDesktopLocalFastObserver fastObserver,
     IDesktopTemporalSceneService temporalScenes,
     IComputerOperatorActionExecutor actionExecutor,
@@ -463,6 +464,26 @@ public sealed class ComputerOperatorTaskService(
                             structuredRoute
                                 ? $"provider=local-structured; purpose=plan; cycle={index}; scene={sceneDiagnosticId}; structuredNodes={desktopState.StructuredScene?.NodeCount ?? 0}; action={decision.Action}; elementId={LimitDiagnostic(decision.TargetElementId, 80)}; geminiCalled=false."
                                 : $"provider=local; purpose=plan; cycle={index}; scene={sceneDiagnosticId}; action={decision.Action}; geminiCalled=false.");
+                    }
+                    else if (ocrActionPlanner.TryPlan(
+                                 normalizedGoal,
+                                 desktopState,
+                                 out decision))
+                    {
+                        plannerStopwatch.Stop();
+                        planTelemetry.Complete(
+                            success: true,
+                            route: "ocr-local");
+
+                        progress.Add(
+                            "ocr-local",
+                            $"Windows OCR fallback planner đã chọn action: {decision.Reason}",
+                            decision.Action,
+                            decision.Confidence);
+
+                        progress.AddDiagnostic(
+                            "provider",
+                            $"provider=windows-ocr; purpose=plan; cycle={index}; scene={sceneDiagnosticId}; action={decision.Action}; confidence={decision.Confidence:0.000}; geminiCalled=false.");
                     }
                     else if (!vision.Ready)
                     {

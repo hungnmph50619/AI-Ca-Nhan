@@ -98,6 +98,11 @@ public sealed class ComputerOperatorAcceptanceService
 
         RunCheck(
             checks,
+            "Gemini operator dùng structured output schema",
+            CheckGeminiOperatorStructuredSchema);
+
+        RunCheck(
+            checks,
             "local visual provider health cooldown sau failure lặp",
             CheckLocalVisualProviderHealthCooldown);
 
@@ -1557,6 +1562,24 @@ public sealed class ComputerOperatorAcceptanceService
                 now.AddSeconds(12),
                 now) == 5000,
             "Provider cooldown delay chưa clamp đúng trong biên 900..5000ms.");
+    }
+
+    private static void CheckGeminiOperatorStructuredSchema()
+    {
+        var schema =
+            DesktopVisionService.CreateDesktopOperatorResponseJsonSchemaForAcceptance();
+
+        Require(
+            schema.ValueKind == JsonValueKind.Object &&
+            schema.TryGetProperty("properties", out var properties) &&
+            properties.TryGetProperty("action", out var action) &&
+            action.TryGetProperty("enum", out var actions) &&
+            actions.EnumerateArray().Any(item =>
+                item.GetString() == "wait") &&
+            properties.TryGetProperty("sceneElements", out var sceneElements) &&
+            sceneElements.TryGetProperty("maxItems", out var maxItems) &&
+            maxItems.GetInt32() == 12,
+            "Gemini operator schema chưa khóa action enum hoặc giới hạn sceneElements đúng thiết kế.");
     }
 
     private static void CheckLocalVisualProviderHealthCooldown()

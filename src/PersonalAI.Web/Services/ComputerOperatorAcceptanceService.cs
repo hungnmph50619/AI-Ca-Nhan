@@ -83,6 +83,11 @@ public sealed class ComputerOperatorAcceptanceService
 
         RunCheck(
             checks,
+            "local vision worker timeout luôn bị giới hạn an toàn",
+            CheckLocalVisionWorkerTimeoutBounds);
+
+        RunCheck(
+            checks,
             "local visual provider health cooldown sau failure lặp",
             CheckLocalVisualProviderHealthCooldown);
 
@@ -1440,6 +1445,18 @@ public sealed class ComputerOperatorAcceptanceService
             !string.IsNullOrWhiteSpace(
                 result.Detail),
             "PaddleOCR worker launch failure chưa được cô lập thành kết quả an toàn.");
+    }
+
+    private static void CheckLocalVisionWorkerTimeoutBounds()
+    {
+        Require(
+            LocalVisionWorkerClient.NormalizeTimeoutForAcceptance(
+                1) == 250 &&
+            LocalVisionWorkerClient.NormalizeTimeoutForAcceptance(
+                4500) == 4500 &&
+            LocalVisionWorkerClient.NormalizeTimeoutForAcceptance(
+                99999) == 15000,
+            "Local vision worker timeout chưa được clamp trong biên 250..15000ms.");
     }
 
     private static void CheckLocalVisualProviderHealthCooldown()

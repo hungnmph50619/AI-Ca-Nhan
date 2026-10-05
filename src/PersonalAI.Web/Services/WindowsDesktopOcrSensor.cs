@@ -232,7 +232,8 @@ public sealed class WindowsDesktopOcrSensor(
 
 
 public sealed class DesktopOcrSensorRouter(
-    IEnumerable<IDesktopOcrProvider> providers)
+    IEnumerable<IDesktopOcrProvider> providers,
+    ILocalVisualProviderHealthRegistry health)
     : IDesktopOcrSensor
 {
     private readonly IReadOnlyList<IDesktopOcrProvider> orderedProviders =
@@ -254,6 +255,30 @@ public sealed class DesktopOcrSensorRouter(
         foreach (var provider in
                  orderedProviders)
         {
+            if (health.ShouldSkip(
+                    provider.Name,
+                    DateTimeOffset.UtcNow,
+                    out var skipReason))
+            {
+                last =
+                    new(
+                        Available: false,
+                        Text: string.Empty,
+                        Language: string.Empty,
+                        Lines:
+                            Array.Empty<DesktopOcrLine>(),
+                        CaptureWidth: 0,
+                        CaptureHeight: 0,
+                        Provider:
+                            provider.Name,
+                        Reason:
+                            skipReason);
+                continue;
+            }
+
+            var stopwatch =
+                System.Diagnostics.Stopwatch.StartNew();
+
             DesktopOcrObservation result;
             try
             {
@@ -267,6 +292,12 @@ public sealed class DesktopOcrSensorRouter(
                     IOException or
                     TimeoutException)
             {
+                stopwatch.Stop();
+                health.RecordFailure(
+                    provider.Name,
+                    stopwatch.ElapsedMilliseconds,
+                    exception.Message);
+
                 last =
                     new(
                         Available: false,
@@ -283,6 +314,7 @@ public sealed class DesktopOcrSensorRouter(
                 continue;
             }
 
+            stopwatch.Stop();
             last =
                 result;
 
@@ -291,8 +323,17 @@ public sealed class DesktopOcrSensorRouter(
                  !string.IsNullOrWhiteSpace(
                      result.Text)))
             {
+                health.RecordSuccess(
+                    provider.Name,
+                    stopwatch.ElapsedMilliseconds,
+                    result.Reason);
                 return result;
             }
+
+            health.RecordFailure(
+                provider.Name,
+                stopwatch.ElapsedMilliseconds,
+                result.Reason);
         }
 
         return last ??

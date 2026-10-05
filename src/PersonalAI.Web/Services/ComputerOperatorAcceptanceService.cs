@@ -28,6 +28,16 @@ public sealed class ComputerOperatorAcceptanceService
 
         RunCheck(
             checks,
+            "capture backend router giữ thứ tự WGC → DXGI → PrintWindow → CopyFromScreen",
+            CheckCaptureBackendRouterOrder);
+
+        RunCheck(
+            checks,
+            "capture backend router chỉ chọn backend đã khả dụng",
+            CheckCaptureBackendRouterAvailableFallback);
+
+        RunCheck(
+            checks,
             "tọa độ pixel trên desktop ảo có gốc âm",
             CheckImagePixelWithNegativeVirtualOrigin);
 
@@ -713,6 +723,57 @@ public sealed class ComputerOperatorAcceptanceService
                     false,
                     exception.Message));
         }
+    }
+
+    private static void CheckCaptureBackendRouterOrder()
+    {
+        var router = new DesktopCaptureBackendRouter();
+        var candidates = router.GetOrderedCandidates(
+            DesktopCaptureScopes.Window);
+
+        Require(
+            candidates.SequenceEqual(
+                [
+                    DesktopCaptureBackends.WindowsGraphicsCapture,
+                    DesktopCaptureBackends.PrintWindow,
+                    DesktopCaptureBackends.CopyFromScreen
+                ]),
+            "Capture router không giữ đúng thứ tự ưu tiên backend cho window.");
+
+        var monitorCandidates = router.GetOrderedCandidates(
+            DesktopCaptureScopes.Monitor);
+
+        Require(
+            monitorCandidates.SequenceEqual(
+                [
+                    DesktopCaptureBackends.WindowsGraphicsCapture,
+                    DesktopCaptureBackends.DxgiDesktopDuplication,
+                    DesktopCaptureBackends.CopyFromScreen
+                ]),
+            "Capture router không giữ đúng thứ tự ưu tiên backend cho monitor.");
+    }
+
+    private static void CheckCaptureBackendRouterAvailableFallback()
+    {
+        var router = new DesktopCaptureBackendRouter();
+
+        Require(
+            router.GetPreferredAvailableBackend(
+                DesktopCaptureScopes.Window) ==
+            DesktopCaptureBackends.PrintWindow,
+            "Window capture chưa được chọn PrintWindow khi WGC chưa kích hoạt.");
+
+        Require(
+            router.GetPreferredAvailableBackend(
+                DesktopCaptureScopes.Monitor) ==
+            DesktopCaptureBackends.CopyFromScreen,
+            "Monitor capture chưa fallback CopyFromScreen khi WGC/DXGI chưa kích hoạt.");
+
+        Require(
+            router.GetPreferredAvailableBackend(
+                DesktopCaptureScopes.VirtualDesktop) ==
+            DesktopCaptureBackends.CopyFromScreen,
+            "Virtual desktop chưa fallback CopyFromScreen khi DXGI chưa kích hoạt.");
     }
 
     private static void CheckImagePixelWithNegativeVirtualOrigin()

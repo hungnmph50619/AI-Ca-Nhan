@@ -24,7 +24,10 @@ public sealed record DesktopSystemEvent(
     string WindowId,
     DateTimeOffset OccurredAtUtc,
     uint NativeEvent,
-    string Reason);
+    string Reason,
+    string Source = "win-event",
+    double SourceConfidence = 0.80,
+    bool Corroborated = false);
 
 public sealed record DesktopObservationWakeResult(
     bool EventReceived,
@@ -82,6 +85,7 @@ public sealed class WindowsDesktopEventWakeSource
     private const uint WmQuit = 0x0012;
     private const int MaximumQueuedEvents = 256;
     private const long DuplicateWindowMilliseconds = 60;
+    private const long CrossSourceCorrelationMilliseconds = 250;
 
     private readonly ConcurrentQueue<DesktopSystemEvent> events = new();
     private readonly SemaphoreSlim signal = new(0, int.MaxValue);
@@ -101,6 +105,8 @@ public sealed class WindowsDesktopEventWakeSource
     private long lastEventUnixMilliseconds;
     private string lastEventIdentity = string.Empty;
     private DesktopSystemEvent? lastEvent;
+    private readonly ConcurrentDictionary<string, DesktopSystemEvent> recentEvidence =
+        new(StringComparer.OrdinalIgnoreCase);
     private readonly IFlaUiAutomationClient? flaUi;
 
     public WindowsDesktopEventWakeSource(
@@ -351,15 +357,18 @@ public sealed class WindowsDesktopEventWakeSource
                         DesktopSystemEventKinds.PropertyChanged
                 };
 
-            return new(
-                kind,
-                string.IsNullOrWhiteSpace(
-                    response.EventWindowId)
-                    ? windowId
-                    : response.EventWindowId,
-                DateTimeOffset.UtcNow,
-                0,
-                response.Detail);
+            return CorrelateEvidence(
+                new DesktopSystemEvent(
+                    kind,
+                    string.IsNullOrWhiteSpace(
+                        response.EventWindowId)
+                        ? windowId
+                        : response.EventWindowId,
+                    DateTimeOffset.UtcNow,
+                    0,
+                    response.Detail,
+                    Source: "uia3",
+                    SourceConfidence: 0.90));
         }
         catch (OperationCanceledException)
         {
@@ -372,6 +381,84 @@ public sealed class WindowsDesktopEventWakeSource
             return null;
         }
     }
+
+    private DesktopSystemEvent CorrelateEvidence(
+        DesktopSystemEvent next)
+    {
+        var family =
+            GetEventFamily(
+                next.Kind);
+
+        var key =
+            $"{next.WindowId}|{family}";
+
+        var corroborated = false;
+        var confidence =
+            next.SourceConfidence;
+
+        if (recentEvidence.TryGetValue(
+                key,
+                out var previous))
+        {
+            var age =
+                Math.Abs(
+                    (next.OccurredAtUtc -
+                     previous.OccurredAtUtc)
+                    .TotalMilliseconds);
+
+            if (age <= CrossSourceCorrelationMilliseconds &&
+                !previous.Source.Equals(
+                    next.Source,
+                    StringComparison.OrdinalIgnoreCase))
+            {
+                corroborated = true;
+                confidence =
+                    Math.Min(
+                        0.99,
+                        Math.Max(
+                            confidence,
+                            previous.SourceConfidence) +
+                        0.08);
+            }
+        }
+
+        var enriched =
+            next with
+            {
+                SourceConfidence = confidence,
+                Corroborated = corroborated
+            };
+
+        recentEvidence[key] =
+            enriched;
+
+        return enriched;
+    }
+
+    private static string GetEventFamily(
+        string kind) =>
+        kind switch
+        {
+            DesktopSystemEventKinds.ForegroundChanged or
+            DesktopSystemEventKinds.FocusChanged =>
+                "focus",
+            DesktopSystemEventKinds.ValueChanged or
+            DesktopSystemEventKinds.PropertyChanged =>
+                "value",
+            DesktopSystemEventKinds.WindowCreated or
+            DesktopSystemEventKinds.WindowShown or
+            DesktopSystemEventKinds.StructureChanged =>
+                "structure-open",
+            DesktopSystemEventKinds.WindowDestroyed or
+            DesktopSystemEventKinds.WindowHidden =>
+                "structure-close",
+            DesktopSystemEventKinds.SelectionChanged =>
+                "selection",
+            DesktopSystemEventKinds.WindowMovedOrResized =>
+                "geometry",
+            _ =>
+                kind
+        };
 
     private bool TryDequeueLatest(
         string? targetWindowId,
@@ -568,12 +655,21 @@ public sealed class WindowsDesktopEventWakeSource
             };
 
         var next =
-            new DesktopSystemEvent(
-                kind,
-                $"0x{window.ToInt64():X}",
-                DateTimeOffset.UtcNow,
-                nativeEvent,
-                reason);
+            CorrelateEvidence(
+                new DesktopSystemEvent(
+                    kind,
+                    $"0x{window.ToInt64():X}",
+                    DateTimeOffset.UtcNow,
+                    nativeEvent,
+                    reason,
+                    Source: "win-event",
+                    SourceConfidence:
+                        kind is
+                            DesktopSystemEventKinds.ForegroundChanged or
+                            DesktopSystemEventKinds.WindowCreated or
+                            DesktopSystemEventKinds.WindowDestroyed
+                            ? 0.90
+                            : 0.82));
 
         Interlocked.Increment(
             ref receivedEvents);

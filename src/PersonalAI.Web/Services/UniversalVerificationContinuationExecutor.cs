@@ -14,29 +14,38 @@ public sealed record UniversalVerificationContinuationExecution(
     UniversalOutcomeEvidence? Evidence,
     string Reason);
 
+public sealed record UniversalVerificationContinuationContext(
+    CodingVerificationRequest? Coding = null);
+
 public interface IUniversalVerificationContinuationExecutor
 {
     Task<UniversalVerificationContinuationExecution> ExecuteAsync(
         UniversalVerificationContinuationPlan plan,
         UniversalTaskRoutePreview route,
         ExecutionAgentResult execution,
+        UniversalVerificationContinuationContext? context = null,
         CancellationToken cancellationToken = default);
 }
 
 public sealed class UniversalVerificationContinuationExecutor(
-    IBrowserAgentService browser)
+    IBrowserAgentService browser,
+    ICodingVerificationGate? codingVerification = null,
+    IUniversalVerificationEvidenceAdapters? evidenceAdapters = null)
     : IUniversalVerificationContinuationExecutor
 {
+    private readonly IUniversalVerificationEvidenceAdapters evidenceAdapters =
+        evidenceAdapters ?? new UniversalVerificationEvidenceAdapters();
     private static readonly Regex UrlRegex = new(
         @"https?://[^\s]+",
         RegexOptions.IgnoreCase |
         RegexOptions.CultureInvariant |
         RegexOptions.Compiled);
 
-    public Task<UniversalVerificationContinuationExecution> ExecuteAsync(
+    public async Task<UniversalVerificationContinuationExecution> ExecuteAsync(
         UniversalVerificationContinuationPlan plan,
         UniversalTaskRoutePreview route,
         ExecutionAgentResult execution,
+        UniversalVerificationContinuationContext? context = null,
         CancellationToken cancellationToken = default)
     {
         ArgumentNullException.ThrowIfNull(plan);
@@ -47,40 +56,54 @@ public sealed class UniversalVerificationContinuationExecutor(
 
         if (!plan.Required)
         {
-            return Task.FromResult(
-                new UniversalVerificationContinuationExecution(
-                    UniversalVerificationContinuationStatuses.Unsupported,
-                    Evidence: null,
-                    "Continuation verification không được yêu cầu."));
+            return new UniversalVerificationContinuationExecution(
+                UniversalVerificationContinuationStatuses.Unsupported,
+                Evidence: null,
+                "Continuation verification không được yêu cầu.");
         }
 
-        return plan.Strategy switch
+        switch (plan.Strategy)
         {
-            UniversalVerificationStrategies.BrowserReadback =>
-                Task.FromResult(
-                    ExecuteBrowserReadback(
-                        route)),
+            case UniversalVerificationStrategies.BrowserReadback:
+                return ExecuteBrowserReadback(
+                    route);
 
-            UniversalVerificationStrategies.CodingVerificationGate =>
-                Task.FromResult(
-                    Pending(
-                        "Coding continuation cần TargetPath và RepositoryPath; không được chạy lại coding agent để đoán context.")),
+            case UniversalVerificationStrategies.CodingVerificationGate:
+                if (context?.Coding is null)
+                {
+                    return Pending(
+                        "Coding continuation cần TargetPath và RepositoryPath; không được chạy lại coding agent để đoán context.");
+                }
 
-            UniversalVerificationStrategies.ComputerOperatorVerifier =>
-                Task.FromResult(
-                    Pending(
-                        "Desktop continuation cần decision + observation + frame difference mới; không được replay action cũ.")),
+                if (codingVerification is null)
+                {
+                    return Pending(
+                        "Coding verification gate chưa được đăng ký.");
+                }
 
-            UniversalVerificationStrategies.ConnectorReadback =>
-                Task.FromResult(
-                    Pending(
-                        "Connector continuation cần provider-specific readback context; chưa có handler an toàn chung.")),
+                var report =
+                    await codingVerification.VerifyAsync(
+                        context.Coding,
+                        cancellationToken);
 
-            _ =>
-                Task.FromResult(
-                    Pending(
-                        $"Chưa có safe continuation handler cho strategy={plan.Strategy}."))
-        };
+                return new(
+                    UniversalVerificationContinuationStatuses.Verified,
+                    evidenceAdapters.FromCoding(
+                        report),
+                    report.Summary);
+
+            case UniversalVerificationStrategies.ComputerOperatorVerifier:
+                return Pending(
+                    "Desktop continuation cần decision + observation + frame difference mới; không được replay action cũ.");
+
+            case UniversalVerificationStrategies.ConnectorReadback:
+                return Pending(
+                    "Connector continuation cần provider-specific readback context; chưa có handler an toàn chung.");
+
+            default:
+                return Pending(
+                    $"Chưa có safe continuation handler cho strategy={plan.Strategy}.");
+        }
     }
 
     private UniversalVerificationContinuationExecution ExecuteBrowserReadback(

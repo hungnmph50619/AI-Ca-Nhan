@@ -423,6 +423,21 @@ public sealed class ComputerOperatorAcceptanceService
 
         RunCheck(
             checks,
+            "screen stability cần 2 lần ổn định liên tiếp",
+            CheckAdaptiveStabilityRequiresTwoComparisons);
+
+        RunCheck(
+            checks,
+            "screen stability reset khi frame bất ổn",
+            CheckAdaptiveStabilityResetsOnInstability);
+
+        RunCheck(
+            checks,
+            "screen stability dùng interval nhanh nhưng có floor an toàn",
+            CheckAdaptiveStabilityTimingPolicy);
+
+        RunCheck(
+            checks,
             "capability cache hit không gọi raw discovery lần hai",
             CheckCapabilityCacheAvoidsRepeatedDiscovery);
 
@@ -3404,6 +3419,68 @@ public sealed class ComputerOperatorAcceptanceService
                 .GetMethod(
                     "WaitAsync") is not null,
             "Operator loop chưa expose replan pacing runtime.");
+    }
+
+    private static void CheckAdaptiveStabilityRequiresTwoComparisons()
+    {
+        var tracker =
+            new DesktopAdaptiveStabilityTracker();
+
+        var first =
+            tracker.Observe(
+                comparable: true,
+                signatureDifference: 2.0);
+
+        var second =
+            tracker.Observe(
+                comparable: true,
+                signatureDifference: 2.5);
+
+        Require(
+            !first &&
+            second &&
+            tracker.ConsecutiveStableComparisons == 2,
+            "Adaptive stability chưa yêu cầu đủ 2 lần ổn định liên tiếp.");
+    }
+
+    private static void CheckAdaptiveStabilityResetsOnInstability()
+    {
+        var tracker =
+            new DesktopAdaptiveStabilityTracker();
+
+        _ = tracker.Observe(
+            comparable: true,
+            signatureDifference: 2.0);
+
+        var unstable =
+            tracker.Observe(
+                comparable: true,
+                signatureDifference: 30.0);
+
+        var afterReset =
+            tracker.Observe(
+                comparable: true,
+                signatureDifference: 2.0);
+
+        Require(
+            !unstable &&
+            !afterReset &&
+            tracker.ConsecutiveStableComparisons == 1,
+            "Adaptive stability không reset chuỗi sau frame bất ổn.");
+    }
+
+    private static void CheckAdaptiveStabilityTimingPolicy()
+    {
+        Require(
+            DesktopAdaptiveStabilizationPolicy
+                .RequiredConsecutiveStableComparisons == 2 &&
+            DesktopAdaptiveStabilizationPolicy
+                .MinimumSampleFloor ==
+                TimeSpan.FromMilliseconds(80) &&
+            DesktopAdaptiveStabilizationPolicy
+                .MaximumSampleInterval ==
+                TimeSpan.FromMilliseconds(160),
+            "Adaptive stability timing policy không đúng mục tiêu accuracy-first.");
     }
 
     private static void CheckCapabilityCacheAvoidsRepeatedDiscovery()

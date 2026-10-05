@@ -26,7 +26,8 @@ public interface IDesktopTemplateMatchingSensor
 }
 
 public sealed class OpenCvTemplateMatchingSensor(
-    ILocalVisualProviderHealthRegistry health)
+    ILocalVisualProviderHealthRegistry health,
+    ILocalVisualSensorBudgetPolicy budgetPolicy)
     : IDesktopTemplateMatchingSensor
 {
     private const double MinimumUniquenessMargin = 0.04;
@@ -48,6 +49,31 @@ public sealed class OpenCvTemplateMatchingSensor(
         double minimumScore = 0.88)
     {
         ArgumentNullException.ThrowIfNull(frame);
+
+        var templateBudget =
+            new LocalVisualSensorBudget(
+                MaximumTotalMilliseconds: 900,
+                MaximumOcrMilliseconds: 0,
+                MaximumTemplateMilliseconds: 800,
+                AllowWindowsOcr: false,
+                AllowPaddleOcr: false,
+                AllowOpenCv: true,
+                Reason: "OpenCV template/recovery budget.");
+
+        var providerHealth =
+            health.Get(
+                "opencv-template");
+
+        if (!budgetPolicy.CanUseProvider(
+                "opencv-template",
+                templateBudget,
+                elapsedMilliseconds: 0,
+                providerHealth,
+                out var budgetReason))
+        {
+            return Unavailable(
+                budgetReason);
+        }
 
         if (health.ShouldSkip(
                 "opencv-template",

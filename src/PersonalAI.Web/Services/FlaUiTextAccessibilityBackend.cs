@@ -33,7 +33,8 @@ public interface IFlaUiAutomationClient
 }
 
 public sealed class FlaUiAutomationClient(
-    ILogger<FlaUiAutomationClient> logger)
+    ILogger<FlaUiAutomationClient> logger,
+    IUniversalCapabilityCache? capabilityCache = null)
     : IFlaUiAutomationClient
 {
     private const int MaximumWaitMilliseconds = 4000;
@@ -103,6 +104,11 @@ public sealed class FlaUiAutomationClient(
                     // Best effort. Timeout là ranh giới an toàn chính.
                 }
 
+                capabilityCache?.MarkTemporarilyUnavailable(
+                    "desktop.flaui-uia3",
+                    TimeSpan.FromSeconds(15),
+                    "Sidecar FlaUI UIA3 timeout.");
+
                 return Unavailable(
                     "FlaUI UIA3 quá thời gian phản hồi; chuyển sang adapter dự phòng.");
             }
@@ -143,6 +149,11 @@ public sealed class FlaUiAutomationClient(
             logger.LogDebug(
                 exception,
                 "FlaUI UIA3 sidecar không khả dụng.");
+
+            capabilityCache?.MarkTemporarilyUnavailable(
+                "desktop.flaui-uia3",
+                TimeSpan.FromSeconds(15),
+                exception.Message);
 
             return Unavailable(
                 $"FlaUI UIA3 không khả dụng: {exception.Message}");

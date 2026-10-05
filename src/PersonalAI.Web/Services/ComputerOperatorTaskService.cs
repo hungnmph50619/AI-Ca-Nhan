@@ -158,6 +158,9 @@ public sealed class ComputerOperatorTaskService(
                     MarkCheckpointStatusSafely(
                         checkpoint,
                         ComputerOperatorCheckpointStatuses.Interrupted);
+                    taskTelemetry.Complete(
+                        success: false,
+                        route: "control-stop");
                     return Finish(
                         false,
                         "Computer Operator đã dừng vì phiên điều khiển hết hạn, hết ngân sách hoặc bị dừng khẩn cấp.");
@@ -419,6 +422,9 @@ public sealed class ComputerOperatorTaskService(
                     MarkCheckpointStatusSafely(
                         checkpoint,
                         ComputerOperatorCheckpointStatuses.Completed);
+                    taskTelemetry.Complete(
+                        success: true,
+                        route: "verified");
                     return Finish(
                         true,
                         steps.Count == 0
@@ -467,6 +473,9 @@ public sealed class ComputerOperatorTaskService(
                     MarkCheckpointStatusSafely(
                         checkpoint,
                         ComputerOperatorCheckpointStatuses.Blocked);
+                    taskTelemetry.Complete(
+                        success: false,
+                        route: "blocked");
                     return Finish(
                         false,
                         $"Vision dừng an toàn sau nhiều lần thử lại: {decision.Reason}");
@@ -1259,12 +1268,18 @@ public sealed class ComputerOperatorTaskService(
             MarkCheckpointStatusSafely(
                 checkpoint,
                 ComputerOperatorCheckpointStatuses.Interrupted);
+            taskTelemetry.Complete(
+                success: false,
+                route: "step-limit");
             return Finish(
                 false,
                 $"Đã đạt giới hạn {MaximumSteps} bước nên dừng để tránh vòng lặp.");
         }
         catch (OperationCanceledException) when (operatorToken.IsCancellationRequested)
         {
+            taskTelemetry.Complete(
+                success: false,
+                route: "cancelled");
             MarkCheckpointStatusSafely(
                 checkpoint,
                 ComputerOperatorCheckpointStatuses.Interrupted);
@@ -1274,6 +1289,9 @@ public sealed class ComputerOperatorTaskService(
         }
         catch (OperationCanceledException)
         {
+            taskTelemetry.Complete(
+                success: false,
+                route: "cancelled");
             MarkCheckpointStatusSafely(
                 checkpoint,
                 ComputerOperatorCheckpointStatuses.Interrupted);
@@ -1282,6 +1300,9 @@ public sealed class ComputerOperatorTaskService(
         }
         catch (Exception exception)
         {
+            taskTelemetry.Complete(
+                success: false,
+                route: "error");
             MarkCheckpointStatusSafely(
                 checkpoint,
                 ComputerOperatorCheckpointStatuses.Interrupted);
@@ -1509,7 +1530,7 @@ public sealed class ComputerOperatorTaskService(
                         ComputerOperatorTelemetryStages.GeminiVerify,
                         decision.Action);
 
-                DesktopVerificationResult result;
+                DesktopVisionVerification result;
                 try
                 {
                     result = await vision.VerifyAsync(

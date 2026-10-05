@@ -37,6 +37,7 @@ public static class ComputerUseEndpoints
         services.AddSingleton<IExecutionAgent, ComputerOperatorExecutionAgent>();
         services.AddSingleton<IExecutionAgentRegistry, ExecutionAgentRegistry>();
         services.AddSingleton<IMicrosoftAgentFrameworkAdapter, MicrosoftAgentFrameworkAdapter>();
+        services.AddSingleton<IWindowsGraphicsCaptureClient, WindowsGraphicsCaptureClient>();
         services.AddSingleton<IDesktopCaptureBackendRouter, DesktopCaptureBackendRouter>();
         services.AddSingleton<IDesktopScreenshotService, WindowsDesktopScreenshotService>();
         services.AddSingleton<IDesktopFrameDifferenceService, DesktopFrameDifferenceService>();

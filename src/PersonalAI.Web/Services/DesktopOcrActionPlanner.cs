@@ -141,9 +141,9 @@ public sealed class DesktopOcrActionPlanner(
                 State:
                     $"Windows OCR thấy duy nhất text '{requestedText}' trong foreground window.",
                 Plan:
-                    $"Click một lần vào bounding box OCR của '{target.Text}', sau đó quan sát lại trước hành động tiếp theo.",
+                    $"Click một lần vào bounding box OCR của '{requestedText}', sau đó quan sát lại trước hành động tiếp theo.",
                 CurrentSubgoal:
-                    $"Tương tác với text '{target.Text}' bằng local OCR fallback.",
+                    $"Tương tác với text '{requestedText}' bằng local OCR fallback.",
                 GoalProgress: 0,
                 VerifiedMilestones:
                     Array.Empty<string>(),
@@ -186,7 +186,7 @@ public sealed class DesktopOcrActionPlanner(
                 BoxNormalizedHeight: 0,
                 ScrollDelta: 0,
                 ExpectedEffect:
-                    $"Phần tử văn bản '{target.Text}' phản hồi sau click OCR-local.",
+                    $"Phần tử văn bản '{requestedText}' phản hồi sau click OCR-local.",
                 Confidence:
                     confidence,
                 Reason:

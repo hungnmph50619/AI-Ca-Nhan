@@ -184,6 +184,11 @@ public sealed class ComputerOperatorAcceptanceService
             "structured toggle không đảo ngược trạng thái đã đúng",
             CheckStructuredToggleUsesCurrentState);
 
+        RunCheck(
+            checks,
+            "structured invoke fallback LegacyIAccessible khi thiếu InvokePattern",
+            CheckStructuredInvokeFallsBackToLegacyAccessible);
+
 
         RunCheck(
             checks,
@@ -1945,6 +1950,74 @@ public sealed class ComputerOperatorAcceptanceService
                 "Windows Search",
                 StringComparison.OrdinalIgnoreCase),
             "Local planner không chọn Windows Search generic cho intent mở ứng dụng.");
+    }
+
+    private static void CheckStructuredInvokeFallsBackToLegacyAccessible()
+    {
+        var planner = new DesktopLocalActionPlanner();
+        var foreground = new ComputerWindowInfo(
+            "0x1234",
+            "Legacy App",
+            "legacy",
+            10,
+            true,
+            0,
+            0,
+            1000,
+            700);
+
+        var node = new StructuredDesktopNode(
+            Token: "root:legacy",
+            ParentToken: "root",
+            Depth: 2,
+            Role: "Button",
+            Name: "Legacy Action",
+            AutomationId: string.Empty,
+            ClassName: "LegacyButton",
+            IsEnabled: true,
+            IsFocused: false,
+            IsOffscreen: false,
+            Left: 220,
+            Top: 180,
+            Width: 160,
+            Height: 40,
+            Patterns: ["LegacyIAccessible"]);
+
+        var structured = new StructuredDesktopSnapshot(
+            WindowId: foreground.WindowId,
+            RootToken: "root",
+            CapturedAtUtc: DateTimeOffset.UtcNow,
+            NodeCount: 1,
+            MaximumNodes: 240,
+            MaximumDepth: 7,
+            Nodes: [node],
+            Source: "flaui-uia3",
+            Detail: "acceptance");
+
+        var state = new ComputerOperatorDesktopState(
+            DateTimeOffset.UtcNow,
+            foreground,
+            [foreground],
+            FrameLeft: 0,
+            FrameTop: 0,
+            FrameWidth: 1000,
+            FrameHeight: 700,
+            CaptureScope: DesktopCaptureScopes.Window,
+            CaptureWindowId: foreground.WindowId,
+            CaptureWindowWasForeground: true,
+            StructuredScene: structured);
+
+        var planned = planner.TryPlan(
+            "Bấm Legacy Action",
+            state,
+            string.Empty,
+            out var decision);
+
+        Require(
+            planned &&
+            decision.Action == "structured-legacy-default" &&
+            decision.TargetElementId == "root:legacy",
+            "Structured planner chưa fallback Invoke intent sang LegacyIAccessible đúng cách.");
     }
 
     private static void CheckStructuredToggleUsesCurrentState()

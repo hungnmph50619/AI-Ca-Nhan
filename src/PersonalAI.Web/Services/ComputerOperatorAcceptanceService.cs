@@ -214,6 +214,21 @@ public sealed class ComputerOperatorAcceptanceService
             "structured invoke local verify chỉ pass khi có transition quan sát được",
             CheckStructuredInvokeLocalVerificationRequiresTransition);
 
+        RunCheck(
+            checks,
+            "structured target revalidation reject scene stale",
+            CheckStructuredTargetRevalidationRejectsStaleScene);
+
+        RunCheck(
+            checks,
+            "structured target revalidation remap token theo semantic duy nhất",
+            CheckStructuredTargetRevalidationRemapsUniqueSemanticTarget);
+
+        RunCheck(
+            checks,
+            "LegacyIAccessible có confidence thấp hơn UIA native",
+            CheckStructuredCapabilityConfidenceDistinguishesLegacyFallback);
+
 
         RunCheck(
             checks,
@@ -2083,6 +2098,193 @@ public sealed class ComputerOperatorAcceptanceService
             result.Status == StructuredVerificationStatus.Verified &&
             result.Confidence >= 0.99,
             "Structured verifier chưa xác minh ValuePattern bằng readback.");
+    }
+
+    private static void CheckStructuredTargetRevalidationRejectsStaleScene()
+    {
+        var revalidator =
+            new StructuredTargetRevalidator();
+
+        var decision =
+            BuildStructuredDecision(
+                "structured-invoke",
+                "root:save",
+                "Save phản hồi.") with
+            {
+                TargetLabel = "Save"
+            };
+
+        var graph =
+            new UnifiedStructuredSceneGraph(
+                WindowId: "0x1234",
+                WindowTitle: "Acceptance",
+                ProcessName: "acceptance",
+                RootId: "root",
+                CapturedAtUtc: DateTimeOffset.UtcNow.AddSeconds(-10),
+                Nodes:
+                [
+                    new UnifiedStructuredSceneNode(
+                        Id: "root:save",
+                        ParentId: "root",
+                        Depth: 1,
+                        Role: "Button",
+                        Name: "Save",
+                        AutomationId: "save",
+                        ClassName: "Button",
+                        IsEnabled: true,
+                        IsFocused: false,
+                        IsVisible: true,
+                        DesktopLeft: 100,
+                        DesktopTop: 100,
+                        Width: 120,
+                        Height: 36,
+                        FrameLeft: 100,
+                        FrameTop: 100,
+                        Capabilities: ["Invoke"],
+                        Children: Array.Empty<string>())
+                ],
+                Source: "acceptance",
+                Detail: "acceptance");
+
+        var result =
+            revalidator.Revalidate(
+                decision,
+                graph,
+                DateTimeOffset.UtcNow);
+
+        Require(
+            result.Status ==
+                StructuredTargetRevalidationStatus.Rejected &&
+            !result.SafeToExecute,
+            "Structured target revalidation vẫn cho execute scene stale.");
+    }
+
+    private static void CheckStructuredTargetRevalidationRemapsUniqueSemanticTarget()
+    {
+        var revalidator =
+            new StructuredTargetRevalidator();
+
+        var decision =
+            BuildStructuredDecision(
+                "structured-invoke",
+                "root:old-save",
+                "Save phản hồi.") with
+            {
+                TargetLabel = "Save"
+            };
+
+        var graph =
+            new UnifiedStructuredSceneGraph(
+                WindowId: "0x1234",
+                WindowTitle: "Acceptance",
+                ProcessName: "acceptance",
+                RootId: "root",
+                CapturedAtUtc: DateTimeOffset.UtcNow,
+                Nodes:
+                [
+                    new UnifiedStructuredSceneNode(
+                        Id: "root:new-save",
+                        ParentId: "root",
+                        Depth: 1,
+                        Role: "Button",
+                        Name: "Save",
+                        AutomationId: "saveButton",
+                        ClassName: "Button",
+                        IsEnabled: true,
+                        IsFocused: false,
+                        IsVisible: true,
+                        DesktopLeft: 140,
+                        DesktopTop: 120,
+                        Width: 120,
+                        Height: 36,
+                        FrameLeft: 140,
+                        FrameTop: 120,
+                        Capabilities: ["Invoke"],
+                        Children: Array.Empty<string>())
+                ],
+                Source: "acceptance",
+                Detail: "acceptance");
+
+        var result =
+            revalidator.Revalidate(
+                decision,
+                graph,
+                DateTimeOffset.UtcNow);
+
+        Require(
+            result.Status ==
+                StructuredTargetRevalidationStatus.Remapped &&
+            result.SafeToExecute &&
+            result.Decision.TargetElementId ==
+                "root:new-save" &&
+            result.Decision.BoxLeft == 140 &&
+            result.Decision.BoxTop == 120,
+            "Structured target revalidation chưa remap token mới theo semantic target duy nhất.");
+    }
+
+    private static void CheckStructuredCapabilityConfidenceDistinguishesLegacyFallback()
+    {
+        var revalidator =
+            new StructuredTargetRevalidator();
+
+        UnifiedStructuredSceneGraph Graph(
+            string capability) =>
+            new(
+                WindowId: "0x1234",
+                WindowTitle: "Acceptance",
+                ProcessName: "acceptance",
+                RootId: "root",
+                CapturedAtUtc: DateTimeOffset.UtcNow,
+                Nodes:
+                [
+                    new UnifiedStructuredSceneNode(
+                        Id: "root:target",
+                        ParentId: "root",
+                        Depth: 1,
+                        Role: "Button",
+                        Name: "Target",
+                        AutomationId: "target",
+                        ClassName: "Button",
+                        IsEnabled: true,
+                        IsFocused: false,
+                        IsVisible: true,
+                        DesktopLeft: 100,
+                        DesktopTop: 100,
+                        Width: 120,
+                        Height: 36,
+                        FrameLeft: 100,
+                        FrameTop: 100,
+                        Capabilities: [capability],
+                        Children: Array.Empty<string>())
+                ],
+                Source: "acceptance",
+                Detail: "acceptance");
+
+        var native =
+            revalidator.Revalidate(
+                BuildStructuredDecision(
+                    "structured-invoke",
+                    "root:target",
+                    "invoke"),
+                Graph("Invoke"),
+                DateTimeOffset.UtcNow);
+
+        var legacy =
+            revalidator.Revalidate(
+                BuildStructuredDecision(
+                    "structured-legacy-default",
+                    "root:target",
+                    "legacy"),
+                Graph("LegacyIAccessible"),
+                DateTimeOffset.UtcNow);
+
+        Require(
+            native.SafeToExecute &&
+            legacy.SafeToExecute &&
+            native.Confidence > legacy.Confidence &&
+            native.Confidence >= 0.95 &&
+            legacy.Confidence <= 0.80,
+            "Structured capability confidence chưa phân biệt UIA native và LegacyIAccessible fallback.");
     }
 
     private static void CheckStructuredInvokeEventRelevance()

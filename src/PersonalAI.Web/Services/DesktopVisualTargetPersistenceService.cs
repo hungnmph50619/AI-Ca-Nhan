@@ -1,5 +1,6 @@
 using System.Drawing;
 using System.Drawing.Imaging;
+using System.Runtime.InteropServices;
 using PersonalAI.Web.Models;
 
 namespace PersonalAI.Web.Services;

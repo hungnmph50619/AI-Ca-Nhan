@@ -200,7 +200,8 @@ public sealed class FlaUiAutomationClient(
 }
 
 public sealed class FlaUiTextAccessibilityBackend(
-    IFlaUiAutomationClient client)
+    IFlaUiAutomationClient client,
+    IUniversalResilienceExecutor resilience)
     : IFlaUiTextAccessibilityBackend
 {
     private const string BackendName = "flaui-uia3";
@@ -208,7 +209,7 @@ public sealed class FlaUiTextAccessibilityBackend(
     public TextTargetCapabilities Probe(
         string windowId)
     {
-        var response = client.Invoke(
+        var response = InvokeReadOnlySafely(
             new FlaUiAutomationRequest(
                 "probe",
                 windowId));
@@ -224,7 +225,7 @@ public sealed class FlaUiTextAccessibilityBackend(
         if (!IsMine(target))
             return null;
 
-        var response = client.Invoke(
+        var response = InvokeReadOnlySafely(
             new FlaUiAutomationRequest(
                 "read",
                 target.WindowId,
@@ -260,7 +261,7 @@ public sealed class FlaUiTextAccessibilityBackend(
         if (!IsMine(target))
             return false;
 
-        var response = client.Invoke(
+        var response = InvokeReadOnlySafely(
             new FlaUiAutomationRequest(
                 "same-focus",
                 target.WindowId,
@@ -268,6 +269,65 @@ public sealed class FlaUiTextAccessibilityBackend(
 
         return response.Success &&
                response.IsFocused;
+    }
+
+    private FlaUiAutomationResponse InvokeReadOnlySafely(
+        FlaUiAutomationRequest request)
+    {
+        try
+        {
+            return resilience.ExecuteReadOnly(
+                "flaui-uia3-readonly",
+                () =>
+                {
+                    var response = client.Invoke(request);
+
+                    if (!response.Success &&
+                        IsTransientTechnicalFailure(
+                            response.Detail))
+                    {
+                        throw new IOException(
+                            response.Detail);
+                    }
+
+                    return response;
+                });
+        }
+        catch (Exception exception) when (
+            exception is IOException or
+            TimeoutException or
+            Polly.CircuitBreaker.BrokenCircuitException)
+        {
+            return new(
+                Success: false,
+                IsFocused: false,
+                CanRead: false,
+                CanDirectSet: false,
+                SupportsSelection: false,
+                IsReadOnly: false,
+                IsSensitive: false,
+                ControlClass: string.Empty,
+                NativeWindowHandle: 0,
+                TargetToken: string.Empty,
+                Value: null,
+                Detail:
+                    $"FlaUI read-only path tạm ngừng bởi resilience policy: {exception.Message}");
+        }
+    }
+
+    private static bool IsTransientTechnicalFailure(
+        string? detail)
+    {
+        var value =
+            (detail ?? string.Empty)
+                .Trim()
+                .ToLowerInvariant();
+
+        return value.Contains("timeout") ||
+               value.Contains("quá thời gian") ||
+               value.Contains("không trả kết quả") ||
+               value.Contains("không khả dụng") ||
+               value.Contains("không khởi động được");
     }
 
     private static TextTargetCapabilities ToCapabilities(

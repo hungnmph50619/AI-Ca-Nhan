@@ -3163,7 +3163,18 @@ jobs:
           grep -Fq '"id": "pause-resume-stop"' tests/computer-use/v3.4.9-acceptance-scenarios.json
           grep -Fq '"id": "loop-recovery"' tests/computer-use/v3.4.9-acceptance-scenarios.json
           grep -Fq '"id": "multi-step-open-and-type"' tests/computer-use/v3.4.9-acceptance-scenarios.json
-          grep -Fq 'totalCount -lt 117' .github/workflows/desktop-control.yml
+          grep -Fq 'totalCount -lt 120' .github/workflows/desktop-control.yml
+          # v4.0.22 — Circuit Breaker & Smart Retry
+          grep -Fq 'PackageReference Include="Polly"' src/PersonalAI.Web/PersonalAI.Web.csproj
+          grep -Fq 'IUniversalResilienceExecutor' src/PersonalAI.Web/Services/UniversalResilienceExecutor.cs
+          grep -Fq 'VerifyBeforeRetry' src/PersonalAI.Web/Services/UniversalResilienceExecutor.cs
+          grep -Fq 'AddCircuitBreaker' src/PersonalAI.Web/Services/UniversalResilienceExecutor.cs
+          grep -Fq 'AddRetry' src/PersonalAI.Web/Services/UniversalResilienceExecutor.cs
+          grep -Fq 'flaui-uia3-readonly' src/PersonalAI.Web/Services/FlaUiTextAccessibilityBackend.cs
+          grep -Fq '/api/universal-router/resilience' src/PersonalAI.Web/Services/UniversalTaskRouterEndpoints.cs
+          grep -Fq 'CheckResilienceStopsOnPermissionDenial' src/PersonalAI.Web/Services/ComputerOperatorAcceptanceService.cs
+          grep -Fq 'CheckResilienceRequiresVerificationAfterPossibleSideEffect' src/PersonalAI.Web/Services/ComputerOperatorAcceptanceService.cs
+          grep -Fq 'CheckResilienceRetriesTransientReadOnlyFailure' src/PersonalAI.Web/Services/ComputerOperatorAcceptanceService.cs
           # v4.0.21 — Capability Cache
           grep -Fq 'IUniversalCapabilityCache' src/PersonalAI.Web/Services/UniversalCapabilityCache.cs
           grep -Fq 'CachedUniversalCapabilityDiscoveryService' src/PersonalAI.Web/Services/UniversalCapabilityCache.cs

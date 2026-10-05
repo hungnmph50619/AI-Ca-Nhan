@@ -23,10 +23,10 @@ jobs:
           dotnet-version: '8.0.x'
 
       - name: Restore
-        run: dotnet restore PersonalAI.sln
+        run: dotnet restore src/PersonalAI.Web/PersonalAI.Web.csproj
 
       - name: Build
-        run: dotnet build PersonalAI.sln --configuration Release --no-restore
+        run: dotnet build src/PersonalAI.Web/PersonalAI.Web.csproj --configuration Release --no-restore
 
       - name: Smoke test memory, RAG quality and internal tools
         shell: bash

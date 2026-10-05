@@ -66,6 +66,11 @@ public sealed class ComputerOperatorAcceptanceService
             "OCR resolver từ chối target mơ hồ",
             CheckOcrResolverRejectsAmbiguousTarget);
 
+        RunCheck(
+            checks,
+            "OCR planner map capture box sang frame đúng tỉ lệ",
+            CheckOcrPlannerMapsCaptureBoxToFrame);
+
 
 
         RunCheck(
@@ -1203,6 +1208,80 @@ public sealed class ComputerOperatorAcceptanceService
             !result.Resolved &&
             result.Target is null,
             "OCR resolver đang đoán khi có nhiều target cùng độ chắc chắn.");
+    }
+
+    private static void CheckOcrPlannerMapsCaptureBoxToFrame()
+    {
+        var observation =
+            new DesktopOcrObservation(
+                Available: true,
+                Text: "Continue",
+                Language: "en-US",
+                Lines:
+                [
+                    new DesktopOcrLine(
+                        "Continue",
+                        [
+                            new DesktopOcrWord(
+                                "Continue",
+                                100,
+                                50,
+                                50,
+                                20)
+                        ])
+                ],
+                CaptureWidth: 400,
+                CaptureHeight: 200,
+                Provider: "acceptance",
+                Reason: "acceptance");
+
+        var planner =
+            new DesktopOcrActionPlanner(
+                new AcceptanceOcrSensor(
+                    observation));
+
+        var foreground =
+            new ComputerWindowInfo(
+                "0x1234",
+                "Acceptance",
+                "acceptance",
+                10,
+                true,
+                100,
+                40,
+                800,
+                400);
+
+        var state =
+            new ComputerOperatorDesktopState(
+                DateTimeOffset.UtcNow,
+                foreground,
+                [foreground],
+                FrameLeft: 0,
+                FrameTop: 0,
+                FrameWidth: 1200,
+                FrameHeight: 800,
+                CaptureScope:
+                    DesktopCaptureScopes.VirtualDesktop,
+                CaptureWindowId: string.Empty,
+                CaptureWindowWasForeground: true);
+
+        var planned =
+            planner.TryPlan(
+                "Bấm chữ Continue",
+                state,
+                out var decision);
+
+        Require(
+            planned &&
+            decision.Action == "click-left" &&
+            decision.BoxLeft == 300 &&
+            decision.BoxTop == 140 &&
+            decision.BoxWidth == 100 &&
+            decision.BoxHeight == 40 &&
+            decision.ImageX == 350 &&
+            decision.ImageY == 160,
+            $"OCR planner map sai capture→frame: box=({decision.BoxLeft},{decision.BoxTop},{decision.BoxWidth},{decision.BoxHeight}), point=({decision.ImageX},{decision.ImageY}).");
     }
 
     private static void CheckLocalVisualDifferenceHash()
@@ -7650,6 +7729,15 @@ public sealed class ComputerOperatorAcceptanceService
         if (!condition)
             throw new InvalidOperationException(
                 message);
+    }
+
+    private sealed class AcceptanceOcrSensor(
+        DesktopOcrObservation observation)
+        : IDesktopOcrSensor
+    {
+        public DesktopOcrObservation ReadWindow(
+            string windowId) =>
+            observation;
     }
 
     private sealed class AcceptanceDisplayTopologyService

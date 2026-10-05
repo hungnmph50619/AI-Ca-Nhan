@@ -17,6 +17,8 @@ public static class UniversalTaskRouterEndpoints
         services.AddSingleton<IUniversalVerificationEvidenceRouter, UniversalVerificationEvidenceRouter>();
         services.AddSingleton<IUniversalVerificationEvidenceAdapters, UniversalVerificationEvidenceAdapters>();
         services.AddSingleton<IUniversalEvidenceFusionEngine, UniversalEvidenceFusionEngine>();
+        services.AddSingleton<IUniversalFailureClassifier, UniversalFailureClassifier>();
+        services.AddSingleton<IUniversalResilienceExecutor, UniversalResilienceExecutor>();
         services.AddScoped<IUniversalExecutionLifecycleCoordinator, UniversalExecutionLifecycleCoordinator>();
         services.AddSingleton<IUniversalVerificationContinuationPlanner, UniversalVerificationContinuationPlanner>();
         services.AddScoped<IUniversalVerificationContinuationExecutor, UniversalVerificationContinuationExecutor>();

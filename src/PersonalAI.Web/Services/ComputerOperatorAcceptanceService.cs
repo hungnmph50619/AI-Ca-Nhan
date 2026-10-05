@@ -408,6 +408,21 @@ public sealed class ComputerOperatorAcceptanceService
 
         RunCheck(
             checks,
+            "resilience không retry permission denial",
+            CheckResilienceStopsOnPermissionDenial);
+
+        RunCheck(
+            checks,
+            "resilience yêu cầu verify trước retry khi side effect có thể đã xảy ra",
+            CheckResilienceRequiresVerificationAfterPossibleSideEffect);
+
+        RunCheck(
+            checks,
+            "resilience chỉ retry lỗi kỹ thuật read-only",
+            CheckResilienceRetriesTransientReadOnlyFailure);
+
+        RunCheck(
+            checks,
             "capability first router phát hiện direct tool an toàn",
             CheckUniversalRouterDetectsDirectToolOpportunity);
 
@@ -3231,6 +3246,56 @@ public sealed class ComputerOperatorAcceptanceService
             cache.GetStatus()
                 .TemporaryUnavailabilityCount >= 1,
             "Capability health override chưa tạm ngừng adapter lỗi.");
+    }
+
+    private static void CheckResilienceStopsOnPermissionDenial()
+    {
+        var classifier = new UniversalFailureClassifier();
+        var result = classifier.Classify(
+            new UnauthorizedAccessException("permission denied"),
+            sideEffectMayHaveOccurred: false);
+
+        Require(
+            result.Action == UniversalFailureActions.Stop &&
+            !result.RetryAllowed,
+            "Permission denial vẫn đang được retry.");
+    }
+
+    private static void CheckResilienceRequiresVerificationAfterPossibleSideEffect()
+    {
+        var classifier = new UniversalFailureClassifier();
+        var result = classifier.Classify(
+            new TimeoutException("timeout"),
+            sideEffectMayHaveOccurred: true);
+
+        Require(
+            result.Action == UniversalFailureActions.VerifyBeforeRetry &&
+            result.RequiresVerificationBeforeAnotherSideEffect &&
+            !result.RetryAllowed,
+            "Lỗi sau side effect chưa buộc verify-before-retry.");
+    }
+
+    private static void CheckResilienceRetriesTransientReadOnlyFailure()
+    {
+        var classifier = new UniversalFailureClassifier();
+        var executor = new UniversalResilienceExecutor(classifier);
+        var calls = 0;
+
+        var result = executor.ExecuteReadOnly(
+            "acceptance-read",
+            () =>
+            {
+                calls++;
+                if (calls == 1)
+                    throw new IOException("technical transient");
+
+                return "ok";
+            });
+
+        Require(
+            result == "ok" &&
+            calls == 2,
+            "Read-only transient failure chưa retry đúng một lần.");
     }
 
     private static void CheckUniversalRouterDetectsDirectToolOpportunity()

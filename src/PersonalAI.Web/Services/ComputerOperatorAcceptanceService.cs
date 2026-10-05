@@ -56,6 +56,16 @@ public sealed class ComputerOperatorAcceptanceService
             "Windows OCR parser giữ text language và word bounding boxes",
             CheckWindowsOcrPayloadParsing);
 
+        RunCheck(
+            checks,
+            "OCR resolver chọn duy nhất text target rõ ràng",
+            CheckOcrResolverChoosesUniqueTarget);
+
+        RunCheck(
+            checks,
+            "OCR resolver từ chối target mơ hồ",
+            CheckOcrResolverRejectsAmbiguousTarget);
+
 
 
         RunCheck(
@@ -1092,6 +1102,107 @@ public sealed class ComputerOperatorAcceptanceService
                 result.Lines[0].Words[0].Left -
                 12) < 0.001,
             "Windows OCR parser chưa giữ đúng text/language/bounding boxes.");
+    }
+
+    private static void CheckOcrResolverChoosesUniqueTarget()
+    {
+        var resolver =
+            new DesktopOcrTargetResolver();
+
+        var observation =
+            new DesktopOcrObservation(
+                Available: true,
+                Text: "Cancel Continue",
+                Language: "en-US",
+                Lines:
+                [
+                    new DesktopOcrLine(
+                        "Cancel Continue",
+                        [
+                            new DesktopOcrWord(
+                                "Cancel",
+                                10,
+                                20,
+                                50,
+                                20),
+                            new DesktopOcrWord(
+                                "Continue",
+                                120,
+                                20,
+                                80,
+                                20)
+                        ])
+                ],
+                CaptureWidth: 800,
+                CaptureHeight: 600,
+                Provider: "acceptance",
+                Reason: "acceptance");
+
+        var result =
+            resolver.Resolve(
+                observation,
+                "Continue");
+
+        Require(
+            result.Resolved &&
+            result.Target is not null &&
+            result.Target.Text == "Continue" &&
+            result.Target.Score >= 110 &&
+            Math.Abs(
+                result.Target.Left -
+                120) < 0.001,
+            "OCR resolver chưa chọn đúng target text duy nhất.");
+    }
+
+    private static void CheckOcrResolverRejectsAmbiguousTarget()
+    {
+        var resolver =
+            new DesktopOcrTargetResolver();
+
+        var observation =
+            new DesktopOcrObservation(
+                Available: true,
+                Text: "Open Open",
+                Language: "en-US",
+                Lines:
+                [
+                    new DesktopOcrLine(
+                        "Open",
+                        [
+                            new DesktopOcrWord(
+                                "Open",
+                                10,
+                                20,
+                                50,
+                                20)
+                        ]),
+                    new DesktopOcrLine(
+                        "Open",
+                        [
+                            new DesktopOcrWord(
+                                "Open",
+                                200,
+                                20,
+                                50,
+                                20)
+                        ])
+                ],
+                CaptureWidth: 800,
+                CaptureHeight: 600,
+                Provider: "acceptance",
+                Reason: "acceptance");
+
+        var result =
+            resolver.Resolve(
+                observation,
+                "Open");
+
+        Require(
+            result.Status ==
+                DesktopOcrResolutionStatus.Ambiguous &&
+            !result.Resolved &&
+            result.Target is null,
+            "OCR resolver đang đoán khi có nhiều target cùng độ chắc chắn.");
     }
 
     private static void CheckLocalVisualDifferenceHash()

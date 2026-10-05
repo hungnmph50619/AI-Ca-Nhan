@@ -112,6 +112,17 @@ internal static class Program
                         automation,
                         request);
             }
+            else if (IsStructuredPatternOperation(
+                         request.Operation))
+            {
+                using var automation =
+                    new UIA3Automation();
+
+                response =
+                    ExecuteStructuredPattern(
+                        automation,
+                        request);
+            }
             else
             {
                 using var automation = new UIA3Automation();
@@ -1210,6 +1221,307 @@ internal static class Program
         int MaximumNodes,
         int MaximumDepth,
         IReadOnlyList<StructuredUiNode> Nodes);
+
+    private static bool IsStructuredPatternOperation(
+        string operation) =>
+        (operation ?? string.Empty)
+            .Trim()
+            .ToLowerInvariant() is
+            "structured-focus" or
+            "structured-invoke" or
+            "structured-select" or
+            "structured-toggle" or
+            "structured-expand" or
+            "structured-collapse" or
+            "structured-set-value";
+
+    private static AutomationResponse ExecuteStructuredPattern(
+        UIA3Automation automation,
+        AutomationRequest request)
+    {
+        var hwnd = ParseWindowId(
+            request.WindowId);
+
+        if (hwnd == nint.Zero ||
+            !IsWindow(hwnd))
+        {
+            return Empty(
+                request,
+                "Cửa sổ structured target không còn hợp lệ.");
+        }
+
+        if (GetForegroundWindow() != hwnd)
+        {
+            return Empty(
+                request,
+                "Cửa sổ structured target không còn ở foreground.");
+        }
+
+        if (string.IsNullOrWhiteSpace(
+                request.TargetToken))
+        {
+            return Empty(
+                request,
+                "Thiếu TargetToken cho structured action.");
+        }
+
+        AutomationElement root;
+        try
+        {
+            root = automation.FromHandle(
+                hwnd);
+        }
+        catch (Exception exception)
+        {
+            return Empty(
+                request,
+                $"UIA3 không tạo được root cho structured action: {exception.Message}");
+        }
+
+        var target = FindByToken(
+            root,
+            request.TargetToken,
+            maximumNodes: 1000,
+            maximumDepth: 12);
+
+        if (target is null)
+        {
+            return Empty(
+                request,
+                "Structured target không còn tồn tại; yêu cầu re-observe/replan.");
+        }
+
+        if (!target.Properties.IsEnabled.ValueOrDefault ||
+            target.Properties.IsOffscreen.ValueOrDefault)
+        {
+            return Empty(
+                request,
+                "Structured target hiện disabled hoặc offscreen.");
+        }
+
+        var token = BuildToken(
+            target);
+
+        var className =
+            target.Properties.ClassName.ValueOrDefault
+            ?? string.Empty;
+
+        var nativeHandle =
+            target.Properties.NativeWindowHandle.ValueOrDefault
+                .ToInt64();
+
+        var isPassword =
+            target.Properties.IsPassword.ValueOrDefault;
+
+        var operation =
+            request.Operation.Trim().ToLowerInvariant();
+
+        try
+        {
+            switch (operation)
+            {
+                case "structured-focus":
+                    target.Focus();
+                    break;
+
+                case "structured-invoke":
+                    if (!target.Patterns.Invoke.IsSupported)
+                        return Empty(
+                            request,
+                            "Structured target không hỗ trợ InvokePattern.");
+
+                    target.Patterns.Invoke.Pattern.Invoke();
+                    break;
+
+                case "structured-select":
+                    if (!target.Patterns.SelectionItem.IsSupported)
+                        return Empty(
+                            request,
+                            "Structured target không hỗ trợ SelectionItemPattern.");
+
+                    target.Patterns.SelectionItem.Pattern.Select();
+                    break;
+
+                case "structured-toggle":
+                    if (!target.Patterns.Toggle.IsSupported)
+                        return Empty(
+                            request,
+                            "Structured target không hỗ trợ TogglePattern.");
+
+                    target.Patterns.Toggle.Pattern.Toggle();
+                    break;
+
+                case "structured-expand":
+                    if (!target.Patterns.ExpandCollapse.IsSupported)
+                        return Empty(
+                            request,
+                            "Structured target không hỗ trợ ExpandCollapsePattern.");
+
+                    target.Patterns.ExpandCollapse.Pattern.Expand();
+                    break;
+
+                case "structured-collapse":
+                    if (!target.Patterns.ExpandCollapse.IsSupported)
+                        return Empty(
+                            request,
+                            "Structured target không hỗ trợ ExpandCollapsePattern.");
+
+                    target.Patterns.ExpandCollapse.Pattern.Collapse();
+                    break;
+
+                case "structured-set-value":
+                    if (isPassword)
+                        return Empty(
+                            request,
+                            "Từ chối structured-set-value trên trường password/nhạy cảm.");
+
+                    if (!target.Patterns.Value.IsSupported)
+                        return Empty(
+                            request,
+                            "Structured target không hỗ trợ ValuePattern.");
+
+                    var valuePattern =
+                        target.Patterns.Value.Pattern;
+
+                    if (valuePattern.IsReadOnly.ValueOrDefault)
+                        return Empty(
+                            request,
+                            "Structured ValuePattern đang read-only.");
+
+                    valuePattern.SetValue(
+                        request.Text ?? string.Empty);
+                    break;
+
+                default:
+                    return Empty(
+                        request,
+                        $"Structured operation chưa được hỗ trợ: {request.Operation}.");
+            }
+        }
+        catch (Exception exception)
+        {
+            return Empty(
+                request,
+                $"Structured UIA action thất bại: {exception.GetType().Name}: {exception.Message}");
+        }
+
+        string? value = null;
+        var canRead =
+            target.Patterns.Value.IsSupported &&
+            !isPassword;
+
+        if (canRead)
+        {
+            try
+            {
+                value =
+                    target.Patterns.Value.Pattern
+                        .Value.Value;
+            }
+            catch
+            {
+                value = null;
+            }
+        }
+
+        return new(
+            Success: true,
+            IsFocused:
+                target.Properties.HasKeyboardFocus.ValueOrDefault,
+            CanRead: canRead,
+            CanDirectSet:
+                target.Patterns.Value.IsSupported &&
+                !isPassword,
+            SupportsSelection:
+                target.Patterns.SelectionItem.IsSupported,
+            IsReadOnly:
+                target.Patterns.Value.IsSupported
+                    ? target.Patterns.Value.Pattern
+                        .IsReadOnly.ValueOrDefault
+                    : true,
+            IsSensitive:
+                isPassword,
+            ControlClass:
+                className,
+            NativeWindowHandle:
+                nativeHandle,
+            TargetToken:
+                token,
+            Value:
+                value,
+            Detail:
+                $"Đã thực hiện {operation} bằng FlaUI/UIA3 trên target token đã revalidate.");
+    }
+
+    private static AutomationElement? FindByToken(
+        AutomationElement root,
+        string targetToken,
+        int maximumNodes,
+        int maximumDepth)
+    {
+        var queue =
+            new Queue<(AutomationElement Element, int Depth)>();
+
+        queue.Enqueue(
+            (root, 0));
+
+        var visited = 0;
+
+        while (queue.Count > 0 &&
+               visited < maximumNodes)
+        {
+            var current =
+                queue.Dequeue();
+
+            visited++;
+
+            string token;
+            try
+            {
+                token = BuildToken(
+                    current.Element);
+            }
+            catch
+            {
+                continue;
+            }
+
+            if (token.Equals(
+                    targetToken,
+                    StringComparison.Ordinal))
+            {
+                return current.Element;
+            }
+
+            if (current.Depth >= maximumDepth)
+                continue;
+
+            AutomationElement[] children;
+            try
+            {
+                children =
+                    current.Element.FindAllChildren();
+            }
+            catch
+            {
+                continue;
+            }
+
+            foreach (var child in children)
+            {
+                if (visited +
+                    queue.Count >= maximumNodes)
+                {
+                    break;
+                }
+
+                queue.Enqueue(
+                    (child, current.Depth + 1));
+            }
+        }
+
+        return null;
+    }
 
     private static AutomationResponse Execute(
         UIA3Automation automation,

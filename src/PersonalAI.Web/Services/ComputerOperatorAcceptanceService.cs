@@ -493,6 +493,11 @@ public sealed class ComputerOperatorAcceptanceService
 
         RunCheck(
             checks,
+            "Gemini budget accuracy-first không chặn sớm hơn tổng quota từng loại",
+            CheckGeminiBudgetAccuracyFirstTotalsAreConsistent);
+
+        RunCheck(
+            checks,
             "capability first router phát hiện direct tool an toàn",
             CheckUniversalRouterDetectsDirectToolOpportunity);
 
@@ -3857,6 +3862,19 @@ public sealed class ComputerOperatorAcceptanceService
             !budget.TryReservePlanning("plan-3").Allowed &&
             budget.GetSnapshot().TotalCalls == 3,
             "Gemini total-call budget chưa chặn đúng giới hạn.");
+    }
+
+    private static void CheckGeminiBudgetAccuracyFirstTotalsAreConsistent()
+    {
+        var policy =
+            GeminiCallBudgetPolicy.AccuracyFirst;
+
+        Require(
+            policy.MaximumTotalCalls ==
+                policy.MaximumPlanningCalls +
+                policy.MaximumVerificationCalls &&
+            policy.MaximumTotalCalls == 20,
+            "Gemini AccuracyFirst budget đang chặn task sớm hơn tổng quota planning + verification.");
     }
 
     private static void CheckOperatorCheckpointRedactsSensitiveContext()

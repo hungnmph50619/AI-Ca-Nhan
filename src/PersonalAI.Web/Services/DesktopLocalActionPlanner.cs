@@ -632,7 +632,36 @@ public sealed class DesktopLocalActionPlanner
                 StringComparison.OrdinalIgnoreCase) ||
             taskHistory.Contains(
                 "BẮT BUỘC đổi chiến lược",
-                StringComparison.OrdinalIgnoreCase);
+                StringComparison.OrdinalIgnoreCase) ||
+            HasFailedSearchLaunchAttempt(
+                taskHistory);
+    }
+
+    private static bool HasFailedSearchLaunchAttempt(
+        string taskHistory)
+    {
+        if (string.IsNullOrWhiteSpace(
+                taskHistory))
+        {
+            return false;
+        }
+
+        var normalized =
+            taskHistory.ToLowerInvariant();
+
+        return
+            normalized.Contains(
+                "verify-failed press-key|key=enter",
+                StringComparison.Ordinal) &&
+            (normalized.Contains(
+                 "windows search khởi chạy ứng dụng",
+                 StringComparison.Ordinal) ||
+             normalized.Contains(
+                 "windows search khoi chay ung dung",
+                 StringComparison.Ordinal) ||
+             normalized.Contains(
+                 "search launch",
+                 StringComparison.Ordinal));
     }
 
     private static bool HasAdditionalGoalSteps(

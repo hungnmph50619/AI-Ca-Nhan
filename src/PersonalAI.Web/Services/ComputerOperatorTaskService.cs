@@ -80,7 +80,8 @@ public sealed record ComputerOperatorDesktopState(
     int FrameHeight,
     string CaptureScope,
     string? CaptureWindowId,
-    bool CaptureWindowWasForeground)
+    bool CaptureWindowWasForeground,
+    StructuredDesktopSnapshot? StructuredScene = null)
 {
     public string ToPromptSummary()
     {
@@ -97,6 +98,24 @@ public sealed record ComputerOperatorDesktopState(
         {
             lines.Add(
                 $"- id={window.WindowId}; title={window.Title}; process={window.ProcessName ?? "?"}; foreground={window.IsForeground}; rect={window.Left},{window.Top},{window.Width},{window.Height}");
+        }
+
+        if (StructuredScene is not null)
+        {
+            lines.Add(
+                $"Structured UIA scene: source={StructuredScene.Source}; nodes={StructuredScene.NodeCount}; root={StructuredScene.RootToken}.");
+
+            foreach (var node in StructuredScene.Nodes
+                         .Where(node =>
+                             !node.IsOffscreen &&
+                             (node.IsFocused ||
+                              node.Patterns.Count > 0 ||
+                              !string.IsNullOrWhiteSpace(node.Name)))
+                         .Take(40))
+            {
+                lines.Add(
+                    $"- UIA depth={node.Depth}; role={node.Role}; name={node.Name}; automationId={node.AutomationId}; enabled={node.IsEnabled}; focused={node.IsFocused}; rect={node.Left},{node.Top},{node.Width},{node.Height}; patterns={string.Join(",", node.Patterns)}");
+            }
         }
 
         return string.Join("\n", lines);
@@ -119,6 +138,7 @@ public sealed class ComputerOperatorTaskService(
     IComputerOperatorActionExecutor actionExecutor,
     IGenericTextInteractionEngine textInteraction,
     IAdaptiveVerificationWaitEngine adaptiveWait,
+    IStructuredDesktopSnapshotService structuredDesktop,
     IComputerOperatorCheckpointStore checkpoints,
     IComputerOperatorTelemetry telemetry,
     IUniversalReliableOperatorCoordinator reliableOperator,
@@ -364,7 +384,7 @@ public sealed class ComputerOperatorTaskService(
 
                 progress.Add(
                     "desktop-state",
-                    $"Unified Desktop State: foreground={active?.Title ?? "không xác định"}; windows={desktopState.Windows.Count}; frame={desktopState.CaptureScope}/{desktopState.FrameWidth}x{desktopState.FrameHeight}.",
+                    $"Unified Desktop State: foreground={active?.Title ?? "không xác định"}; windows={desktopState.Windows.Count}; structuredNodes={desktopState.StructuredScene?.NodeCount ?? 0}; frame={desktopState.CaptureScope}/{desktopState.FrameWidth}x{desktopState.FrameHeight}.",
                     observation: true);
 
                 var sceneDiagnosticId =
@@ -372,7 +392,7 @@ public sealed class ComputerOperatorTaskService(
 
                 progress.AddDiagnostic(
                     "cycle",
-                    $"cycle={index}; scene={sceneDiagnosticId}; foreground={active?.ProcessName ?? "?"}/{active?.Title ?? "không xác định"}; windows={desktopState.Windows.Count}; frame={desktopState.CaptureScope}; origin=({desktopState.FrameLeft},{desktopState.FrameTop}); size={desktopState.FrameWidth}x{desktopState.FrameHeight}.");
+                    $"cycle={index}; scene={sceneDiagnosticId}; foreground={active?.ProcessName ?? "?"}/{active?.Title ?? "không xác định"}; windows={desktopState.Windows.Count}; structuredNodes={desktopState.StructuredScene?.NodeCount ?? 0}; frame={desktopState.CaptureScope}; origin=({desktopState.FrameLeft},{desktopState.FrameTop}); size={desktopState.FrameWidth}x{desktopState.FrameHeight}.");
 
                 DesktopOperatorDecision decision;
                 var plannerStopwatch = Stopwatch.StartNew();
@@ -3046,13 +3066,22 @@ public sealed class ComputerOperatorTaskService(
             .Select(window =>
                 $"{NormalizeSceneToken(window.ProcessName)}:{NormalizeSceneToken(window.Title)}:{Quantize(window.Left, 64)},{Quantize(window.Top, 64)},{Quantize(window.Width, 64)},{Quantize(window.Height, 64)}");
 
+        var structured = state.StructuredScene is null
+            ? "structured:none"
+            : $"structured:{string.Join(";", state.StructuredScene.Nodes
+                .Where(node => !node.IsOffscreen)
+                .Take(24)
+                .Select(node =>
+                    $"{NormalizeSceneToken(node.Role)}:{NormalizeSceneToken(node.Name)}:{NormalizeSceneToken(node.AutomationId)}:{Quantize(node.Left, 32)},{Quantize(node.Top, 32)},{Quantize(node.Width, 32)},{Quantize(node.Height, 32)}"))}";
+
         return string.Join(
             "|",
             new[]
             {
                 foreground,
                 $"frame:{state.CaptureScope}:{Quantize(state.FrameLeft, 32)},{Quantize(state.FrameTop, 32)},{Quantize(state.FrameWidth, 32)},{Quantize(state.FrameHeight, 32)}",
-                $"windows:{string.Join(";", visible)}"
+                $"windows:{string.Join(";", visible)}",
+                structured
             });
     }
 
@@ -3089,6 +3118,18 @@ public sealed class ComputerOperatorTaskService(
         var active = windows.FirstOrDefault(window => window.IsForeground)
             ?? computer.GetActiveWindow();
 
+        StructuredDesktopSnapshot? structuredScene = null;
+
+        if (active is not null &&
+            !string.IsNullOrWhiteSpace(active.WindowId))
+        {
+            structuredScene =
+                structuredDesktop.CaptureWindow(
+                    active.WindowId,
+                    maximumNodes: 240,
+                    maximumDepth: 7);
+        }
+
         return new ComputerOperatorDesktopState(
             frame.CapturedAtUtc,
             active,
@@ -3099,7 +3140,8 @@ public sealed class ComputerOperatorTaskService(
             frame.Height,
             frame.CaptureScope,
             frame.WindowId,
-            frame.WindowWasForeground);
+            frame.WindowWasForeground,
+            structuredScene);
     }
 
     private static string RequireActive(

@@ -240,6 +240,16 @@ public sealed class ComputerOperatorAcceptanceService
 
         RunCheck(
             checks,
+            "verification router xác minh local transition khi action khởi chạy app",
+            CheckVerificationRouterLaunchTransitionLocalPass);
+
+        RunCheck(
+            checks,
+            "Gemini planning repair chỉ đóng JSON envelope bị cắt an toàn",
+            CheckGeminiPlanningRepairsOnlySafeTruncation);
+
+        RunCheck(
+            checks,
             "ROI Vision ưu tiên target box khi cùng không gian ảnh",
             CheckRoiVisionTargetPriority);
 
@@ -2692,6 +2702,92 @@ public sealed class ComputerOperatorAcceptanceService
         Require(
             route.Route == DesktopVerificationRoute.GeminiRequired,
             "Verification Router đã tự xác minh click semantic chỉ từ frame difference.");
+    }
+
+    private static void CheckVerificationRouterLaunchTransitionLocalPass()
+    {
+        var router =
+            new DesktopVerificationRouter();
+
+        var decision =
+            BuildClickDecision(
+                ComputerCoordinateSpaces.ImagePixel) with
+            {
+                Action = "click-left",
+                CurrentSubgoal =
+                    "Mở ứng dụng từ kết quả tìm kiếm.",
+                ExpectedEffect =
+                    "Ứng dụng Demo sẽ bắt đầu khởi chạy.",
+                Reason =
+                    "Click kết quả tìm kiếm để khởi chạy ứng dụng."
+            };
+
+        var observation =
+            new DesktopFastObservation(
+                ScreenChanged: true,
+                ChangeRatio: 0.14,
+                ForegroundWindowChanged: true,
+                WindowBoundsChanged: true,
+                CursorMoved: true,
+                MonitorChanged: false,
+                DpiChanged: false,
+                TargetMoved: false,
+                TargetMissing: false,
+                TargetLikelyOccluded: false,
+                Summary: "acceptance");
+
+        var result =
+            router.Route(
+                decision,
+                observation,
+                new DesktopFrameDifference(
+                    true,
+                    0.14,
+                    140,
+                    1000,
+                    0,
+                    0,
+                    800,
+                    600,
+                    20,
+                    "acceptance"));
+
+        Require(
+            result.Route ==
+                DesktopVerificationRoute.LocalVerified &&
+            result.Confidence >= 0.95,
+            "Launch transition vẫn bị đẩy sang semantic verifier dù local evidence đã đủ mạnh.");
+    }
+
+    private static void CheckGeminiPlanningRepairsOnlySafeTruncation()
+    {
+        var safe =
+            """
+{"state":"Đang mở","plan":"Chờ","currentSubgoal":"Mở app","goalProgress":0.1,"verifiedMilestones":[],"sceneElements":[],"targetElementId":"","action":"wait","expectedEffect":"","confidence":0.8,"reason":"đang tải"
+""";
+
+        var repaired =
+            DesktopVisionService.TryRepairTruncatedJsonObjectForAcceptance(
+                safe,
+                out var repairedJson);
+
+        var unsafeMidString =
+            """
+{"state":"Đang mở","action":"wait","reason":"chuỗi bị cắt
+""";
+
+        var rejected =
+            DesktopVisionService.TryRepairTruncatedJsonObjectForAcceptance(
+                unsafeMidString,
+                out _);
+
+        Require(
+            repaired &&
+            repairedJson.EndsWith(
+                "}",
+                StringComparison.Ordinal) &&
+            !rejected,
+            "Gemini JSON repair đang sửa quá mức hoặc không đóng được envelope truncation an toàn.");
     }
 
     private static void CheckRoiVisionTargetPriority()

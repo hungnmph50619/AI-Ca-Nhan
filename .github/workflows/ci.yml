@@ -3163,7 +3163,17 @@ jobs:
           grep -Fq '"id": "pause-resume-stop"' tests/computer-use/v3.4.9-acceptance-scenarios.json
           grep -Fq '"id": "loop-recovery"' tests/computer-use/v3.4.9-acceptance-scenarios.json
           grep -Fq '"id": "multi-step-open-and-type"' tests/computer-use/v3.4.9-acceptance-scenarios.json
-          grep -Fq 'totalCount -lt 105' .github/workflows/desktop-control.yml
+          grep -Fq 'totalCount -lt 108' .github/workflows/desktop-control.yml
+          # v4.0.18 — Adaptive Wait & Progress Tracking
+          grep -Fq 'IAdaptiveVerificationWaitEngine' src/PersonalAI.Web/Services/AdaptiveVerificationWaitEngine.cs
+          grep -Fq 'AdaptiveWaitStatuses.Progressing' src/PersonalAI.Web/Services/AdaptiveVerificationWaitEngine.cs
+          grep -Fq 'Stalled' src/PersonalAI.Web/Services/AdaptiveVerificationWaitEngine.cs
+          grep -Fq 'AbsoluteTimeout' src/PersonalAI.Web/Services/AdaptiveVerificationWaitEngine.cs
+          grep -Fq 'KHÔNG thực thi lại action' src/PersonalAI.Web/Services/ComputerOperatorTaskService.cs
+          grep -Fq 'WaitForAdaptiveTransitionAsync' src/PersonalAI.Web/Services/ComputerOperatorTaskService.cs
+          grep -Fq 'CheckAdaptiveWaitCompletesOnVerifiedEvidence' src/PersonalAI.Web/Services/ComputerOperatorAcceptanceService.cs
+          grep -Fq 'CheckAdaptiveWaitIgnoresWeakVisualHeartbeat' src/PersonalAI.Web/Services/ComputerOperatorAcceptanceService.cs
+          grep -Fq 'CheckAdaptiveWaitStalledIsNotFailure' src/PersonalAI.Web/Services/ComputerOperatorAcceptanceService.cs
           # v4.0.17 — Capability Discovery Router
           grep -Fq 'IUniversalCapabilityDiscoveryService' src/PersonalAI.Web/Services/UniversalCapabilityDiscoveryService.cs
           grep -Fq 'desktop.flaui-uia3' src/PersonalAI.Web/Services/UniversalCapabilityDiscoveryService.cs

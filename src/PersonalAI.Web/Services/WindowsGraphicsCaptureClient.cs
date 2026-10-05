@@ -17,6 +17,9 @@ public interface IWindowsGraphicsCaptureClient
 
     WindowsGraphicsCaptureResponse CaptureWindow(
         string windowId);
+
+    WindowsGraphicsCaptureResponse CaptureMonitor(
+        string monitorDevice);
 }
 
 public sealed class WindowsGraphicsCaptureClient(
@@ -35,19 +38,32 @@ public sealed class WindowsGraphicsCaptureClient(
             ResolveSidecarPath());
 
     public WindowsGraphicsCaptureResponse CaptureWindow(
-        string windowId)
+        string windowId) =>
+        Capture(
+            new
+            {
+                operation = "capture-window",
+                windowId
+            });
+
+    public WindowsGraphicsCaptureResponse CaptureMonitor(
+        string monitorDevice) =>
+        Capture(
+            new
+            {
+                operation = "capture-monitor",
+                windowId = "0x0",
+                monitorDevice
+            });
+
+    private WindowsGraphicsCaptureResponse Capture(
+        object request)
     {
         if (!Available)
         {
             return Unavailable(
                 "Windows Graphics Capture sidecar chưa khả dụng trên máy này.");
         }
-
-        var request = new
-        {
-            operation = "capture-window",
-            windowId
-        };
 
         using var process = new Process
         {

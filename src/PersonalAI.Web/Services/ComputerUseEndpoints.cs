@@ -31,6 +31,7 @@ public static class ComputerUseEndpoints
         services.AddSingleton<IComputerSafeTargetingService, ComputerSafeTargetingService>();
         services.AddSingleton<IComputerOperatorAcceptanceService, ComputerOperatorAcceptanceService>();
         services.AddSingleton<IComputerOperatorCheckpointStore, SqliteComputerOperatorCheckpointStore>();
+        services.AddSingleton<IComputerOperatorTelemetry, ComputerOperatorTelemetry>();
         services.AddSingleton<IComputerOperatorTaskService, ComputerOperatorTaskService>();
         services.AddSingleton<IExecutionAgent, ComputerOperatorExecutionAgent>();
         services.AddSingleton<IExecutionAgentRegistry, ExecutionAgentRegistry>();
@@ -83,6 +84,72 @@ public static class ComputerUseEndpoints
         app.MapGet("/api/computer/operator-progress", (
             ComputerOperatorProgressStore progress) =>
             Results.Ok(progress.Get()));
+
+        app.MapGet("/api/computer/operator-telemetry", (
+            HttpContext context,
+            IComputerOperatorTelemetry telemetry) =>
+        {
+            if (!IsLocalRequest(context))
+                return Results.StatusCode(StatusCodes.Status403Forbidden);
+
+            var snapshot = telemetry.GetSnapshot();
+            return Results.Ok(new
+            {
+                phienBan = snapshot.Version,
+                chiLuuTrongBoNho = snapshot.MemoryOnly,
+                tuongThichOpenTelemetry =
+                    snapshot.OpenTelemetryCompatible,
+                quyenRiengTu = new
+                {
+                    coLuuMucTieu = snapshot.ContainsGoals,
+                    coLuuNoiDungText =
+                        snapshot.ContainsTextPayloads,
+                    coLuuAnhManHinh =
+                        snapshot.ContainsScreenshots,
+                    coLuuToaDo =
+                        snapshot.ContainsCoordinates
+                },
+                toiDaSuKienGanNhat =
+                    snapshot.MaximumRecentEvents,
+                tongHop = snapshot.Aggregates.Select(item => new
+                {
+                    giaiDoan = item.Stage,
+                    soLan = item.Count,
+                    thanhCong = item.SuccessCount,
+                    thatBai = item.FailureCount,
+                    trungBinhMs =
+                        Math.Round(item.AverageMilliseconds, 1),
+                    toiDaMs = item.MaximumMilliseconds
+                }),
+                suKienGanNhat = snapshot.RecentEvents.Select(item => new
+                {
+                    stt = item.Sequence,
+                    lucUtc = item.TimestampUtc,
+                    traceId = item.TraceId,
+                    giaiDoan = item.Stage,
+                    hanhDong = item.Action,
+                    duongXacMinh = item.Route,
+                    thanhCong = item.Success,
+                    thoiGianMs = item.DurationMilliseconds
+                })
+            });
+        });
+
+        app.MapPost("/api/computer/operator-telemetry/reset", (
+            HttpContext context,
+            IComputerOperatorTelemetry telemetry) =>
+        {
+            if (!IsLocalRequest(context))
+                return Results.StatusCode(StatusCodes.Status403Forbidden);
+
+            telemetry.Reset();
+            return Results.Ok(new
+            {
+                daXoa = true,
+                message =
+                    "Đã xóa telemetry hiệu năng trong bộ nhớ. Không có nội dung task hoặc ảnh màn hình được lưu."
+            });
+        });
 
         app.MapGet("/api/computer/operator-checkpoint", (
             HttpContext context,

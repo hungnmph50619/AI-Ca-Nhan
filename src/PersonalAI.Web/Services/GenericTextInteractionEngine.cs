@@ -60,6 +60,16 @@ public interface ITextAccessibilityBackend
     bool IsSameFocusedTarget(TextTargetCapabilities target);
 }
 
+public interface IFlaUiTextAccessibilityBackend
+    : ITextAccessibilityBackend
+{
+}
+
+public interface IWin32TextAccessibilityBackend
+    : ITextAccessibilityBackend
+{
+}
+
 public interface ITextClipboardWriter
 {
     bool CanUseSafely(out string reason);
@@ -404,7 +414,7 @@ public sealed class GenericTextInteractionEngine(
 }
 
 public sealed class WindowsTextAccessibilityBackend
-    : ITextAccessibilityBackend
+    : IWin32TextAccessibilityBackend
 {
     private const int GwlStyle = -16;
     private const long EsReadOnly = 0x0800L;

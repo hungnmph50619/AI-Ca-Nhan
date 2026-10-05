@@ -46,6 +46,7 @@ public static class ComputerUseEndpoints
         services.AddSingleton<IDesktopScreenshotService, WindowsDesktopScreenshotService>();
         services.AddSingleton<IDesktopFrameDifferenceService, DesktopFrameDifferenceService>();
         services.AddSingleton<IDesktopLocalVisualSensor, DesktopLocalVisualSensor>();
+        services.AddSingleton<IDesktopTemplateMatchingSensor, OpenCvTemplateMatchingSensor>();
         services.AddSingleton<IDesktopOcrProvider, WindowsDesktopOcrSensor>();
         services.AddSingleton<IDesktopOcrSensor, DesktopOcrSensorRouter>();
         services.AddSingleton<IDesktopOcrActionPlanner, DesktopOcrActionPlanner>();

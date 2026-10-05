@@ -27,9 +27,21 @@ public sealed record DesktopObservationWakeResult(
     TimeSpan Waited,
     string Reason);
 
+public sealed record DesktopEventObservationSnapshot(
+    bool EventDrivenAvailable,
+    long ReceivedEvents,
+    long CoalescedEvents,
+    long DroppedEvents,
+    long DeliveredWakeups,
+    long PollFallbacks,
+    int QueuedEvents,
+    DesktopSystemEvent? LastEvent);
+
 public interface IAdaptiveObservationWakeSource
 {
     bool EventDrivenAvailable { get; }
+
+    DesktopEventObservationSnapshot GetSnapshot();
 
     Task<DesktopObservationWakeResult> WaitAsync(
         TimeSpan fallbackDelay,
@@ -50,6 +62,8 @@ public sealed class WindowsDesktopEventWakeSource
     private const uint WineventSkipownprocess = 0x0002;
     private const int ObjidWindow = 0;
     private const uint WmQuit = 0x0012;
+    private const int MaximumQueuedEvents = 256;
+    private const long DuplicateWindowMilliseconds = 60;
 
     private readonly ConcurrentQueue<DesktopSystemEvent> events = new();
     private readonly SemaphoreSlim signal = new(0, int.MaxValue);
@@ -60,6 +74,15 @@ public sealed class WindowsDesktopEventWakeSource
     private nint hook;
     private uint hookThreadId;
     private bool disposed;
+    private long receivedEvents;
+    private long coalescedEvents;
+    private long droppedEvents;
+    private long deliveredWakeups;
+    private long pollFallbacks;
+    private long queuedEvents;
+    private long lastEventUnixMilliseconds;
+    private string lastEventIdentity = string.Empty;
+    private DesktopSystemEvent? lastEvent;
 
     public WindowsDesktopEventWakeSource()
     {
@@ -80,6 +103,22 @@ public sealed class WindowsDesktopEventWakeSource
         hook != nint.Zero &&
         hookThread?.IsAlive == true;
 
+    public DesktopEventObservationSnapshot GetSnapshot() =>
+        new(
+            EventDrivenAvailable,
+            Interlocked.Read(ref receivedEvents),
+            Interlocked.Read(ref coalescedEvents),
+            Interlocked.Read(ref droppedEvents),
+            Interlocked.Read(ref deliveredWakeups),
+            Interlocked.Read(ref pollFallbacks),
+            checked((int)Math.Min(
+                int.MaxValue,
+                Math.Max(
+                    0,
+                    Interlocked.Read(ref queuedEvents)))),
+            Volatile.Read(ref lastEvent));
+
+
     public async Task<DesktopObservationWakeResult> WaitAsync(
         TimeSpan fallbackDelay,
         CancellationToken cancellationToken = default)
@@ -93,6 +132,9 @@ public sealed class WindowsDesktopEventWakeSource
 
         if (!EventDrivenAvailable)
         {
+            Interlocked.Increment(
+                ref pollFallbacks);
+
             await Task.Delay(
                 fallbackDelay,
                 cancellationToken);
@@ -106,6 +148,9 @@ public sealed class WindowsDesktopEventWakeSource
 
         if (TryDequeueLatest(out var queued))
         {
+            Interlocked.Increment(
+                ref deliveredWakeups);
+
             return new(
                 EventReceived: true,
                 queued,
@@ -136,6 +181,9 @@ public sealed class WindowsDesktopEventWakeSource
             if (TryDequeueLatest(
                     out var received))
             {
+                Interlocked.Increment(
+                    ref deliveredWakeups);
+
                 return new(
                     EventReceived: true,
                     received,
@@ -143,6 +191,9 @@ public sealed class WindowsDesktopEventWakeSource
                     $"WinEventHook đánh thức verifier: {received!.Reason}");
             }
         }
+
+        Interlocked.Increment(
+            ref pollFallbacks);
 
         return new(
             EventReceived: false,
@@ -159,6 +210,8 @@ public sealed class WindowsDesktopEventWakeSource
         while (events.TryDequeue(
                    out var item))
         {
+            _ = Interlocked.Decrement(
+                ref queuedEvents);
             result = item;
         }
 
@@ -276,13 +329,73 @@ public sealed class WindowsDesktopEventWakeSource
                     "Windows UI state vừa thay đổi."
             };
 
-        events.Enqueue(
-            new(
+        var next =
+            new DesktopSystemEvent(
                 kind,
                 $"0x{window.ToInt64():X}",
                 DateTimeOffset.UtcNow,
                 nativeEvent,
-                reason));
+                reason);
+
+        Interlocked.Increment(
+            ref receivedEvents);
+
+        var nowMilliseconds =
+            next.OccurredAtUtc.ToUnixTimeMilliseconds();
+
+        var identity =
+            $"{next.Kind}|{next.WindowId}";
+
+        var previousIdentity =
+            Volatile.Read(
+                ref lastEventIdentity);
+
+        var previousMilliseconds =
+            Interlocked.Read(
+                ref lastEventUnixMilliseconds);
+
+        if (identity.Equals(
+                previousIdentity,
+                StringComparison.Ordinal) &&
+            nowMilliseconds - previousMilliseconds <=
+                DuplicateWindowMilliseconds)
+        {
+            Interlocked.Increment(
+                ref coalescedEvents);
+            Volatile.Write(
+                ref lastEvent,
+                next);
+            Interlocked.Exchange(
+                ref lastEventUnixMilliseconds,
+                nowMilliseconds);
+            return;
+        }
+
+        Volatile.Write(
+            ref lastEventIdentity,
+            identity);
+        Volatile.Write(
+            ref lastEvent,
+            next);
+        Interlocked.Exchange(
+            ref lastEventUnixMilliseconds,
+            nowMilliseconds);
+
+        while (Interlocked.Read(
+                   ref queuedEvents) >= MaximumQueuedEvents &&
+               events.TryDequeue(
+                   out _))
+        {
+            _ = Interlocked.Decrement(
+                ref queuedEvents);
+            Interlocked.Increment(
+                ref droppedEvents);
+        }
+
+        events.Enqueue(
+            next);
+        Interlocked.Increment(
+            ref queuedEvents);
 
         try
         {

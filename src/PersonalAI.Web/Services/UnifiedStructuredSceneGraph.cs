@@ -20,7 +20,10 @@ public sealed record UnifiedStructuredSceneNode(
     int FrameLeft,
     int FrameTop,
     IReadOnlyList<string> Capabilities,
-    IReadOnlyList<string> Children)
+    IReadOnlyList<string> Children,
+    string ToggleState = "",
+    string ExpandCollapseState = "",
+    bool? IsSelected = null)
 {
     public bool Interactive =>
         IsVisible &&
@@ -147,7 +150,10 @@ public static class UnifiedStructuredSceneGraphBuilder
                             node.Token,
                             out var children)
                                 ? children
-                                : Array.Empty<string>());
+                                : Array.Empty<string>(),
+                        ToggleState: node.ToggleState,
+                        ExpandCollapseState: node.ExpandCollapseState,
+                        IsSelected: node.IsSelected);
                 })
                 .ToArray();
 

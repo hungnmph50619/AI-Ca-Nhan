@@ -775,6 +775,18 @@ public sealed class ComputerOperatorAcceptanceService
                     DesktopCaptureBackends.CopyFromScreen
                 ]),
             "Capture router không giữ đúng thứ tự ưu tiên WGC → DXGI → CopyFromScreen cho monitor.");
+
+        var virtualCandidates =
+            router.GetOrderedCandidates(
+                DesktopCaptureScopes.VirtualDesktop);
+
+        Require(
+            virtualCandidates.SequenceEqual(
+                [
+                    DesktopCaptureBackends.DxgiDesktopDuplication,
+                    DesktopCaptureBackends.CopyFromScreen
+                ]),
+            "Capture router không giữ đúng thứ tự ưu tiên DXGI → CopyFromScreen cho virtual desktop.");
     }
 
     private static void CheckCaptureBackendRouterAvailableFallback()

@@ -49,6 +49,7 @@ public static class ComputerUseEndpoints
         services.AddSingleton<IDesktopTemplateMatchingSensor, OpenCvTemplateMatchingSensor>();
         services.AddSingleton<IDesktopVisualTargetPersistenceService, DesktopVisualTargetPersistenceService>();
         services.AddSingleton<ILocalVisualTargetResolver, LocalVisualTargetResolver>();
+        services.AddSingleton<ILocalVisualVerificationService, LocalVisualVerificationService>();
         services.AddSingleton<IDesktopOcrProvider, WindowsDesktopOcrSensor>();
         services.AddSingleton<IDesktopOcrSensor, DesktopOcrSensorRouter>();
         services.AddSingleton<IDesktopOcrActionPlanner, DesktopOcrActionPlanner>();

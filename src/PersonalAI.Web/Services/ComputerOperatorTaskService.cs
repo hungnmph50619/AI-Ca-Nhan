@@ -2260,6 +2260,7 @@ public sealed class ComputerOperatorTaskService(
             policy,
             verificationCaptureContext?.WindowId,
             decision.Action,
+            decision.ExpectedEffect,
             cancellationToken);
 
         adaptiveWaitTelemetry.Complete(

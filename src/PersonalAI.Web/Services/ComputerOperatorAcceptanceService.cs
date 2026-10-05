@@ -461,6 +461,12 @@ public sealed class ComputerOperatorAcceptanceService
             "event burst gom tín hiệu dồn dập thành một transaction UI",
             CheckEventBurstGrouping);
 
+        RunCheck(
+            checks,
+            "unified desktop state mang theo structured UI scene",
+            CheckUnifiedDesktopStateIncludesStructuredScene);
+
+
 
 
 
@@ -3761,6 +3767,69 @@ public sealed class ComputerOperatorAcceptanceService
                 later,
                 TimeSpan.FromMilliseconds(120)),
             "Event burst policy chưa gom đúng các event dồn dập theo cửa sổ và thời gian.");
+    }
+
+    private static void CheckUnifiedDesktopStateIncludesStructuredScene()
+    {
+        var node =
+            new StructuredDesktopNode(
+                Token: "root:button",
+                ParentToken: "root",
+                Depth: 1,
+                Role: "Button",
+                Name: "Save",
+                AutomationId: "saveButton",
+                ClassName: "Button",
+                IsEnabled: true,
+                IsFocused: false,
+                IsOffscreen: false,
+                Left: 100,
+                Top: 120,
+                Width: 80,
+                Height: 32,
+                Patterns: ["Invoke"]);
+
+        var structured =
+            new StructuredDesktopSnapshot(
+                WindowId: "0x1234",
+                RootToken: "root",
+                CapturedAtUtc: DateTimeOffset.UtcNow,
+                NodeCount: 1,
+                MaximumNodes: 200,
+                MaximumDepth: 6,
+                Nodes: [node],
+                Source: "flaui-uia3",
+                Detail: "acceptance");
+
+        var state =
+            new ComputerOperatorDesktopState(
+                DateTimeOffset.UtcNow,
+                ForegroundWindow: null,
+                Windows: Array.Empty<ComputerWindowInfo>(),
+                FrameLeft: 0,
+                FrameTop: 0,
+                FrameWidth: 1920,
+                FrameHeight: 1080,
+                CaptureScope: "virtual-desktop",
+                CaptureWindowId: null,
+                CaptureWindowWasForeground: false,
+                StructuredScene: structured);
+
+        var summary =
+            state.ToPromptSummary();
+
+        Require(
+            state.StructuredScene?.NodeCount == 1 &&
+            summary.Contains(
+                "role=Button",
+                StringComparison.Ordinal) &&
+            summary.Contains(
+                "name=Save",
+                StringComparison.Ordinal) &&
+            summary.Contains(
+                "patterns=Invoke",
+                StringComparison.Ordinal),
+            "Unified Desktop State chưa công bố structured UI scene cho planner.");
     }
 
     private static void CheckCapabilityCacheAvoidsRepeatedDiscovery()

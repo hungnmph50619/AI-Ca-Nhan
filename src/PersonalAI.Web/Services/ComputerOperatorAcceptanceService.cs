@@ -438,6 +438,11 @@ public sealed class ComputerOperatorAcceptanceService
 
         RunCheck(
             checks,
+            "checkpoint không lưu plaintext nhạy cảm",
+            CheckOperatorCheckpointRedactsSensitiveContext);
+
+        RunCheck(
+            checks,
             "telemetry không công bố payload nhạy cảm",
             CheckOperatorTelemetryDoesNotExposePayloads);
 
@@ -3600,6 +3605,82 @@ public sealed class ComputerOperatorAcceptanceService
                 .Count ==
                 ComputerOperatorTelemetry.MaximumRecentEvents + 25,
             "Telemetry recent-event buffer hoặc aggregate count không đúng giới hạn.");
+    }
+
+    private static void CheckOperatorCheckpointRedactsSensitiveContext()
+    {
+        var root = Path.Combine(
+            Path.GetTempPath(),
+            "personalai-checkpoint-sensitive-" + Guid.NewGuid().ToString("N"));
+
+        try
+        {
+            var configuration =
+                new ConfigurationBuilder()
+                    .AddInMemoryCollection(
+                        new Dictionary<string, string?>
+                        {
+                            ["Tasks:Root"] = root
+                        })
+                    .Build();
+
+            var workspace =
+                new AcceptanceCheckpointWorkspaceContext(
+                    "personal");
+
+            var store =
+                new SqliteComputerOperatorCheckpointStore(
+                    configuration,
+                    workspace,
+                    Microsoft.Extensions.Logging.Abstractions.NullLogger<SqliteComputerOperatorCheckpointStore>.Instance);
+
+            const string rawGoal =
+                "Mở ứng dụng thử nghiệm bình thường";
+
+            var checkpoint =
+                store.StartOrResume(rawGoal);
+
+            var updated =
+                store.SaveProgress(
+                    checkpoint,
+                    ["OTP 123456 đã xuất hiện"],
+                    "Nhập access token abc123",
+                    0.50,
+                    "type password secret-value",
+                    "verification code 654321 đã được nhập");
+
+            Require(
+                !updated.Goal.Equals(
+                    rawGoal,
+                    StringComparison.Ordinal) &&
+                updated.VerifiedMilestones.All(item =>
+                    !item.Contains(
+                        "123456",
+                        StringComparison.Ordinal)) &&
+                !updated.CurrentSubgoal.Contains(
+                    "abc123",
+                    StringComparison.Ordinal) &&
+                (updated.LastVerifiedAction is null ||
+                 !updated.LastVerifiedAction.Contains(
+                     "secret-value",
+                     StringComparison.Ordinal)) &&
+                (updated.LastVerifiedExpectedEffect is null ||
+                 !updated.LastVerifiedExpectedEffect.Contains(
+                     "654321",
+                     StringComparison.Ordinal)),
+                "Checkpoint vẫn lưu plaintext goal hoặc context nhạy cảm.");
+        }
+        finally
+        {
+            try
+            {
+                if (Directory.Exists(root))
+                    Directory.Delete(root, recursive: true);
+            }
+            catch
+            {
+            }
+        }
     }
 
     private static void CheckUniversalRouterDetectsDirectToolOpportunity()

@@ -17,7 +17,10 @@ public static class ComputerUseEndpoints
             sp.GetRequiredService<WindowsAiOperatorConsoleService>());
         services.AddHostedService<WindowsStopHotkeyService>();
         services.AddSingleton<IComputerUseService, WindowsComputerUseService>();
-        services.AddSingleton<ITextAccessibilityBackend, WindowsTextAccessibilityBackend>();
+        services.AddSingleton<IWin32TextAccessibilityBackend, WindowsTextAccessibilityBackend>();
+        services.AddSingleton<IFlaUiAutomationClient, FlaUiAutomationClient>();
+        services.AddSingleton<IFlaUiTextAccessibilityBackend, FlaUiTextAccessibilityBackend>();
+        services.AddSingleton<ITextAccessibilityBackend, CompositeTextAccessibilityBackend>();
         services.AddSingleton<ITextClipboardWriter, WindowsTextClipboardWriter>();
         services.AddSingleton<IGenericTextInteractionEngine, GenericTextInteractionEngine>();
         services.AddSingleton<IComputerDisplayTopologyService, WindowsComputerDisplayTopologyService>();

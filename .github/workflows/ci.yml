@@ -3163,7 +3163,19 @@ jobs:
           grep -Fq '"id": "pause-resume-stop"' tests/computer-use/v3.4.9-acceptance-scenarios.json
           grep -Fq '"id": "loop-recovery"' tests/computer-use/v3.4.9-acceptance-scenarios.json
           grep -Fq '"id": "multi-step-open-and-type"' tests/computer-use/v3.4.9-acceptance-scenarios.json
-          grep -Fq 'totalCount -lt 96' .github/workflows/desktop-control.yml
+          grep -Fq 'totalCount -lt 99' .github/workflows/desktop-control.yml
+          # v4.0.15 — FlaUI UIA3 Adapter
+          grep -Fq 'PersonalAI.WindowsAutomation' PersonalAI.sln
+          grep -Fq 'FlaUI.UIA3' src/PersonalAI.WindowsAutomation/PersonalAI.WindowsAutomation.csproj
+          grep -Fq 'new UIA3Automation()' src/PersonalAI.WindowsAutomation/Program.cs
+          grep -Fq 'Patterns.Value.IsSupported' src/PersonalAI.WindowsAutomation/Program.cs
+          grep -Fq 'IFlaUiAutomationClient' src/PersonalAI.Web/Services/FlaUiTextAccessibilityBackend.cs
+          grep -Fq 'CompositeTextAccessibilityBackend' src/PersonalAI.Web/Services/FlaUiTextAccessibilityBackend.cs
+          grep -Fq 'IFlaUiTextAccessibilityBackend' src/PersonalAI.Web/Services/ComputerUseEndpoints.cs
+          grep -Fq 'IWin32TextAccessibilityBackend' src/PersonalAI.Web/Services/ComputerUseEndpoints.cs
+          grep -Fq 'CheckFlaUiCompositePrefersStructuredBackend' src/PersonalAI.Web/Services/ComputerOperatorAcceptanceService.cs
+          grep -Fq 'CheckFlaUiCompositeFallsBackToWin32' src/PersonalAI.Web/Services/ComputerOperatorAcceptanceService.cs
+          grep -Fq 'CheckFlaUiCompositePreservesSensitiveDetection' src/PersonalAI.Web/Services/ComputerOperatorAcceptanceService.cs
           # v4.0.14 — Generic Text Interaction Engine
           grep -Fq 'IGenericTextInteractionEngine' src/PersonalAI.Web/Services/GenericTextInteractionEngine.cs
           grep -Fq 'ITextAccessibilityBackend' src/PersonalAI.Web/Services/GenericTextInteractionEngine.cs

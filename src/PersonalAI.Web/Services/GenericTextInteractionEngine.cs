@@ -29,7 +29,8 @@ public sealed record TextTargetCapabilities(
     bool SupportsSelection,
     bool IsReadOnly,
     bool IsSensitive,
-    string Backend);
+    string Backend,
+    string TargetToken = "");
 
 public sealed record TextInteractionRequest(
     string WindowId,
@@ -57,6 +58,16 @@ public interface ITextAccessibilityBackend
         string text,
         string writeMode);
     bool IsSameFocusedTarget(TextTargetCapabilities target);
+}
+
+public interface IFlaUiTextAccessibilityBackend
+    : ITextAccessibilityBackend
+{
+}
+
+public interface IWin32TextAccessibilityBackend
+    : ITextAccessibilityBackend
+{
 }
 
 public interface ITextClipboardWriter
@@ -403,7 +414,7 @@ public sealed class GenericTextInteractionEngine(
 }
 
 public sealed class WindowsTextAccessibilityBackend
-    : ITextAccessibilityBackend
+    : IWin32TextAccessibilityBackend
 {
     private const int GwlStyle = -16;
     private const long EsReadOnly = 0x0800L;

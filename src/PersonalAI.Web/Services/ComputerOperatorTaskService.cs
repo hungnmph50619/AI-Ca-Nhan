@@ -43,6 +43,7 @@ public sealed class ComputerOperatorTaskService(
     IUniversalReliableOperatorCoordinator reliableOperator,
     IComputerOperatorGeminiBudgetFactory geminiBudgetFactory,
     IComputerOperatorFastReobserveGate fastReobserve,
+    IComputerOperatorReplanPacer replanPacer,
     ILogger<ComputerOperatorTaskService> logger)
     : IComputerOperatorTaskService
 {
@@ -442,7 +443,10 @@ public sealed class ComputerOperatorTaskService(
                             ComputerOperatorActionState.Replan,
                             "Loop guard yêu cầu đổi chiến lược.");
 
-                        await Task.Delay(250, linked.Token);
+                        await WaitForReplanPacingAsync(
+                            250,
+                            "Loop guard yêu cầu đổi chiến lược.",
+                            linked.Token);
                         continue;
                     }
                 }
@@ -509,7 +513,10 @@ public sealed class ComputerOperatorTaskService(
                             ComputerOperatorActionState.Replan,
                             "Blocked tạm thời; cần quan sát và thử chiến lược khác.");
 
-                        await Task.Delay(350, linked.Token);
+                        await WaitForReplanPacingAsync(
+                            350,
+                            "Blocked tạm thời; chờ desktop thay đổi hoặc hết fallback.",
+                            linked.Token);
                         continue;
                     }
 
@@ -553,7 +560,10 @@ public sealed class ComputerOperatorTaskService(
                         ComputerOperatorActionState.Replan,
                         "Chờ UI ổn định rồi quan sát lại.");
 
-                    await Task.Delay(900, linked.Token);
+                    await WaitForReplanPacingAsync(
+                        900,
+                        "Action wait yêu cầu chờ UI ổn định trước khi quan sát lại.",
+                        linked.Token);
                     continue;
                 }
 
@@ -613,7 +623,10 @@ public sealed class ComputerOperatorTaskService(
                             $"State machine: {replanState.State} — {replanState.Detail}",
                             "replan");
 
-                        await Task.Delay(200, linked.Token);
+                        await WaitForReplanPacingAsync(
+                            200,
+                            "Target tracking yêu cầu quan sát lại.",
+                            linked.Token);
                         continue;
                     }
 
@@ -645,7 +658,10 @@ public sealed class ComputerOperatorTaskService(
                         ComputerOperatorActionState.Replan,
                         "Thiếu expected effect; không được execute.");
 
-                    await Task.Delay(300, linked.Token);
+                    await WaitForReplanPacingAsync(
+                        300,
+                        "Thiếu expected effect; chờ nhịp replan an toàn.",
+                        linked.Token);
                     continue;
                 }
 
@@ -698,11 +714,12 @@ public sealed class ComputerOperatorTaskService(
                             ? "Confidence trung gian; yêu cầu Gemini quan sát lại với ngữ cảnh mới."
                             : "Confidence thấp; cần re-observe trước khi execute.");
 
-                    await Task.Delay(
+                    await WaitForReplanPacingAsync(
                         confidenceAssessment.Decision ==
                             ComputerOperatorConfidenceDecision.GeminiFallback
                             ? 350
                             : 650,
+                        "Confidence Engine yêu cầu re-observe trước bước tiếp theo.",
                         linked.Token);
                     continue;
                 }
@@ -728,7 +745,10 @@ public sealed class ComputerOperatorTaskService(
                             ComputerOperatorActionState.Replan,
                             "Keyboard Reset Mode yêu cầu đổi chiến lược sửa text.");
 
-                        await Task.Delay(220, linked.Token);
+                        await WaitForReplanPacingAsync(
+                            220,
+                            "Keyboard Reset Mode yêu cầu đổi chiến lược.",
+                            linked.Token);
                         continue;
                     }
 
@@ -748,7 +768,10 @@ public sealed class ComputerOperatorTaskService(
                             ComputerOperatorActionState.Replan,
                             "Chưa có selection an toàn trước khi nhập lại text.");
 
-                        await Task.Delay(220, linked.Token);
+                        await WaitForReplanPacingAsync(
+                            220,
+                            "Keyboard Reset Mode yêu cầu nhịp replan an toàn.",
+                            linked.Token);
                         continue;
                     }
                 }
@@ -771,7 +794,10 @@ public sealed class ComputerOperatorTaskService(
                         ComputerOperatorActionState.Replan,
                         "Recovery memory yêu cầu chiến lược khác.");
 
-                    await Task.Delay(250, linked.Token);
+                    await WaitForReplanPacingAsync(
+                        250,
+                        "Recovery memory yêu cầu chiến lược khác.",
+                        linked.Token);
                     continue;
                 }
 
@@ -927,8 +953,9 @@ public sealed class ComputerOperatorTaskService(
                             ComputerOperatorActionState.Replan,
                             "Failure policy yêu cầu chờ và quan sát lại.");
 
-                        await Task.Delay(
+                        await WaitForReplanPacingAsync(
                             750,
+                            "Failure policy yêu cầu chờ và quan sát lại.",
                             linked.Token);
                         continue;
                     }
@@ -1001,7 +1028,10 @@ public sealed class ComputerOperatorTaskService(
                             decision.Confidence);
                     }
 
-                    await Task.Delay(500, linked.Token);
+                    await WaitForReplanPacingAsync(
+                        500,
+                        "Hành động bị từ chối; chờ event hoặc fallback trước replan.",
+                        linked.Token);
                     continue;
                 }
 
@@ -1081,7 +1111,10 @@ public sealed class ComputerOperatorTaskService(
                             decision.Confidence);
                     }
 
-                    await Task.Delay(500, linked.Token);
+                    await WaitForReplanPacingAsync(
+                        500,
+                        "Action không tạo kết quả đủ rõ; chờ event hoặc fallback trước replan.",
+                        linked.Token);
                     continue;
                 }
 
@@ -1284,7 +1317,10 @@ public sealed class ComputerOperatorTaskService(
                             verification.Confidence);
                     }
 
-                    await Task.Delay(350, linked.Token);
+                    await WaitForReplanPacingAsync(
+                        350,
+                        "Verification chưa đạt; chờ event hoặc fallback trước replan.",
+                        linked.Token);
                     continue;
                 }
 
@@ -1424,6 +1460,48 @@ public sealed class ComputerOperatorTaskService(
                 steps.ToArray(),
                 "Gemini",
                 vision.Model);
+    }
+
+    private async Task WaitForReplanPacingAsync(
+        int maximumMilliseconds,
+        string reason,
+        CancellationToken cancellationToken)
+    {
+        using var pacingTelemetry =
+            telemetry.Begin(
+                ComputerOperatorTelemetryStages.ReplanPacing);
+
+        ReplanPacingResult result;
+        try
+        {
+            result =
+                await replanPacer.WaitAsync(
+                    TimeSpan.FromMilliseconds(
+                        maximumMilliseconds),
+                    reason,
+                    cancellationToken);
+
+            pacingTelemetry.Complete(
+                success: true,
+                route:
+                    result.EventReceived
+                        ? "event"
+                        : "timeout");
+        }
+        catch
+        {
+            pacingTelemetry.Complete(
+                success: false,
+                route: "error");
+            throw;
+        }
+
+        progress.Add(
+            "replan-pacing",
+            $"Replan Pacing: waited={result.Waited.TotalMilliseconds:0}ms; max={result.MaximumWait.TotalMilliseconds:0}ms; event={result.EventReceived}; kind={result.EventKind}. {result.Reason}",
+            result.EventReceived
+                ? "event"
+                : "timeout");
     }
 
     private sealed record ActionVerificationResult(

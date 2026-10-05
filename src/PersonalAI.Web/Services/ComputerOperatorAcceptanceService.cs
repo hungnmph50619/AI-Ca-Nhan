@@ -268,6 +268,16 @@ public sealed class ComputerOperatorAcceptanceService
             "local planner dùng Windows Search generic khi provider degraded",
             CheckLocalPlannerUsesGenericWindowsSearch);
 
+        RunCheck(
+            checks,
+            "local planner cắt intent mở app tại ranh giới câu",
+            CheckLocalPlannerStopsOpenTargetAtSentenceBoundary);
+
+        RunCheck(
+            checks,
+            "local planner nhường quyền sau loop directive",
+            CheckLocalPlannerYieldsAfterLoopDirective);
+
 
         RunCheck(
             checks,
@@ -2982,6 +2992,97 @@ public sealed class ComputerOperatorAcceptanceService
                 "Windows Search",
                 StringComparison.OrdinalIgnoreCase),
             "Local planner không chọn Windows Search generic cho intent mở ứng dụng.");
+    }
+
+    private static void CheckLocalPlannerStopsOpenTargetAtSentenceBoundary()
+    {
+        var planner =
+            new DesktopLocalActionPlanner();
+
+        var foreground =
+            new ComputerWindowInfo(
+                "0x100",
+                "Trình duyệt",
+                "msedge",
+                100,
+                true,
+                0,
+                0,
+                1280,
+                720);
+
+        var state =
+            new ComputerOperatorDesktopState(
+                DateTimeOffset.UtcNow,
+                foreground,
+                [foreground],
+                0,
+                0,
+                1920,
+                1080,
+                DesktopCaptureScopes.VirtualDesktop,
+                null,
+                false);
+
+        var planned =
+            planner.TryPlan(
+                "Mở Demo App. Vào màn hình tiếp theo rồi hoàn tất.",
+                state,
+                string.Empty,
+                out var decision);
+
+        Require(
+            planned &&
+            decision.Action == "press-hotkey" &&
+            decision.CurrentSubgoal.Contains(
+                "Demo App",
+                StringComparison.OrdinalIgnoreCase) &&
+            !decision.CurrentSubgoal.Contains(
+                "Vào màn hình",
+                StringComparison.OrdinalIgnoreCase),
+            "Local planner chưa cắt open-app target tại dấu chấm kết thúc câu.");
+    }
+
+    private static void CheckLocalPlannerYieldsAfterLoopDirective()
+    {
+        var planner =
+            new DesktopLocalActionPlanner();
+
+        var foreground =
+            new ComputerWindowInfo(
+                "0x200",
+                "Client hiện tại",
+                "client",
+                200,
+                true,
+                0,
+                0,
+                1280,
+                720);
+
+        var state =
+            new ComputerOperatorDesktopState(
+                DateTimeOffset.UtcNow,
+                foreground,
+                [foreground],
+                0,
+                0,
+                1920,
+                1080,
+                DesktopCaptureScopes.VirtualDesktop,
+                null,
+                false);
+
+        var planned =
+            planner.TryPlan(
+                "Mở Demo App. Vào màn hình tiếp theo rồi hoàn tất.",
+                state,
+                "CHỈ DẪN THOÁT VÒNG LẶP: BẮT BUỘC đổi chiến lược. Không lặp lại cùng action/target.",
+                out _);
+
+        Require(
+            !planned,
+            "Local planner vẫn chiếm quyền sau khi loop guard đã bắt buộc đổi chiến lược.");
     }
 
     private static void CheckStructuredVerifierToggleState()

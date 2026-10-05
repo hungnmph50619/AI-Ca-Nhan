@@ -139,6 +139,7 @@ public sealed class ComputerOperatorTaskService(
     IComputerDisplayTopologyService displays,
     IComputerSafeTargetingService targeting,
     IDesktopFrameDifferenceService frameDifferences,
+    IDesktopLocalVisualSensor localVisualSensor,
     IDesktopLocalFastObserver fastObserver,
     IDesktopTemporalSceneService temporalScenes,
     IComputerOperatorActionExecutor actionExecutor,
@@ -2023,6 +2024,28 @@ public sealed class ComputerOperatorTaskService(
                         ? $"Frame difference: {frameDifference.ChangedRatio * 100:0.00}% mẫu thay đổi; vùng=({frameDifference.BoxLeft},{frameDifference.BoxTop},{frameDifference.BoxWidth},{frameDifference.BoxHeight}); meanDelta={frameDifference.MeanChannelDelta:0.0}."
                         : $"Frame difference không khả dụng: {frameDifference.Reason}",
                     observation: true);
+            }
+
+            DesktopLocalVisualObservation? localVisual = null;
+
+            if (verificationBaseline is not null &&
+                !verificationContextChanged)
+            {
+                localVisual =
+                    localVisualSensor.Analyze(
+                        verificationBaseline,
+                        after);
+
+                progress.Add(
+                    "local-visual-sensor",
+                    localVisual.Comparable
+                        ? $"Local Visual Sensor: dHash distance={localVisual.HashDistance}/64; similarity={localVisual.HashSimilarity:0.000}; meaningful={localVisual.MeaningfulVisualChange}; {localVisual.Reason}"
+                        : $"Local Visual Sensor fallback: {localVisual.Reason}",
+                    observation: true);
+
+                progress.AddDiagnostic(
+                    "local-visual",
+                    $"action={decision.Action}; comparable={localVisual.Comparable}; hashDistance={localVisual.HashDistance}; similarity={localVisual.HashSimilarity:0.000}; meaningful={localVisual.MeaningfulVisualChange}; regionRatio={localVisual.RegionDelta?.ChangedRatio ?? -1:0.000000}.");
             }
 
             DesktopVerificationRoutingResult? localRouteForFusion = null;

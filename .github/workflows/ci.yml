@@ -3164,6 +3164,11 @@ jobs:
           grep -Fq '"id": "loop-recovery"' tests/computer-use/v3.4.9-acceptance-scenarios.json
           grep -Fq '"id": "multi-step-open-and-type"' tests/computer-use/v3.4.9-acceptance-scenarios.json
           grep -Fq 'totalCount -lt 91' .github/workflows/desktop-control.yml
+          # v4.0.12 — Keyboard Reset Recovery
+          grep -Fq 'keyboardResetRequired' src/PersonalAI.Web/Services/ComputerOperatorTaskService.cs
+          grep -Fq 'IsFineGrainedKeyboardRepair' src/PersonalAI.Web/Services/ComputerOperatorTaskService.cs
+          grep -Fq 'IsSelectAllHotkey' src/PersonalAI.Web/Services/ComputerOperatorTaskService.cs
+          grep -Fq 'Không được tiếp tục BACKSPACE/DELETE' src/PersonalAI.Web/Services/ComputerOperatorTaskService.cs
           # v4.0.12 — Safe Verification Continuation Executor
           grep -Fq 'IUniversalVerificationContinuationExecutor' src/PersonalAI.Web/Services/UniversalVerificationContinuationExecutor.cs
           grep -Fq 'BrowserReadback' src/PersonalAI.Web/Services/UniversalVerificationContinuationExecutor.cs

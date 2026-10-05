@@ -28,7 +28,8 @@ public sealed record FlaUiAutomationResponse(
     string Detail,
     string EventKind = "",
     string EventWindowId = "",
-    string StructuredJson = "");
+    string StructuredJson = "",
+    string OcrJson = "");
 
 public interface IFlaUiAutomationClient
 {

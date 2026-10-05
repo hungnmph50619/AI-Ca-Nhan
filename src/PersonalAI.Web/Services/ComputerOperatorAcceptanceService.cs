@@ -166,6 +166,12 @@ public sealed class ComputerOperatorAcceptanceService
 
         RunCheck(
             checks,
+            "structured-first planner chọn UIA target duy nhất trước Vision",
+            CheckStructuredFirstPlannerUsesUiaTarget);
+
+
+        RunCheck(
+            checks,
             "dynamic target tracker remap bbox khi cửa sổ di chuyển",
             CheckDynamicTargetTrackerMovesWithWindow);
 
@@ -1909,6 +1915,81 @@ public sealed class ComputerOperatorAcceptanceService
                 "Windows Search",
                 StringComparison.OrdinalIgnoreCase),
             "Local planner không chọn Windows Search generic cho intent mở ứng dụng.");
+    }
+
+    private static void CheckStructuredFirstPlannerUsesUiaTarget()
+    {
+        var planner = new DesktopLocalActionPlanner();
+        var foreground = new ComputerWindowInfo(
+            "0x1234",
+            "Acceptance App",
+            "acceptance",
+            10,
+            true,
+            100,
+            80,
+            900,
+            700);
+
+        var node = new StructuredDesktopNode(
+            Token: "root:save",
+            ParentToken: "root",
+            Depth: 2,
+            Role: "Button",
+            Name: "Save",
+            AutomationId: "saveButton",
+            ClassName: "Button",
+            IsEnabled: true,
+            IsFocused: false,
+            IsOffscreen: false,
+            Left: 420,
+            Top: 260,
+            Width: 120,
+            Height: 44,
+            Patterns: ["Invoke"]);
+
+        var structured = new StructuredDesktopSnapshot(
+            WindowId: foreground.WindowId,
+            RootToken: "root",
+            CapturedAtUtc: DateTimeOffset.UtcNow,
+            NodeCount: 1,
+            MaximumNodes: 240,
+            MaximumDepth: 7,
+            Nodes: [node],
+            Source: "flaui-uia3",
+            Detail: "acceptance");
+
+        var state = new ComputerOperatorDesktopState(
+            DateTimeOffset.UtcNow,
+            foreground,
+            [foreground],
+            FrameLeft: 100,
+            FrameTop: 80,
+            FrameWidth: 900,
+            FrameHeight: 700,
+            CaptureScope: DesktopCaptureScopes.Window,
+            CaptureWindowId: foreground.WindowId,
+            CaptureWindowWasForeground: true,
+            StructuredScene: structured);
+
+        var planned = planner.TryPlan(
+            "Bấm nút Save",
+            state,
+            string.Empty,
+            out var decision);
+
+        Require(
+            planned &&
+            decision.Action == "click-left" &&
+            decision.TargetElementId == "root:save" &&
+            decision.TargetLabel == "Save" &&
+            decision.CoordinateWindowId == foreground.WindowId &&
+            decision.BoxLeft == 320 &&
+            decision.BoxTop == 180 &&
+            decision.BoxWidth == 120 &&
+            decision.BoxHeight == 44 &&
+            decision.Confidence >= 0.94,
+            "Structured-first planner chưa chuyển UIA target thành click có bounding box an toàn.");
     }
 
     private static void CheckDynamicTargetTrackerMovesWithWindow()

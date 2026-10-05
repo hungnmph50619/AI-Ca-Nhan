@@ -12,7 +12,8 @@ public interface IDesktopOcrActionPlanner
 
 public sealed class DesktopOcrActionPlanner(
     IDesktopOcrSensor ocrSensor,
-    ILocalVisualTargetResolver visualResolver)
+    ILocalVisualTargetResolver visualResolver,
+    ILocalVisualSensorBudgetPolicy budgetPolicy)
     : IDesktopOcrActionPlanner
 {
     private static readonly DesktopOcrTargetResolver Resolver =
@@ -60,9 +61,16 @@ public sealed class DesktopOcrActionPlanner(
         var window =
             state.ForegroundWindow;
 
+        var budget =
+            budgetPolicy.ForPlanning(
+                state,
+                structuredTargetResolved: false,
+                explicitTextIntent: true);
+
         var observation =
             ocrSensor.ReadWindow(
-                window.WindowId);
+                window.WindowId,
+                budget);
 
         if (!observation.Available ||
             observation.CaptureWidth <= 0 ||

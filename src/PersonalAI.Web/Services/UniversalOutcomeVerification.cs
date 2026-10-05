@@ -19,12 +19,14 @@ public sealed record UniversalOutcomeEvidence(
 public sealed record UniversalToolOutcomeVerificationRequest(
     string Goal,
     ToolExecutionResponse Execution,
-    UniversalOutcomeEvidence? Evidence = null);
+    UniversalOutcomeEvidence? Evidence = null,
+    IReadOnlyList<UniversalEvidenceSignal>? EvidenceSignals = null);
 
 public sealed record UniversalAgentOutcomeVerificationRequest(
     string Goal,
     ExecutionAgentResult Execution,
-    UniversalOutcomeEvidence? Evidence = null);
+    UniversalOutcomeEvidence? Evidence = null,
+    IReadOnlyList<UniversalEvidenceSignal>? EvidenceSignals = null);
 
 public sealed record UniversalOutcomeVerificationResult(
     string Status,
@@ -47,11 +49,16 @@ public interface IUniversalOutcomeVerificationService
 public sealed class UniversalOutcomeVerificationService(
     IToolCapabilityRegistry toolCapabilities,
     IExecutionAgentRegistry executionAgents,
-    IUniversalVerificationEvidenceAdapters? evidenceAdapters = null)
+    IUniversalVerificationEvidenceAdapters? evidenceAdapters = null,
+    IUniversalEvidenceFusionEngine? evidenceFusion = null)
     : IUniversalOutcomeVerificationService
 {
     private readonly IUniversalVerificationEvidenceAdapters evidenceAdapters =
         evidenceAdapters ?? new UniversalVerificationEvidenceAdapters();
+
+    private readonly IUniversalEvidenceFusionEngine evidenceFusion =
+        evidenceFusion ?? new UniversalEvidenceFusionEngine();
+
     private const double StrongEvidenceThreshold = 0.80;
 
     public UniversalOutcomeVerificationResult VerifyTool(
@@ -81,6 +88,17 @@ public sealed class UniversalOutcomeVerificationService(
         toolCapabilities.TryGet(
             request.Execution.ToolName,
             out var capability);
+
+        if (request.EvidenceSignals is { Count: > 0 })
+        {
+            var fused =
+                evidenceFusion.Fuse(
+                    request.EvidenceSignals);
+
+            return FromFusion(
+                fused,
+                executionSucceeded: true);
+        }
 
         var evidence = request.Evidence;
 
@@ -181,6 +199,17 @@ public sealed class UniversalOutcomeVerificationService(
                 "Agent báo execution thành công nhưng agent contract không hỗ trợ verification.");
         }
 
+        if (request.EvidenceSignals is { Count: > 0 })
+        {
+            var fused =
+                evidenceFusion.Fuse(
+                    request.EvidenceSignals);
+
+            return FromFusion(
+                fused,
+                executionSucceeded: true);
+        }
+
         var evidence =
             request.Evidence ??
             evidenceAdapters.FromAgent(
@@ -235,5 +264,45 @@ public sealed class UniversalOutcomeVerificationService(
             confidence,
             evidence.Source,
             $"Universal evidence xác nhận agent đã đạt goal: {evidence.Summary}");
+    }
+
+    private static UniversalOutcomeVerificationResult FromFusion(
+        UniversalEvidenceFusionResult fused,
+        bool executionSucceeded)
+    {
+        return fused.Status switch
+        {
+            UniversalEvidenceFusionStatuses.Verified =>
+                new(
+                    UniversalOutcomeStatuses.Verified,
+                    executionSucceeded,
+                    GoalAchieved: true,
+                    IndependentlyVerified:
+                        fused.IndependentlyVerified,
+                    fused.Confidence,
+                    fused.Source,
+                    $"Hợp nhất bằng chứng xác nhận goal đã đạt: {fused.Reason}"),
+
+            UniversalEvidenceFusionStatuses.NotAchieved =>
+                new(
+                    UniversalOutcomeStatuses.NotAchieved,
+                    executionSucceeded,
+                    GoalAchieved: false,
+                    IndependentlyVerified:
+                        fused.IndependentlyVerified,
+                    fused.Confidence,
+                    fused.Source,
+                    $"Hợp nhất bằng chứng xác nhận goal chưa đạt: {fused.Reason}"),
+
+            _ =>
+                new(
+                    UniversalOutcomeStatuses.NeedsVerification,
+                    executionSucceeded,
+                    GoalAchieved: false,
+                    IndependentlyVerified: false,
+                    fused.Confidence,
+                    fused.Source,
+                    $"Bằng chứng chưa đủ để kết luận: {fused.Reason}")
+        };
     }
 }

@@ -40,6 +40,41 @@ public sealed class DesktopVerificationRouter
             .Trim()
             .ToLowerInvariant();
 
+        if (action is
+                "click-left" or
+                "double-click-left" or
+                "press-key" or
+                "press-hotkey" &&
+            IsLaunchTransitionExpected(
+                decision))
+        {
+            var launchTransition =
+                observation.ForegroundWindowChanged &&
+                (observation.WindowBoundsChanged ||
+                 (frameDifference?.Comparable == true &&
+                  frameDifference.ChangedRatio >=
+                      StrongVisualChangeRatio));
+
+            if (launchTransition)
+            {
+                return new(
+                    DesktopVerificationRoute.LocalVerified,
+                    0.96,
+                    "Expected effect là khởi chạy/mở ứng dụng và local evidence xác nhận transition rõ ràng: foreground đổi kèm thay đổi hình học hoặc hình ảnh.");
+            }
+
+            if (frameDifference?.Comparable == true &&
+                frameDifference.ChangedRatio <=
+                    NoVisualChangeRatio &&
+                !observation.ForegroundWindowChanged)
+            {
+                return new(
+                    DesktopVerificationRoute.GeminiRequired,
+                    0.0,
+                    "Expected effect là khởi chạy ứng dụng nhưng chưa thấy transition; không kết luận action-no-effect ngay vì ứng dụng có thể đang tải.");
+            }
+        }
+
         if (action is "press-key" or "press-hotkey")
         {
             var strongTransition =
@@ -187,5 +222,38 @@ public sealed class DesktopVerificationRouter
             DesktopVerificationRoute.GeminiRequired,
             0.0,
             "Kết quả cần hiểu semantic; chuyển sang Gemini Vision.");
+    }
+
+    internal static bool IsLaunchTransitionExpectedForAcceptance(
+        DesktopOperatorDecision decision) =>
+        IsLaunchTransitionExpected(
+            decision);
+
+    private static bool IsLaunchTransitionExpected(
+        DesktopOperatorDecision decision)
+    {
+        var text =
+            $"{decision.CurrentSubgoal} {decision.ExpectedEffect} {decision.Reason}"
+                .ToLowerInvariant();
+
+        var markers =
+            new[]
+            {
+                "khởi chạy",
+                "khoi chay",
+                "mở ứng dụng",
+                "mo ung dung",
+                "bắt đầu mở",
+                "bat dau mo",
+                "launch application",
+                "launch app",
+                "start application",
+                "start app"
+            };
+
+        return markers.Any(marker =>
+            text.Contains(
+                marker,
+                StringComparison.OrdinalIgnoreCase));
     }
 }

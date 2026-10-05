@@ -446,6 +446,12 @@ public sealed class ComputerOperatorAcceptanceService
             "event relevance ưu tiên tín hiệu phù hợp với action",
             CheckEventRelevancePrioritizesExpectedSignals);
 
+        RunCheck(
+            checks,
+            "event correlation dùng expected effect để tăng độ liên quan",
+            CheckEventRelevanceUsesExpectedEffect);
+
+
 
 
 
@@ -3634,6 +3640,33 @@ public sealed class ComputerOperatorAcceptanceService
             typeMove < 0.55 &&
             maximizeMove >= 0.9,
             "Event relevance chưa phân biệt đúng tín hiệu theo action.");
+    }
+
+    private static void CheckEventRelevanceUsesExpectedEffect()
+    {
+        var structureEvent =
+            new DesktopSystemEvent(
+                DesktopSystemEventKinds.StructureChanged,
+                "0x1",
+                DateTimeOffset.UtcNow,
+                0,
+                "acceptance structure changed");
+
+        var withoutEffect =
+            ComputerOperatorEventRelevance.Score(
+                "press-hotkey",
+                structureEvent);
+
+        var withEffect =
+            ComputerOperatorEventRelevance.Score(
+                "press-hotkey",
+                "Windows Search xuất hiện.",
+                structureEvent);
+
+        Require(
+            withEffect > withoutEffect &&
+            withEffect >= 0.9,
+            "Expected effect chưa tăng độ ưu tiên cho event phù hợp.");
     }
 
     private static void CheckCapabilityCacheAvoidsRepeatedDiscovery()

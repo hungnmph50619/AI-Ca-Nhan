@@ -25,7 +25,8 @@ public interface IDesktopTemplateMatchingSensor
         double minimumScore = 0.88);
 }
 
-public sealed class OpenCvTemplateMatchingSensor
+public sealed class OpenCvTemplateMatchingSensor(
+    ILocalVisualProviderHealthRegistry health)
     : IDesktopTemplateMatchingSensor
 {
     private const double MinimumUniquenessMargin = 0.04;
@@ -47,6 +48,18 @@ public sealed class OpenCvTemplateMatchingSensor
         double minimumScore = 0.88)
     {
         ArgumentNullException.ThrowIfNull(frame);
+
+        if (health.ShouldSkip(
+                "opencv-template",
+                DateTimeOffset.UtcNow,
+                out var skipReason))
+        {
+            return Unavailable(
+                skipReason);
+        }
+
+        var stopwatch =
+            System.Diagnostics.Stopwatch.StartNew();
 
         if (!OperatingSystem.IsWindows())
         {
@@ -253,6 +266,16 @@ public sealed class OpenCvTemplateMatchingSensor
                     minimumScore &&
                 !ambiguous;
 
+            stopwatch.Stop();
+            health.RecordSuccess(
+                "opencv-template",
+                stopwatch.ElapsedMilliseconds,
+                ambiguous
+                    ? "Engine chạy bình thường nhưng match mơ hồ."
+                    : matched
+                        ? "Template match thành công."
+                        : "Engine chạy bình thường, không có match đủ ngưỡng.");
+
             return new(
                 Available: true,
                 Matched:
@@ -295,6 +318,12 @@ public sealed class OpenCvTemplateMatchingSensor
                 TypeInitializationException or
                 BadImageFormatException)
         {
+            stopwatch.Stop();
+            health.RecordFailure(
+                "opencv-template",
+                stopwatch.ElapsedMilliseconds,
+                exception.Message);
+
             return Unavailable(
                 $"OpenCV không khả dụng: {exception.GetType().Name}: {exception.Message}");
         }

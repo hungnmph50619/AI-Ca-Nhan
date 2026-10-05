@@ -24,6 +24,7 @@ public static class ComputerUseEndpoints
         services.AddSingleton<ITextClipboardWriter, WindowsTextClipboardWriter>();
         services.AddSingleton<IGenericTextInteractionEngine, GenericTextInteractionEngine>();
         services.AddSingleton<IAdaptiveObservationWakeSource, WindowsDesktopEventWakeSource>();
+        services.AddSingleton<IComputerOperatorFastReobserveGate, ComputerOperatorFastReobserveGate>();
         services.AddSingleton<IAdaptiveVerificationWaitEngine, AdaptiveVerificationWaitEngine>();
         services.AddSingleton<IComputerDisplayTopologyService, WindowsComputerDisplayTopologyService>();
         services.AddSingleton<IComputerDpiCalibrationService, ComputerDpiCalibrationService>();

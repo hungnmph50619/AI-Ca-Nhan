@@ -393,6 +393,21 @@ public sealed class ComputerOperatorAcceptanceService
 
         RunCheck(
             checks,
+            "fast reobserve wake ngay khi có desktop event",
+            CheckFastReobserveUsesDesktopEvent);
+
+        RunCheck(
+            checks,
+            "fast reobserve fallback không vượt 220ms",
+            CheckFastReobserveKeepsShortFallback);
+
+        RunCheck(
+            checks,
+            "fast reobserve move-pointer chỉ chờ local settle ngắn",
+            CheckFastReobserveMovePointerIsLocalFastPath);
+
+        RunCheck(
+            checks,
             "capability cache hit không gọi raw discovery lần hai",
             CheckCapabilityCacheAvoidsRepeatedDiscovery);
 
@@ -3232,6 +3247,73 @@ public sealed class ComputerOperatorAcceptanceService
             result.EventWakeups == 0 &&
             wake.WaitCount >= 1,
             "Không có event nhưng polling fallback chưa hoạt động.");
+    }
+
+    private static void CheckFastReobserveUsesDesktopEvent()
+    {
+        var wake =
+            new AcceptanceObservationWakeSource(
+                emitEvent: true);
+
+        var gate =
+            new ComputerOperatorFastReobserveGate(
+                wake);
+
+        var result =
+            gate.WaitBeforeVerificationAsync(
+                    "click-left")
+                .GetAwaiter()
+                .GetResult();
+
+        Require(
+            result.EventDriven &&
+            result.EventReceived &&
+            result.EventKind ==
+                DesktopSystemEventKinds.ForegroundChanged &&
+            wake.WaitCount == 1,
+            "Fast Reobserve chưa wake ngay bằng desktop event.");
+    }
+
+    private static void CheckFastReobserveKeepsShortFallback()
+    {
+        var waits =
+            new[]
+            {
+                ComputerOperatorFastReobserveGate.MaximumWaitForAction("focus-window"),
+                ComputerOperatorFastReobserveGate.MaximumWaitForAction("click-left"),
+                ComputerOperatorFastReobserveGate.MaximumWaitForAction("press-hotkey"),
+                ComputerOperatorFastReobserveGate.MaximumWaitForAction("unknown")
+            };
+
+        Require(
+            waits.All(item =>
+                item <= TimeSpan.FromMilliseconds(220)) &&
+            waits.Min() <= TimeSpan.FromMilliseconds(120),
+            "Fast Reobserve fallback đang dài hơn latency target.");
+    }
+
+    private static void CheckFastReobserveMovePointerIsLocalFastPath()
+    {
+        var wake =
+            new AcceptanceObservationWakeSource(
+                emitEvent: false);
+
+        var gate =
+            new ComputerOperatorFastReobserveGate(
+                wake);
+
+        var result =
+            gate.WaitBeforeVerificationAsync(
+                    "move-pointer")
+                .GetAwaiter()
+                .GetResult();
+
+        Require(
+            !result.EventReceived &&
+            result.MaximumWait ==
+                TimeSpan.FromMilliseconds(40) &&
+            wake.WaitCount == 0,
+            "Move-pointer chưa dùng local fast path độc lập với desktop event.");
     }
 
     private static void CheckCapabilityCacheAvoidsRepeatedDiscovery()

@@ -16,7 +16,8 @@ internal sealed record AutomationRequest(
     string WindowId,
     string? TargetToken = null,
     string? Text = null,
-    string? WriteMode = null);
+    string? WriteMode = null,
+    string? MonitorDevice = null);
 
 internal sealed record AutomationResponse(
     bool Success,
@@ -56,6 +57,13 @@ internal static class Program
                     StringComparison.OrdinalIgnoreCase))
             {
                 response = await CaptureWindowAsync(
+                    request);
+            }
+            else if (request.Operation.Trim().Equals(
+                         "capture-monitor",
+                         StringComparison.OrdinalIgnoreCase))
+            {
+                response = await CaptureMonitorAsync(
                     request);
             }
             else
@@ -111,25 +119,102 @@ internal static class Program
                 "Windows Graphics Capture không được hệ thống hỗ trợ.");
         }
 
-        GraphicsCaptureItem? item = null;
+        var item = CreateCaptureItemForWindow(
+            hwnd);
+
+        if (item is null ||
+            item.Size.Width <= 0 ||
+            item.Size.Height <= 0)
+        {
+            return Empty(
+                request,
+                "Không tạo được GraphicsCaptureItem hợp lệ cho cửa sổ.");
+        }
+
+        return await CaptureGraphicsItemAsync(
+            request,
+            item,
+            nativeHandle: hwnd.ToInt64(),
+            isFocused: GetForegroundWindow() == hwnd,
+            successDetail:
+                "Đã capture cửa sổ bằng Windows Graphics Capture.");
+    }
+
+    private static async Task<AutomationResponse> CaptureMonitorAsync(
+        AutomationRequest request)
+    {
+        if (!OperatingSystem.IsWindowsVersionAtLeast(
+                10,
+                0,
+                18362))
+        {
+            return Empty(
+                request,
+                "Windows Graphics Capture yêu cầu Windows 10 build 18362 trở lên.");
+        }
+
+        if (!GraphicsCaptureSession.IsSupported())
+        {
+            return Empty(
+                request,
+                "Windows Graphics Capture không được hệ thống hỗ trợ.");
+        }
+
+        var device =
+            (request.MonitorDevice ?? string.Empty)
+                .Trim();
+
+        if (device.Length == 0)
+        {
+            return Empty(
+                request,
+                "Thiếu tên monitor cần capture.");
+        }
+
+        var monitor = FindMonitorByDeviceName(
+            device);
+
+        if (monitor == nint.Zero)
+        {
+            return Empty(
+                request,
+                $"Không tìm thấy monitor {device}.");
+        }
+
+        var item = CreateCaptureItemForMonitor(
+            monitor);
+
+        if (item is null ||
+            item.Size.Width <= 0 ||
+            item.Size.Height <= 0)
+        {
+            return Empty(
+                request,
+                "Không tạo được GraphicsCaptureItem hợp lệ cho monitor.");
+        }
+
+        return await CaptureGraphicsItemAsync(
+            request,
+            item,
+            nativeHandle: monitor.ToInt64(),
+            isFocused: false,
+            successDetail:
+                $"Đã capture monitor {device} bằng Windows Graphics Capture.");
+    }
+
+    private static async Task<AutomationResponse> CaptureGraphicsItemAsync(
+        AutomationRequest request,
+        GraphicsCaptureItem item,
+        long nativeHandle,
+        bool isFocused,
+        string successDetail)
+    {
         Direct3D11CaptureFramePool? framePool = null;
         GraphicsCaptureSession? session = null;
         Direct3D11CaptureFrame? frame = null;
 
         try
         {
-            item = CreateCaptureItemForWindow(
-                hwnd);
-
-            if (item is null ||
-                item.Size.Width <= 0 ||
-                item.Size.Height <= 0)
-            {
-                return Empty(
-                    request,
-                    "Không tạo được GraphicsCaptureItem hợp lệ cho cửa sổ.");
-            }
-
             var device = CanvasDevice.GetSharedDevice();
             framePool = Direct3D11CaptureFramePool.CreateFreeThreaded(
                 device,
@@ -204,18 +289,17 @@ internal static class Program
 
             return new(
                 Success: true,
-                IsFocused: GetForegroundWindow() == hwnd,
+                IsFocused: isFocused,
                 CanRead: false,
                 CanDirectSet: false,
                 SupportsSelection: false,
                 IsReadOnly: false,
                 IsSensitive: false,
                 ControlClass: string.Empty,
-                NativeWindowHandle: hwnd.ToInt64(),
+                NativeWindowHandle: nativeHandle,
                 TargetToken: string.Empty,
                 Value: null,
-                Detail:
-                    "Đã capture cửa sổ bằng Windows Graphics Capture.",
+                Detail: successDetail,
                 JpegBase64: Convert.ToBase64String(bytes),
                 CaptureWidth: frame.ContentSize.Width,
                 CaptureHeight: frame.ContentSize.Height,
@@ -284,6 +368,66 @@ internal static class Program
             Marshal.Release(
                 itemPointer);
         }
+    }
+
+    private static GraphicsCaptureItem? CreateCaptureItemForMonitor(
+        nint monitor)
+    {
+        var interop =
+            GraphicsCaptureItem.As<IGraphicsCaptureItemInterop>();
+
+        var itemPointer =
+            interop.CreateForMonitor(
+                monitor,
+                GraphicsCaptureItemGuid);
+
+        if (itemPointer == nint.Zero)
+            return null;
+
+        try
+        {
+            return GraphicsCaptureItem.FromAbi(
+                itemPointer);
+        }
+        finally
+        {
+            Marshal.Release(
+                itemPointer);
+        }
+    }
+
+    private static nint FindMonitorByDeviceName(
+        string deviceName)
+    {
+        nint found = nint.Zero;
+
+        _ = EnumDisplayMonitors(
+            nint.Zero,
+            nint.Zero,
+            (monitor, _, _, _) =>
+            {
+                var info = new MonitorInfoEx
+                {
+                    Size = (uint)Marshal.SizeOf<MonitorInfoEx>()
+                };
+
+                if (GetMonitorInfo(
+                        monitor,
+                        ref info) &&
+                    string.Equals(
+                        info.DeviceName?.TrimEnd('\0'),
+                        deviceName,
+                        StringComparison.OrdinalIgnoreCase))
+                {
+                    found = monitor;
+                    return false;
+                }
+
+                return true;
+            },
+            nint.Zero);
+
+        return found;
     }
 
     private static AutomationResponse Execute(
@@ -630,6 +774,30 @@ internal static class Program
             PropertyNameCaseInsensitive = true
         };
 
+    private delegate bool MonitorEnumProc(
+        nint monitor,
+        nint hdc,
+        nint rect,
+        nint data);
+
+    [StructLayout(LayoutKind.Sequential, CharSet = CharSet.Unicode)]
+    private struct MonitorInfoEx
+    {
+        public uint Size;
+        public int Left;
+        public int Top;
+        public int Right;
+        public int Bottom;
+        public int WorkLeft;
+        public int WorkTop;
+        public int WorkRight;
+        public int WorkBottom;
+        public uint Flags;
+
+        [MarshalAs(UnmanagedType.ByValTStr, SizeConst = 32)]
+        public string DeviceName;
+    }
+
     private static readonly Guid GraphicsCaptureItemGuid =
         new("79C3F95B-31F7-4EC2-A464-632EF5D30760");
 
@@ -654,4 +822,18 @@ internal static class Program
     [return: MarshalAs(UnmanagedType.Bool)]
     private static extern bool IsWindow(
         nint hWnd);
+
+    [DllImport("user32.dll")]
+    [return: MarshalAs(UnmanagedType.Bool)]
+    private static extern bool EnumDisplayMonitors(
+        nint hdc,
+        nint clip,
+        MonitorEnumProc callback,
+        nint data);
+
+    [DllImport("user32.dll", CharSet = CharSet.Unicode)]
+    [return: MarshalAs(UnmanagedType.Bool)]
+    private static extern bool GetMonitorInfo(
+        nint monitor,
+        ref MonitorInfoEx info);
 }

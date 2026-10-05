@@ -1424,7 +1424,7 @@ public sealed class ComputerOperatorAcceptanceService
     private static void CheckPaddleWorkerInvocationFailureIsIsolated()
     {
         var result =
-            PaddleOnnxDesktopOcrProvider.InvokeWorkerForAcceptance(
+            LocalVisionWorkerClient.InvokeProcessForAcceptance(
                 executable:
                     "__personal_ai_missing_worker__",
                 arguments:

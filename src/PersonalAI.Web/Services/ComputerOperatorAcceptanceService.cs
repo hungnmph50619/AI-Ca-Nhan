@@ -1,4 +1,3 @@
-using CoreOCROnnx.SDK;
 using PersonalAI.Web.Models;
 
 namespace PersonalAI.Web.Services;
@@ -79,8 +78,8 @@ public sealed class ComputerOperatorAcceptanceService
 
         RunCheck(
             checks,
-            "CoreOCROnnx chuyển bốn điểm text block thành bounding box chuẩn",
-            CheckCoreOcrBlockBoundingBoxConversion);
+            "PaddleOCR worker failure được cô lập khỏi Web host",
+            CheckPaddleWorkerInvocationFailureIsIsolated);
 
         RunCheck(
             checks,
@@ -1422,34 +1421,25 @@ public sealed class ComputerOperatorAcceptanceService
             "OCR provider router chưa ưu tiên Windows hoặc chưa fallback đúng sang PaddleOCR/ONNX.");
     }
 
-    private static void CheckCoreOcrBlockBoundingBoxConversion()
+    private static void CheckPaddleWorkerInvocationFailureIsIsolated()
     {
-        var block =
-            new JsonResult
-            {
-                Text = "Continue",
-                Boxes =
-                [
-                    new OCRLocation { x = 120, y = 50 },
-                    new OCRLocation { x = 200, y = 48 },
-                    new OCRLocation { x = 202, y = 82 },
-                    new OCRLocation { x = 118, y = 84 }
-                ]
-            };
-
-        var line =
-            PaddleOnnxDesktopOcrProvider.ToLine(
-                block);
+        var result =
+            PaddleOnnxDesktopOcrProvider.InvokeWorkerForAcceptance(
+                executable:
+                    "__personal_ai_missing_worker__",
+                arguments:
+                    string.Empty,
+                request:
+                    "{}",
+                timeoutMilliseconds:
+                    250);
 
         Require(
-            line is not null &&
-            line.Text == "Continue" &&
-            line.Words.Count == 1 &&
-            Math.Abs(line.Words[0].Left - 118) < 0.001 &&
-            Math.Abs(line.Words[0].Top - 48) < 0.001 &&
-            Math.Abs(line.Words[0].Width - 84) < 0.001 &&
-            Math.Abs(line.Words[0].Height - 36) < 0.001,
-            "CoreOCROnnx text block chưa được chuẩn hóa đúng bounding box.");
+            !result.Success &&
+            !result.TimedOut &&
+            !string.IsNullOrWhiteSpace(
+                result.Detail),
+            "PaddleOCR worker launch failure chưa được cô lập thành kết quả an toàn.");
     }
 
     private static void CheckLocalVisualProviderHealthCooldown()

@@ -65,7 +65,8 @@ public static class UnifiedStructuredSceneGraphBuilder
                 "Invoke",
                 "SelectionItem",
                 "Toggle",
-                "ExpandCollapse"
+                "ExpandCollapse",
+                "LegacyIAccessible"
             ],
             StringComparer.OrdinalIgnoreCase);
 

@@ -96,6 +96,16 @@ public sealed class ComputerOperatorAcceptanceService
             "local visual fusion từ chối hai nguồn mạnh xung đột vị trí",
             CheckLocalVisualFusionRejectsConflictingTargets);
 
+        RunCheck(
+            checks,
+            "local visual verification xác nhận thay đổi khi dHash và region cùng mạnh",
+            CheckLocalVisualVerificationDetectsChange);
+
+        RunCheck(
+            checks,
+            "local visual verification xác nhận frame ổn định khi hai cảm biến cùng yên",
+            CheckLocalVisualVerificationDetectsStable);
+
 
 
         RunCheck(
@@ -1512,6 +1522,88 @@ public sealed class ComputerOperatorAcceptanceService
                 LocalVisualTargetStatus.Ambiguous &&
             !result.Resolved,
             "Local visual fusion đang chọn bừa khi OCR/OpenCV mạnh nhưng xung đột vị trí.");
+    }
+
+    private static void CheckLocalVisualVerificationDetectsChange()
+    {
+        var service =
+            new LocalVisualVerificationService();
+
+        var result =
+            service.Evaluate(
+                new DesktopLocalVisualObservation(
+                    Comparable: true,
+                    BeforeHash:
+                        new DesktopPerceptualHash(
+                            0,
+                            "acceptance"),
+                    AfterHash:
+                        new DesktopPerceptualHash(
+                            ulong.MaxValue,
+                            "acceptance"),
+                    HashDistance: 12,
+                    HashSimilarity: 0.8125,
+                    RegionDelta:
+                        new DesktopFrameDifference(
+                            true,
+                            0.05,
+                            12,
+                            100,
+                            0,
+                            0,
+                            100,
+                            100,
+                            0,
+                            "acceptance"),
+                    MeaningfulVisualChange: true,
+                    Reason: "acceptance"));
+
+        Require(
+            result.Status ==
+                LocalVisualVerificationStatus.Changed &&
+            result.Confidence >= 0.95,
+            "Local visual verification chưa xác nhận Changed khi dHash/region đều mạnh.");
+    }
+
+    private static void CheckLocalVisualVerificationDetectsStable()
+    {
+        var service =
+            new LocalVisualVerificationService();
+
+        var result =
+            service.Evaluate(
+                new DesktopLocalVisualObservation(
+                    Comparable: true,
+                    BeforeHash:
+                        new DesktopPerceptualHash(
+                            0,
+                            "acceptance"),
+                    AfterHash:
+                        new DesktopPerceptualHash(
+                            0,
+                            "acceptance"),
+                    HashDistance: 0,
+                    HashSimilarity: 1.0,
+                    RegionDelta:
+                        new DesktopFrameDifference(
+                            true,
+                            0.001,
+                            1,
+                            100,
+                            0,
+                            0,
+                            0,
+                            0,
+                            0,
+                            "acceptance"),
+                    MeaningfulVisualChange: false,
+                    Reason: "acceptance"));
+
+        Require(
+            result.Status ==
+                LocalVisualVerificationStatus.Stable &&
+            result.Confidence >= 0.90,
+            "Local visual verification chưa xác nhận Stable khi dHash/region đều yên.");
     }
 
     private static void CheckLocalVisualDifferenceHash()

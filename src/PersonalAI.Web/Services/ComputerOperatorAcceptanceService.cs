@@ -478,6 +478,21 @@ public sealed class ComputerOperatorAcceptanceService
 
         RunCheck(
             checks,
+            "Gemini budget giới hạn planning đúng policy",
+            CheckGeminiBudgetLimitsPlanning);
+
+        RunCheck(
+            checks,
+            "Gemini budget chặn verification lặp cùng ngữ cảnh",
+            CheckGeminiBudgetBlocksRepeatedVerification);
+
+        RunCheck(
+            checks,
+            "Gemini budget không vượt tổng call của task",
+            CheckGeminiBudgetCapsTotalCalls);
+
+        RunCheck(
+            checks,
             "capability first router phát hiện direct tool an toàn",
             CheckUniversalRouterDetectsDirectToolOpportunity);
 
@@ -3778,6 +3793,71 @@ public sealed class ComputerOperatorAcceptanceService
                     Priority: 1,
                     "acceptance")
             ]);
+
+    private static void CheckGeminiBudgetLimitsPlanning()
+    {
+        var budget =
+            new ComputerOperatorGeminiBudgetSession(
+                new GeminiCallBudgetPolicy(
+                    MaximumPlanningCalls: 2,
+                    MaximumVerificationCalls: 5,
+                    MaximumTotalCalls: 6,
+                    MaximumRepeatedVerificationCalls: 2));
+
+        Require(
+            budget.TryReservePlanning("step-1").Allowed &&
+            budget.TryReservePlanning("step-2").Allowed &&
+            !budget.TryReservePlanning("step-3").Allowed,
+            "Gemini planning budget chưa chặn sau giới hạn policy.");
+    }
+
+    private static void CheckGeminiBudgetBlocksRepeatedVerification()
+    {
+        var budget =
+            new ComputerOperatorGeminiBudgetSession(
+                new GeminiCallBudgetPolicy(
+                    MaximumPlanningCalls: 5,
+                    MaximumVerificationCalls: 5,
+                    MaximumTotalCalls: 8,
+                    MaximumRepeatedVerificationCalls: 2));
+
+        Require(
+            budget.TryReserveVerification(
+                "click-left",
+                "Dialog đã mở",
+                "verify-1").Allowed &&
+            budget.TryReserveVerification(
+                "click-left",
+                "Dialog đã mở",
+                "verify-2").Allowed &&
+            !budget.TryReserveVerification(
+                "click-left",
+                "Dialog đã mở",
+                "verify-3").Allowed,
+            "Gemini verification vẫn lặp cùng action/effect quá giới hạn.");
+    }
+
+    private static void CheckGeminiBudgetCapsTotalCalls()
+    {
+        var budget =
+            new ComputerOperatorGeminiBudgetSession(
+                new GeminiCallBudgetPolicy(
+                    MaximumPlanningCalls: 5,
+                    MaximumVerificationCalls: 5,
+                    MaximumTotalCalls: 3,
+                    MaximumRepeatedVerificationCalls: 2));
+
+        Require(
+            budget.TryReservePlanning("plan-1").Allowed &&
+            budget.TryReserveVerification(
+                "scroll",
+                "Đã cuộn",
+                "verify-1").Allowed &&
+            budget.TryReservePlanning("plan-2").Allowed &&
+            !budget.TryReservePlanning("plan-3").Allowed &&
+            budget.GetSnapshot().TotalCalls == 3,
+            "Gemini total-call budget chưa chặn đúng giới hạn.");
+    }
 
     private static void CheckOperatorCheckpointRedactsSensitiveContext()
     {

@@ -42,7 +42,8 @@ public sealed class WindowsDesktopScreenshotService(
     IComputerDisplayTopologyService displays,
     IComputerWindowVisibilityService visibility,
     IDesktopCaptureBackendRouter captureRouter,
-    IWindowsGraphicsCaptureClient wgc)
+    IWindowsGraphicsCaptureClient wgc,
+    IDxgiDesktopDuplicationClient dxgi)
     : IDesktopScreenshotService
 {
     public DesktopScreenshotFrame CaptureVirtualScreen()
@@ -269,6 +270,51 @@ public sealed class WindowsDesktopScreenshotService(
             }
         }
 
+        string? dxgiReason = null;
+
+        if (candidates.Contains(
+                DesktopCaptureBackends.DxgiDesktopDuplication,
+                StringComparer.OrdinalIgnoreCase) &&
+            dxgi.Available)
+        {
+            var captured =
+                dxgi.CaptureMonitor(
+                    monitor.DeviceName);
+
+            if (captured.Success &&
+                TryDecodeJpeg(
+                    captured.Jpeg,
+                    out var dxgiBitmap) &&
+                dxgiBitmap is not null)
+            {
+                if (dxgiBitmap.Width == monitor.Width &&
+                    dxgiBitmap.Height == monitor.Height)
+                {
+                    MaskOperatorConsole(
+                        dxgiBitmap,
+                        monitor.Left,
+                        monitor.Top);
+
+                    return new(
+                        dxgiBitmap,
+                        DesktopCaptureBackends.DxgiDesktopDuplication,
+                        string.IsNullOrWhiteSpace(wgcReason)
+                            ? null
+                            : $"WGC fallback: {wgcReason}");
+                }
+
+                dxgiReason =
+                    $"DXGI monitor trả geometry {dxgiBitmap.Width}x{dxgiBitmap.Height}, khác topology {monitor.Width}x{monitor.Height}.";
+
+                dxgiBitmap.Dispose();
+            }
+            else
+            {
+                dxgiReason =
+                    captured.Detail;
+            }
+        }
+
         var bitmap = CaptureBitmap(
             monitor.Left,
             monitor.Top,
@@ -280,12 +326,20 @@ public sealed class WindowsDesktopScreenshotService(
             monitor.Left,
             monitor.Top);
 
+        var fallbackReasons = new List<string>();
+
+        if (!string.IsNullOrWhiteSpace(wgcReason))
+            fallbackReasons.Add($"WGC: {wgcReason}");
+
+        if (!string.IsNullOrWhiteSpace(dxgiReason))
+            fallbackReasons.Add($"DXGI: {dxgiReason}");
+
         return new(
             bitmap,
             DesktopCaptureBackends.CopyFromScreen,
-            string.IsNullOrWhiteSpace(wgcReason)
+            fallbackReasons.Count == 0
                 ? null
-                : $"WGC fallback: {wgcReason}");
+                : string.Join(" ", fallbackReasons));
     }
 
     private static DesktopScreenshotFrame EncodeMonitorFrame(

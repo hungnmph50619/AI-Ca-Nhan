@@ -61,6 +61,14 @@ public interface IAdaptiveVerificationWaitEngine
         string? targetWindowId,
         string? action,
         CancellationToken cancellationToken);
+
+    Task<AdaptiveWaitResult> WaitAsync(
+        Func<CancellationToken, Task<AdaptiveProgressSample>> sampleProvider,
+        AdaptiveWaitPolicy? policy,
+        string? targetWindowId,
+        string? action,
+        string? expectedEffect,
+        CancellationToken cancellationToken);
 }
 
 public sealed class AdaptiveVerificationWaitEngine(
@@ -89,11 +97,26 @@ public sealed class AdaptiveVerificationWaitEngine(
             action: null,
             cancellationToken);
 
+    public Task<AdaptiveWaitResult> WaitAsync(
+        Func<CancellationToken, Task<AdaptiveProgressSample>> sampleProvider,
+        AdaptiveWaitPolicy? policy,
+        string? targetWindowId,
+        string? action,
+        CancellationToken cancellationToken) =>
+        WaitAsync(
+            sampleProvider,
+            policy,
+            targetWindowId,
+            action,
+            expectedEffect: null,
+            cancellationToken);
+
     public async Task<AdaptiveWaitResult> WaitAsync(
         Func<CancellationToken, Task<AdaptiveProgressSample>> sampleProvider,
         AdaptiveWaitPolicy? policy,
         string? targetWindowId,
         string? action,
+        string? expectedEffect,
         CancellationToken cancellationToken)
     {
         ArgumentNullException.ThrowIfNull(sampleProvider);
@@ -221,6 +244,7 @@ public sealed class AdaptiveVerificationWaitEngine(
                     var relevance =
                         ComputerOperatorEventRelevance.Score(
                             action,
+                            expectedEffect,
                             wake.Event);
 
                     if (relevance >= 0.55)
@@ -255,6 +279,15 @@ public static class ComputerOperatorEventRelevance
 {
     public static double Score(
         string? action,
+        DesktopSystemEvent? desktopEvent) =>
+        Score(
+            action,
+            expectedEffect: null,
+            desktopEvent);
+
+    public static double Score(
+        string? action,
+        string? expectedEffect,
         DesktopSystemEvent? desktopEvent)
     {
         if (desktopEvent is null)
@@ -267,11 +300,78 @@ public static class ComputerOperatorEventRelevance
 
         var kind =
             desktopEvent.Kind;
+        var effect =
+            (expectedEffect ?? string.Empty)
+                .Trim()
+                .ToLowerInvariant();
+
+        var semanticBoost =
+            0.0;
+
+        if (effect.Length > 0)
+        {
+            if ((effect.Contains("focus") ||
+                 effect.Contains("foreground")) &&
+                kind is
+                    DesktopSystemEventKinds.FocusChanged or
+                    DesktopSystemEventKinds.ForegroundChanged)
+            {
+                semanticBoost = 0.20;
+            }
+            else if ((effect.Contains("text") ||
+                      effect.Contains("type") ||
+                      effect.Contains("value") ||
+                      effect.Contains("nhập") ||
+                      effect.Contains("gõ")) &&
+                     kind is
+                         DesktopSystemEventKinds.ValueChanged or
+                         DesktopSystemEventKinds.PropertyChanged)
+            {
+                semanticBoost = 0.20;
+            }
+            else if ((effect.Contains("open") ||
+                      effect.Contains("mở") ||
+                      effect.Contains("appear") ||
+                      effect.Contains("xuất hiện") ||
+                      effect.Contains("menu") ||
+                      effect.Contains("dialog")) &&
+                     kind is
+                         DesktopSystemEventKinds.WindowCreated or
+                         DesktopSystemEventKinds.WindowShown or
+                         DesktopSystemEventKinds.StructureChanged)
+            {
+                semanticBoost = 0.20;
+            }
+            else if ((effect.Contains("close") ||
+                      effect.Contains("đóng") ||
+                      effect.Contains("disappear") ||
+                      effect.Contains("biến mất")) &&
+                     kind is
+                         DesktopSystemEventKinds.WindowDestroyed or
+                         DesktopSystemEventKinds.WindowHidden)
+            {
+                semanticBoost = 0.20;
+            }
+            else if ((effect.Contains("select") ||
+                      effect.Contains("chọn")) &&
+                     kind == DesktopSystemEventKinds.SelectionChanged)
+            {
+                semanticBoost = 0.20;
+            }
+            else if ((effect.Contains("resize") ||
+                      effect.Contains("maximize") ||
+                      effect.Contains("restore") ||
+                      effect.Contains("kích thước")) &&
+                     kind == DesktopSystemEventKinds.WindowMovedOrResized)
+            {
+                semanticBoost = 0.20;
+            }
+        }
 
         if (normalizedAction is
             "type-text")
         {
-            return kind switch
+            var score = kind switch
             {
                 DesktopSystemEventKinds.ValueChanged => 1.0,
                 DesktopSystemEventKinds.PropertyChanged => 0.95,
@@ -279,25 +379,29 @@ public static class ComputerOperatorEventRelevance
                 DesktopSystemEventKinds.SelectionChanged => 0.70,
                 _ => 0.35
             };
+
+            return Math.Min(1.0, score + semanticBoost);
         }
 
         if (normalizedAction is
             "focus-window")
         {
-            return kind switch
+            var score = kind switch
             {
                 DesktopSystemEventKinds.ForegroundChanged => 1.0,
                 DesktopSystemEventKinds.FocusChanged => 0.95,
                 DesktopSystemEventKinds.WindowShown => 0.75,
                 _ => 0.30
             };
+
+            return Math.Min(1.0, score + semanticBoost);
         }
 
         if (normalizedAction is
             "restore" or
             "maximize")
         {
-            return kind switch
+            var score = kind switch
             {
                 DesktopSystemEventKinds.WindowMovedOrResized => 1.0,
                 DesktopSystemEventKinds.ForegroundChanged => 0.90,
@@ -305,13 +409,15 @@ public static class ComputerOperatorEventRelevance
                 DesktopSystemEventKinds.PropertyChanged => 0.65,
                 _ => 0.30
             };
+
+            return Math.Min(1.0, score + semanticBoost);
         }
 
         if (normalizedAction is
             "press-key" or
             "press-hotkey")
         {
-            return kind switch
+            var score = kind switch
             {
                 DesktopSystemEventKinds.ForegroundChanged => 1.0,
                 DesktopSystemEventKinds.WindowCreated => 0.95,
@@ -323,13 +429,15 @@ public static class ComputerOperatorEventRelevance
                 DesktopSystemEventKinds.PropertyChanged => 0.70,
                 _ => 0.45
             };
+
+            return Math.Min(1.0, score + semanticBoost);
         }
 
         if (normalizedAction is
             "click-left" or
             "double-click-left")
         {
-            return kind switch
+            var score = kind switch
             {
                 DesktopSystemEventKinds.ForegroundChanged => 1.0,
                 DesktopSystemEventKinds.WindowCreated => 0.95,
@@ -343,11 +451,13 @@ public static class ComputerOperatorEventRelevance
                 DesktopSystemEventKinds.FocusChanged => 0.70,
                 _ => 0.50
             };
+
+            return Math.Min(1.0, score + semanticBoost);
         }
 
         // Không biết action: ưu tiên event thay đổi trạng thái lớn,
         // nhưng không coi mọi tín hiệu nhỏ là đáng wake.
-        return kind switch
+        var fallbackScore = kind switch
         {
             DesktopSystemEventKinds.ForegroundChanged => 0.95,
             DesktopSystemEventKinds.WindowCreated => 0.90,
@@ -358,6 +468,8 @@ public static class ComputerOperatorEventRelevance
             DesktopSystemEventKinds.PropertyChanged => 0.65,
             _ => 0.50
         };
+
+        return Math.Min(1.0, fallbackScore + semanticBoost);
     }
 }
 

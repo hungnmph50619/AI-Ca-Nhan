@@ -192,6 +192,13 @@ No tools are available in this continuation. Produce only the final user-facing 
 
         foreach (var reference in message.Attachments)
         {
+            if (!reference.Route.Equals(
+                    "direct",
+                    StringComparison.OrdinalIgnoreCase))
+            {
+                continue;
+            }
+
             var stored =
                 _attachmentStore.GetRequired(
                     reference.Id);

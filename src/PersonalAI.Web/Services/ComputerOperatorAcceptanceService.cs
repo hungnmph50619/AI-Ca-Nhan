@@ -99,6 +99,21 @@ public sealed class ComputerOperatorAcceptanceService
 
         RunCheck(
             checks,
+            "sensor budget bỏ visual khi structured target đã rõ",
+            CheckSensorBudgetSkipsVisualWhenStructuredResolved);
+
+        RunCheck(
+            checks,
+            "sensor budget cho PaddleOCR khi intent text rõ và UIA yếu",
+            CheckSensorBudgetAllowsPaddleForWeakStructuredCoverage);
+
+        RunCheck(
+            checks,
+            "sensor budget bỏ provider có latency lịch sử quá cao",
+            CheckSensorBudgetRejectsHistoricallySlowProvider);
+
+        RunCheck(
+            checks,
             "OpenCV template sensor giữ multi-scale nhỏ và ngưỡng confidence an toàn",
             CheckOpenCvTemplateSensorPolicy);
 
@@ -1546,6 +1561,149 @@ public sealed class ComputerOperatorAcceptanceService
             snapshot.State !=
                 LocalVisualProviderHealthState.Unavailable,
             "OCR provider healthy nhưng ảnh trống đang bị tính sai thành health failure.");
+    }
+
+    private static void CheckSensorBudgetSkipsVisualWhenStructuredResolved()
+    {
+        var policy =
+            new LocalVisualSensorBudgetPolicy();
+
+        var state =
+            new ComputerOperatorDesktopState(
+                DateTimeOffset.UtcNow,
+                ForegroundWindow: null,
+                Windows:
+                    Array.Empty<ComputerWindowInfo>(),
+                FrameLeft: 0,
+                FrameTop: 0,
+                FrameWidth: 1920,
+                FrameHeight: 1080,
+                CaptureScope:
+                    DesktopCaptureScopes.VirtualDesktop,
+                CaptureWindowId: string.Empty,
+                CaptureWindowWasForeground: true);
+
+        var budget =
+            policy.ForPlanning(
+                state,
+                structuredTargetResolved: true,
+                explicitTextIntent: true);
+
+        Require(
+            budget.MaximumTotalMilliseconds == 0 &&
+            !budget.AllowWindowsOcr &&
+            !budget.AllowPaddleOcr &&
+            !budget.AllowOpenCv,
+            "Sensor budget vẫn tiêu visual khi structured target đã rõ.");
+    }
+
+    private static void CheckSensorBudgetAllowsPaddleForWeakStructuredCoverage()
+    {
+        var policy =
+            new LocalVisualSensorBudgetPolicy();
+
+        var graph =
+            new UnifiedStructuredSceneGraph(
+                WindowId: "0x1234",
+                WindowTitle: "Acceptance",
+                ProcessName: "acceptance",
+                RootId: "root",
+                CapturedAtUtc:
+                    DateTimeOffset.UtcNow,
+                Nodes:
+                [
+                    new UnifiedStructuredSceneNode(
+                        Id: "root",
+                        ParentId: string.Empty,
+                        Depth: 0,
+                        Role: "Window",
+                        Name: "Acceptance",
+                        AutomationId: string.Empty,
+                        ClassName: "Window",
+                        IsEnabled: true,
+                        IsFocused: true,
+                        IsVisible: true,
+                        DesktopLeft: 0,
+                        DesktopTop: 0,
+                        Width: 800,
+                        Height: 600,
+                        FrameLeft: 0,
+                        FrameTop: 0,
+                        Capabilities:
+                            Array.Empty<string>(),
+                        Children:
+                            Array.Empty<string>())
+                ],
+                Source: "acceptance",
+                Detail: "acceptance");
+
+        var state =
+            new ComputerOperatorDesktopState(
+                DateTimeOffset.UtcNow,
+                ForegroundWindow: null,
+                Windows:
+                    Array.Empty<ComputerWindowInfo>(),
+                FrameLeft: 0,
+                FrameTop: 0,
+                FrameWidth: 800,
+                FrameHeight: 600,
+                CaptureScope:
+                    DesktopCaptureScopes.VirtualDesktop,
+                CaptureWindowId: string.Empty,
+                CaptureWindowWasForeground: true,
+                StructuredGraph: graph);
+
+        var budget =
+            policy.ForPlanning(
+                state,
+                structuredTargetResolved: false,
+                explicitTextIntent: true);
+
+        Require(
+            budget.AllowWindowsOcr &&
+            budget.AllowPaddleOcr &&
+            budget.MaximumOcrMilliseconds >= 3000 &&
+            budget.MaximumTotalMilliseconds >= 4000,
+            "Sensor budget chưa mở PaddleOCR khi intent text rõ và structured coverage yếu.");
+    }
+
+    private static void CheckSensorBudgetRejectsHistoricallySlowProvider()
+    {
+        var policy =
+            new LocalVisualSensorBudgetPolicy();
+
+        var budget =
+            new LocalVisualSensorBudget(
+                MaximumTotalMilliseconds: 3000,
+                MaximumOcrMilliseconds: 1000,
+                MaximumTemplateMilliseconds: 500,
+                AllowWindowsOcr: true,
+                AllowPaddleOcr: true,
+                AllowOpenCv: true,
+                Reason: "acceptance");
+
+        var health =
+            new LocalVisualProviderHealth(
+                Provider: "paddleocr-onnx",
+                State:
+                    LocalVisualProviderHealthState.Healthy,
+                ConsecutiveFailures: 0,
+                LastLatencyMilliseconds: 2500,
+                UpdatedAtUtc:
+                    DateTimeOffset.UtcNow,
+                Reason: "acceptance");
+
+        var allowed =
+            policy.CanUseProvider(
+                "paddleocr-onnx",
+                budget,
+                elapsedMilliseconds: 100,
+                health,
+                out _);
+
+        Require(
+            !allowed,
+            "Sensor budget vẫn cho provider có latency lịch sử cao hơn gấp đôi budget.");
     }
 
     private static void CheckOpenCvTemplateSensorPolicy()

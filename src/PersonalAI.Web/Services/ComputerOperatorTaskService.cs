@@ -1380,6 +1380,9 @@ public sealed class ComputerOperatorTaskService(
                 }
 
                 ComputerActionResponse action;
+                var executionStopwatch =
+                    Stopwatch.StartNew();
+
                 using var executionTelemetry =
                     telemetry.Begin(
                         decision.Action.Equals(
@@ -1508,9 +1511,45 @@ public sealed class ComputerOperatorTaskService(
                                 StringComparison.OrdinalIgnoreCase)
                                 ? "text-engine"
                                 : "computer");
+
+                    executionStopwatch.Stop();
+                    cycleTrace.Executed =
+                        action.Applied;
+                    cycleTrace.ExecutionMilliseconds =
+                        executionStopwatch.ElapsedMilliseconds;
+                    cycleTrace.Executor =
+                        decision.Action.Equals(
+                            "type-text",
+                            StringComparison.OrdinalIgnoreCase)
+                            ? "text-engine"
+                            : decision.Action.StartsWith(
+                                "structured-",
+                                StringComparison.OrdinalIgnoreCase)
+                                ? "uia-structured"
+                                : "computer-input";
                 }
                 catch (ToolExecutionInputException exception)
                 {
+                    executionStopwatch.Stop();
+                    cycleTrace.Executed =
+                        false;
+                    cycleTrace.ExecutionMilliseconds =
+                        executionStopwatch.ElapsedMilliseconds;
+                    cycleTrace.Executor =
+                        decision.Action.StartsWith(
+                            "structured-",
+                            StringComparison.OrdinalIgnoreCase)
+                            ? "uia-structured"
+                            : "computer-input";
+                    cycleTrace.RecoveryCode =
+                        "action-rejected";
+                    cycleTrace.RecoveryDetail =
+                        exception.Message;
+                    cycleTrace.Result =
+                        "replan";
+                    cycleTrace.Next =
+                        "observe";
+
                     executionTelemetry.Complete(
                         success: false,
                         route: "rejected");
@@ -1545,6 +1584,14 @@ public sealed class ComputerOperatorTaskService(
                         progress.Block(
                             $"Dừng theo failure policy: {failurePolicy.Reason}");
 
+                        cycleTrace.Result =
+                            "blocked";
+                        cycleTrace.Next =
+                            "stop";
+                        EmitCycleForensicSummary(
+                            progress,
+                            cycleTrace);
+
                         return Finish(
                             false,
                             $"Computer Operator dừng an toàn: {failurePolicy.Reason}");
@@ -1556,6 +1603,18 @@ public sealed class ComputerOperatorTaskService(
                         _ = actionState.MoveTo(
                             ComputerOperatorActionState.Replan,
                             "Failure policy yêu cầu chờ và quan sát lại.");
+
+                        cycleTrace.RecoveryCode =
+                            failurePolicy.Category;
+                        cycleTrace.RecoveryDetail =
+                            failurePolicy.Reason;
+                        cycleTrace.Result =
+                            "waiting";
+                        cycleTrace.Next =
+                            "observe";
+                        EmitCycleForensicSummary(
+                            progress,
+                            cycleTrace);
 
                         await Task.Delay(
                             750,
@@ -1631,6 +1690,23 @@ public sealed class ComputerOperatorTaskService(
                             "replan",
                             decision.Confidence);
                     }
+
+                    cycleTrace.RecoveryCode =
+                        ClassifyFailureKind(
+                            decision.Action,
+                            exception.Message,
+                            actionApplied: false,
+                            verificationFailed: false)
+                            .ToString();
+                    cycleTrace.RecoveryDetail =
+                        recoveryPlan.Reason;
+                    cycleTrace.Result =
+                        "replan";
+                    cycleTrace.Next =
+                        "observe";
+                    EmitCycleForensicSummary(
+                        progress,
+                        cycleTrace);
 
                     await Task.Delay(500, linked.Token);
                     continue;
@@ -1712,6 +1788,25 @@ public sealed class ComputerOperatorTaskService(
                             "replan",
                             decision.Confidence);
                     }
+
+                    cycleTrace.Executed =
+                        false;
+                    cycleTrace.RecoveryCode =
+                        ClassifyFailureKind(
+                            decision.Action,
+                            action.Detail,
+                            actionApplied: false,
+                            verificationFailed: false)
+                            .ToString();
+                    cycleTrace.RecoveryDetail =
+                        recoveryPlan.Reason;
+                    cycleTrace.Result =
+                        "not-applied";
+                    cycleTrace.Next =
+                        "observe";
+                    EmitCycleForensicSummary(
+                        progress,
+                        cycleTrace);
 
                     await Task.Delay(500, linked.Token);
                     continue;
@@ -3646,6 +3741,15 @@ public sealed class ComputerOperatorTaskService(
                 value ?? string.Empty));
 
         return Convert.ToHexString(bytes)[..12];
+    }
+
+    private static void EmitCycleForensicSummary(
+        ComputerOperatorProgressStore progress,
+        ComputerOperatorCycleTrace trace)
+    {
+        progress.AddDiagnostic(
+            "cycle-summary",
+            trace.RenderSummary());
     }
 
     private static string LimitDiagnostic(

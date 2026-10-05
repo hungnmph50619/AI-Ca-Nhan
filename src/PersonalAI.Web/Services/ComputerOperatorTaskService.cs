@@ -140,6 +140,7 @@ public sealed class ComputerOperatorTaskService(
     IComputerSafeTargetingService targeting,
     IDesktopFrameDifferenceService frameDifferences,
     IDesktopLocalVisualSensor localVisualSensor,
+    ILocalVisualVerificationService localVisualVerification,
     IDesktopOcrActionPlanner ocrActionPlanner,
     IDesktopLocalFastObserver fastObserver,
     IDesktopTemporalSceneService temporalScenes,
@@ -2069,6 +2070,17 @@ public sealed class ComputerOperatorTaskService(
                     $"action={decision.Action}; comparable={localVisual.Comparable}; hashDistance={localVisual.HashDistance}; similarity={localVisual.HashSimilarity:0.000}; meaningful={localVisual.MeaningfulVisualChange}; regionRatio={localVisual.RegionDelta?.ChangedRatio ?? -1:0.000000}.");
             }
 
+            var visualVerdict =
+                localVisualVerification.Evaluate(
+                    localVisual);
+
+            progress.Add(
+                "local-visual-verification",
+                $"Local Visual Verification: {visualVerdict.Status} — {visualVerdict.Reason}",
+                visualVerdict.Status.ToString().ToLowerInvariant(),
+                visualVerdict.Confidence,
+                observation: true);
+
             DesktopVerificationRoutingResult? localRouteForFusion = null;
 
             if (fastObserverBaseline is not null)
@@ -2099,6 +2111,24 @@ public sealed class ComputerOperatorTaskService(
 
                 if (route.Route == DesktopVerificationRoute.LocalVerified)
                 {
+                    if (visualVerdict.Status ==
+                            LocalVisualVerificationStatus.Changed &&
+                        visualVerdict.Confidence >= 0.88)
+                    {
+                        route =
+                            route with
+                            {
+                                Confidence =
+                                    Math.Min(
+                                        0.99,
+                                        Math.Max(
+                                            route.Confidence,
+                                            visualVerdict.Confidence)),
+                                Reason =
+                                    $"{route.Reason} Local visual fusion corroborates change: {visualVerdict.Reason}"
+                            };
+                    }
+
                     localRouteForFusion = route;
 
                     var localDecision =
@@ -2130,6 +2160,8 @@ public sealed class ComputerOperatorTaskService(
                     ComputerOperatorAdaptiveWaitPolicy.SupportsAdaptiveWaiting(
                         decision.Action) &&
                     (route.Route == DesktopVerificationRoute.LocalFailed ||
+                     visualVerdict.Status ==
+                        LocalVisualVerificationStatus.Stable ||
                      (route.Route == DesktopVerificationRoute.GeminiRequired &&
                       !fastObservation.ForegroundWindowChanged &&
                       !fastObservation.WindowBoundsChanged &&

@@ -54,6 +54,14 @@ public sealed class DesktopLocalActionPlanner
 
         decision = Empty();
 
+        if (TryPlanStructuredValueInteraction(
+                goal,
+                state,
+                out decision))
+        {
+            return true;
+        }
+
         if (TryPlanStructuredInteraction(
                 goal,
                 state,
@@ -144,6 +152,141 @@ public sealed class DesktopLocalActionPlanner
             plan: "Mở Windows Search bằng WIN+S, sau đó quan sát lại trước hành động tiếp theo.");
 
         return true;
+    }
+
+    private static bool TryPlanStructuredValueInteraction(
+        string goal,
+        ComputerOperatorDesktopState state,
+        out DesktopOperatorDecision decision)
+    {
+        decision = Empty();
+
+        if (state.ForegroundWindow is null ||
+            !TryExtractStructuredValueIntent(
+                goal,
+                out var target,
+                out var text))
+        {
+            return false;
+        }
+
+        var graph =
+            state.StructuredGraph ??
+            UnifiedStructuredSceneGraphBuilder.Build(
+                state.StructuredScene,
+                state.ForegroundWindow,
+                state.FrameLeft,
+                state.FrameTop,
+                state.FrameWidth,
+                state.FrameHeight);
+
+        if (graph is null)
+            return false;
+
+        var valueCapabilities =
+            new HashSet<string>(
+                ["Value"],
+                StringComparer.OrdinalIgnoreCase);
+
+        var resolution =
+            StructuredResolver.ResolveInteractiveTarget(
+                graph,
+                target,
+                valueCapabilities);
+
+        if (!resolution.Resolved ||
+            resolution.Node is null)
+        {
+            return false;
+        }
+
+        var node = resolution.Node;
+
+        decision = Build(
+            action: "structured-set-value",
+            currentSubgoal:
+                $"Nhập giá trị vào '{DisplayNode(node)}' bằng UIA ValuePattern.",
+            expectedEffect:
+                $"Giá trị của '{DisplayNode(node)}' trở thành nội dung yêu cầu.",
+            reason:
+                $"Structured resolver xác định field '{target}' là node '{node.Id}' có ValuePattern với score={resolution.Score}; ưu tiên direct structured write thay vì click + keyboard.",
+            plan:
+                $"Set ValuePattern trên đúng target token '{node.Id}', sau đó quan sát và xác minh lại.",
+            text: text,
+            targetLabel: DisplayNode(node),
+            targetElementId: node.Id,
+            coordinateWindowId: graph.WindowId,
+            imageX: node.FrameLeft + node.Width / 2,
+            imageY: node.FrameTop + node.Height / 2,
+            boxLeft: node.FrameLeft,
+            boxTop: node.FrameTop,
+            boxWidth: node.Width,
+            boxHeight: node.Height,
+            confidence: resolution.Score >= 100 ? 0.99 : 0.94);
+
+        return true;
+    }
+
+    private static bool TryExtractStructuredValueIntent(
+        string goal,
+        out string target,
+        out string text)
+    {
+        var value = (goal ?? string.Empty).Trim();
+        var prefixes = new[]
+        {
+            "nhập ",
+            "nhap ",
+            "gõ ",
+            "go ",
+            "type "
+        };
+
+        foreach (var prefix in prefixes)
+        {
+            if (!value.StartsWith(
+                    prefix,
+                    StringComparison.OrdinalIgnoreCase))
+            {
+                continue;
+            }
+
+            var remainder = value[prefix.Length..].Trim();
+            var separators = new[]
+            {
+                " vào ",
+                " vao ",
+                " into "
+            };
+
+            foreach (var separator in separators)
+            {
+                var index = remainder.IndexOf(
+                    separator,
+                    StringComparison.OrdinalIgnoreCase);
+
+                if (index <= 0)
+                    continue;
+
+                text = remainder[..index]
+                    .Trim()
+                    .Trim('"', '\'', '“', '”');
+
+                target = remainder[(index + separator.Length)..]
+                    .Trim()
+                    .Trim('"', '\'', '“', '”', '.', ':');
+
+                target = StripStructuredTargetPrefix(target);
+
+                return text.Length > 0 &&
+                       text.Length <= 1000 &&
+                       target.Length is >= 1 and <= 120;
+            }
+        }
+
+        target = string.Empty;
+        text = string.Empty;
+        return false;
     }
 
     private static bool TryPlanStructuredInteraction(

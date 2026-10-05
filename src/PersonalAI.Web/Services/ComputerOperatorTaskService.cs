@@ -115,7 +115,7 @@ public sealed record ComputerOperatorDesktopState(
                          .Take(40))
             {
                 lines.Add(
-                    $"- node={node.Id}; parent={node.ParentId}; depth={node.Depth}; role={node.Role}; name={node.Name}; automationId={node.AutomationId}; enabled={node.IsEnabled}; focused={node.IsFocused}; frameRect={node.FrameLeft},{node.FrameTop},{node.Width},{node.Height}; capabilities={string.Join(",", node.Capabilities)}; children={node.Children.Count}");
+                    $"- node={node.Id}; parent={node.ParentId}; depth={node.Depth}; role={node.Role}; name={node.Name}; automationId={node.AutomationId}; enabled={node.IsEnabled}; focused={node.IsFocused}; frameRect={node.FrameLeft},{node.FrameTop},{node.Width},{node.Height}; capabilities={string.Join(",", node.Capabilities)}; toggle={node.ToggleState}; expandCollapse={node.ExpandCollapseState}; selected={node.IsSelected?.ToString() ?? "?"}; children={node.Children.Count}");
             }
         }
         else if (StructuredScene is not null)

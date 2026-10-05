@@ -243,6 +243,21 @@ public sealed class ComputerOperatorAcceptanceService
 
         RunCheck(
             checks,
+            "browser router ưu tiên Playwright khi DOM verify được",
+            CheckBrowserRouterPrefersPlaywright);
+
+        RunCheck(
+            checks,
+            "browser router fallback HTTP khi Playwright chưa verify",
+            CheckBrowserRouterFallsBackToHttp);
+
+        RunCheck(
+            checks,
+            "browser router chọn backend có confidence cao hơn",
+            CheckBrowserRouterUsesHigherConfidenceBackend);
+
+        RunCheck(
+            checks,
             "coding execution agent chỉ nhận explicit coding command",
             CheckCodingExecutionAgentExplicitCommandBoundary);
 
@@ -2079,6 +2094,107 @@ public sealed class ComputerOperatorAcceptanceService
             result.Provider == "browser" &&
             result.Model == "acceptance-browser",
             "Browser execution agent không bọc backend đúng contract.");
+    }
+
+    private static void CheckBrowserRouterPrefersPlaywright()
+    {
+        var playwright =
+            new AcceptancePlaywrightBrowserExecutionBackend(
+                confidence: 0.995,
+                success: true,
+                verified: true);
+
+        var http =
+            new AcceptanceHttpBrowserExecutionBackend(
+                confidence: 0.97,
+                success: true,
+                verified: true);
+
+        var router =
+            new CompositeBrowserExecutionBackend(
+                playwright,
+                http);
+
+        var result = router.ExecuteAsync(
+                new ExecutionAgentRequest(
+                    "Mở https://example.com",
+                    ExecutionAgentChannels.Browser))
+            .GetAwaiter()
+            .GetResult();
+
+        Require(
+            playwright.CallCount == 1 &&
+            http.CallCount == 0 &&
+            result.Verified &&
+            result.Engine == "acceptance-playwright",
+            "Browser router chưa ưu tiên Playwright khi structured DOM verify được.");
+    }
+
+    private static void CheckBrowserRouterFallsBackToHttp()
+    {
+        var playwright =
+            new AcceptancePlaywrightBrowserExecutionBackend(
+                confidence: 0.995,
+                success: false,
+                verified: false);
+
+        var http =
+            new AcceptanceHttpBrowserExecutionBackend(
+                confidence: 0.97,
+                success: true,
+                verified: true);
+
+        var router =
+            new CompositeBrowserExecutionBackend(
+                playwright,
+                http);
+
+        var result = router.ExecuteAsync(
+                new ExecutionAgentRequest(
+                    "Mở https://example.com",
+                    ExecutionAgentChannels.Browser))
+            .GetAwaiter()
+            .GetResult();
+
+        Require(
+            playwright.CallCount == 1 &&
+            http.CallCount == 1 &&
+            result.Verified &&
+            result.Engine == "acceptance-http",
+            "Browser router chưa fallback HTTP khi Playwright chưa tạo evidence đủ.");
+    }
+
+    private static void CheckBrowserRouterUsesHigherConfidenceBackend()
+    {
+        var playwright =
+            new AcceptancePlaywrightBrowserExecutionBackend(
+                confidence: 0.70,
+                success: true,
+                verified: true);
+
+        var http =
+            new AcceptanceHttpBrowserExecutionBackend(
+                confidence: 0.97,
+                success: true,
+                verified: true);
+
+        var router =
+            new CompositeBrowserExecutionBackend(
+                playwright,
+                http);
+
+        var result = router.ExecuteAsync(
+                new ExecutionAgentRequest(
+                    "Mở https://example.com",
+                    ExecutionAgentChannels.Browser))
+            .GetAwaiter()
+            .GetResult();
+
+        Require(
+            playwright.CallCount == 0 &&
+            http.CallCount == 1 &&
+            result.Engine == "acceptance-http",
+            "Browser router chưa tôn trọng capability/confidence khi chọn backend.");
     }
 
     private static void CheckCodingExecutionAgentExplicitCommandBoundary()
@@ -5242,6 +5358,100 @@ public sealed class ComputerOperatorAcceptanceService
                 TextTruncated: false,
                 [],
                 1);
+    }
+
+    private sealed class AcceptancePlaywrightBrowserExecutionBackend(
+        double confidence,
+        bool success,
+        bool verified)
+        : IPlaywrightBrowserExecutionBackend
+    {
+        public int CallCount { get; private set; }
+
+        public string Engine => "acceptance-playwright";
+
+        public bool CanHandle(
+            ExecutionAgentRequest request,
+            out double resolvedConfidence,
+            out string reason)
+        {
+            var accepted =
+                request.Channel.Equals(
+                    ExecutionAgentChannels.Browser,
+                    StringComparison.OrdinalIgnoreCase);
+
+            resolvedConfidence =
+                accepted ? confidence : 0;
+            reason =
+                accepted
+                    ? "acceptance-playwright"
+                    : "wrong-channel";
+            return accepted;
+        }
+
+        public Task<BrowserExecutionBackendResult> ExecuteAsync(
+            ExecutionAgentRequest request,
+            CancellationToken cancellationToken = default)
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            CallCount++;
+
+            return Task.FromResult(
+                new BrowserExecutionBackendResult(
+                    success,
+                    "acceptance playwright",
+                    ["dom"],
+                    ChangedExternalState: success,
+                    Verified: verified,
+                    Engine));
+        }
+    }
+
+    private sealed class AcceptanceHttpBrowserExecutionBackend(
+        double confidence,
+        bool success,
+        bool verified)
+        : IHttpBrowserExecutionBackend
+    {
+        public int CallCount { get; private set; }
+
+        public string Engine => "acceptance-http";
+
+        public bool CanHandle(
+            ExecutionAgentRequest request,
+            out double resolvedConfidence,
+            out string reason)
+        {
+            var accepted =
+                request.Channel.Equals(
+                    ExecutionAgentChannels.Browser,
+                    StringComparison.OrdinalIgnoreCase);
+
+            resolvedConfidence =
+                accepted ? confidence : 0;
+            reason =
+                accepted
+                    ? "acceptance-http"
+                    : "wrong-channel";
+            return accepted;
+        }
+
+        public Task<BrowserExecutionBackendResult> ExecuteAsync(
+            ExecutionAgentRequest request,
+            CancellationToken cancellationToken = default)
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            CallCount++;
+
+            return Task.FromResult(
+                new BrowserExecutionBackendResult(
+                    success,
+                    "acceptance http",
+                    ["http"],
+                    ChangedExternalState: success,
+                    Verified: verified,
+                    Engine));
+        }
     }
 
     private sealed class AcceptanceBrowserExecutionBackend

@@ -433,6 +433,12 @@ public sealed class ComputerOperatorAcceptanceService
 
         RunCheck(
             checks,
+            "event observation snapshot công bố counters an toàn",
+            CheckEventObservationSnapshotContract);
+
+
+        RunCheck(
+            checks,
             "capability cache hit không gọi raw discovery lần hai",
             CheckCapabilityCacheAvoidsRepeatedDiscovery);
 
@@ -3524,6 +3530,26 @@ public sealed class ComputerOperatorAcceptanceService
             "Không có event nhưng polling fallback chưa hoạt động.");
     }
 
+    private static void CheckEventObservationSnapshotContract()
+    {
+        var source =
+            new AcceptanceObservationWakeSource(
+                emitEvent: true);
+
+        var snapshot =
+            source.GetSnapshot();
+
+        Require(
+            snapshot.EventDrivenAvailable &&
+            snapshot.ReceivedEvents >= 0 &&
+            snapshot.CoalescedEvents >= 0 &&
+            snapshot.DroppedEvents >= 0 &&
+            snapshot.DeliveredWakeups >= 0 &&
+            snapshot.PollFallbacks >= 0 &&
+            snapshot.QueuedEvents >= 0,
+            "Event observation snapshot trả counters không hợp lệ.");
+    }
+
     private static void CheckCapabilityCacheAvoidsRepeatedDiscovery()
     {
         var raw =
@@ -6401,6 +6427,17 @@ public sealed class ComputerOperatorAcceptanceService
         public int WaitCount { get; private set; }
 
         public bool EventDrivenAvailable => true;
+
+        public DesktopEventObservationSnapshot GetSnapshot() =>
+            new(
+                EventDrivenAvailable: true,
+                ReceivedEvents: emitEvent ? 1 : 0,
+                CoalescedEvents: 0,
+                DroppedEvents: 0,
+                DeliveredWakeups: emitEvent ? WaitCount : 0,
+                PollFallbacks: emitEvent ? 0 : WaitCount,
+                QueuedEvents: 0,
+                LastEvent: null);
 
         public async Task<DesktopObservationWakeResult> WaitAsync(
             TimeSpan fallbackDelay,

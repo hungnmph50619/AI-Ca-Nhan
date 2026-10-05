@@ -51,6 +51,11 @@ public sealed class ComputerOperatorAcceptanceService
             "local visual dHash phân biệt frame giống và khác cấu trúc",
             CheckLocalVisualDifferenceHash);
 
+        RunCheck(
+            checks,
+            "Windows OCR parser giữ text language và word bounding boxes",
+            CheckWindowsOcrPayloadParsing);
+
 
 
         RunCheck(
@@ -1040,6 +1045,53 @@ public sealed class ComputerOperatorAcceptanceService
             otherMonitor.First() ==
             DesktopCaptureBackends.WindowsGraphicsCapture,
             "Health penalty của một monitor đã làm ảnh hưởng target monitor khác.");
+    }
+
+    private static void CheckWindowsOcrPayloadParsing()
+    {
+        const string json = """
+        {
+          "text": "Save File",
+          "language": "en-US",
+          "lines": [
+            {
+              "text": "Save File",
+              "words": [
+                {
+                  "text": "Save",
+                  "left": 12,
+                  "top": 20,
+                  "width": 40,
+                  "height": 18
+                },
+                {
+                  "text": "File",
+                  "left": 58,
+                  "top": 20,
+                  "width": 30,
+                  "height": 18
+                }
+              ]
+            }
+          ]
+        }
+        """;
+
+        var result =
+            WindowsDesktopOcrSensor.ParseForAcceptance(
+                json);
+
+        Require(
+            result.Available &&
+            result.Text == "Save File" &&
+            result.Language == "en-US" &&
+            result.Lines.Count == 1 &&
+            result.WordCount == 2 &&
+            result.Lines[0].Words[0].Text == "Save" &&
+            Math.Abs(
+                result.Lines[0].Words[0].Left -
+                12) < 0.001,
+            "Windows OCR parser chưa giữ đúng text/language/bounding boxes.");
     }
 
     private static void CheckLocalVisualDifferenceHash()

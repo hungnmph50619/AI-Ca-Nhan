@@ -759,16 +759,16 @@ public sealed class WindowsComputerUseService(
             {
                 for (var index = 1; index <= steps; index++)
                 {
-                    if (GetRootWindowAtPoint(nextX, nextY) != target)
-                        throw new ToolExecutionInputException(
-                            "Target dưới con trỏ đã thay đổi trong lúc kéo-thả.");
-
                     var p = index / (double)steps;
                     var eased = p * p * (3d - 2d * p);
                     var nextX = (int)Math.Round(
                         startX + ((endX - startX) * eased));
                     var nextY = (int)Math.Round(
                         startY + ((endY - startY) * eased));
+
+                    if (GetRootWindowAtPoint(nextX, nextY) != target)
+                        throw new ToolExecutionInputException(
+                            "Target dưới con trỏ đã thay đổi trong lúc kéo-thả.");
 
                     if (!SetCursorPos(nextX, nextY))
                         throw new ToolExecutionInputException(

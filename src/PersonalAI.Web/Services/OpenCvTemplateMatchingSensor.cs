@@ -1,4 +1,3 @@
-using OpenCvSharp;
 using PersonalAI.Web.Models;
 
 namespace PersonalAI.Web.Services;
@@ -27,11 +26,10 @@ public interface IDesktopTemplateMatchingSensor
 
 public sealed class OpenCvTemplateMatchingSensor(
     ILocalVisualProviderHealthRegistry health,
-    ILocalVisualSensorBudgetPolicy budgetPolicy)
+    ILocalVisualSensorBudgetPolicy budgetPolicy,
+    ILocalVisionWorkerClient worker)
     : IDesktopTemplateMatchingSensor
 {
-    private const double MinimumUniquenessMargin = 0.04;
-
     private static readonly double[] ScaleCandidates =
     [
         1.00,
@@ -52,9 +50,9 @@ public sealed class OpenCvTemplateMatchingSensor(
 
         var templateBudget =
             new LocalVisualSensorBudget(
-                MaximumTotalMilliseconds: 900,
+                MaximumTotalMilliseconds: 1200,
                 MaximumOcrMilliseconds: 0,
-                MaximumTemplateMilliseconds: 800,
+                MaximumTemplateMilliseconds: 1000,
                 AllowWindowsOcr: false,
                 AllowPaddleOcr: false,
                 AllowOpenCv: true,
@@ -84,13 +82,10 @@ public sealed class OpenCvTemplateMatchingSensor(
                 skipReason);
         }
 
-        var stopwatch =
-            System.Diagnostics.Stopwatch.StartNew();
-
         if (!OperatingSystem.IsWindows())
         {
             return Unavailable(
-                "OpenCV native runtime hiện chỉ bật trên Windows.");
+                "OpenCV worker hiện chỉ bật trên Windows.");
         }
 
         if (frame.Jpeg is null ||
@@ -107,287 +102,71 @@ public sealed class OpenCvTemplateMatchingSensor(
                 0.50,
                 0.999);
 
-        try
+        var stopwatch =
+            System.Diagnostics.Stopwatch.StartNew();
+
+        var invocation =
+            worker.Invoke(
+                new LocalVisionWorkerRequest(
+                    Operation: "opencv-template",
+                    JpegBase64:
+                        Convert.ToBase64String(
+                            frame.Jpeg),
+                    TemplateBase64:
+                        Convert.ToBase64String(
+                            templateImage.Span),
+                    MinimumScore:
+                        minimumScore),
+                timeoutMilliseconds: 1100);
+
+        stopwatch.Stop();
+
+        if (!invocation.Success ||
+            invocation.Response?.Match is null)
         {
-            using var source =
-                Cv2.ImDecode(
-                    frame.Jpeg,
-                    ImreadModes.Grayscale);
-
-            using var template =
-                Cv2.ImDecode(
-                    templateImage.ToArray(),
-                    ImreadModes.Grayscale);
-
-            if (source.Empty() ||
-                template.Empty())
-            {
-                return Unavailable(
-                    "OpenCV không decode được frame/template.");
-            }
-
-            var candidates =
-                new List<MatchCandidate>();
-
-            foreach (var scale in
-                     ScaleCandidates)
-            {
-                var width =
-                    Math.Max(
-                        2,
-                        (int)Math.Round(
-                            template.Width *
-                            scale));
-                var height =
-                    Math.Max(
-                        2,
-                        (int)Math.Round(
-                            template.Height *
-                            scale));
-
-                if (width >
-                        source.Width ||
-                    height >
-                        source.Height)
-                {
-                    continue;
-                }
-
-                using var scaled =
-                    new Mat();
-
-                Cv2.Resize(
-                    template,
-                    scaled,
-                    new Size(
-                        width,
-                        height),
-                    interpolation:
-                        scale < 1.0
-                            ? InterpolationFlags.Area
-                            : InterpolationFlags.Linear);
-
-                using var result =
-                    new Mat();
-
-                Cv2.MatchTemplate(
-                    source,
-                    scaled,
-                    result,
-                    TemplateMatchModes.CCoeffNormed);
-
-                Cv2.MinMaxLoc(
-                    result,
-                    out _,
-                    out var maxValue,
-                    out _,
-                    out var maxLocation);
-
-                var candidate =
-                    new MatchCandidate(
-                        maxValue,
-                        maxLocation.X,
-                        maxLocation.Y,
-                        width,
-                        height,
-                        scale);
-
-                candidates.Add(
-                    candidate);
-
-                using var suppressed =
-                    result.Clone();
-
-                var suppressLeft =
-                    Math.Max(
-                        0,
-                        maxLocation.X -
-                        width / 2);
-                var suppressTop =
-                    Math.Max(
-                        0,
-                        maxLocation.Y -
-                        height / 2);
-                var suppressWidth =
-                    Math.Min(
-                        suppressed.Width -
-                        suppressLeft,
-                        Math.Max(
-                            1,
-                            width * 2));
-                var suppressHeight =
-                    Math.Min(
-                        suppressed.Height -
-                        suppressTop,
-                        Math.Max(
-                            1,
-                            height * 2));
-
-                Cv2.Rectangle(
-                    suppressed,
-                    new Rect(
-                        suppressLeft,
-                        suppressTop,
-                        suppressWidth,
-                        suppressHeight),
-                    Scalar.All(-1),
-                    thickness: -1);
-
-                Cv2.MinMaxLoc(
-                    suppressed,
-                    out _,
-                    out var secondValue,
-                    out _,
-                    out var secondLocation);
-
-                candidates.Add(
-                    new MatchCandidate(
-                        secondValue,
-                        secondLocation.X,
-                        secondLocation.Y,
-                        width,
-                        height,
-                        scale));
-            }
-
-            if (candidates.Count == 0)
-            {
-                return Unavailable(
-                    "Không có scale template hợp lệ trong frame.");
-            }
-
-            var ordered =
-                candidates
-                    .OrderByDescending(candidate =>
-                        candidate.Score)
-                    .ToArray();
-
-            var best =
-                ordered[0];
-
-            var second =
-                ordered
-                    .Skip(1)
-                    .FirstOrDefault(candidate =>
-                        IsSpatiallyDistinct(
-                            best,
-                            candidate));
-
-            var secondScore =
-                second?.Score ??
-                -1.0;
-
-            var ambiguous =
-                best.Score >=
-                    minimumScore &&
-                second is not null &&
-                second.Score >=
-                    minimumScore &&
-                best.Score -
-                    second.Score <
-                    MinimumUniquenessMargin;
-
-            var matched =
-                best.Score >=
-                    minimumScore &&
-                !ambiguous;
-
-            stopwatch.Stop();
-            health.RecordSuccess(
-                "opencv-template",
-                stopwatch.ElapsedMilliseconds,
-                ambiguous
-                    ? "Engine chạy bình thường nhưng match mơ hồ."
-                    : matched
-                        ? "Template match thành công."
-                        : "Engine chạy bình thường, không có match đủ ngưỡng.");
-
-            return new(
-                Available: true,
-                Matched:
-                    matched,
-                Ambiguous:
-                    ambiguous,
-                Score:
-                    Math.Clamp(
-                        best.Score,
-                        -1,
-                        1),
-                SecondBestScore:
-                    Math.Clamp(
-                        secondScore,
-                        -1,
-                        1),
-                Left:
-                    best.Left,
-                Top:
-                    best.Top,
-                Width:
-                    best.Width,
-                Height:
-                    best.Height,
-                Scale:
-                    best.Scale,
-                Provider:
-                    "opencv-template",
-                Reason:
-                    ambiguous
-                        ? $"OpenCV có hai match gần ngang nhau: best={best.Score:0.000}; second={secondScore:0.000}; từ chối đoán."
-                        : matched
-                            ? $"OpenCV template match đạt {best.Score:0.000}, second={secondScore:0.000}, scale={best.Scale:0.00}."
-                            : $"OpenCV template match tốt nhất {best.Score:0.000} thấp hơn ngưỡng {minimumScore:0.000}.");
-        }
-        catch (Exception exception) when (
-            exception is
-                OpenCVException or
-                DllNotFoundException or
-                TypeInitializationException or
-                BadImageFormatException)
-        {
-            stopwatch.Stop();
             health.RecordFailure(
                 "opencv-template",
                 stopwatch.ElapsedMilliseconds,
-                exception.Message);
+                invocation.Detail);
 
             return Unavailable(
-                $"OpenCV không khả dụng: {exception.GetType().Name}: {exception.Message}");
+                invocation.Detail);
         }
-    }
 
-    private static bool IsSpatiallyDistinct(
-        MatchCandidate left,
-        MatchCandidate right)
-    {
-        var leftCenterX =
-            left.Left +
-            left.Width / 2.0;
-        var leftCenterY =
-            left.Top +
-            left.Height / 2.0;
-        var rightCenterX =
-            right.Left +
-            right.Width / 2.0;
-        var rightCenterY =
-            right.Top +
-            right.Height / 2.0;
+        var match =
+            invocation.Response.Match;
 
-        var threshold =
-            Math.Max(
-                8.0,
-                Math.Min(
-                    left.Width,
-                    left.Height) *
-                0.5);
+        health.RecordSuccess(
+            "opencv-template",
+            stopwatch.ElapsedMilliseconds,
+            invocation.Response.Detail ??
+            "OpenCV worker hoàn tất.");
 
-        return Math.Abs(
-                   leftCenterX -
-                   rightCenterX) >
-                   threshold ||
-               Math.Abs(
-                   leftCenterY -
-                   rightCenterY) >
-                   threshold;
+        return new(
+            Available: true,
+            Matched:
+                match.Matched,
+            Ambiguous:
+                match.Ambiguous,
+            Score:
+                match.Score,
+            SecondBestScore:
+                match.SecondBestScore,
+            Left:
+                match.Left,
+            Top:
+                match.Top,
+            Width:
+                match.Width,
+            Height:
+                match.Height,
+            Scale:
+                match.Scale,
+            Provider:
+                "opencv-template",
+            Reason:
+                invocation.Response.Detail ??
+                "OpenCV worker hoàn tất.");
     }
 
     internal static IReadOnlyList<double> CandidateScalesForAcceptance() =>
@@ -420,12 +199,4 @@ public sealed class OpenCvTemplateMatchingSensor(
                 "opencv-template",
             Reason:
                 reason);
-
-    private sealed record MatchCandidate(
-        double Score,
-        int Left,
-        int Top,
-        int Width,
-        int Height,
-        double Scale);
 }

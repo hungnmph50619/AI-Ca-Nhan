@@ -8,66 +8,109 @@ var jsonOptions =
         PropertyNameCaseInsensitive = true
     };
 
-try
+using var paddleEngine =
+    new PersistentPaddleEngine();
+
+while (true)
 {
     var input =
-        await Console.In.ReadToEndAsync();
+        await Console.In.ReadLineAsync();
 
-    var request =
-        JsonSerializer.Deserialize<WorkerRequest>(
-            input,
-            jsonOptions);
+    if (input is null)
+        break;
 
-    if (request is null)
+    if (string.IsNullOrWhiteSpace(input))
+        continue;
+
+    WorkerRequest? request = null;
+
+    try
+    {
+        request =
+            JsonSerializer.Deserialize<WorkerRequest>(
+                input,
+                jsonOptions);
+
+        if (request is null)
+        {
+            Write(
+                Fail(
+                    "Request worker không hợp lệ."));
+            continue;
+        }
+
+        WorkerResponse response;
+
+        if (request.Operation.Equals(
+                "heartbeat",
+                StringComparison.OrdinalIgnoreCase))
+        {
+            response =
+                new(
+                    true,
+                    "Local vision worker sẵn sàng.",
+                    string.Empty,
+                    Array.Empty<WorkerLine>(),
+                    null);
+        }
+        else if (request.Operation.Equals(
+                     "paddle-ocr",
+                     StringComparison.OrdinalIgnoreCase))
+        {
+            response =
+                RunPaddleOcr(
+                    request,
+                    paddleEngine);
+        }
+        else if (request.Operation.Equals(
+                     "opencv-template",
+                     StringComparison.OrdinalIgnoreCase))
+        {
+            response =
+                RunOpenCvTemplate(
+                    request);
+        }
+        else
+        {
+            response =
+                Fail(
+                    $"Worker operation không hỗ trợ: {request.Operation}.");
+        }
+
+        Write(
+            response with
+            {
+                RequestId =
+                    request.RequestId ??
+                    string.Empty
+            });
+    }
+    catch (Exception exception)
     {
         Write(
             Fail(
-                "Request worker không hợp lệ."));
-        return;
+                $"{exception.GetType().Name}: {exception.Message}") with
+            {
+                RequestId =
+                    request?.RequestId ??
+                    string.Empty
+            });
     }
-
-    if (request.Operation.Equals(
-            "paddle-ocr",
-            StringComparison.OrdinalIgnoreCase))
-    {
-        Write(
-            RunPaddleOcr(
-                request));
-        return;
-    }
-
-    if (request.Operation.Equals(
-            "opencv-template",
-            StringComparison.OrdinalIgnoreCase))
-    {
-        Write(
-            RunOpenCvTemplate(
-                request));
-        return;
-    }
-
-    Write(
-        Fail(
-            $"Worker operation không hỗ trợ: {request.Operation}."));
-}
-catch (Exception exception)
-{
-    Write(
-        Fail(
-            $"{exception.GetType().Name}: {exception.Message}"));
 }
 
 void Write(
     WorkerResponse response)
 {
-    Console.Out.Write(
+    Console.Out.WriteLine(
         JsonSerializer.Serialize(
             response,
             jsonOptions));
+    Console.Out.Flush();
 }
 
 WorkerResponse RunPaddleOcr(
-    WorkerRequest request)
+    WorkerRequest request,
+    PersistentPaddleEngine paddleEngine)
 {
     if (string.IsNullOrWhiteSpace(
             request.JpegBase64))
@@ -86,20 +129,12 @@ WorkerResponse RunPaddleOcr(
             "Không tìm thấy bộ model PP-OCRv6 trong local vision worker output.");
     }
 
-    using var engine =
-        new EngineLease(
-            new OCRService());
+    var service =
+        paddleEngine.GetOrCreate(
+            modelDirectory,
+            out var init);
 
-    var init =
-        engine.Service.InitDefaultOCREngine(
-            modelDirectory);
-
-    if (!init.Contains(
-            "成功",
-            StringComparison.OrdinalIgnoreCase) &&
-        !init.Contains(
-            "success",
-            StringComparison.OrdinalIgnoreCase))
+    if (service is null)
     {
         return Fail(
             $"Khởi tạo CoreOCROnnx thất bại: {init}");
@@ -110,7 +145,7 @@ WorkerResponse RunPaddleOcr(
             request.JpegBase64);
 
     var result =
-        engine.Service.Detect(
+        service.Detect(
             image);
 
     var lines =
@@ -575,14 +610,16 @@ sealed record WorkerRequest(
     string Operation,
     string? JpegBase64,
     string? TemplateBase64,
-    double MinimumScore);
+    double MinimumScore,
+    string? RequestId = null);
 
 sealed record WorkerResponse(
     bool Success,
     string Detail,
     string Text,
     WorkerLine[] Lines,
-    WorkerMatch? Match);
+    WorkerMatch? Match,
+    string RequestId = "");
 
 sealed record WorkerMatch(
     bool Matched,
@@ -614,22 +651,83 @@ sealed record MatchCandidate(
     int Height,
     double Scale);
 
-sealed class EngineLease(
-    OCRService service)
+sealed class PersistentPaddleEngine
     : IDisposable
 {
-    public OCRService Service { get; } =
-        service;
+    private OCRService? service;
+    private string? modelDirectory;
 
-    public void Dispose()
+    public OCRService? GetOrCreate(
+        string requestedModelDirectory,
+        out string detail)
     {
+        if (service is not null &&
+            string.Equals(
+                modelDirectory,
+                requestedModelDirectory,
+                StringComparison.OrdinalIgnoreCase))
+        {
+            detail =
+                "CoreOCROnnx warm engine đã sẵn sàng.";
+            return service;
+        }
+
+        DisposeService();
+
+        var candidate =
+            new OCRService();
+
+        var init =
+            candidate.InitDefaultOCREngine(
+                requestedModelDirectory);
+
+        if (!init.Contains(
+                "成功",
+                StringComparison.OrdinalIgnoreCase) &&
+            !init.Contains(
+                "success",
+                StringComparison.OrdinalIgnoreCase))
+        {
+            try
+            {
+                candidate.FreeEngine();
+            }
+            catch
+            {
+                // Best effort cleanup khi init thất bại.
+            }
+
+            detail = init;
+            return null;
+        }
+
+        service = candidate;
+        modelDirectory =
+            requestedModelDirectory;
+        detail = init;
+        return service;
+    }
+
+    public void Dispose() =>
+        DisposeService();
+
+    private void DisposeService()
+    {
+        if (service is null)
+            return;
+
         try
         {
-            Service.FreeEngine();
+            service.FreeEngine();
         }
         catch
         {
             // Worker process sắp kết thúc; không propagate lỗi dispose.
+        }
+        finally
+        {
+            service = null;
+            modelDirectory = null;
         }
     }
 }

@@ -34,6 +34,7 @@ public static class ComputerUseEndpoints
         services.AddSingleton<IComputerOperatorAcceptanceService, ComputerOperatorAcceptanceService>();
         services.AddSingleton<IComputerOperatorCheckpointStore, SqliteComputerOperatorCheckpointStore>();
         services.AddSingleton<IComputerOperatorTelemetry, ComputerOperatorTelemetry>();
+        services.AddSingleton<IComputerOperatorPerformanceProfileService, ComputerOperatorPerformanceProfileService>();
         services.AddSingleton<IComputerOperatorGeminiBudgetFactory, ComputerOperatorGeminiBudgetFactory>();
         services.AddSingleton<IUniversalReliableOperatorCoordinator, UniversalReliableOperatorCoordinator>();
         services.AddSingleton<IComputerOperatorTaskService, ComputerOperatorTaskService>();
@@ -191,6 +192,55 @@ public static class ComputerUseEndpoints
                     "Permission denial dừng; pending thì chờ; context đổi thì replan.",
                     "Không replay action có side effect chỉ vì lỗi kỹ thuật.",
                     "Resume luôn quan sát lại desktop hiện tại trước action mới."
+                }
+            });
+        });
+
+        app.MapGet("/api/computer/operator-performance", (
+            HttpContext context,
+            IComputerOperatorPerformanceProfileService performance) =>
+        {
+            if (!IsLocalRequest(context))
+                return Results.StatusCode(StatusCodes.Status403Forbidden);
+
+            var report =
+                performance.GetReport();
+
+            return Results.Ok(new
+            {
+                phienBan = report.Version,
+                tongQuan = report.Summary,
+                gemini = new
+                {
+                    planningCalls = report.GeminiPlanningCalls,
+                    verificationCalls = report.GeminiVerificationCalls
+                },
+                verification = new
+                {
+                    localEvents = report.LocalVerificationEvents,
+                    semanticEvents = report.SemanticVerificationEvents
+                },
+                eventDriven = new
+                {
+                    wakeByEvent = report.EventWakeups,
+                    wakeByTimeout = report.TimeoutWakeups,
+                    tyLeWakeBangEvent = report.EventWakeRatio
+                },
+                stages = report.Stages.Select(item => new
+                {
+                    giaiDoan = item.Stage,
+                    trangThai = item.Status,
+                    soLan = item.Count,
+                    trungBinhMs = item.AverageMilliseconds,
+                    toiDaMs = item.MaximumMilliseconds,
+                    mucTieuTrungBinhMs = item.TargetAverageMilliseconds,
+                    lyDo = item.Reason
+                }),
+                nguyenTac = new[]
+                {
+                    "SLO chỉ để quan sát, không làm giảm verification để chạy nhanh hơn.",
+                    "Gemini/network stage chỉ theo dõi, không hard-fail theo latency.",
+                    "Chỉ tối ưu stage local khi telemetry cho thấy bottleneck thật."
                 }
             });
         });

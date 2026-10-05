@@ -287,11 +287,31 @@ public sealed class ComputerOperatorTaskService(
         var plannerBackoffUntil = DateTimeOffset.MinValue;
         IReadOnlyList<DesktopSceneElement> previousScene = Array.Empty<DesktopSceneElement>();
         var temporalSceneContext = string.Empty;
+        ComputerOperatorCycleTrace? pendingCycleTrace =
+            null;
 
         try
         {
             for (var index = 1; index <= MaximumSteps; index++)
             {
+                if (pendingCycleTrace is
+                    {
+                        Emitted: false
+                    })
+                {
+                    if (pendingCycleTrace.Result == "-")
+                        pendingCycleTrace.Result =
+                            "cycle-ended-without-explicit-result";
+
+                    if (pendingCycleTrace.Next == "-")
+                        pendingCycleTrace.Next =
+                            "observe-next-cycle";
+
+                    EmitCycleForensicSummary(
+                        progress,
+                        pendingCycleTrace);
+                }
+
                 linked.Token.ThrowIfCancellationRequested();
 
                 var gateBeforeRenewal = control.GetStatus();
@@ -415,6 +435,9 @@ public sealed class ComputerOperatorTaskService(
                             ComputerOperatorCycleTrace.DescribeWindow(
                                 active)
                     };
+
+                pendingCycleTrace =
+                    cycleTrace;
 
                 progress.AddDiagnostic(
                     "cycle",
@@ -2322,6 +2345,24 @@ public sealed class ComputerOperatorTaskService(
         }
         finally
         {
+            if (pendingCycleTrace is
+                {
+                    Emitted: false
+                })
+            {
+                if (pendingCycleTrace.Result == "-")
+                    pendingCycleTrace.Result =
+                        "task-ended";
+
+                if (pendingCycleTrace.Next == "-")
+                    pendingCycleTrace.Next =
+                        "stop";
+
+                EmitCycleForensicSummary(
+                    progress,
+                    pendingCycleTrace);
+            }
+
             execution.Complete();
         }
 
@@ -3888,9 +3929,14 @@ public sealed class ComputerOperatorTaskService(
         ComputerOperatorProgressStore progress,
         ComputerOperatorCycleTrace trace)
     {
+        if (trace.Emitted)
+            return;
+
         progress.AddDiagnostic(
             "cycle-summary",
             trace.RenderSummary());
+
+        trace.MarkEmitted();
     }
 
     private static string LimitDiagnostic(

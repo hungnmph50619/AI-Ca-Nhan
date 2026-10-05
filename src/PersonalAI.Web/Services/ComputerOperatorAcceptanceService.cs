@@ -766,6 +766,11 @@ public sealed class ComputerOperatorAcceptanceService
 
         RunCheck(
             checks,
+            "attachment hybrid router chọn direct hay RAG đúng loại tệp",
+            CheckAttachmentHybridRouting);
+
+        RunCheck(
+            checks,
             "reliable operator runtime chỉ ready khi có desktop capability",
             CheckReliableOperatorRuntimeReadiness);
 
@@ -6744,6 +6749,47 @@ public sealed class ComputerOperatorAcceptanceService
                 "count=2->2",
                 StringComparison.Ordinal),
             "Forensic window delta chưa mô tả đủ appeared/disappeared/moved.");
+    }
+
+    private static void CheckAttachmentHybridRouting()
+    {
+        var image =
+            ChatAttachmentStore.SelectRouteForAcceptance(
+                ".png",
+                "image",
+                9 * 1024 * 1024);
+
+        var xlsx =
+            ChatAttachmentStore.SelectRouteForAcceptance(
+                ".xlsx",
+                "document",
+                200 * 1024);
+
+        var pptx =
+            ChatAttachmentStore.SelectRouteForAcceptance(
+                ".pptx",
+                "document",
+                200 * 1024);
+
+        var codeSmall =
+            ChatAttachmentStore.SelectRouteForAcceptance(
+                ".cs",
+                "text",
+                64 * 1024);
+
+        var codeLarge =
+            ChatAttachmentStore.SelectRouteForAcceptance(
+                ".cs",
+                "text",
+                2 * 1024 * 1024);
+
+        Require(
+            image == "direct" &&
+            xlsx == "knowledge" &&
+            pptx == "knowledge" &&
+            codeSmall == "direct" &&
+            codeLarge == "knowledge",
+            "Hybrid attachment router không giữ đúng policy direct/RAG.");
     }
 
     private static void CheckOperatorTelemetryBoundsRecentEvents()

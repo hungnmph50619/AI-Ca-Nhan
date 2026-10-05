@@ -1,0 +1,18 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <TargetFramework>net8.0</TargetFramework>
+    <RuntimeIdentifier>win-x64</RuntimeIdentifier>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <OutputPath>..\PersonalAI.Web\bin\$(Configuration)\net8.0\local-vision-worker\</OutputPath>
+    <AppendTargetFrameworkToOutputPath>false</AppendTargetFrameworkToOutputPath>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <PackageReference Include="CoreOCROnnx.SDK" Version="4.2.1" />
+    <PackageReference Include="CoreOCRRuntime.Onnx.CPU.win-x64" Version="4.2.1" />
+  </ItemGroup>
+
+</Project>

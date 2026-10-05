@@ -12,7 +12,9 @@ public sealed record StoredChatAttachment(
     string Kind,
     string Route,
     string Path,
-    DateTimeOffset CreatedAt);
+    DateTimeOffset CreatedAt,
+    Guid? KnowledgeDocumentId = null,
+    int KnowledgeChunkCount = 0);
 
 public interface IChatAttachmentStore
 {
@@ -25,6 +27,11 @@ public interface IChatAttachmentStore
 
     byte[] ReadAllBytes(
         Guid id);
+
+    ChatAttachmentReference MarkKnowledgeDocument(
+        Guid id,
+        Guid documentId,
+        int chunkCount);
 }
 
 public sealed class ChatAttachmentStore(
@@ -50,7 +57,10 @@ public sealed class ChatAttachmentStore(
                 "image/webp",
                 "application/pdf",
                 "text/plain",
-                "text/markdown"
+                "text/markdown",
+                "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+                "application/zip",
+                "application/x-zip-compressed"
             ],
             StringComparer.OrdinalIgnoreCase);
 
@@ -63,7 +73,8 @@ public sealed class ChatAttachmentStore(
                 ".webp",
                 ".pdf",
                 ".txt",
-                ".md"
+                ".md",
+                ".docx"
             ],
             StringComparer.OrdinalIgnoreCase);
 
@@ -113,11 +124,20 @@ public sealed class ChatAttachmentStore(
                 "image/",
                 StringComparison.OrdinalIgnoreCase)
                 ? "image"
-                : mimeType.Equals(
-                    "application/pdf",
+                : extension.Equals(
+                    ".txt",
+                    StringComparison.OrdinalIgnoreCase) ||
+                  extension.Equals(
+                    ".md",
                     StringComparison.OrdinalIgnoreCase)
-                    ? "document"
-                    : "text";
+                    ? "text"
+                    : "document";
+
+        var route =
+            SelectRoute(
+                extension,
+                kind,
+                file.Length);
 
         var workspaceId =
             storagePaths.CurrentWorkspaceId;
@@ -163,7 +183,7 @@ public sealed class ChatAttachmentStore(
                 mimeType,
                 file.Length,
                 kind,
-                "direct",
+                route,
                 storedPath,
                 DateTimeOffset.UtcNow);
 
@@ -191,7 +211,9 @@ public sealed class ChatAttachmentStore(
             item.MimeType,
             item.Size,
             item.Kind,
-            item.Route);
+            item.Route,
+            item.KnowledgeDocumentId,
+            item.KnowledgeChunkCount);
     }
 
     public StoredChatAttachment GetRequired(
@@ -273,6 +295,93 @@ public sealed class ChatAttachmentStore(
             item.Path);
     }
 
+    public ChatAttachmentReference MarkKnowledgeDocument(
+        Guid id,
+        Guid documentId,
+        int chunkCount)
+    {
+        var current =
+            GetRequired(
+                id);
+
+        var updated =
+            current with
+            {
+                Route =
+                    "knowledge",
+                KnowledgeDocumentId =
+                    documentId,
+                KnowledgeChunkCount =
+                    Math.Max(
+                        0,
+                        chunkCount)
+            };
+
+        var directory =
+            GetAttachmentDirectory(
+                updated.WorkspaceId);
+
+        Directory.CreateDirectory(
+            directory);
+
+        File.WriteAllText(
+            GetMetadataPath(
+                directory,
+                id),
+            JsonSerializer.Serialize(
+                updated,
+                JsonOptions));
+
+        lock (_gate)
+        {
+            _items[id] =
+                updated;
+        }
+
+        return new ChatAttachmentReference(
+            updated.Id,
+            updated.FileName,
+            updated.MimeType,
+            updated.Size,
+            updated.Kind,
+            updated.Route,
+            updated.KnowledgeDocumentId,
+            updated.KnowledgeChunkCount);
+    }
+
+    private static string SelectRoute(
+        string extension,
+        string kind,
+        long size)
+    {
+        if (kind.Equals(
+                "image",
+                StringComparison.OrdinalIgnoreCase))
+        {
+            return "direct";
+        }
+
+        if (extension.Equals(
+                ".docx",
+                StringComparison.OrdinalIgnoreCase))
+        {
+            return "knowledge";
+        }
+
+        if (extension.Equals(
+                ".pdf",
+                StringComparison.OrdinalIgnoreCase))
+        {
+            return size > 4 * 1024 * 1024
+                ? "knowledge"
+                : "direct";
+        }
+
+        return size > 1024 * 1024
+            ? "knowledge"
+            : "direct";
+    }
+
     private static string GetAttachmentDirectory(
         string workspaceId)
     {
@@ -315,6 +424,7 @@ public sealed class ChatAttachmentStore(
             ".pdf" => "application/pdf",
             ".md" => "text/markdown",
             ".txt" => "text/plain",
+            ".docx" => "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
             _ => "application/octet-stream"
         };
 }

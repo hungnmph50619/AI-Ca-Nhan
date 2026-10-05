@@ -4,6 +4,7 @@ using System.Globalization;
 using System.Runtime.InteropServices;
 using System.Text.Json;
 using FlaUI.Core.AutomationElements;
+using FlaUI.Core.Definitions;
 using FlaUI.UIA3;
 using Microsoft.Graphics.Canvas;
 using Windows.Graphics.Capture;
@@ -25,7 +26,8 @@ internal sealed record AutomationRequest(
     string? TargetToken = null,
     string? Text = null,
     string? WriteMode = null,
-    string? MonitorDevice = null);
+    string? MonitorDevice = null,
+    int WaitMilliseconds = 0);
 
 internal sealed record AutomationResponse(
     bool Success,
@@ -43,7 +45,9 @@ internal sealed record AutomationResponse(
     string? JpegBase64 = null,
     int CaptureWidth = 0,
     int CaptureHeight = 0,
-    string CaptureBackend = "");
+    string CaptureBackend = "",
+    string EventKind = "",
+    string EventWindowId = "");
 
 internal static class Program
 {
@@ -80,6 +84,18 @@ internal static class Program
             {
                 response = CaptureMonitorDxgi(
                     request);
+            }
+            else if (request.Operation.Trim().Equals(
+                         "wait-uia-event",
+                         StringComparison.OrdinalIgnoreCase))
+            {
+                using var automation =
+                    new UIA3Automation();
+
+                response =
+                    await WaitForUiaEventAsync(
+                        automation,
+                        request);
             }
             else
             {
@@ -770,6 +786,170 @@ internal static class Program
             return Empty(
                 request,
                 $"DXGI Desktop Duplication lỗi: {exception.GetType().Name}: {exception.Message}");
+        }
+    }
+
+    private static async Task<AutomationResponse> WaitForUiaEventAsync(
+        UIA3Automation automation,
+        AutomationRequest request)
+    {
+        var hwnd =
+            ParseWindowId(
+                request.WindowId);
+
+        if (hwnd == nint.Zero ||
+            !IsWindow(hwnd))
+        {
+            return Empty(
+                request,
+                "Cửa sổ UIA cần theo dõi không còn hợp lệ.");
+        }
+
+        var waitMilliseconds =
+            Math.Clamp(
+                request.WaitMilliseconds <= 0
+                    ? 500
+                    : request.WaitMilliseconds,
+                100,
+                3000);
+
+        AutomationElement root;
+        try
+        {
+            root =
+                automation.FromHandle(
+                    hwnd);
+        }
+        catch (Exception exception)
+        {
+            return Empty(
+                request,
+                $"UIA3 không tạo được root từ HWND: {exception.Message}");
+        }
+
+        var processId =
+            root.Properties.ProcessId.ValueOrDefault;
+
+        var eventReady =
+            new TaskCompletionSource<(string Kind, string WindowId, string Detail)>(
+                TaskCreationOptions.RunContinuationsAsynchronously);
+
+        var focusHandler =
+            automation.RegisterFocusChangedEvent(
+                element =>
+                {
+                    try
+                    {
+                        if (processId > 0 &&
+                            element.Properties.ProcessId.ValueOrDefault != processId)
+                        {
+                            return;
+                        }
+
+                        eventReady.TrySetResult(
+                            (
+                                "uia-focus-changed",
+                                request.WindowId,
+                                "UIA3 phát hiện focus accessibility thay đổi."
+                            ));
+                    }
+                    catch
+                    {
+                        // Event callback không được phép làm hỏng bridge.
+                    }
+                });
+
+        var propertyHandler =
+            root.RegisterPropertyChangedEvent(
+                TreeScope.Subtree,
+                (_, property, _) =>
+                {
+                    eventReady.TrySetResult(
+                        (
+                            "uia-property-changed",
+                            request.WindowId,
+                            $"UIA3 phát hiện property thay đổi: {property.Name}."
+                        ));
+                },
+                automation.PropertyLibrary.Element.Name,
+                automation.PropertyLibrary.Element.HasKeyboardFocus,
+                automation.PropertyLibrary.Value.Value);
+
+        var structureHandler =
+            root.RegisterStructureChangedEvent(
+                TreeScope.Subtree,
+                (_, changeType, _) =>
+                {
+                    eventReady.TrySetResult(
+                        (
+                            "uia-structure-changed",
+                            request.WindowId,
+                            $"UIA3 phát hiện cấu trúc UI thay đổi: {changeType}."
+                        ));
+                });
+
+        try
+        {
+            var completed =
+                await Task.WhenAny(
+                    eventReady.Task,
+                    Task.Delay(
+                        waitMilliseconds));
+
+            if (completed != eventReady.Task)
+            {
+                return Empty(
+                    request,
+                    $"UIA3 không có event mới trong {waitMilliseconds} ms.");
+            }
+
+            var received =
+                await eventReady.Task;
+
+            return new(
+                Success: true,
+                IsFocused: false,
+                CanRead: false,
+                CanDirectSet: false,
+                SupportsSelection: false,
+                IsReadOnly: false,
+                IsSensitive: false,
+                ControlClass: string.Empty,
+                NativeWindowHandle: hwnd.ToInt64(),
+                TargetToken: string.Empty,
+                Value: null,
+                Detail: received.Detail,
+                EventKind: received.Kind,
+                EventWindowId: received.WindowId);
+        }
+        finally
+        {
+            try
+            {
+                automation.UnregisterFocusChangedEvent(
+                    focusHandler);
+            }
+            catch
+            {
+            }
+
+            try
+            {
+                root.UnregisterPropertyChangedEventHandler(
+                    propertyHandler);
+            }
+            catch
+            {
+            }
+
+            try
+            {
+                root.UnregisterStructureChangedEventHandler(
+                    structureHandler);
+            }
+            catch
+            {
+            }
         }
     }
 

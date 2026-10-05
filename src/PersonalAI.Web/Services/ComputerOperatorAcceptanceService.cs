@@ -423,6 +423,21 @@ public sealed class ComputerOperatorAcceptanceService
 
         RunCheck(
             checks,
+            "checkpoint restart chuyển running thành interrupted và giữ mốc đã xác minh",
+            CheckOperatorCheckpointRecoversInterruptedRun);
+
+        RunCheck(
+            checks,
+            "checkpoint bị cô lập theo workspace",
+            CheckOperatorCheckpointWorkspaceIsolation);
+
+        RunCheck(
+            checks,
+            "checkpoint completed không được resume",
+            CheckOperatorCheckpointCompletedIsNotResumable);
+
+        RunCheck(
+            checks,
             "capability first router phát hiện direct tool an toàn",
             CheckUniversalRouterDetectsDirectToolOpportunity);
 
@@ -3298,6 +3313,191 @@ public sealed class ComputerOperatorAcceptanceService
             "Read-only transient failure chưa retry đúng một lần.");
     }
 
+    private static void CheckOperatorCheckpointRecoversInterruptedRun()
+    {
+        var root = Path.Combine(
+            Path.GetTempPath(),
+            "personalai-checkpoint-acceptance-" + Guid.NewGuid().ToString("N"));
+
+        try
+        {
+            var configuration =
+                new ConfigurationBuilder()
+                    .AddInMemoryCollection(
+                        new Dictionary<string, string?>
+                        {
+                            ["Tasks:Root"] = root
+                        })
+                    .Build();
+
+            var workspace =
+                new AcceptanceCheckpointWorkspaceContext(
+                    "personal");
+
+            var first =
+                new SqliteComputerOperatorCheckpointStore(
+                    configuration,
+                    workspace,
+                    Microsoft.Extensions.Logging.Abstractions.NullLogger<SqliteComputerOperatorCheckpointStore>.Instance);
+
+            var checkpoint =
+                first.StartOrResume(
+                    "Mở ứng dụng thử nghiệm");
+
+            first.SaveProgress(
+                checkpoint,
+                ["Ứng dụng đã mở"],
+                "Kiểm tra cửa sổ chính",
+                0.50,
+                "click-left",
+                "Ứng dụng bắt đầu mở");
+
+            var afterRestart =
+                new SqliteComputerOperatorCheckpointStore(
+                    configuration,
+                    workspace,
+                    Microsoft.Extensions.Logging.Abstractions.NullLogger<SqliteComputerOperatorCheckpointStore>.Instance);
+
+            var recovered =
+                afterRestart.FindResumable(
+                    "Mở ứng dụng thử nghiệm");
+
+            Require(
+                recovered is not null &&
+                recovered.Status ==
+                    ComputerOperatorCheckpointStatuses.Interrupted &&
+                recovered.VerifiedMilestones.Contains(
+                    "Ứng dụng đã mở",
+                    StringComparer.OrdinalIgnoreCase),
+                "Checkpoint không phục hồi interrupted state hoặc làm mất verified milestone.");
+        }
+        finally
+        {
+            try
+            {
+                if (Directory.Exists(root))
+                    Directory.Delete(root, recursive: true);
+            }
+            catch
+            {
+            }
+        }
+    }
+
+    private static void CheckOperatorCheckpointWorkspaceIsolation()
+    {
+        var root = Path.Combine(
+            Path.GetTempPath(),
+            "personalai-checkpoint-workspace-" + Guid.NewGuid().ToString("N"));
+
+        try
+        {
+            var configuration =
+                new ConfigurationBuilder()
+                    .AddInMemoryCollection(
+                        new Dictionary<string, string?>
+                        {
+                            ["Tasks:Root"] = root
+                        })
+                    .Build();
+
+            var personal =
+                new AcceptanceCheckpointWorkspaceContext(
+                    "personal");
+
+            var work =
+                new AcceptanceCheckpointWorkspaceContext(
+                    "work");
+
+            var personalStore =
+                new SqliteComputerOperatorCheckpointStore(
+                    configuration,
+                    personal,
+                    Microsoft.Extensions.Logging.Abstractions.NullLogger<SqliteComputerOperatorCheckpointStore>.Instance);
+
+            _ = personalStore.StartOrResume(
+                "Mở ứng dụng thử nghiệm");
+
+            var workStore =
+                new SqliteComputerOperatorCheckpointStore(
+                    configuration,
+                    work,
+                    Microsoft.Extensions.Logging.Abstractions.NullLogger<SqliteComputerOperatorCheckpointStore>.Instance);
+
+            var leaked =
+                workStore.FindResumable(
+                    "Mở ứng dụng thử nghiệm");
+
+            Require(
+                leaked is null,
+                "Checkpoint đã bị đọc xuyên workspace.");
+        }
+        finally
+        {
+            try
+            {
+                if (Directory.Exists(root))
+                    Directory.Delete(root, recursive: true);
+            }
+            catch
+            {
+            }
+        }
+    }
+
+    private static void CheckOperatorCheckpointCompletedIsNotResumable()
+    {
+        var root = Path.Combine(
+            Path.GetTempPath(),
+            "personalai-checkpoint-complete-" + Guid.NewGuid().ToString("N"));
+
+        try
+        {
+            var configuration =
+                new ConfigurationBuilder()
+                    .AddInMemoryCollection(
+                        new Dictionary<string, string?>
+                        {
+                            ["Tasks:Root"] = root
+                        })
+                    .Build();
+
+            var workspace =
+                new AcceptanceCheckpointWorkspaceContext(
+                    "personal");
+
+            var store =
+                new SqliteComputerOperatorCheckpointStore(
+                    configuration,
+                    workspace,
+                    Microsoft.Extensions.Logging.Abstractions.NullLogger<SqliteComputerOperatorCheckpointStore>.Instance);
+
+            var checkpoint =
+                store.StartOrResume(
+                    "Mở ứng dụng thử nghiệm");
+
+            store.MarkStatus(
+                checkpoint,
+                ComputerOperatorCheckpointStatuses.Completed);
+
+            Require(
+                store.FindResumable(
+                    "Mở ứng dụng thử nghiệm") is null,
+                "Checkpoint completed vẫn đang được dùng để resume.");
+        }
+        finally
+        {
+            try
+            {
+                if (Directory.Exists(root))
+                    Directory.Delete(root, recursive: true);
+            }
+            catch
+            {
+            }
+        }
+    }
+
     private static void CheckUniversalRouterDetectsDirectToolOpportunity()
     {
         IPersonalAiTool browserTool =
@@ -5571,6 +5771,18 @@ public sealed class ComputerOperatorAcceptanceService
                 fallbackDelay,
                 "acceptance fallback");
         }
+    }
+
+    private sealed class AcceptanceCheckpointWorkspaceContext(
+        string workspaceId)
+        : IWorkspaceContextAccessor
+    {
+        public string CurrentWorkspaceId { get; } =
+            workspaceId;
+
+        public PersonalAI.Web.Models.PersonalWorkspace CurrentWorkspace =>
+            throw new NotSupportedException(
+                "Acceptance checkpoint store chỉ cần CurrentWorkspaceId.");
     }
 
     private sealed class AcceptanceCapabilityDiscoveryService(

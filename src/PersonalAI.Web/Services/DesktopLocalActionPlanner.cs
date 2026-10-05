@@ -202,6 +202,37 @@ public sealed class DesktopLocalActionPlanner
 
         var node = resolution.Node;
 
+        if (!CanSafelyApplyRequestedStructuredState(
+                node,
+                requestedCapability,
+                desiredState,
+                out var alreadySatisfied))
+        {
+            return false;
+        }
+
+        if (alreadySatisfied)
+        {
+            if (HasAdditionalGoalSteps(goal))
+                return false;
+
+            decision = Build(
+                action: "complete",
+                currentSubgoal:
+                    $"Trạng thái của '{DisplayNode(node)}' đã đúng yêu cầu.",
+                expectedEffect: string.Empty,
+                reason:
+                    $"Structured state evidence xác nhận '{DisplayNode(node)}' đã ở trạng thái {desiredState}; không thực hiện action dư thừa.",
+                plan:
+                    "Không gửi input vì mục tiêu structured đã được thỏa mãn.",
+                targetLabel: DisplayNode(node),
+                targetElementId: node.Id,
+                coordinateWindowId: graph.WindowId,
+                confidence: 0.99);
+
+            return true;
+        }
+
         decision = Build(
             action: "structured-set-value",
             currentSubgoal:
@@ -301,7 +332,8 @@ public sealed class DesktopLocalActionPlanner
                 goal,
                 out var requestedTarget,
                 out var requestedCapability,
-                out var requestedAction))
+                out var requestedAction,
+                out var desiredState))
         {
             return false;
         }
@@ -379,33 +411,34 @@ public sealed class DesktopLocalActionPlanner
         string goal,
         out string target,
         out string capability,
-        out string action)
+        out string action,
+        out string desiredState)
     {
         var value = (goal ?? string.Empty).Trim();
 
         var intents = new[]
         {
-            new { Prefix = "mở rộng ", Capability = "ExpandCollapse", Action = "structured-expand" },
-            new { Prefix = "mo rong ", Capability = "ExpandCollapse", Action = "structured-expand" },
-            new { Prefix = "expand ", Capability = "ExpandCollapse", Action = "structured-expand" },
-            new { Prefix = "thu gọn ", Capability = "ExpandCollapse", Action = "structured-collapse" },
-            new { Prefix = "thu gon ", Capability = "ExpandCollapse", Action = "structured-collapse" },
-            new { Prefix = "collapse ", Capability = "ExpandCollapse", Action = "structured-collapse" },
-            new { Prefix = "bật ", Capability = "Toggle", Action = "structured-toggle" },
-            new { Prefix = "bat ", Capability = "Toggle", Action = "structured-toggle" },
-            new { Prefix = "tắt ", Capability = "Toggle", Action = "structured-toggle" },
-            new { Prefix = "tat ", Capability = "Toggle", Action = "structured-toggle" },
-            new { Prefix = "tick ", Capability = "Toggle", Action = "structured-toggle" },
-            new { Prefix = "toggle ", Capability = "Toggle", Action = "structured-toggle" },
-            new { Prefix = "chọn ", Capability = "SelectionItem", Action = "structured-select" },
-            new { Prefix = "chon ", Capability = "SelectionItem", Action = "structured-select" },
-            new { Prefix = "select ", Capability = "SelectionItem", Action = "structured-select" },
-            new { Prefix = "bấm ", Capability = "Invoke", Action = "structured-invoke" },
-            new { Prefix = "bam ", Capability = "Invoke", Action = "structured-invoke" },
-            new { Prefix = "nhấn ", Capability = "Invoke", Action = "structured-invoke" },
-            new { Prefix = "nhan ", Capability = "Invoke", Action = "structured-invoke" },
-            new { Prefix = "click ", Capability = "Invoke", Action = "structured-invoke" },
-            new { Prefix = "press ", Capability = "Invoke", Action = "structured-invoke" }
+            new { Prefix = "mở rộng ", Capability = "ExpandCollapse", Action = "structured-expand", DesiredState = "Expanded" },
+            new { Prefix = "mo rong ", Capability = "ExpandCollapse", Action = "structured-expand", DesiredState = "Expanded" },
+            new { Prefix = "expand ", Capability = "ExpandCollapse", Action = "structured-expand", DesiredState = "Expanded" },
+            new { Prefix = "thu gọn ", Capability = "ExpandCollapse", Action = "structured-collapse", DesiredState = "Collapsed" },
+            new { Prefix = "thu gon ", Capability = "ExpandCollapse", Action = "structured-collapse", DesiredState = "Collapsed" },
+            new { Prefix = "collapse ", Capability = "ExpandCollapse", Action = "structured-collapse", DesiredState = "Collapsed" },
+            new { Prefix = "bật ", Capability = "Toggle", Action = "structured-toggle", DesiredState = "On" },
+            new { Prefix = "bat ", Capability = "Toggle", Action = "structured-toggle", DesiredState = "On" },
+            new { Prefix = "tắt ", Capability = "Toggle", Action = "structured-toggle", DesiredState = "Off" },
+            new { Prefix = "tat ", Capability = "Toggle", Action = "structured-toggle", DesiredState = "Off" },
+            new { Prefix = "tick ", Capability = "Toggle", Action = "structured-toggle", DesiredState = "On" },
+            new { Prefix = "toggle ", Capability = "Toggle", Action = "structured-toggle", DesiredState = "" },
+            new { Prefix = "chọn ", Capability = "SelectionItem", Action = "structured-select", DesiredState = "Selected" },
+            new { Prefix = "chon ", Capability = "SelectionItem", Action = "structured-select", DesiredState = "Selected" },
+            new { Prefix = "select ", Capability = "SelectionItem", Action = "structured-select", DesiredState = "Selected" },
+            new { Prefix = "bấm ", Capability = "Invoke", Action = "structured-invoke", DesiredState = "" },
+            new { Prefix = "bam ", Capability = "Invoke", Action = "structured-invoke", DesiredState = "" },
+            new { Prefix = "nhấn ", Capability = "Invoke", Action = "structured-invoke", DesiredState = "" },
+            new { Prefix = "nhan ", Capability = "Invoke", Action = "structured-invoke", DesiredState = "" },
+            new { Prefix = "click ", Capability = "Invoke", Action = "structured-invoke", DesiredState = "" },
+            new { Prefix = "press ", Capability = "Invoke", Action = "structured-invoke", DesiredState = "" }
         };
 
         foreach (var intent in intents)
@@ -440,6 +473,7 @@ public sealed class DesktopLocalActionPlanner
 
             capability = intent.Capability;
             action = intent.Action;
+            desiredState = intent.DesiredState;
 
             return target.Length is >= 1 and <= 120;
         }
@@ -447,8 +481,84 @@ public sealed class DesktopLocalActionPlanner
         target = string.Empty;
         capability = string.Empty;
         action = string.Empty;
+        desiredState = string.Empty;
         return false;
     }
+
+    private static bool CanSafelyApplyRequestedStructuredState(
+        UnifiedStructuredSceneNode node,
+        string capability,
+        string desiredState,
+        out bool alreadySatisfied)
+    {
+        alreadySatisfied = false;
+
+        if (string.IsNullOrWhiteSpace(desiredState))
+            return true;
+
+        if (capability.Equals(
+                "Toggle",
+                StringComparison.OrdinalIgnoreCase))
+        {
+            if (string.IsNullOrWhiteSpace(node.ToggleState) ||
+                node.ToggleState.Equals(
+                    "Indeterminate",
+                    StringComparison.OrdinalIgnoreCase))
+            {
+                return false;
+            }
+
+            alreadySatisfied =
+                node.ToggleState.Equals(
+                    desiredState,
+                    StringComparison.OrdinalIgnoreCase);
+
+            return true;
+        }
+
+        if (capability.Equals(
+                "ExpandCollapse",
+                StringComparison.OrdinalIgnoreCase))
+        {
+            if (string.IsNullOrWhiteSpace(node.ExpandCollapseState) ||
+                node.ExpandCollapseState.Equals(
+                    "LeafNode",
+                    StringComparison.OrdinalIgnoreCase))
+            {
+                return false;
+            }
+
+            alreadySatisfied =
+                node.ExpandCollapseState.Equals(
+                    desiredState,
+                    StringComparison.OrdinalIgnoreCase);
+
+            return true;
+        }
+
+        if (capability.Equals(
+                "SelectionItem",
+                StringComparison.OrdinalIgnoreCase) &&
+            desiredState.Equals(
+                "Selected",
+                StringComparison.OrdinalIgnoreCase))
+        {
+            if (!node.IsSelected.HasValue)
+                return false;
+
+            alreadySatisfied = node.IsSelected.Value;
+            return true;
+        }
+
+        return true;
+    }
+
+    private static bool HasAdditionalGoalSteps(
+        string goal) =>
+        NextStepSeparators.Any(separator =>
+            (goal ?? string.Empty).IndexOf(
+                separator,
+                StringComparison.OrdinalIgnoreCase) >= 0);
 
     private static string StripStructuredTargetPrefix(
         string value)

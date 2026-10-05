@@ -39,7 +39,8 @@ public sealed record AdaptiveWaitResult(
     int ProgressHeartbeats,
     TimeSpan Elapsed,
     string Reason,
-    int EventWakeups = 0);
+    int EventWakeups = 0,
+    int IgnoredEventWakeups = 0);
 
 public interface IAdaptiveVerificationWaitEngine
 {
@@ -52,6 +53,13 @@ public interface IAdaptiveVerificationWaitEngine
         Func<CancellationToken, Task<AdaptiveProgressSample>> sampleProvider,
         AdaptiveWaitPolicy? policy,
         string? targetWindowId,
+        CancellationToken cancellationToken);
+
+    Task<AdaptiveWaitResult> WaitAsync(
+        Func<CancellationToken, Task<AdaptiveProgressSample>> sampleProvider,
+        AdaptiveWaitPolicy? policy,
+        string? targetWindowId,
+        string? action,
         CancellationToken cancellationToken);
 }
 
@@ -69,10 +77,23 @@ public sealed class AdaptiveVerificationWaitEngine(
             targetWindowId: null,
             cancellationToken);
 
+    public Task<AdaptiveWaitResult> WaitAsync(
+        Func<CancellationToken, Task<AdaptiveProgressSample>> sampleProvider,
+        AdaptiveWaitPolicy? policy,
+        string? targetWindowId,
+        CancellationToken cancellationToken) =>
+        WaitAsync(
+            sampleProvider,
+            policy,
+            targetWindowId,
+            action: null,
+            cancellationToken);
+
     public async Task<AdaptiveWaitResult> WaitAsync(
         Func<CancellationToken, Task<AdaptiveProgressSample>> sampleProvider,
         AdaptiveWaitPolicy? policy,
         string? targetWindowId,
+        string? action,
         CancellationToken cancellationToken)
     {
         ArgumentNullException.ThrowIfNull(sampleProvider);
@@ -94,6 +115,7 @@ public sealed class AdaptiveVerificationWaitEngine(
         var samples = 0;
         var heartbeats = 0;
         var eventWakeups = 0;
+        var ignoredEventWakeups = 0;
         var lastReason =
             "Chưa có bằng chứng kết quả hoặc tiến triển.";
 
@@ -114,7 +136,8 @@ public sealed class AdaptiveVerificationWaitEngine(
                     heartbeats,
                     elapsed,
                     $"Đã chạm giới hạn chờ tuyệt đối {resolved.AbsoluteTimeout.TotalSeconds:0}s. {lastReason}",
-                    eventWakeups);
+                    eventWakeups,
+                    ignoredEventWakeups);
             }
 
             var sample =
@@ -136,7 +159,8 @@ public sealed class AdaptiveVerificationWaitEngine(
                     heartbeats,
                     DateTimeOffset.UtcNow - started,
                     sample.Reason,
-                    eventWakeups);
+                    eventWakeups,
+                    ignoredEventWakeups);
             }
 
             if (sample.Status.Equals(
@@ -151,7 +175,8 @@ public sealed class AdaptiveVerificationWaitEngine(
                     heartbeats,
                     DateTimeOffset.UtcNow - started,
                     sample.Reason,
-                    eventWakeups);
+                    eventWakeups,
+                    ignoredEventWakeups);
             }
 
             var strongProgress =
@@ -180,7 +205,8 @@ public sealed class AdaptiveVerificationWaitEngine(
                     heartbeats,
                     DateTimeOffset.UtcNow - started,
                     $"Không có tiến triển đủ mạnh trong {resolved.StallTimeout.TotalSeconds:0}s. {sample.Reason}",
-                    eventWakeups);
+                    eventWakeups,
+                    ignoredEventWakeups);
             }
 
             if (wakeSource is not null)
@@ -191,7 +217,29 @@ public sealed class AdaptiveVerificationWaitEngine(
                     cancellationToken);
 
                 if (wake.EventReceived)
-                    eventWakeups++;
+                {
+                    var relevance =
+                        ComputerOperatorEventRelevance.Score(
+                            action,
+                            wake.Event);
+
+                    if (relevance >= 0.55)
+                    {
+                        eventWakeups++;
+                    }
+                    else
+                    {
+                        ignoredEventWakeups++;
+
+                        // Tránh event không liên quan gây vòng lặp capture nóng.
+                        await Task.Delay(
+                            TimeSpan.FromMilliseconds(
+                                Math.Min(
+                                    50,
+                                    resolved.PollInterval.TotalMilliseconds)),
+                            cancellationToken);
+                    }
+                }
             }
             else
             {
@@ -200,6 +248,116 @@ public sealed class AdaptiveVerificationWaitEngine(
                     cancellationToken);
             }
         }
+    }
+}
+
+public static class ComputerOperatorEventRelevance
+{
+    public static double Score(
+        string? action,
+        DesktopSystemEvent? desktopEvent)
+    {
+        if (desktopEvent is null)
+            return 0;
+
+        var normalizedAction =
+            (action ?? string.Empty)
+                .Trim()
+                .ToLowerInvariant();
+
+        var kind =
+            desktopEvent.Kind;
+
+        if (normalizedAction is
+            "type-text")
+        {
+            return kind switch
+            {
+                DesktopSystemEventKinds.ValueChanged => 1.0,
+                DesktopSystemEventKinds.PropertyChanged => 0.95,
+                DesktopSystemEventKinds.FocusChanged => 0.75,
+                DesktopSystemEventKinds.SelectionChanged => 0.70,
+                _ => 0.35
+            };
+        }
+
+        if (normalizedAction is
+            "focus-window")
+        {
+            return kind switch
+            {
+                DesktopSystemEventKinds.ForegroundChanged => 1.0,
+                DesktopSystemEventKinds.FocusChanged => 0.95,
+                DesktopSystemEventKinds.WindowShown => 0.75,
+                _ => 0.30
+            };
+        }
+
+        if (normalizedAction is
+            "restore" or
+            "maximize")
+        {
+            return kind switch
+            {
+                DesktopSystemEventKinds.WindowMovedOrResized => 1.0,
+                DesktopSystemEventKinds.ForegroundChanged => 0.90,
+                DesktopSystemEventKinds.WindowShown => 0.80,
+                DesktopSystemEventKinds.PropertyChanged => 0.65,
+                _ => 0.30
+            };
+        }
+
+        if (normalizedAction is
+            "press-key" or
+            "press-hotkey")
+        {
+            return kind switch
+            {
+                DesktopSystemEventKinds.ForegroundChanged => 1.0,
+                DesktopSystemEventKinds.WindowCreated => 0.95,
+                DesktopSystemEventKinds.WindowShown => 0.95,
+                DesktopSystemEventKinds.FocusChanged => 0.85,
+                DesktopSystemEventKinds.ValueChanged => 0.80,
+                DesktopSystemEventKinds.SelectionChanged => 0.75,
+                DesktopSystemEventKinds.StructureChanged => 0.75,
+                DesktopSystemEventKinds.PropertyChanged => 0.70,
+                _ => 0.45
+            };
+        }
+
+        if (normalizedAction is
+            "click-left" or
+            "double-click-left")
+        {
+            return kind switch
+            {
+                DesktopSystemEventKinds.ForegroundChanged => 1.0,
+                DesktopSystemEventKinds.WindowCreated => 0.95,
+                DesktopSystemEventKinds.WindowDestroyed => 0.95,
+                DesktopSystemEventKinds.WindowShown => 0.90,
+                DesktopSystemEventKinds.WindowHidden => 0.90,
+                DesktopSystemEventKinds.StructureChanged => 0.90,
+                DesktopSystemEventKinds.SelectionChanged => 0.85,
+                DesktopSystemEventKinds.ValueChanged => 0.80,
+                DesktopSystemEventKinds.PropertyChanged => 0.75,
+                DesktopSystemEventKinds.FocusChanged => 0.70,
+                _ => 0.50
+            };
+        }
+
+        // Không biết action: ưu tiên event thay đổi trạng thái lớn,
+        // nhưng không coi mọi tín hiệu nhỏ là đáng wake.
+        return kind switch
+        {
+            DesktopSystemEventKinds.ForegroundChanged => 0.95,
+            DesktopSystemEventKinds.WindowCreated => 0.90,
+            DesktopSystemEventKinds.WindowDestroyed => 0.90,
+            DesktopSystemEventKinds.WindowShown => 0.85,
+            DesktopSystemEventKinds.WindowHidden => 0.85,
+            DesktopSystemEventKinds.StructureChanged => 0.70,
+            DesktopSystemEventKinds.PropertyChanged => 0.65,
+            _ => 0.50
+        };
     }
 }
 

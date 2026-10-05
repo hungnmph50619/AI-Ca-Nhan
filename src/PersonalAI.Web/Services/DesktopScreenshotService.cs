@@ -41,7 +41,8 @@ public sealed class WindowsDesktopScreenshotService(
     IComputerUseService computer,
     IComputerDisplayTopologyService displays,
     IComputerWindowVisibilityService visibility,
-    IDesktopCaptureBackendRouter captureRouter)
+    IDesktopCaptureBackendRouter captureRouter,
+    IWindowsGraphicsCaptureClient wgc)
     : IDesktopScreenshotService
 {
     public DesktopScreenshotFrame CaptureVirtualScreen()
@@ -382,13 +383,41 @@ public sealed class WindowsDesktopScreenshotService(
     private WindowCaptureBitmap CaptureWindowBitmap(
         ComputerWindowInfo window)
     {
+        string? wgcReason = null;
+        var candidates =
+            captureRouter.GetOrderedCandidates(
+                DesktopCaptureScopes.Window);
+
+        if (candidates.Contains(
+                DesktopCaptureBackends.WindowsGraphicsCapture,
+                StringComparer.OrdinalIgnoreCase) &&
+            wgc.Available)
+        {
+            var captured =
+                wgc.CaptureWindow(
+                    window.WindowId);
+
+            if (captured.Success &&
+                TryDecodeJpeg(
+                    captured.Jpeg,
+                    out var wgcBitmap))
+            {
+                return new(
+                    wgcBitmap!,
+                    window.Left,
+                    window.Top,
+                    DesktopCaptureBackends.WindowsGraphicsCapture,
+                    null);
+            }
+
+            wgcReason =
+                captured.Detail;
+        }
+
         string? printWindowReason = null;
         Bitmap? printWindowBitmap = null;
         var canUseFullWindowCapture =
             CanUseFullWindowCapture(window);
-        var candidates =
-            captureRouter.GetOrderedCandidates(
-                DesktopCaptureScopes.Window);
         var allowPrintWindow =
             candidates.Contains(
                 DesktopCaptureBackends.PrintWindow,
@@ -406,7 +435,9 @@ public sealed class WindowsDesktopScreenshotService(
                 window.Left,
                 window.Top,
                 DesktopCaptureBackends.PrintWindow,
-                null);
+                string.IsNullOrWhiteSpace(wgcReason)
+                    ? null
+                    : $"WGC fallback: {wgcReason}");
         }
 
         var fallbackReason = canUseFullWindowCapture
@@ -424,14 +455,70 @@ public sealed class WindowsDesktopScreenshotService(
             region.Left,
             region.Top);
 
+        var reasons = new List<string>();
+        if (!string.IsNullOrWhiteSpace(wgcReason))
+            reasons.Add($"WGC: {wgcReason}");
+        if (!string.IsNullOrWhiteSpace(printWindowReason))
+            reasons.Add($"PrintWindow: {printWindowReason}");
+        reasons.Add(fallbackReason);
+
         return new(
             screenBitmap,
             region.Left,
             region.Top,
             DesktopCaptureBackends.CopyFromScreen,
-            string.IsNullOrWhiteSpace(printWindowReason)
-                ? fallbackReason
-                : $"{fallbackReason} {printWindowReason}");
+            string.Join(" ", reasons));
+    }
+
+    private static bool TryDecodeJpeg(
+        byte[] jpeg,
+        out Bitmap? bitmap)
+    {
+        bitmap = null;
+
+        if (jpeg is null ||
+            jpeg.Length < 24)
+        {
+            return false;
+        }
+
+        try
+        {
+            using var memory =
+                new MemoryStream(
+                    jpeg,
+                    writable: false);
+
+            using var source =
+                new Bitmap(
+                    memory);
+
+            bitmap = new Bitmap(
+                source.Width,
+                source.Height,
+                PixelFormat.Format24bppRgb);
+
+            using var graphics =
+                Graphics.FromImage(
+                    bitmap);
+
+            graphics.DrawImageUnscaled(
+                source,
+                0,
+                0);
+
+            return bitmap.Width > 0 &&
+                   bitmap.Height > 0;
+        }
+        catch (Exception exception) when (
+            exception is
+                ArgumentException or
+                ExternalException)
+        {
+            bitmap?.Dispose();
+            bitmap = null;
+            return false;
+        }
     }
 
     private bool CanUseFullWindowCapture(

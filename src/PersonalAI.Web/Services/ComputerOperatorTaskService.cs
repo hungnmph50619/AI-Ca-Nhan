@@ -400,6 +400,22 @@ public sealed class ComputerOperatorTaskService(
                 var sceneDiagnosticId =
                     BuildDiagnosticId(sceneFingerprint);
 
+                var cycleTrace =
+                    new ComputerOperatorCycleTrace(
+                        index,
+                        normalizedGoal)
+                    {
+                        SceneId =
+                            sceneDiagnosticId,
+                        CurrentSubgoal =
+                            string.IsNullOrWhiteSpace(currentSubgoal)
+                                ? "-"
+                                : currentSubgoal,
+                        BeforeForeground =
+                            ComputerOperatorCycleTrace.DescribeWindow(
+                                active)
+                    };
+
                 progress.AddDiagnostic(
                     "cycle",
                     $"cycle={index}; scene={sceneDiagnosticId}; foreground={active?.ProcessName ?? "?"}/{active?.Title ?? "không xác định"}; windows={desktopState.Windows.Count}; structuredNodes={desktopState.StructuredScene?.NodeCount ?? 0}; graphNodes={desktopState.StructuredGraph?.NodeCount ?? 0}; interactive={desktopState.StructuredGraph?.InteractiveNodeCount ?? 0}; frame={desktopState.CaptureScope}; origin=({desktopState.FrameLeft},{desktopState.FrameTop}); size={desktopState.FrameWidth}x{desktopState.FrameHeight}.");
@@ -454,6 +470,15 @@ public sealed class ComputerOperatorTaskService(
                             desktopState.StructuredScene is not null &&
                             !string.IsNullOrWhiteSpace(decision.TargetElementId);
 
+                        cycleTrace.PlannerRoute =
+                            structuredRoute
+                                ? "structured-first"
+                                : "local-planner";
+                        cycleTrace.PlannerTrace.Add(
+                            structuredRoute
+                                ? "Structured=Resolved"
+                                : "Structured/Local=Resolved");
+
                         progress.Add(
                             structuredRoute
                                 ? "structured-first"
@@ -480,6 +505,13 @@ public sealed class ComputerOperatorTaskService(
                             success: true,
                             route: "ocr-local");
 
+                        cycleTrace.PlannerRoute =
+                            "ocr-local";
+                        cycleTrace.PlannerTrace.Add(
+                            "Structured/Local=NotResolved");
+                        cycleTrace.PlannerTrace.Add(
+                            "OCR=Resolved");
+
                         progress.Add(
                             "ocr-local",
                             $"OCR-local fallback planner đã chọn action: {decision.Reason}",
@@ -494,6 +526,15 @@ public sealed class ComputerOperatorTaskService(
                     {
                         decision =
                             CreateProviderUnavailableBlockedDecision();
+
+                        cycleTrace.PlannerRoute =
+                            "provider-unavailable";
+                        cycleTrace.PlannerTrace.Add(
+                            "Structured/Local=NotResolved");
+                        cycleTrace.PlannerTrace.Add(
+                            "OCR=NotResolved");
+                        cycleTrace.PlannerTrace.Add(
+                            "Gemini=Unavailable");
 
                         plannerStopwatch.Stop();
                         planTelemetry.Complete(
@@ -514,6 +555,15 @@ public sealed class ComputerOperatorTaskService(
                         decision = CreatePlannerCooldownWaitDecision(
                             plannerBackoffUntil);
 
+                        cycleTrace.PlannerRoute =
+                            "provider-cooldown";
+                        cycleTrace.PlannerTrace.Add(
+                            "Structured/Local=NotResolved");
+                        cycleTrace.PlannerTrace.Add(
+                            "OCR=NotResolved");
+                        cycleTrace.PlannerTrace.Add(
+                            "Gemini=Skipped(cooldown)");
+
                         plannerStopwatch.Stop();
                         planTelemetry.Complete(
                             success: true,
@@ -533,6 +583,15 @@ public sealed class ComputerOperatorTaskService(
                         progress.Add(
                             "analyze",
                             $"Structured/local planner chưa có action đủ chắc chắn; gửi ảnh desktop {frame.Width}x{frame.Height} cho Vision/Gemini fallback.");
+
+                        cycleTrace.PlannerRoute =
+                            "gemini";
+                        cycleTrace.PlannerTrace.Add(
+                            "Structured/Local=NotResolved");
+                        cycleTrace.PlannerTrace.Add(
+                            "OCR=NotResolved");
+                        cycleTrace.PlannerTrace.Add(
+                            "Gemini=Called");
 
                         decision = await vision.DecideComputerOperatorActionAsync(
                             frame,
@@ -620,6 +679,36 @@ public sealed class ComputerOperatorTaskService(
                 {
                     frame.Clear();
                 }
+
+                cycleTrace.Action =
+                    decision.Action;
+                cycleTrace.Target =
+                    string.IsNullOrWhiteSpace(decision.TargetLabel)
+                        ? "-"
+                        : decision.TargetLabel;
+                cycleTrace.TargetElementId =
+                    string.IsNullOrWhiteSpace(decision.TargetElementId)
+                        ? "-"
+                        : decision.TargetElementId;
+                cycleTrace.TargetBox =
+                    decision.BoxWidth > 0 &&
+                    decision.BoxHeight > 0
+                        ? $"{decision.BoxLeft},{decision.BoxTop},{decision.BoxWidth},{decision.BoxHeight}"
+                        : "-";
+                cycleTrace.DecisionConfidence =
+                    decision.Confidence;
+                cycleTrace.ExpectedEffect =
+                    decision.ExpectedEffect;
+                cycleTrace.DecisionReason =
+                    decision.Reason;
+                cycleTrace.CurrentSubgoal =
+                    string.IsNullOrWhiteSpace(decision.CurrentSubgoal)
+                        ? cycleTrace.CurrentSubgoal
+                        : decision.CurrentSubgoal;
+
+                progress.AddDiagnostic(
+                    "decision-snapshot",
+                    $"cycle={index}; route={cycleTrace.PlannerRoute}; action={decision.Action}; target={LimitDiagnostic(decision.TargetLabel, 100)}; elementId={LimitDiagnostic(decision.TargetElementId, 80)}; bbox={cycleTrace.TargetBox}; confidence={decision.Confidence:0.000}; expected={LimitDiagnostic(decision.ExpectedEffect, 240)}; reason={LimitDiagnostic(decision.Reason, 280)}.");
 
                 var planState = actionState.MoveTo(
                     ComputerOperatorActionState.Plan,

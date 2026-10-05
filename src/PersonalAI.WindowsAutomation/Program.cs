@@ -27,7 +27,9 @@ internal sealed record AutomationRequest(
     string? Text = null,
     string? WriteMode = null,
     string? MonitorDevice = null,
-    int WaitMilliseconds = 0);
+    int WaitMilliseconds = 0,
+    int MaxNodes = 200,
+    int MaxDepth = 6);
 
 internal sealed record AutomationResponse(
     bool Success,
@@ -47,7 +49,8 @@ internal sealed record AutomationResponse(
     int CaptureHeight = 0,
     string CaptureBackend = "",
     string EventKind = "",
-    string EventWindowId = "");
+    string EventWindowId = "",
+    string StructuredJson = "");
 
 internal static class Program
 {
@@ -94,6 +97,18 @@ internal static class Program
 
                 response =
                     await WaitForUiaEventAsync(
+                        automation,
+                        request);
+            }
+            else if (request.Operation.Trim().Equals(
+                         "read-uia-tree",
+                         StringComparison.OrdinalIgnoreCase))
+            {
+                using var automation =
+                    new UIA3Automation();
+
+                response =
+                    ReadUiaTree(
                         automation,
                         request);
             }
@@ -948,6 +963,254 @@ internal static class Program
             }
         }
     }
+
+    private static AutomationResponse ReadUiaTree(
+        UIA3Automation automation,
+        AutomationRequest request)
+    {
+        var hwnd =
+            ParseWindowId(
+                request.WindowId);
+
+        if (hwnd == nint.Zero ||
+            !IsWindow(hwnd))
+        {
+            return Empty(
+                request,
+                "Cửa sổ UIA cần đọc không còn hợp lệ.");
+        }
+
+        AutomationElement root;
+        try
+        {
+            root =
+                automation.FromHandle(
+                    hwnd);
+        }
+        catch (Exception exception)
+        {
+            return Empty(
+                request,
+                $"UIA3 không tạo được root từ HWND: {exception.Message}");
+        }
+
+        var maximumNodes =
+            Math.Clamp(
+                request.MaxNodes <= 0
+                    ? 200
+                    : request.MaxNodes,
+                20,
+                1000);
+
+        var maximumDepth =
+            Math.Clamp(
+                request.MaxDepth <= 0
+                    ? 6
+                    : request.MaxDepth,
+                1,
+                12);
+
+        var nodes =
+            new List<StructuredUiNode>(
+                Math.Min(
+                    maximumNodes,
+                    256));
+
+        var rootToken =
+            BuildToken(
+                root);
+
+        var queue =
+            new Queue<(AutomationElement Element, string ParentToken, int Depth)>();
+
+        queue.Enqueue(
+            (
+                root,
+                string.Empty,
+                0
+            ));
+
+        while (queue.Count > 0 &&
+               nodes.Count < maximumNodes)
+        {
+            var current =
+                queue.Dequeue();
+
+            StructuredUiNode? node;
+            try
+            {
+                node =
+                    ToStructuredNode(
+                        current.Element,
+                        current.ParentToken,
+                        current.Depth);
+            }
+            catch
+            {
+                // Một control bị dispose giữa lúc duyệt cây không được
+                // làm hỏng toàn bộ structured snapshot.
+                continue;
+            }
+
+            nodes.Add(
+                node);
+
+            if (current.Depth >= maximumDepth)
+                continue;
+
+            AutomationElement[] children;
+            try
+            {
+                children =
+                    current.Element.FindAllChildren();
+            }
+            catch
+            {
+                continue;
+            }
+
+            foreach (var child in children)
+            {
+                if (nodes.Count +
+                    queue.Count >= maximumNodes)
+                {
+                    break;
+                }
+
+                queue.Enqueue(
+                    (
+                        child,
+                        node.Token,
+                        current.Depth + 1
+                    ));
+            }
+        }
+
+        var snapshot =
+            new StructuredUiSnapshot(
+                request.WindowId,
+                rootToken,
+                DateTimeOffset.UtcNow,
+                nodes.Count,
+                maximumNodes,
+                maximumDepth,
+                nodes);
+
+        return new(
+            Success: true,
+            IsFocused:
+                GetForegroundWindow() == hwnd,
+            CanRead: true,
+            CanDirectSet: false,
+            SupportsSelection: false,
+            IsReadOnly: true,
+            IsSensitive: false,
+            ControlClass:
+                root.Properties.ClassName.ValueOrDefault
+                ?? string.Empty,
+            NativeWindowHandle:
+                hwnd.ToInt64(),
+            TargetToken:
+                rootToken,
+            Value: null,
+            Detail:
+                $"Đã đọc UIA3 structured tree với {nodes.Count} node.",
+            StructuredJson:
+                JsonSerializer.Serialize(
+                    snapshot,
+                    JsonOptions()));
+    }
+
+    private static StructuredUiNode ToStructuredNode(
+        AutomationElement element,
+        string parentToken,
+        int depth)
+    {
+        var token =
+            BuildToken(
+                element);
+
+        var bounds =
+            element.Properties.BoundingRectangle.ValueOrDefault;
+
+        var patterns =
+            new List<string>();
+
+        if (element.Patterns.Value.IsSupported)
+            patterns.Add("Value");
+
+        if (element.Patterns.Invoke.IsSupported)
+            patterns.Add("Invoke");
+
+        if (element.Patterns.SelectionItem.IsSupported)
+            patterns.Add("SelectionItem");
+
+        if (element.Patterns.Toggle.IsSupported)
+            patterns.Add("Toggle");
+
+        if (element.Patterns.ExpandCollapse.IsSupported)
+            patterns.Add("ExpandCollapse");
+
+        return new(
+            Token: token,
+            ParentToken: parentToken,
+            Depth: depth,
+            Role:
+                element.Properties.ControlType.ValueOrDefault
+                    ?.ToString()
+                ?? "Unknown",
+            Name:
+                element.Properties.Name.ValueOrDefault
+                ?? string.Empty,
+            AutomationId:
+                element.Properties.AutomationId.ValueOrDefault
+                ?? string.Empty,
+            ClassName:
+                element.Properties.ClassName.ValueOrDefault
+                ?? string.Empty,
+            IsEnabled:
+                element.Properties.IsEnabled.ValueOrDefault,
+            IsFocused:
+                element.Properties.HasKeyboardFocus.ValueOrDefault,
+            IsOffscreen:
+                element.Properties.IsOffscreen.ValueOrDefault,
+            Left:
+                bounds.Left,
+            Top:
+                bounds.Top,
+            Width:
+                bounds.Width,
+            Height:
+                bounds.Height,
+            Patterns:
+                patterns.ToArray());
+    }
+
+    private sealed record StructuredUiNode(
+        string Token,
+        string ParentToken,
+        int Depth,
+        string Role,
+        string Name,
+        string AutomationId,
+        string ClassName,
+        bool IsEnabled,
+        bool IsFocused,
+        bool IsOffscreen,
+        int Left,
+        int Top,
+        int Width,
+        int Height,
+        string[] Patterns);
+
+    private sealed record StructuredUiSnapshot(
+        string WindowId,
+        string RootToken,
+        DateTimeOffset CapturedAtUtc,
+        int NodeCount,
+        int MaximumNodes,
+        int MaximumDepth,
+        IReadOnlyList<StructuredUiNode> Nodes);
 
     private static AutomationResponse Execute(
         UIA3Automation automation,

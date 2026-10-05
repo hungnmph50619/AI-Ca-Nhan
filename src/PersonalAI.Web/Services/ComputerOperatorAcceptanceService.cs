@@ -94,6 +94,11 @@ public sealed class ComputerOperatorAcceptanceService
 
         RunCheck(
             checks,
+            "OCR provider ảnh trống không bị tính là health failure",
+            CheckOcrProviderEmptyResultDoesNotTripHealth);
+
+        RunCheck(
+            checks,
             "OpenCV template sensor giữ multi-scale nhỏ và ngưỡng confidence an toàn",
             CheckOpenCvTemplateSensorPolicy);
 
@@ -1482,6 +1487,62 @@ public sealed class ComputerOperatorAcceptanceService
             snapshot.ConsecutiveFailures == 0 &&
             snapshot.LastLatencyMilliseconds == 40,
             "Local visual provider health chưa reset sau success.");
+    }
+
+    private static void CheckOcrProviderEmptyResultDoesNotTripHealth()
+    {
+        var health =
+            new LocalVisualProviderHealthRegistry();
+
+        var empty =
+            new AcceptanceOcrProvider(
+                "windows-ocr",
+                new DesktopOcrObservation(
+                    Available: true,
+                    Text: string.Empty,
+                    Language: "en-US",
+                    Lines:
+                        Array.Empty<DesktopOcrLine>(),
+                    CaptureWidth: 800,
+                    CaptureHeight: 600,
+                    Provider: "windows-ocr",
+                    Reason: "healthy empty"));
+
+        var fallback =
+            new AcceptanceOcrProvider(
+                "paddleocr-onnx",
+                new DesktopOcrObservation(
+                    Available: false,
+                    Text: string.Empty,
+                    Language: string.Empty,
+                    Lines:
+                        Array.Empty<DesktopOcrLine>(),
+                    CaptureWidth: 0,
+                    CaptureHeight: 0,
+                    Provider: "paddleocr-onnx",
+                    Reason: "unavailable"));
+
+        var router =
+            new DesktopOcrSensorRouter(
+                [empty, fallback],
+                health);
+
+        for (var i = 0; i < 4; i++)
+        {
+            _ =
+                router.ReadWindow(
+                    "0x1234");
+        }
+
+        var snapshot =
+            health.Get(
+                "windows-ocr");
+
+        Require(
+            snapshot.ConsecutiveFailures == 0 &&
+            snapshot.State !=
+                LocalVisualProviderHealthState.Unavailable,
+            "OCR provider healthy nhưng ảnh trống đang bị tính sai thành health failure.");
     }
 
     private static void CheckOpenCvTemplateSensorPolicy()

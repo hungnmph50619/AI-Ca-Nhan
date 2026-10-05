@@ -1,3 +1,4 @@
+using System.Diagnostics;
 using System.Drawing;
 using System.Drawing.Imaging;
 using System.Runtime.InteropServices;
@@ -43,7 +44,8 @@ public sealed class WindowsDesktopScreenshotService(
     IComputerWindowVisibilityService visibility,
     IDesktopCaptureBackendRouter captureRouter,
     IWindowsGraphicsCaptureClient wgc,
-    IDxgiDesktopDuplicationClient dxgi)
+    IDxgiDesktopDuplicationClient dxgi,
+    IDesktopCaptureHealthTracker captureHealth)
     : IDesktopScreenshotService
 {
     public DesktopScreenshotFrame CaptureVirtualScreen()
@@ -191,6 +193,15 @@ public sealed class WindowsDesktopScreenshotService(
         using var bitmap = result.Bitmap;
         var signature = ComputeSignature(
             bitmap);
+
+        captureHealth.RecordSuccess(
+            DesktopCaptureScopes.Monitor,
+            monitor.DeviceName,
+            result.Backend,
+            result.LatencyMs,
+            signature,
+            result.FallbackReason);
+
         var frame = EncodeMonitorFrame(
             bitmap,
             monitor,
@@ -209,6 +220,16 @@ public sealed class WindowsDesktopScreenshotService(
             monitor);
 
         using var bitmap = result.Bitmap;
+        var signature = ComputeSignature(
+            bitmap);
+
+        captureHealth.RecordSuccess(
+            DesktopCaptureScopes.Monitor,
+            monitor.DeviceName,
+            result.Backend,
+            result.LatencyMs,
+            signature,
+            result.FallbackReason);
 
         return EncodeMonitorFrame(
             bitmap,
@@ -220,6 +241,8 @@ public sealed class WindowsDesktopScreenshotService(
     private MonitorCaptureBitmap CaptureMonitorBitmap(
         ComputerMonitorInfo monitor)
     {
+        var stopwatch = Stopwatch.StartNew();
+
         ValidateRegion(
             monitor.Width,
             monitor.Height);
@@ -252,10 +275,13 @@ public sealed class WindowsDesktopScreenshotService(
                         monitor.Left,
                         monitor.Top);
 
+                    stopwatch.Stop();
+
                     return new(
                         wgcBitmap,
                         DesktopCaptureBackends.WindowsGraphicsCapture,
-                        null);
+                        null,
+                        stopwatch.ElapsedMilliseconds);
                 }
 
                 wgcReason =
@@ -295,12 +321,15 @@ public sealed class WindowsDesktopScreenshotService(
                         monitor.Left,
                         monitor.Top);
 
+                    stopwatch.Stop();
+
                     return new(
                         dxgiBitmap,
                         DesktopCaptureBackends.DxgiDesktopDuplication,
                         string.IsNullOrWhiteSpace(wgcReason)
                             ? null
-                            : $"WGC fallback: {wgcReason}");
+                            : $"WGC fallback: {wgcReason}",
+                        stopwatch.ElapsedMilliseconds);
                 }
 
                 dxgiReason =
@@ -334,12 +363,15 @@ public sealed class WindowsDesktopScreenshotService(
         if (!string.IsNullOrWhiteSpace(dxgiReason))
             fallbackReasons.Add($"DXGI: {dxgiReason}");
 
+        stopwatch.Stop();
+
         return new(
             bitmap,
             DesktopCaptureBackends.CopyFromScreen,
             fallbackReasons.Count == 0
                 ? null
-                : string.Join(" ", fallbackReasons));
+                : string.Join(" ", fallbackReasons),
+            stopwatch.ElapsedMilliseconds);
     }
 
     private static DesktopScreenshotFrame EncodeMonitorFrame(
@@ -370,7 +402,8 @@ public sealed class WindowsDesktopScreenshotService(
     private sealed record MonitorCaptureBitmap(
         Bitmap Bitmap,
         string Backend,
-        string? FallbackReason);
+        string? FallbackReason,
+        long LatencyMs);
 
     private ComputerMonitorInfo ResolveMonitor(
         string deviceName)

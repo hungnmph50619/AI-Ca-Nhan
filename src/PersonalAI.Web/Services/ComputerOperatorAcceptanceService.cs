@@ -438,6 +438,21 @@ public sealed class ComputerOperatorAcceptanceService
 
         RunCheck(
             checks,
+            "performance SLO đánh dấu stage local vượt mục tiêu",
+            CheckPerformanceSloFlagsSlowLocalStage);
+
+        RunCheck(
+            checks,
+            "performance report đếm Gemini calls",
+            CheckPerformanceReportCountsGeminiCalls);
+
+        RunCheck(
+            checks,
+            "performance report tính event wake ratio",
+            CheckPerformanceReportCalculatesEventWakeRatio);
+
+        RunCheck(
+            checks,
             "capability cache hit không gọi raw discovery lần hai",
             CheckCapabilityCacheAvoidsRepeatedDiscovery);
 
@@ -3481,6 +3496,118 @@ public sealed class ComputerOperatorAcceptanceService
                 .MaximumSampleInterval ==
                 TimeSpan.FromMilliseconds(160),
             "Adaptive stability timing policy không đúng mục tiêu accuracy-first.");
+    }
+
+    private static void CheckPerformanceSloFlagsSlowLocalStage()
+    {
+        var snapshot =
+            new ComputerOperatorTelemetrySnapshot(
+                PersonalAiRelease.Version,
+                MemoryOnly: true,
+                OpenTelemetryCompatible: true,
+                ContainsGoals: false,
+                ContainsTextPayloads: false,
+                ContainsScreenshots: false,
+                ContainsCoordinates: false,
+                MaximumRecentEvents: 200,
+                Aggregates:
+                [
+                    new ComputerOperatorTelemetryAggregate(
+                        ComputerOperatorTelemetryStages.FastReobserve,
+                        Count: 4,
+                        SuccessCount: 4,
+                        FailureCount: 0,
+                        AverageMilliseconds: 320,
+                        MaximumMilliseconds: 420)
+                ],
+                RecentEvents:
+                    Array.Empty<ComputerOperatorTelemetryEvent>());
+
+        var report =
+            ComputerOperatorPerformanceProfileService
+                .Evaluate(snapshot);
+
+        Require(
+            report.Stages.Single(item =>
+                    item.Stage ==
+                    ComputerOperatorTelemetryStages.FastReobserve)
+                .Status ==
+                ComputerOperatorPerformanceStatuses.Watch,
+            "Performance SLO chưa đánh dấu fast-reobserve vượt mục tiêu.");
+    }
+
+    private static void CheckPerformanceReportCountsGeminiCalls()
+    {
+        var snapshot =
+            new ComputerOperatorTelemetrySnapshot(
+                PersonalAiRelease.Version,
+                true,
+                true,
+                false,
+                false,
+                false,
+                false,
+                200,
+                [
+                    new ComputerOperatorTelemetryAggregate(
+                        ComputerOperatorTelemetryStages.GeminiPlan,
+                        3, 3, 0, 1000, 1200),
+                    new ComputerOperatorTelemetryAggregate(
+                        ComputerOperatorTelemetryStages.GeminiVerify,
+                        2, 2, 0, 900, 1000)
+                ],
+                Array.Empty<ComputerOperatorTelemetryEvent>());
+
+        var report =
+            ComputerOperatorPerformanceProfileService
+                .Evaluate(snapshot);
+
+        Require(
+            report.GeminiPlanningCalls == 3 &&
+            report.GeminiVerificationCalls == 2,
+            "Performance report đếm Gemini calls không đúng.");
+    }
+
+    private static void CheckPerformanceReportCalculatesEventWakeRatio()
+    {
+        var now =
+            DateTimeOffset.UtcNow;
+
+        var snapshot =
+            new ComputerOperatorTelemetrySnapshot(
+                PersonalAiRelease.Version,
+                true,
+                true,
+                false,
+                false,
+                false,
+                false,
+                200,
+                Array.Empty<ComputerOperatorTelemetryAggregate>(),
+                [
+                    new ComputerOperatorTelemetryEvent(
+                        1, now, "a",
+                        ComputerOperatorTelemetryStages.FastReobserve,
+                        "click-left", "event", true, 80),
+                    new ComputerOperatorTelemetryEvent(
+                        2, now, "b",
+                        ComputerOperatorTelemetryStages.ReplanPacing,
+                        "none", "event", true, 90),
+                    new ComputerOperatorTelemetryEvent(
+                        3, now, "c",
+                        ComputerOperatorTelemetryStages.FastReobserve,
+                        "click-left", "timeout", true, 180)
+                ]);
+
+        var report =
+            ComputerOperatorPerformanceProfileService
+                .Evaluate(snapshot);
+
+        Require(
+            report.EventWakeups == 2 &&
+            report.TimeoutWakeups == 1 &&
+            Math.Abs(report.EventWakeRatio - (2.0 / 3.0)) < 0.001,
+            "Performance report tính event wake ratio không đúng.");
     }
 
     private static void CheckCapabilityCacheAvoidsRepeatedDiscovery()

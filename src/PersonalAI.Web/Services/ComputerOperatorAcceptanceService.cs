@@ -2122,16 +2122,28 @@ public sealed class ComputerOperatorAcceptanceService
 
         var changed =
             new DesktopFastObservation(
+                ScreenChanged: true,
+                ChangeRatio: 0.05,
                 ForegroundWindowChanged: true,
                 WindowBoundsChanged: false,
+                CursorMoved: false,
+                MonitorChanged: false,
+                DpiChanged: false,
+                TargetMoved: false,
                 TargetMissing: false,
                 TargetLikelyOccluded: false,
                 Summary: "foreground changed");
 
         var unchanged =
             new DesktopFastObservation(
+                ScreenChanged: false,
+                ChangeRatio: 0.0,
                 ForegroundWindowChanged: false,
                 WindowBoundsChanged: false,
+                CursorMoved: false,
+                MonitorChanged: false,
+                DpiChanged: false,
+                TargetMoved: false,
                 TargetMissing: false,
                 TargetLikelyOccluded: false,
                 Summary: "unchanged");
@@ -2147,14 +2159,16 @@ public sealed class ComputerOperatorAcceptanceService
                 decision,
                 unchanged,
                 new DesktopFrameDifference(
-                    Comparable: true,
-                    ChangedRatio: 0.0,
-                    MeanChannelDelta: 0,
-                    BoxLeft: 0,
-                    BoxTop: 0,
-                    BoxWidth: 0,
-                    BoxHeight: 0,
-                    Reason: "acceptance"));
+                    true,
+                    0.0,
+                    0,
+                    100,
+                    0,
+                    0,
+                    0,
+                    0,
+                    0,
+                    "acceptance"));
 
         Require(
             changedRoute.Route ==

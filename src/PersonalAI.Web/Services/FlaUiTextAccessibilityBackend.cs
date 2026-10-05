@@ -31,7 +31,9 @@ public sealed record FlaUiAutomationResponse(
     string EventKind = "",
     string EventWindowId = "",
     string StructuredJson = "",
-    string OcrJson = "");
+    string OcrJson = "",
+    string? JpegBase64 = null,
+    string CaptureBackend = "");
 
 public interface IFlaUiAutomationClient
 {

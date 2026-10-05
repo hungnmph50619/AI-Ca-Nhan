@@ -24,7 +24,7 @@ public sealed record ComputerOperatorProgressSnapshot(
 public sealed class ComputerOperatorProgressStore(
     ILogger<ComputerOperatorProgressStore> logger)
 {
-    private const int MaximumEntries = 60;
+    private const int MaximumEntries = 240;
     private static readonly TimeSpan StaleThreshold = TimeSpan.FromSeconds(10);
     private readonly object _sync = new();
     private readonly List<ComputerOperatorProgressEntry> _entries = [];
@@ -74,6 +74,32 @@ public sealed class ComputerOperatorProgressStore(
             _currentStage = stage;
             AddCore(stage, message, action, confidence);
             LogCore(stage, message, action, confidence);
+        }
+    }
+
+    public void AddDiagnostic(
+        string category,
+        string message,
+        string? action = null,
+        double? confidence = null)
+    {
+        lock (_sync)
+        {
+            var normalized = string.IsNullOrWhiteSpace(category)
+                ? "general"
+                : category.Trim().ToLowerInvariant();
+
+            AddCore(
+                $"diagnostic-{normalized}",
+                message,
+                action,
+                confidence);
+
+            LogCore(
+                $"diagnostic-{normalized}",
+                message,
+                action,
+                confidence);
         }
     }
 

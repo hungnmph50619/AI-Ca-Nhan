@@ -1996,6 +1996,7 @@ async function clearActiveConversation() {
     return;
   }
 
+  clearPendingAttachments();
   conversation.messages = [];
   conversation.title = "Cuộc trò chuyện mới";
   touchConversation(conversation);
@@ -2036,6 +2037,7 @@ function getActiveConversation() {
 function createNewConversation() {
   if (state.busy) return;
 
+  clearPendingAttachments();
   const activeConversation = getActiveConversation();
   if (activeConversation.messages.length === 0) {
     elements.sidebar.classList.remove("open");
@@ -2057,6 +2059,7 @@ function selectConversation(conversationId) {
   if (state.busy || conversationId === state.activeConversationId) return;
   if (!state.conversations.some(item => item.id === conversationId)) return;
 
+  clearPendingAttachments();
   state.activeConversationId = conversationId;
   persistWorkspace();
   elements.sidebar.classList.remove("open");

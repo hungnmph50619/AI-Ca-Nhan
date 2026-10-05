@@ -258,7 +258,9 @@ public static class ComputerUseEndpoints
                         lyDo = snapshot.LastEvent.Reason,
                         nguon = snapshot.LastEvent.Source,
                         doTinCayNguon = Math.Round(snapshot.LastEvent.SourceConfidence, 2),
-                        daDuocNguonKhacXacNhan = snapshot.LastEvent.Corroborated
+                        daDuocNguonKhacXacNhan = snapshot.LastEvent.Corroborated,
+                        nhomSuKien = snapshot.LastEvent.BurstId,
+                        soSuKienTrongNhom = snapshot.LastEvent.BurstSize
                     }
             });
         });

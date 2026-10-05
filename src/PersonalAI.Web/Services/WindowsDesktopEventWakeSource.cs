@@ -15,6 +15,8 @@ public static class DesktopSystemEventKinds
     public const string FocusChanged = "focus-changed";
     public const string SelectionChanged = "selection-changed";
     public const string ValueChanged = "value-changed";
+    public const string StructureChanged = "structure-changed";
+    public const string PropertyChanged = "property-changed";
 }
 
 public sealed record DesktopSystemEvent(
@@ -99,9 +101,12 @@ public sealed class WindowsDesktopEventWakeSource
     private long lastEventUnixMilliseconds;
     private string lastEventIdentity = string.Empty;
     private DesktopSystemEvent? lastEvent;
+    private readonly IFlaUiAutomationClient? flaUi;
 
-    public WindowsDesktopEventWakeSource()
+    public WindowsDesktopEventWakeSource(
+        IFlaUiAutomationClient? flaUi = null)
     {
+        this.flaUi = flaUi;
         if (!OperatingSystem.IsWindows())
             return;
 
@@ -163,8 +168,19 @@ public sealed class WindowsDesktopEventWakeSource
                 "Khoảng chờ fallback phải lớn hơn 0.");
 
         var started = DateTimeOffset.UtcNow;
+        var target =
+            (targetWindowId ?? string.Empty)
+                .Trim();
 
-        if (!EventDrivenAvailable)
+        var winEventAvailable =
+            EventDrivenAvailable;
+
+        var uiaAvailable =
+            target.Length > 0 &&
+            flaUi?.Available == true;
+
+        if (!winEventAvailable &&
+            !uiaAvailable)
         {
             Interlocked.Increment(
                 ref pollFallbacks);
@@ -177,10 +193,11 @@ public sealed class WindowsDesktopEventWakeSource
                 EventReceived: false,
                 Event: null,
                 DateTimeOffset.UtcNow - started,
-                "WinEventHook chưa khả dụng; đã dùng polling fallback.");
+                "Không có WinEvent/UIA event source khả dụng; đã dùng polling fallback.");
         }
 
-        if (TryDequeueLatest(
+        if (winEventAvailable &&
+            TryDequeueLatest(
                 targetWindowId,
                 out var queued))
         {
@@ -194,30 +211,51 @@ public sealed class WindowsDesktopEventWakeSource
                 $"Được đánh thức ngay bởi sự kiện Windows: {queued!.Reason}");
         }
 
+        using var waitCancellation =
+            CancellationTokenSource.CreateLinkedTokenSource(
+                cancellationToken);
+
         var timeoutTask =
             Task.Delay(
                 fallbackDelay,
-                cancellationToken);
+                waitCancellation.Token);
 
-        var eventTask =
-            signal.WaitAsync(
-                cancellationToken);
+        Task winEventTask =
+            winEventAvailable
+                ? signal.WaitAsync(
+                    waitCancellation.Token)
+                : Task.Delay(
+                    Timeout.InfiniteTimeSpan,
+                    waitCancellation.Token);
+
+        Task<DesktopSystemEvent?> uiaTask =
+            uiaAvailable
+                ? WaitForUiaEventAsync(
+                    target,
+                    fallbackDelay,
+                    waitCancellation.Token)
+                : Task.FromResult<DesktopSystemEvent?>(
+                    null);
 
         var completed =
             await Task.WhenAny(
-                eventTask,
+                winEventTask,
+                uiaTask,
                 timeoutTask);
 
         cancellationToken.ThrowIfCancellationRequested();
 
-        if (completed == eventTask)
+        if (completed == winEventTask &&
+            winEventAvailable)
         {
-            await eventTask;
+            await winEventTask;
 
             if (TryDequeueLatest(
                     targetWindowId,
                     out var received))
             {
+                waitCancellation.Cancel();
+
                 Interlocked.Increment(
                     ref deliveredWakeups);
 
@@ -229,6 +267,34 @@ public sealed class WindowsDesktopEventWakeSource
             }
         }
 
+        if (completed == uiaTask &&
+            uiaAvailable)
+        {
+            var uiaEvent =
+                await uiaTask;
+
+            if (uiaEvent is not null)
+            {
+                waitCancellation.Cancel();
+
+                Interlocked.Increment(
+                    ref receivedEvents);
+                Interlocked.Increment(
+                    ref deliveredWakeups);
+                Volatile.Write(
+                    ref lastEvent,
+                    uiaEvent);
+
+                return new(
+                    EventReceived: true,
+                    uiaEvent,
+                    DateTimeOffset.UtcNow - started,
+                    $"UIA3 đánh thức verifier: {uiaEvent.Reason}");
+            }
+        }
+
+        waitCancellation.Cancel();
+
         Interlocked.Increment(
             ref pollFallbacks);
 
@@ -236,7 +302,75 @@ public sealed class WindowsDesktopEventWakeSource
             EventReceived: false,
             Event: null,
             DateTimeOffset.UtcNow - started,
-            "Không có Windows event trước poll deadline; tiếp tục polling fallback.");
+            "Không có WinEvent/UIA event trước poll deadline; tiếp tục polling fallback.");
+    }
+
+    private async Task<DesktopSystemEvent?> WaitForUiaEventAsync(
+        string windowId,
+        TimeSpan fallbackDelay,
+        CancellationToken cancellationToken)
+    {
+        if (flaUi?.Available != true)
+            return null;
+
+        var waitMilliseconds =
+            Math.Clamp(
+                checked((int)Math.Ceiling(
+                    fallbackDelay.TotalMilliseconds)),
+                100,
+                3000);
+
+        try
+        {
+            var response =
+                await Task.Run(
+                    () => flaUi.Invoke(
+                        new FlaUiAutomationRequest(
+                            "wait-uia-event",
+                            windowId,
+                            WaitMilliseconds: waitMilliseconds)),
+                    cancellationToken);
+
+            if (!response.Success ||
+                string.IsNullOrWhiteSpace(
+                    response.EventKind))
+            {
+                return null;
+            }
+
+            var kind =
+                response.EventKind.Trim().ToLowerInvariant() switch
+                {
+                    "uia-focus-changed" =>
+                        DesktopSystemEventKinds.FocusChanged,
+                    "uia-structure-changed" =>
+                        DesktopSystemEventKinds.StructureChanged,
+                    "uia-property-changed" =>
+                        DesktopSystemEventKinds.PropertyChanged,
+                    _ =>
+                        DesktopSystemEventKinds.PropertyChanged
+                };
+
+            return new(
+                kind,
+                string.IsNullOrWhiteSpace(
+                    response.EventWindowId)
+                    ? windowId
+                    : response.EventWindowId,
+                DateTimeOffset.UtcNow,
+                0,
+                response.Detail);
+        }
+        catch (OperationCanceledException)
+        {
+            return null;
+        }
+        catch
+        {
+            // UIA là nguồn tăng tốc bổ sung. Lỗi bridge không được làm
+            // hỏng polling/WinEvent fallback của verifier.
+            return null;
+        }
     }
 
     private bool TryDequeueLatest(

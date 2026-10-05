@@ -17,7 +17,10 @@ public sealed record StructuredDesktopNode(
     int Top,
     int Width,
     int Height,
-    IReadOnlyList<string> Patterns);
+    IReadOnlyList<string> Patterns,
+    string ToggleState = "",
+    string ExpandCollapseState = "",
+    bool? IsSelected = null);
 
 public sealed record StructuredDesktopSnapshot(
     string WindowId,
@@ -111,7 +114,10 @@ public sealed class StructuredDesktopSnapshotService(
                         node.Top,
                         node.Width,
                         node.Height,
-                        node.Patterns ?? Array.Empty<string>()))
+                        node.Patterns ?? Array.Empty<string>(),
+                        node.ToggleState ?? string.Empty,
+                        node.ExpandCollapseState ?? string.Empty,
+                        node.IsSelected))
                 .ToArray();
 
         return new(
@@ -156,5 +162,8 @@ public sealed class StructuredDesktopSnapshotService(
         int Top,
         int Width,
         int Height,
-        string[]? Patterns);
+        string[]? Patterns,
+        string? ToggleState = null,
+        string? ExpandCollapseState = null,
+        bool? IsSelected = null);
 }

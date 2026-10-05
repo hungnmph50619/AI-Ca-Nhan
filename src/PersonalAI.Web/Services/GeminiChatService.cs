@@ -27,6 +27,7 @@ Function calling is disabled in this continuation. Produce only the final user-f
     private readonly HttpClient _httpClient;
     private readonly GeminiOptions _options;
     private readonly IAiSettingsStore _settingsStore;
+    private readonly IChatAttachmentStore _attachmentStore;
     private readonly ILogger<GeminiChatService> _logger;
     private readonly string _instructions;
 
@@ -34,12 +35,14 @@ Function calling is disabled in this continuation. Produce only the final user-f
         HttpClient httpClient,
         IOptions<GeminiOptions> options,
         IAiSettingsStore settingsStore,
+        IChatAttachmentStore attachmentStore,
         IWebHostEnvironment environment,
         ILogger<GeminiChatService> logger)
     {
         _httpClient = httpClient;
         _options = options.Value;
         _settingsStore = settingsStore;
+        _attachmentStore = attachmentStore;
         _logger = logger;
 
         var constitutionPath = Path.Combine(environment.ContentRootPath, "AI-CONSTITUTION.md");
@@ -76,7 +79,7 @@ Function calling is disabled in this continuation. Produce only the final user-f
                 role = message.Role.Equals("assistant", StringComparison.OrdinalIgnoreCase)
                     ? "model"
                     : "user",
-                parts = new[] { new { text = message.Content } }
+                parts = BuildGeminiParts(message)
             }),
             generationConfig = new
             {
@@ -168,6 +171,73 @@ Function calling is disabled in this continuation. Produce only the final user-f
         throw new HttpRequestException("Gemini không thể xử lý yêu cầu sau nhiều lần thử.");
     }
 
+
+    private object[] BuildGeminiParts(
+        ChatMessage message)
+    {
+        var parts =
+            new List<object>
+            {
+                new
+                {
+                    text =
+                        message.Content
+                }
+            };
+
+        if (message.Attachments is not
+            {
+                Count: > 0
+            })
+        {
+            return parts.ToArray();
+        }
+
+        foreach (var reference in message.Attachments)
+        {
+            var stored =
+                _attachmentStore.GetRequired(
+                    reference.Id);
+
+            var bytes =
+                _attachmentStore.ReadAllBytes(
+                    reference.Id);
+
+            if (stored.Kind.Equals(
+                    "text",
+                    StringComparison.OrdinalIgnoreCase))
+            {
+                var text =
+                    Encoding.UTF8.GetString(
+                        bytes);
+
+                parts.Add(
+                    new
+                    {
+                        text =
+                            $"\n\n[TỆP ĐÍNH KÈM: {stored.FileName}]\n{text}\n[HẾT TỆP]\n"
+                    });
+
+                continue;
+            }
+
+            parts.Add(
+                new
+                {
+                    inlineData =
+                        new
+                        {
+                            mimeType =
+                                stored.MimeType,
+                            data =
+                                Convert.ToBase64String(
+                                    bytes)
+                        }
+                });
+        }
+
+        return parts.ToArray();
+    }
 
     public async Task<ProviderFunctionCallDecision?> ProposeFunctionCallAsync(
         IReadOnlyList<ChatMessage> messages,

@@ -38,17 +38,43 @@ public interface IUniversalReliableOperatorCoordinator
         bool sideEffectMayHaveOccurred);
 }
 
-public sealed class UniversalReliableOperatorCoordinator(
-    IUniversalCapabilityDiscoveryService capabilities,
-    IUniversalCapabilityCache capabilityCache,
-    IUniversalEvidenceFusionEngine evidenceFusion,
-    IUniversalResilienceExecutor resilience)
+public sealed class UniversalReliableOperatorCoordinator
     : IUniversalReliableOperatorCoordinator
 {
+    private readonly IServiceScopeFactory? scopeFactory;
+    private readonly IUniversalCapabilityDiscoveryService? testCapabilities;
+    private readonly IUniversalCapabilityCache capabilityCache;
+    private readonly IUniversalEvidenceFusionEngine evidenceFusion;
+    private readonly IUniversalResilienceExecutor resilience;
+
+    public UniversalReliableOperatorCoordinator(
+        IServiceScopeFactory scopeFactory,
+        IUniversalCapabilityCache capabilityCache,
+        IUniversalEvidenceFusionEngine evidenceFusion,
+        IUniversalResilienceExecutor resilience)
+    {
+        this.scopeFactory = scopeFactory;
+        this.capabilityCache = capabilityCache;
+        this.evidenceFusion = evidenceFusion;
+        this.resilience = resilience;
+    }
+
+    internal UniversalReliableOperatorCoordinator(
+        IUniversalCapabilityDiscoveryService capabilities,
+        IUniversalCapabilityCache capabilityCache,
+        IUniversalEvidenceFusionEngine evidenceFusion,
+        IUniversalResilienceExecutor resilience)
+    {
+        testCapabilities = capabilities;
+        this.capabilityCache = capabilityCache;
+        this.evidenceFusion = evidenceFusion;
+        this.resilience = resilience;
+    }
+
     public UniversalReliableOperatorRuntimeSnapshot GetRuntimeSnapshot()
     {
         var snapshot =
-            capabilities.Discover();
+            DiscoverCapabilities();
 
         var availableComputer =
             snapshot.ForChannel(
@@ -67,6 +93,25 @@ public sealed class UniversalReliableOperatorCoordinator(
             availableComputer.Length > 0
                 ? $"Có {availableComputer.Length} capability desktop khả dụng: {string.Join(", ", availableComputer)}."
                 : "Không có capability desktop khả dụng; không được thực thi Computer Operator.");
+    }
+
+    private UniversalCapabilitySnapshot DiscoverCapabilities()
+    {
+        if (testCapabilities is not null)
+            return testCapabilities.Discover();
+
+        if (scopeFactory is null)
+            throw new InvalidOperationException(
+                "Reliable Operator không có scope factory để đọc capability runtime.");
+
+        using var scope =
+            scopeFactory.CreateScope();
+
+        var discovery =
+            scope.ServiceProvider
+                .GetRequiredService<IUniversalCapabilityDiscoveryService>();
+
+        return discovery.Discover();
     }
 
     public UniversalReliableVerificationDecision EvaluateLocalVerification(

@@ -477,6 +477,16 @@ public sealed class ComputerOperatorAcceptanceService
             "structured scene graph giữ parent-child và capability tương tác",
             CheckStructuredSceneGraphBuildsHierarchy);
 
+        RunCheck(
+            checks,
+            "structured resolver chọn duy nhất target đủ chắc chắn",
+            CheckStructuredResolverChoosesUniqueTarget);
+
+        RunCheck(
+            checks,
+            "structured resolver từ chối target mơ hồ",
+            CheckStructuredResolverRejectsAmbiguousTarget);
+
 
 
 
@@ -3853,6 +3863,143 @@ public sealed class ComputerOperatorAcceptanceService
                 later,
                 TimeSpan.FromMilliseconds(120)),
             "Event burst policy chưa gom đúng các event dồn dập theo cửa sổ và thời gian.");
+    }
+
+    private static void CheckStructuredResolverChoosesUniqueTarget()
+    {
+        var resolver = new StructuredDesktopResolver();
+
+        var graph = new UnifiedStructuredSceneGraph(
+            WindowId: "0x1234",
+            WindowTitle: "Acceptance",
+            ProcessName: "acceptance",
+            RootId: "root",
+            CapturedAtUtc: DateTimeOffset.UtcNow,
+            Nodes:
+            [
+                new UnifiedStructuredSceneNode(
+                    Id: "root:save",
+                    ParentId: "root",
+                    Depth: 1,
+                    Role: "Button",
+                    Name: "Save",
+                    AutomationId: "saveButton",
+                    ClassName: "Button",
+                    IsEnabled: true,
+                    IsFocused: false,
+                    IsVisible: true,
+                    DesktopLeft: 420,
+                    DesktopTop: 260,
+                    Width: 120,
+                    Height: 44,
+                    FrameLeft: 320,
+                    FrameTop: 180,
+                    Capabilities: ["Invoke"],
+                    Children: Array.Empty<string>()),
+                new UnifiedStructuredSceneNode(
+                    Id: "root:cancel",
+                    ParentId: "root",
+                    Depth: 1,
+                    Role: "Button",
+                    Name: "Cancel",
+                    AutomationId: "cancelButton",
+                    ClassName: "Button",
+                    IsEnabled: true,
+                    IsFocused: false,
+                    IsVisible: true,
+                    DesktopLeft: 560,
+                    DesktopTop: 260,
+                    Width: 120,
+                    Height: 44,
+                    FrameLeft: 460,
+                    FrameTop: 180,
+                    Capabilities: ["Invoke"],
+                    Children: Array.Empty<string>())
+            ],
+            Source: "acceptance",
+            Detail: "acceptance");
+
+        var result = resolver.ResolveInteractiveTarget(
+            graph,
+            "Save",
+            new HashSet<string>(
+                ["Invoke"],
+                StringComparer.OrdinalIgnoreCase));
+
+        Require(
+            result.Resolved &&
+            result.Status == StructuredResolutionStatus.Resolved &&
+            result.Node?.Id == "root:save" &&
+            result.Score >= 100,
+            "Structured resolver chưa chọn đúng target duy nhất.");
+    }
+
+    private static void CheckStructuredResolverRejectsAmbiguousTarget()
+    {
+        var resolver = new StructuredDesktopResolver();
+
+        var graph = new UnifiedStructuredSceneGraph(
+            WindowId: "0x1234",
+            WindowTitle: "Acceptance",
+            ProcessName: "acceptance",
+            RootId: "root",
+            CapturedAtUtc: DateTimeOffset.UtcNow,
+            Nodes:
+            [
+                new UnifiedStructuredSceneNode(
+                    Id: "root:one",
+                    ParentId: "root",
+                    Depth: 1,
+                    Role: "Button",
+                    Name: "Open",
+                    AutomationId: "openOne",
+                    ClassName: "Button",
+                    IsEnabled: true,
+                    IsFocused: false,
+                    IsVisible: true,
+                    DesktopLeft: 100,
+                    DesktopTop: 100,
+                    Width: 100,
+                    Height: 40,
+                    FrameLeft: 100,
+                    FrameTop: 100,
+                    Capabilities: ["Invoke"],
+                    Children: Array.Empty<string>()),
+                new UnifiedStructuredSceneNode(
+                    Id: "root:two",
+                    ParentId: "root",
+                    Depth: 1,
+                    Role: "Button",
+                    Name: "Open",
+                    AutomationId: "openTwo",
+                    ClassName: "Button",
+                    IsEnabled: true,
+                    IsFocused: false,
+                    IsVisible: true,
+                    DesktopLeft: 240,
+                    DesktopTop: 100,
+                    Width: 100,
+                    Height: 40,
+                    FrameLeft: 240,
+                    FrameTop: 100,
+                    Capabilities: ["Invoke"],
+                    Children: Array.Empty<string>())
+            ],
+            Source: "acceptance",
+            Detail: "acceptance");
+
+        var result = resolver.ResolveInteractiveTarget(
+            graph,
+            "Open",
+            new HashSet<string>(
+                ["Invoke"],
+                StringComparer.OrdinalIgnoreCase));
+
+        Require(
+            !result.Resolved &&
+            result.Status == StructuredResolutionStatus.Ambiguous &&
+            result.Node is null,
+            "Structured resolver vẫn tự đoán khi có nhiều target cùng mức tin cậy.");
     }
 
     private static void CheckStructuredSceneGraphBuildsHierarchy()

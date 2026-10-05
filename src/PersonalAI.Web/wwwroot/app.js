@@ -913,6 +913,171 @@ async function refreshStatus() {
   }
 }
 
+function normalizeChatAttachment(value) {
+  if (!value || typeof value !== "object") return null;
+  const id = typeof value.id === "string" ? value.id.trim() : "";
+  const fileName = typeof value.fileName === "string" ? value.fileName.trim() : "";
+  const mimeType = typeof value.mimeType === "string" ? value.mimeType.trim() : "";
+  const size = Math.max(0, Number(value.size) || 0);
+  const kind = typeof value.kind === "string" ? value.kind : "document";
+  const route = typeof value.route === "string" ? value.route : "direct";
+  if (!id || !fileName || !mimeType || size <= 0) return null;
+  return { id, fileName, mimeType, size, kind, route };
+}
+
+function normalizeChatAttachments(value) {
+  return Array.isArray(value)
+    ? value.map(normalizeChatAttachment).filter(Boolean).slice(0, MAX_CHAT_ATTACHMENTS)
+    : [];
+}
+
+async function queueChatAttachments(files) {
+  if (state.busy || !Array.isArray(files) || files.length === 0) return;
+
+  const available = MAX_CHAT_ATTACHMENTS - state.pendingAttachments.length;
+  if (available <= 0) {
+    await showVietnameseNotice(`Mỗi tin nhắn chỉ được đính kèm tối đa ${MAX_CHAT_ATTACHMENTS} tệp.`, {
+      title: "Đã đạt giới hạn tệp"
+    });
+    return;
+  }
+
+  const selected = files.slice(0, available);
+  for (const file of selected) {
+    if (file.size <= 0) continue;
+    if (file.size > MAX_CHAT_ATTACHMENT_BYTES) {
+      await showVietnameseNotice(`${file.name} lớn hơn 10 MB nên chưa thể đính kèm.`, {
+        title: "Tệp quá lớn"
+      });
+      continue;
+    }
+
+    const tempId = globalThis.crypto?.randomUUID
+      ? globalThis.crypto.randomUUID()
+      : `upload-${Date.now()}-${Math.random().toString(16).slice(2)}`;
+
+    const pending = {
+      tempId,
+      fileName: file.name,
+      mimeType: file.type || "application/octet-stream",
+      size: file.size,
+      kind: file.type.startsWith("image/") ? "image" : "document",
+      uploading: true,
+      error: "",
+      attachment: null,
+      previewUrl: file.type.startsWith("image/") ? URL.createObjectURL(file) : ""
+    };
+
+    state.pendingAttachments.push(pending);
+    renderChatAttachmentPreview();
+
+    try {
+      pending.attachment = await uploadChatAttachment(file);
+      pending.uploading = false;
+      pending.error = "";
+    } catch (error) {
+      pending.uploading = false;
+      pending.error = error.message || "Không tải được tệp.";
+    }
+
+    renderChatAttachmentPreview();
+  }
+
+  updateComposerAvailability();
+}
+
+async function uploadChatAttachment(file) {
+  const body = new FormData();
+  body.append("file", file);
+
+  const response = await fetch("/api/chat/attachments", {
+    method: "POST",
+    body
+  });
+  const payload = await response.json().catch(() => ({}));
+
+  if (!response.ok) {
+    throw new Error(payload.error || "Không thể tải tệp đính kèm.");
+  }
+
+  const attachment = normalizeChatAttachment(payload);
+  if (!attachment) throw new Error("Máy chủ trả metadata tệp đính kèm không hợp lệ.");
+  return attachment;
+}
+
+function removePendingAttachment(tempId) {
+  const target = state.pendingAttachments.find(item => item.tempId === tempId);
+  if (target?.previewUrl) URL.revokeObjectURL(target.previewUrl);
+  state.pendingAttachments = state.pendingAttachments.filter(item => item.tempId !== tempId);
+  renderChatAttachmentPreview();
+  updateComposerAvailability();
+}
+
+function clearPendingAttachments() {
+  state.pendingAttachments.forEach(item => {
+    if (item.previewUrl) URL.revokeObjectURL(item.previewUrl);
+  });
+  state.pendingAttachments = [];
+  renderChatAttachmentPreview();
+  updateComposerAvailability();
+}
+
+function renderChatAttachmentPreview() {
+  if (!elements.attachmentPreview) return;
+  elements.attachmentPreview.replaceChildren();
+
+  if (state.pendingAttachments.length === 0) {
+    elements.attachmentPreview.hidden = true;
+    return;
+  }
+
+  elements.attachmentPreview.hidden = false;
+
+  state.pendingAttachments.forEach(item => {
+    const card = documentElement(
+      "div",
+      `chat-attachment-card${item.uploading ? " uploading" : ""}`);
+
+    const icon = documentElement(
+      "div",
+      "chat-attachment-icon",
+      item.kind === "image" ? "▧" : "▤");
+
+    const meta = documentElement("div", "chat-attachment-meta");
+    const name = documentElement("span", "chat-attachment-name", item.fileName);
+    const status = item.error
+      ? `Lỗi · ${item.error}`
+      : item.uploading
+        ? "Đang tải lên…"
+        : formatAttachmentSize(item.size);
+    const size = documentElement("span", "chat-attachment-size", status);
+    meta.append(name, size);
+
+    const remove = documentElement("button", "chat-attachment-remove", "×");
+    remove.type = "button";
+    remove.title = "Bỏ tệp";
+    remove.setAttribute("aria-label", `Bỏ tệp ${item.fileName}`);
+    remove.addEventListener("click", () => removePendingAttachment(item.tempId));
+
+    card.append(icon, meta, remove);
+    elements.attachmentPreview.appendChild(card);
+  });
+}
+
+function updateComposerAvailability() {
+  const hasUploading = state.pendingAttachments.some(item => item.uploading);
+  const hasFailed = state.pendingAttachments.some(item => item.error);
+  if (elements.attachmentButton) elements.attachmentButton.disabled = state.busy;
+  if (elements.send) elements.send.disabled = state.busy || hasUploading || hasFailed;
+}
+
+function formatAttachmentSize(bytes) {
+  const value = Math.max(0, Number(bytes) || 0);
+  if (value < 1024) return `${value} B`;
+  if (value < 1024 * 1024) return `${(value / 1024).toFixed(1)} KB`;
+  return `${(value / (1024 * 1024)).toFixed(1)} MB`;
+}
+
 async function sendCurrentMessage(event) {
   event.preventDefault();
   const content = elements.input.value.trim();

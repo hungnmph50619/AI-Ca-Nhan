@@ -19,7 +19,7 @@ public sealed record GeminiCallBudgetPolicy(
         new(
             MaximumPlanningCalls: 12,
             MaximumVerificationCalls: 8,
-            MaximumTotalCalls: 18,
+            MaximumTotalCalls: 20,
             MaximumRepeatedVerificationCalls: 2);
 }
 

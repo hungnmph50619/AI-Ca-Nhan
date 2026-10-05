@@ -418,59 +418,69 @@ public sealed class ComputerOperatorTaskService(
 
                 try
                 {
-                    if (providerBackoffActive)
+                    var localHistory =
+                        string.Join(
+                            "\n",
+                            taskHistory.TakeLast(40));
+
+                    if (LocalPlanner.TryPlan(
+                            normalizedGoal,
+                            desktopState,
+                            localHistory,
+                            out decision))
                     {
-                        var localHistory =
-                            string.Join(
-                                "\n",
-                                taskHistory.TakeLast(40));
+                        plannerStopwatch.Stop();
+                        planTelemetry.Complete(
+                            success: true,
+                            route: desktopState.StructuredScene is not null &&
+                                   !string.IsNullOrWhiteSpace(decision.TargetElementId)
+                                ? "structured-first"
+                                : "local-planner");
 
-                        if (LocalPlanner.TryPlan(
-                                normalizedGoal,
-                                desktopState,
-                                localHistory,
-                                out decision))
-                        {
-                            plannerStopwatch.Stop();
-                            planTelemetry.Complete(
-                                success: true,
-                                route: "local-planner");
+                        var structuredRoute =
+                            desktopState.StructuredScene is not null &&
+                            !string.IsNullOrWhiteSpace(decision.TargetElementId);
 
-                            progress.Add(
-                                "local-planner",
-                                $"Provider đang cooldown trên scene không đổi; dùng Local Planner: {decision.Reason}",
-                                decision.Action,
-                                decision.Confidence);
+                        progress.Add(
+                            structuredRoute
+                                ? "structured-first"
+                                : "local-planner",
+                            structuredRoute
+                                ? $"Structured-first planner đã chọn action từ UIA tree: {decision.Reason}"
+                                : $"Local Planner đã xử lý action không cần Vision: {decision.Reason}",
+                            decision.Action,
+                            decision.Confidence);
 
-                            progress.AddDiagnostic(
-                                "provider",
-                                $"provider=Gemini; purpose=plan; cycle={index}; circuit=open; scene={sceneDiagnosticId}; backoffUntil={plannerBackoffUntil:O}; fallback=local-planner; action={decision.Action}.");
-                        }
-                        else
-                        {
-                            decision = CreatePlannerCooldownWaitDecision(
-                                plannerBackoffUntil);
+                        progress.AddDiagnostic(
+                            "provider",
+                            structuredRoute
+                                ? $"provider=local-structured; purpose=plan; cycle={index}; scene={sceneDiagnosticId}; structuredNodes={desktopState.StructuredScene?.NodeCount ?? 0}; action={decision.Action}; elementId={LimitDiagnostic(decision.TargetElementId, 80)}; geminiCalled=false."
+                                : $"provider=local; purpose=plan; cycle={index}; scene={sceneDiagnosticId}; action={decision.Action}; geminiCalled=false.");
+                    }
+                    else if (providerBackoffActive)
+                    {
+                        decision = CreatePlannerCooldownWaitDecision(
+                            plannerBackoffUntil);
 
-                            plannerStopwatch.Stop();
-                            planTelemetry.Complete(
-                                success: true,
-                                route: "provider-cooldown");
+                        plannerStopwatch.Stop();
+                        planTelemetry.Complete(
+                            success: true,
+                            route: "provider-cooldown");
 
-                            progress.Add(
-                                "provider-cooldown",
-                                $"Scene chưa đổi và Gemini đang cooldown đến {plannerBackoffUntil:HH:mm:ss}; không gọi lặp provider.",
-                                "wait");
+                        progress.Add(
+                            "provider-cooldown",
+                            $"Scene chưa đổi và Gemini đang cooldown đến {plannerBackoffUntil:HH:mm:ss}; structured/local planner không có action đủ chắc chắn nên chờ an toàn.",
+                            "wait");
 
-                            progress.AddDiagnostic(
-                                "provider",
-                                $"provider=Gemini; purpose=plan; cycle={index}; circuit=open; scene={sceneDiagnosticId}; backoffUntil={plannerBackoffUntil:O}; fallback=safe-wait.");
-                        }
+                        progress.AddDiagnostic(
+                            "provider",
+                            $"provider=Gemini; purpose=plan; cycle={index}; circuit=open; scene={sceneDiagnosticId}; backoffUntil={plannerBackoffUntil:O}; fallback=safe-wait.");
                     }
                     else
                     {
                         progress.Add(
                             "analyze",
-                            $"Đang gửi ảnh desktop {frame.Width}x{frame.Height} cho Vision để phân tích.");
+                            $"Structured/local planner chưa có action đủ chắc chắn; gửi ảnh desktop {frame.Width}x{frame.Height} cho Vision/Gemini fallback.");
 
                         decision = await vision.DecideComputerOperatorActionAsync(
                             frame,

@@ -11,7 +11,8 @@ public static class UniversalExecutionLifecycleActions
 public sealed record UniversalExecutionLifecycleRequest(
     string Goal,
     string? PreferredChannel = null,
-    bool ConfirmExecution = false);
+    bool ConfirmExecution = false,
+    UniversalVerificationContinuationContext? VerificationContext = null);
 
 public sealed record UniversalExecutionLifecycleResult(
     UniversalTaskRouteExecution Execution,
@@ -80,6 +81,7 @@ public sealed class UniversalExecutionLifecycleCoordinator(
                     verificationPlan,
                     execution.Route,
                     execution.Gateway.Result,
+                    request.VerificationContext,
                     cancellationToken);
 
             if (continuationExecution.Evidence is not null)

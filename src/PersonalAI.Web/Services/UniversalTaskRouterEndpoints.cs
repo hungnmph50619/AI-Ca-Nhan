@@ -7,6 +7,7 @@ public static class UniversalTaskRouterEndpoints
     public static IServiceCollection AddUniversalTaskRouter(
         this IServiceCollection services)
     {
+        services.AddScoped<IUniversalCapabilityDiscoveryService, UniversalCapabilityDiscoveryService>();
         services.AddScoped<IUniversalTaskRouter, UniversalTaskRouter>();
         services.AddScoped<IUniversalDirectToolPath, UniversalDirectToolPath>();
         services.AddSingleton<IUniversalFallbackPolicy, UniversalFallbackPolicy>();
@@ -22,6 +23,27 @@ public static class UniversalTaskRouterEndpoints
     public static WebApplication MapUniversalTaskRouter(
         this WebApplication app)
     {
+        app.MapGet("/api/universal-router/capabilities", (
+            IUniversalCapabilityDiscoveryService discovery) =>
+        {
+            var snapshot = discovery.Discover();
+            return Results.Ok(new
+            {
+                phienBan = snapshot.Version,
+                thoiDiemUtc = snapshot.GeneratedAtUtc,
+                khaNang = snapshot.Signals.Select(item => new
+                {
+                    ma = item.Key,
+                    kenh = item.Channel,
+                    ten = item.DisplayName,
+                    khaDung = item.Available,
+                    mucDoTinCay = item.Reliability,
+                    thuTuUuTien = item.Priority,
+                    lyDo = item.Reason
+                })
+            });
+        });
+
         app.MapPost("/api/universal-router/preview", (
             UniversalTaskRouteRequest request,
             IUniversalTaskRouter router) =>

@@ -333,6 +333,21 @@ public sealed class ComputerOperatorAcceptanceService
 
         RunCheck(
             checks,
+            "runtime capability thêm Playwright evidence cho browser",
+            CheckUniversalRouterUsesPlaywrightCapability);
+
+        RunCheck(
+            checks,
+            "runtime capability thêm FlaUI evidence cho computer",
+            CheckUniversalRouterUsesFlaUiCapability);
+
+        RunCheck(
+            checks,
+            "runtime capability không quảng bá adapter không khả dụng",
+            CheckUniversalRouterIgnoresUnavailableCapability);
+
+        RunCheck(
+            checks,
             "capability first router phát hiện direct tool an toàn",
             CheckUniversalRouterDetectsDirectToolOpportunity);
 
@@ -2627,6 +2642,167 @@ public sealed class ComputerOperatorAcceptanceService
             $"URL regex regression: {browser.Reason}; {route.Reason}");
     }
 
+    private static void CheckUniversalRouterUsesPlaywrightCapability()
+    {
+        var registry = new ExecutionAgentRegistry(
+            new IExecutionAgent[]
+            {
+                new AcceptanceExecutionAgent(
+                    "execution.browser.acceptance",
+                    ExecutionAgentChannels.Browser),
+                new AcceptanceExecutionAgent(
+                    "execution.computer.acceptance",
+                    ExecutionAgentChannels.Computer)
+            });
+
+        var discovery =
+            new AcceptanceCapabilityDiscoveryService(
+                new UniversalCapabilitySnapshot(
+                    PersonalAiRelease.Version,
+                    DateTimeOffset.UtcNow,
+                    [
+                        new UniversalCapabilitySignal(
+                            "browser.playwright-dom",
+                            ExecutionAgentChannels.Browser,
+                            "Playwright + Microsoft Edge",
+                            Available: true,
+                            UniversalCapabilityReliability.Structured,
+                            0.05,
+                            Priority: 1,
+                            "acceptance")
+                    ]));
+
+        var router = new UniversalTaskRouter(
+            registry,
+            new ExecutionGateway(registry),
+            toolCapabilities: null,
+            capabilityDiscovery: discovery);
+
+        var route = router.Preview(
+            new UniversalTaskRouteRequest(
+                "Mở https://example.com và đọc trang"));
+
+        var browser = route.Candidates.Single(
+            item => item.Channel ==
+                ExecutionAgentChannels.Browser);
+
+        Require(
+            route.SelectedChannel ==
+                ExecutionAgentChannels.Browser &&
+            browser.Reason.Contains(
+                "capability:browser.playwright-dom",
+                StringComparison.OrdinalIgnoreCase),
+            $"Router chưa dùng Playwright runtime capability: {browser.Reason}");
+    }
+
+    private static void CheckUniversalRouterUsesFlaUiCapability()
+    {
+        var registry = new ExecutionAgentRegistry(
+            new IExecutionAgent[]
+            {
+                new AcceptanceExecutionAgent(
+                    "execution.computer.acceptance",
+                    ExecutionAgentChannels.Computer)
+            });
+
+        var discovery =
+            new AcceptanceCapabilityDiscoveryService(
+                new UniversalCapabilitySnapshot(
+                    PersonalAiRelease.Version,
+                    DateTimeOffset.UtcNow,
+                    [
+                        new UniversalCapabilitySignal(
+                            "desktop.flaui-uia3",
+                            ExecutionAgentChannels.Computer,
+                            "FlaUI / UI Automation 3",
+                            Available: true,
+                            UniversalCapabilityReliability.Structured,
+                            0.04,
+                            Priority: 1,
+                            "acceptance")
+                    ]));
+
+        var router = new UniversalTaskRouter(
+            registry,
+            new ExecutionGateway(registry),
+            toolCapabilities: null,
+            capabilityDiscovery: discovery);
+
+        var route = router.Preview(
+            new UniversalTaskRouteRequest(
+                "Mở ứng dụng desktop bằng chuột và bàn phím"));
+
+        var computer = route.Candidates.Single(
+            item => item.Channel ==
+                ExecutionAgentChannels.Computer);
+
+        Require(
+            computer.Reason.Contains(
+                "capability:desktop.flaui-uia3",
+                StringComparison.OrdinalIgnoreCase),
+            $"Router chưa dùng FlaUI runtime capability: {computer.Reason}");
+    }
+
+    private static void CheckUniversalRouterIgnoresUnavailableCapability()
+    {
+        var registry = new ExecutionAgentRegistry(
+            new IExecutionAgent[]
+            {
+                new AcceptanceExecutionAgent(
+                    "execution.browser.acceptance",
+                    ExecutionAgentChannels.Browser)
+            });
+
+        var discovery =
+            new AcceptanceCapabilityDiscoveryService(
+                new UniversalCapabilitySnapshot(
+                    PersonalAiRelease.Version,
+                    DateTimeOffset.UtcNow,
+                    [
+                        new UniversalCapabilitySignal(
+                            "browser.playwright-dom",
+                            ExecutionAgentChannels.Browser,
+                            "Playwright + Microsoft Edge",
+                            Available: false,
+                            UniversalCapabilityReliability.Structured,
+                            0,
+                            Priority: 1,
+                            "acceptance-unavailable"),
+                        new UniversalCapabilitySignal(
+                            "browser.http-html",
+                            ExecutionAgentChannels.Browser,
+                            "Browser Agent HTTP/HTML",
+                            Available: true,
+                            UniversalCapabilityReliability.Fallback,
+                            0.02,
+                            Priority: 2,
+                            "acceptance-http")
+                    ]));
+
+        var router = new UniversalTaskRouter(
+            registry,
+            new ExecutionGateway(registry),
+            toolCapabilities: null,
+            capabilityDiscovery: discovery);
+
+        var route = router.Preview(
+            new UniversalTaskRouteRequest(
+                "Mở https://example.com"));
+
+        var browser = route.Candidates.Single(
+            item => item.Channel ==
+                ExecutionAgentChannels.Browser);
+
+        Require(
+            !browser.Reason.Contains(
+                "capability:browser.playwright-dom",
+                StringComparison.OrdinalIgnoreCase) &&
+            browser.Reason.Contains(
+                "capability:browser.http-html",
+                StringComparison.OrdinalIgnoreCase),
+            $"Router vẫn quảng bá capability không khả dụng: {browser.Reason}");
+    }
+
     private static void CheckUniversalRouterDetectsDirectToolOpportunity()
     {
         IPersonalAiTool browserTool =
@@ -4833,6 +5009,14 @@ public sealed class ComputerOperatorAcceptanceService
                     Provider: "acceptance",
                     Model: "acceptance"));
         }
+    }
+
+    private sealed class AcceptanceCapabilityDiscoveryService(
+        UniversalCapabilitySnapshot snapshot)
+        : IUniversalCapabilityDiscoveryService
+    {
+        public UniversalCapabilitySnapshot Discover() =>
+            snapshot;
     }
 
     private sealed class AcceptanceStructuredTextBackend(

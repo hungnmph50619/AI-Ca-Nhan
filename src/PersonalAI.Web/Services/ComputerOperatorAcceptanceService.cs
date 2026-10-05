@@ -114,6 +114,11 @@ public sealed class ComputerOperatorAcceptanceService
 
         RunCheck(
             checks,
+            "provider health dùng EWMA để giảm nhiễu latency một lần",
+            CheckProviderHealthUsesLatencyEwma);
+
+        RunCheck(
+            checks,
             "OpenCV template sensor giữ multi-scale nhỏ và ngưỡng confidence an toàn",
             CheckOpenCvTemplateSensorPolicy);
 
@@ -1689,6 +1694,7 @@ public sealed class ComputerOperatorAcceptanceService
                     LocalVisualProviderHealthState.Healthy,
                 ConsecutiveFailures: 0,
                 LastLatencyMilliseconds: 2500,
+                AverageLatencyMilliseconds: 2500,
                 UpdatedAtUtc:
                     DateTimeOffset.UtcNow,
                 Reason: "acceptance");
@@ -1704,6 +1710,36 @@ public sealed class ComputerOperatorAcceptanceService
         Require(
             !allowed,
             "Sensor budget vẫn cho provider có latency lịch sử cao hơn gấp đôi budget.");
+    }
+
+    private static void CheckProviderHealthUsesLatencyEwma()
+    {
+        var health =
+            new LocalVisualProviderHealthRegistry();
+
+        health.RecordSuccess(
+            "windows-ocr",
+            100,
+            "fast");
+        health.RecordSuccess(
+            "windows-ocr",
+            100,
+            "fast");
+        health.RecordSuccess(
+            "windows-ocr",
+            2100,
+            "single spike");
+
+        var snapshot =
+            health.Get(
+                "windows-ocr");
+
+        Require(
+            snapshot.AverageLatencyMilliseconds <
+                snapshot.LastLatencyMilliseconds &&
+            snapshot.AverageLatencyMilliseconds >
+                100,
+            "Provider health chưa dùng EWMA để làm mượt latency.");
     }
 
     private static void CheckOpenCvTemplateSensorPolicy()

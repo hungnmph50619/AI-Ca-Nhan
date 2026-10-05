@@ -1051,10 +1051,18 @@ function renderChatAttachmentPreview() {
       "div",
       `chat-attachment-card${item.uploading ? " uploading" : ""}`);
 
-    const icon = documentElement(
-      "div",
-      "chat-attachment-icon",
-      item.kind === "image" ? "▧" : "▤");
+    let icon;
+    if (item.kind === "image" && item.previewUrl) {
+      icon = document.createElement("img");
+      icon.className = "chat-attachment-thumb";
+      icon.src = item.previewUrl;
+      icon.alt = "";
+    } else {
+      icon = documentElement(
+        "div",
+        "chat-attachment-icon",
+        item.kind === "image" ? "▧" : "▤");
+    }
 
     const meta = documentElement("div", "chat-attachment-meta");
     const name = documentElement("span", "chat-attachment-name", item.fileName);
@@ -1233,10 +1241,19 @@ function createMessageAttachmentsNode(attachments) {
 
   attachments.forEach(attachment => {
     const card = documentElement("div", "message-attachment-card");
-    const icon = documentElement(
-      "div",
-      "message-attachment-icon",
-      attachment.kind === "image" ? "▧" : "▤");
+    let icon;
+    if (attachment.kind === "image") {
+      icon = document.createElement("img");
+      icon.className = "message-attachment-thumb";
+      icon.src = `/api/chat/attachments/${encodeURIComponent(attachment.id)}`;
+      icon.alt = "";
+      icon.loading = "lazy";
+    } else {
+      icon = documentElement(
+        "div",
+        "message-attachment-icon",
+        "▤");
+    }
     const meta = documentElement("div", "message-attachment-meta");
     const name = documentElement(
       "span",
@@ -1249,6 +1266,20 @@ function createMessageAttachmentsNode(attachments) {
 
     meta.append(name, size);
     card.append(icon, meta);
+    card.title = "Mở tệp đính kèm";
+    card.tabIndex = 0;
+    card.addEventListener("click", () => {
+      window.open(
+        `/api/chat/attachments/${encodeURIComponent(attachment.id)}`,
+        "_blank",
+        "noopener,noreferrer");
+    });
+    card.addEventListener("keydown", event => {
+      if (event.key === "Enter" || event.key === " ") {
+        event.preventDefault();
+        card.click();
+      }
+    });
     wrap.appendChild(card);
   });
 

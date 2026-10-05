@@ -1295,7 +1295,8 @@ public sealed class ComputerOperatorAcceptanceService
             new DesktopOcrActionPlanner(
                 new AcceptanceOcrSensor(
                     observation),
-                new LocalVisualTargetResolver());
+                new LocalVisualTargetResolver(),
+                new LocalVisualSensorBudgetPolicy());
 
         var foreground =
             new ComputerWindowInfo(
@@ -1385,7 +1386,8 @@ public sealed class ComputerOperatorAcceptanceService
         var router =
             new DesktopOcrSensorRouter(
                 [paddle, windows],
-                new LocalVisualProviderHealthRegistry());
+                new LocalVisualProviderHealthRegistry(),
+                new LocalVisualSensorBudgetPolicy());
 
         var result =
             router.ReadWindow(
@@ -1525,7 +1527,8 @@ public sealed class ComputerOperatorAcceptanceService
         var router =
             new DesktopOcrSensorRouter(
                 [empty, fallback],
-                health);
+                health,
+                new LocalVisualSensorBudgetPolicy());
 
         for (var i = 0; i < 4; i++)
         {
@@ -8243,7 +8246,8 @@ public sealed class ComputerOperatorAcceptanceService
         : IDesktopOcrSensor
     {
         public DesktopOcrObservation ReadWindow(
-            string windowId) =>
+            string windowId,
+            LocalVisualSensorBudget? budget = null) =>
             observation;
     }
 

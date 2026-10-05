@@ -380,7 +380,11 @@ public static class ComputerOperatorEventRelevance
                 _ => 0.35
             };
 
-            return Math.Min(1.0, score + semanticBoost);
+            return ApplySourceConfidence(
+                Math.Min(
+                    1.0,
+                    score + semanticBoost),
+                desktopEvent);
         }
 
         if (normalizedAction is
@@ -394,7 +398,11 @@ public static class ComputerOperatorEventRelevance
                 _ => 0.30
             };
 
-            return Math.Min(1.0, score + semanticBoost);
+            return ApplySourceConfidence(
+                Math.Min(
+                    1.0,
+                    score + semanticBoost),
+                desktopEvent);
         }
 
         if (normalizedAction is
@@ -410,7 +418,11 @@ public static class ComputerOperatorEventRelevance
                 _ => 0.30
             };
 
-            return Math.Min(1.0, score + semanticBoost);
+            return ApplySourceConfidence(
+                Math.Min(
+                    1.0,
+                    score + semanticBoost),
+                desktopEvent);
         }
 
         if (normalizedAction is
@@ -430,7 +442,11 @@ public static class ComputerOperatorEventRelevance
                 _ => 0.45
             };
 
-            return Math.Min(1.0, score + semanticBoost);
+            return ApplySourceConfidence(
+                Math.Min(
+                    1.0,
+                    score + semanticBoost),
+                desktopEvent);
         }
 
         if (normalizedAction is
@@ -452,7 +468,11 @@ public static class ComputerOperatorEventRelevance
                 _ => 0.50
             };
 
-            return Math.Min(1.0, score + semanticBoost);
+            return ApplySourceConfidence(
+                Math.Min(
+                    1.0,
+                    score + semanticBoost),
+                desktopEvent);
         }
 
         // Không biết action: ưu tiên event thay đổi trạng thái lớn,
@@ -469,7 +489,37 @@ public static class ComputerOperatorEventRelevance
             _ => 0.50
         };
 
-        return Math.Min(1.0, fallbackScore + semanticBoost);
+        return ApplySourceConfidence(
+            Math.Min(
+                1.0,
+                fallbackScore +
+                semanticBoost),
+            desktopEvent);
+    }
+
+    private static double ApplySourceConfidence(
+        double relevance,
+        DesktopSystemEvent desktopEvent)
+    {
+        var sourceWeight =
+            Math.Clamp(
+                desktopEvent.SourceConfidence,
+                0.50,
+                1.0);
+
+        var fused =
+            relevance *
+            sourceWeight;
+
+        if (desktopEvent.Corroborated)
+        {
+            fused =
+                Math.Min(
+                    1.0,
+                    fused + 0.10);
+        }
+
+        return fused;
     }
 }
 

@@ -8,6 +8,7 @@
     <ImplicitUsings>enable</ImplicitUsings>
     <OutputPath>..\PersonalAI.Web\bin\$(Configuration)\net8.0\local-vision-worker\</OutputPath>
     <AppendTargetFrameworkToOutputPath>false</AppendTargetFrameworkToOutputPath>
+    <AppendRuntimeIdentifierToOutputPath>false</AppendRuntimeIdentifierToOutputPath>
   </PropertyGroup>
 
   <ItemGroup>

@@ -30,6 +30,7 @@ public static class ComputerUseEndpoints
         services.AddSingleton<IComputerCoordinateTransformService, ComputerCoordinateTransformService>();
         services.AddSingleton<IComputerSafeTargetingService, ComputerSafeTargetingService>();
         services.AddSingleton<IComputerOperatorAcceptanceService, ComputerOperatorAcceptanceService>();
+        services.AddSingleton<IComputerOperatorCheckpointStore, SqliteComputerOperatorCheckpointStore>();
         services.AddSingleton<IComputerOperatorTaskService, ComputerOperatorTaskService>();
         services.AddSingleton<IExecutionAgent, ComputerOperatorExecutionAgent>();
         services.AddSingleton<IExecutionAgentRegistry, ExecutionAgentRegistry>();
@@ -82,6 +83,39 @@ public static class ComputerUseEndpoints
         app.MapGet("/api/computer/operator-progress", (
             ComputerOperatorProgressStore progress) =>
             Results.Ok(progress.Get()));
+
+        app.MapGet("/api/computer/operator-checkpoint", (
+            HttpContext context,
+            IComputerOperatorCheckpointStore checkpoints) =>
+        {
+            if (!IsLocalRequest(context))
+                return Results.StatusCode(StatusCodes.Status403Forbidden);
+
+            var checkpoint = checkpoints.GetLatest();
+            return Results.Ok(checkpoint is null
+                ? new
+                {
+                    coCheckpoint = false,
+                    thoiHanKhoiPhucGio =
+                        SqliteComputerOperatorCheckpointStore.ResumeLifetime.TotalHours
+                }
+                : new
+                {
+                    coCheckpoint = true,
+                    ma = checkpoint.Id,
+                    trangThai = checkpoint.Status,
+                    soMocDaXacMinh =
+                        checkpoint.VerifiedMilestones.Count,
+                    tienDo =
+                        checkpoint.GoalProgress,
+                    capNhatLuc =
+                        checkpoint.UpdatedAt,
+                    thoiHanKhoiPhucGio =
+                        SqliteComputerOperatorCheckpointStore.ResumeLifetime.TotalHours,
+                    nguyenTac =
+                        "Checkpoint chỉ khôi phục bằng chứng đã xác minh. Computer Operator luôn quan sát lại desktop trước action mới và không replay action cuối."
+                });
+        });
 
         app.MapGet("/api/execution-agents", (
             IExecutionAgentRegistry agents) =>

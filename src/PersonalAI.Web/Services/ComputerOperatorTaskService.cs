@@ -1,3 +1,6 @@
+using System.Diagnostics;
+using System.Security.Cryptography;
+using System.Text;
 using PersonalAI.Web.Models;
 
 namespace PersonalAI.Web.Services;
@@ -22,6 +25,84 @@ public sealed record ComputerOperatorTaskResult(
     string Provider,
     string Model);
 
+public sealed record VerificationCaptureContext(
+    string CaptureScope,
+    string? WindowId,
+    string? MonitorDevice,
+    int Left,
+    int Top,
+    int Width,
+    int Height,
+    uint DpiX,
+    uint DpiY)
+{
+    public static VerificationCaptureContext From(
+        DesktopScreenshotFrame frame) =>
+        new(
+            frame.CaptureScope,
+            frame.WindowId,
+            frame.MonitorDevice,
+            frame.Left,
+            frame.Top,
+            frame.Width,
+            frame.Height,
+            frame.MonitorDpiX,
+            frame.MonitorDpiY);
+
+    public bool Matches(
+        DesktopScreenshotFrame frame) =>
+        CaptureScope.Equals(
+            frame.CaptureScope,
+            StringComparison.OrdinalIgnoreCase) &&
+        string.Equals(
+            WindowId,
+            frame.WindowId,
+            StringComparison.OrdinalIgnoreCase) &&
+        string.Equals(
+            MonitorDevice,
+            frame.MonitorDevice,
+            StringComparison.OrdinalIgnoreCase) &&
+        Left == frame.Left &&
+        Top == frame.Top &&
+        Width == frame.Width &&
+        Height == frame.Height &&
+        DpiX == frame.MonitorDpiX &&
+        DpiY == frame.MonitorDpiY;
+}
+
+public sealed record ComputerOperatorDesktopState(
+    DateTimeOffset CapturedAtUtc,
+    ComputerWindowInfo? ForegroundWindow,
+    IReadOnlyList<ComputerWindowInfo> Windows,
+    int FrameLeft,
+    int FrameTop,
+    int FrameWidth,
+    int FrameHeight,
+    string CaptureScope,
+    string? CaptureWindowId,
+    bool CaptureWindowWasForeground)
+{
+    public string ToPromptSummary()
+    {
+        var lines = new List<string>
+        {
+            ForegroundWindow is null
+                ? "Foreground: không xác định"
+                : $"Foreground: id={ForegroundWindow.WindowId}; title={ForegroundWindow.Title}; process={ForegroundWindow.ProcessName ?? "?"}; rect={ForegroundWindow.Left},{ForegroundWindow.Top},{ForegroundWindow.Width},{ForegroundWindow.Height}",
+            $"Observation frame: scope={CaptureScope}; origin={FrameLeft},{FrameTop}; size={FrameWidth}x{FrameHeight}; window={CaptureWindowId ?? "-"}; foreground={CaptureWindowWasForeground}",
+            "Cửa sổ đang hiển thị:"
+        };
+
+        foreach (var window in Windows)
+        {
+            lines.Add(
+                $"- id={window.WindowId}; title={window.Title}; process={window.ProcessName ?? "?"}; foreground={window.IsForeground}; rect={window.Left},{window.Top},{window.Width},{window.Height}");
+        }
+
+        return string.Join("\n", lines);
+    }
+}
+
 public sealed class ComputerOperatorTaskService(
     IComputerUseService computer,
     ComputerControlGate control,
@@ -40,10 +121,14 @@ public sealed class ComputerOperatorTaskService(
     IAdaptiveVerificationWaitEngine adaptiveWait,
     IComputerOperatorCheckpointStore checkpoints,
     IComputerOperatorTelemetry telemetry,
+    IUniversalReliableOperatorCoordinator reliableOperator,
     ILogger<ComputerOperatorTaskService> logger)
     : IComputerOperatorTaskService
 {
-    private const int MaximumSteps = 12;
+    private const int MaximumSteps = 64;
+    private const int ScopedLeaseActions = 16;
+    private const int ScopedLeaseSeconds = 120;
+    private const int ScopedLeaseRenewalThresholdSeconds = 25;
     private const double MinimumConfidence = 0.72;
     private static readonly IDesktopVerificationRouter VerificationRouter =
         new DesktopVerificationRouter();
@@ -57,6 +142,8 @@ public sealed class ComputerOperatorTaskService(
         new ComputerOperatorConfidenceEngine();
     private static readonly IComputerOperatorFailureRecoveryEngine RecoveryEngine =
         new ComputerOperatorFailureRecoveryEngine();
+    private static readonly IDesktopLocalActionPlanner LocalPlanner =
+        new DesktopLocalActionPlanner();
 
     private static readonly string[] SecretTerms =
     [
@@ -90,8 +177,8 @@ public sealed class ComputerOperatorTaskService(
                 ComputerOperatorTelemetryStages.Task);
 
         control.EnableScopedAutomation(
-            maximumActions: 12,
-            maximumSeconds: 170);
+            maximumActions: ScopedLeaseActions,
+            maximumSeconds: ScopedLeaseSeconds);
 
         var operatorToken = execution.Begin(normalizedGoal);
         using var linked = CancellationTokenSource.CreateLinkedTokenSource(
@@ -100,6 +187,27 @@ public sealed class ComputerOperatorTaskService(
 
         progress.Start(
             $"Bắt đầu tác vụ: {normalizedGoal}");
+
+        var reliableRuntime =
+            reliableOperator.GetRuntimeSnapshot();
+
+        if (!reliableRuntime.Ready)
+        {
+            taskTelemetry.Complete(
+                success: false,
+                route: "runtime-not-ready");
+
+            progress.Block(
+                reliableRuntime.Reason);
+
+            throw new ToolExecutionInputException(
+                reliableRuntime.Reason);
+        }
+
+        progress.Add(
+            "reliable-runtime",
+            $"Universal Reliable Operator: {reliableRuntime.Reason}",
+            "ready");
 
         var resumableCheckpoint =
             checkpoints.FindResumable(
@@ -144,6 +252,9 @@ public sealed class ComputerOperatorTaskService(
         var keyboardRepairFailures = 0;
         var keyboardResetRequired = false;
         var keyboardSelectionReady = false;
+        string? plannerDegradedScene = null;
+        var plannerDegradedCount = 0;
+        var plannerBackoffUntil = DateTimeOffset.MinValue;
         IReadOnlyList<DesktopSceneElement> previousScene = Array.Empty<DesktopSceneElement>();
         var temporalSceneContext = string.Empty;
 
@@ -153,7 +264,11 @@ public sealed class ComputerOperatorTaskService(
             {
                 linked.Token.ThrowIfCancellationRequested();
 
-                if (control.GetStatus().Paused)
+                var gateBeforeRenewal = control.GetStatus();
+                if (!control.EnsureScopedAutomationLease(
+                        ScopedLeaseActions,
+                        ScopedLeaseSeconds,
+                        ScopedLeaseRenewalThresholdSeconds))
                 {
                     MarkCheckpointStatusSafely(
                         checkpoint,
@@ -163,7 +278,24 @@ public sealed class ComputerOperatorTaskService(
                         route: "control-stop");
                     return Finish(
                         false,
-                        "Computer Operator đã dừng vì phiên điều khiển hết hạn, hết ngân sách hoặc bị dừng khẩn cấp.");
+                        gateBeforeRenewal.PauseReason ==
+                            ComputerControlPauseReasons.HotkeyUnavailable
+                            ? "Computer Operator đã dừng vì phím dừng khẩn cấp không còn khả dụng."
+                            : "Computer Operator đã dừng theo yêu cầu người dùng.");
+                }
+
+                var gateAfterRenewal = control.GetStatus();
+                if (gateBeforeRenewal.Paused &&
+                    !gateAfterRenewal.Paused)
+                {
+                    progress.Add(
+                        "safety-lease",
+                        "Safety lease đã hết nhưng task vẫn còn hiệu lực; đã cấp lease mới trước khi tiếp tục. Đây không phải task timeout.",
+                        "renewed");
+
+                    progress.AddDiagnostic(
+                        "lifecycle",
+                        $"cycle={index}; event=safety-lease-renewed; taskContinues=true; remainingActions={gateAfterRenewal.RemainingActions}; expiresAt={gateAfterRenewal.ExpiresAt:O}.");
                 }
 
                 await execution.WaitIfPausedAsync(linked.Token);
@@ -179,14 +311,13 @@ public sealed class ComputerOperatorTaskService(
                     $"State machine: {stateSnapshot.State} — {stateSnapshot.Detail}",
                     stateSnapshot.State.ToString().ToLowerInvariant());
 
-                var windowsContext = BuildObservation();
-                var active = computer.GetActiveWindow();
+                var activeBeforeObservation = computer.GetActiveWindow();
 
                 progress.Add(
                     "stabilize",
-                    active is null
+                    activeBeforeObservation is null
                         ? "Đang chờ desktop ổn định trước khi quan sát. Foreground chưa xác định."
-                        : $"Đang chờ desktop ổn định trước khi quan sát. Foreground: {active.Title}.");
+                        : $"Đang chờ desktop ổn định trước khi quan sát. Foreground: {activeBeforeObservation.Title}.");
 
                 DesktopScreenshotFrame frame;
                 using var observeTelemetry =
@@ -225,33 +356,151 @@ public sealed class ComputerOperatorTaskService(
                         $"Không chụp được desktop: {exception.Message}");
                 }
 
+                var desktopState = BuildDesktopState(frame);
+                var sceneFingerprint =
+                    BuildDesktopSceneFingerprint(desktopState);
+                var windowsContext = desktopState.ToPromptSummary();
+                var active = desktopState.ForegroundWindow;
+
+                progress.Add(
+                    "desktop-state",
+                    $"Unified Desktop State: foreground={active?.Title ?? "không xác định"}; windows={desktopState.Windows.Count}; frame={desktopState.CaptureScope}/{desktopState.FrameWidth}x{desktopState.FrameHeight}.",
+                    observation: true);
+
+                var sceneDiagnosticId =
+                    BuildDiagnosticId(sceneFingerprint);
+
+                progress.AddDiagnostic(
+                    "cycle",
+                    $"cycle={index}; scene={sceneDiagnosticId}; foreground={active?.ProcessName ?? "?"}/{active?.Title ?? "không xác định"}; windows={desktopState.Windows.Count}; frame={desktopState.CaptureScope}; origin=({desktopState.FrameLeft},{desktopState.FrameTop}); size={desktopState.FrameWidth}x{desktopState.FrameHeight}.");
+
                 DesktopOperatorDecision decision;
+                var plannerStopwatch = Stopwatch.StartNew();
                 using var planTelemetry =
                     telemetry.Begin(
                         ComputerOperatorTelemetryStages.GeminiPlan);
 
+                var sameDegradedScene =
+                    plannerDegradedScene is not null &&
+                    plannerDegradedScene.Equals(
+                        sceneFingerprint,
+                        StringComparison.Ordinal);
+
+                if (!sameDegradedScene)
+                {
+                    plannerDegradedCount = 0;
+                    plannerBackoffUntil = DateTimeOffset.MinValue;
+                }
+
+                var providerBackoffActive =
+                    sameDegradedScene &&
+                    DateTimeOffset.UtcNow < plannerBackoffUntil;
+
                 try
                 {
-                    progress.Add(
-                        "analyze",
-                        $"Đang gửi ảnh desktop {frame.Width}x{frame.Height} cho Vision để phân tích.");
+                    if (providerBackoffActive)
+                    {
+                        var localHistory =
+                            string.Join(
+                                "\n",
+                                taskHistory.TakeLast(40));
 
-                    decision = await vision.DecideComputerOperatorActionAsync(
-                        frame,
-                        normalizedGoal,
-                        windowsContext,
-                        BuildHistoryContext(
-                            taskHistory,
-                            recovery,
-                            verifiedMilestones,
-                            currentSubgoal,
-                            latestGoalProgress),
-                        temporalSceneContext,
-                        linked.Token);
+                        if (LocalPlanner.TryPlan(
+                                normalizedGoal,
+                                desktopState,
+                                localHistory,
+                                out decision))
+                        {
+                            plannerStopwatch.Stop();
+                            planTelemetry.Complete(
+                                success: true,
+                                route: "local-planner");
 
-                    planTelemetry.Complete(
-                        success: true,
-                        route: "gemini");
+                            progress.Add(
+                                "local-planner",
+                                $"Provider đang cooldown trên scene không đổi; dùng Local Planner: {decision.Reason}",
+                                decision.Action,
+                                decision.Confidence);
+
+                            progress.AddDiagnostic(
+                                "provider",
+                                $"provider=Gemini; purpose=plan; cycle={index}; circuit=open; scene={sceneDiagnosticId}; backoffUntil={plannerBackoffUntil:O}; fallback=local-planner; action={decision.Action}.");
+                        }
+                        else
+                        {
+                            decision = CreatePlannerCooldownWaitDecision(
+                                plannerBackoffUntil);
+
+                            plannerStopwatch.Stop();
+                            planTelemetry.Complete(
+                                success: true,
+                                route: "provider-cooldown");
+
+                            progress.Add(
+                                "provider-cooldown",
+                                $"Scene chưa đổi và Gemini đang cooldown đến {plannerBackoffUntil:HH:mm:ss}; không gọi lặp provider.",
+                                "wait");
+
+                            progress.AddDiagnostic(
+                                "provider",
+                                $"provider=Gemini; purpose=plan; cycle={index}; circuit=open; scene={sceneDiagnosticId}; backoffUntil={plannerBackoffUntil:O}; fallback=safe-wait.");
+                        }
+                    }
+                    else
+                    {
+                        progress.Add(
+                            "analyze",
+                            $"Đang gửi ảnh desktop {frame.Width}x{frame.Height} cho Vision để phân tích.");
+
+                        decision = await vision.DecideComputerOperatorActionAsync(
+                            frame,
+                            normalizedGoal,
+                            windowsContext,
+                            BuildHistoryContext(
+                                taskHistory,
+                                recovery,
+                                verifiedMilestones,
+                                currentSubgoal,
+                                latestGoalProgress),
+                            temporalSceneContext,
+                            linked.Token);
+
+                        plannerStopwatch.Stop();
+                        planTelemetry.Complete(
+                            success: true,
+                            route: "gemini");
+
+                        if (IsProviderDegradedPlannerDecision(
+                                decision))
+                        {
+                            plannerDegradedScene =
+                                sceneFingerprint;
+                            plannerDegradedCount++;
+
+                            var backoffSeconds =
+                                Math.Min(
+                                    20,
+                                    5 * plannerDegradedCount);
+
+                            plannerBackoffUntil =
+                                DateTimeOffset.UtcNow.AddSeconds(
+                                    backoffSeconds);
+
+                            progress.AddDiagnostic(
+                                "provider",
+                                $"provider=Gemini; purpose=plan; cycle={index}; latencyMs={plannerStopwatch.ElapsedMilliseconds}; result=degraded; scene={sceneDiagnosticId}; circuit=open; backoffSeconds={backoffSeconds}; action={decision.Action}; replaySideEffect=false.");
+                        }
+                        else
+                        {
+                            plannerDegradedScene = null;
+                            plannerDegradedCount = 0;
+                            plannerBackoffUntil = DateTimeOffset.MinValue;
+
+                            progress.AddDiagnostic(
+                                "provider",
+                                $"provider=Gemini; purpose=plan; cycle={index}; latencyMs={plannerStopwatch.ElapsedMilliseconds}; action={decision.Action}; confidence={decision.Confidence:0.000}; payload=parsed.");
+                        }
+                    }
                 }
                 catch
                 {
@@ -348,10 +597,10 @@ public sealed class ComputerOperatorTaskService(
                 var loopStrategy =
                     decision.Action is "complete" or "blocked" or "wait"
                         ? string.Empty
-                        : BuildActionSignature(decision);
+                        : BuildSemanticActionSignature(decision);
 
                 var loopAssessment = loopGuard.Observe(
-                    decision.State,
+                    sceneFingerprint,
                     loopStrategy);
 
                 progress.Add(
@@ -571,10 +820,10 @@ public sealed class ComputerOperatorTaskService(
                         $"STEP {index}: REJECTED {decision.Action} — thiếu EXPECTED EFFECT để xác minh.");
 
                     recovery.RecordFailure(
-                        BuildActionSignature(decision),
+                        BuildSemanticActionSignature(decision),
                         decision.Action,
                         ComputerOperatorFailureKinds.MissingExpectedEffect,
-                        decision.State,
+                        sceneFingerprint,
                         "Thiếu kết quả mong đợi để xác minh hành động.",
                         decision.ExpectedEffect,
                         decision.Confidence);
@@ -614,10 +863,10 @@ public sealed class ComputerOperatorTaskService(
                         $"CONFIDENCE-REPLAN: {confidenceAssessment.Reason}");
 
                     recovery.RecordFailure(
-                        BuildActionSignature(decision),
+                        BuildSemanticActionSignature(decision),
                         decision.Action,
                         ComputerOperatorFailureKinds.LowConfidence,
-                        decision.State,
+                        sceneFingerprint,
                         confidenceAssessment.Reason,
                         decision.ExpectedEffect,
                         confidenceAssessment.OverallConfidence);
@@ -653,7 +902,20 @@ public sealed class ComputerOperatorTaskService(
 
                 lowConfidenceCount = 0;
 
-                var actionSignature = BuildActionSignature(decision);
+                var actionSignature = BuildSemanticActionSignature(decision);
+                var strategyDiagnosticId =
+                    BuildDiagnosticId(actionSignature);
+                var previousStrategyFailures =
+                    recovery.Attempts.Count(item =>
+                        item.ActionSignature.Equals(
+                            actionSignature,
+                            StringComparison.OrdinalIgnoreCase));
+
+                progress.AddDiagnostic(
+                    "strategy",
+                    $"cycle={index}; scene={sceneDiagnosticId}; strategy={strategyDiagnosticId}; previousFailures={previousStrategyFailures}; action={decision.Action}; targetLabel={LimitDiagnostic(decision.TargetLabel, 100)}; elementId={LimitDiagnostic(decision.TargetElementId, 80)}; bbox=({decision.BoxLeft},{decision.BoxTop},{decision.BoxWidth},{decision.BoxHeight}); plannerPoint=({decision.ImageX},{decision.ImageY}); coordinateSpace={decision.CoordinateSpace}; expectedEffect={LimitDiagnostic(decision.ExpectedEffect, 180)}; semantic={LimitDiagnostic(actionSignature, 220)}.",
+                    decision.Action,
+                    decision.Confidence);
 
                 if (keyboardResetRequired)
                 {
@@ -699,7 +961,7 @@ public sealed class ComputerOperatorTaskService(
 
                 if (recovery.ShouldAvoidRepeatedStrategy(
                         actionSignature,
-                        decision.State,
+                        sceneFingerprint,
                         out var avoidReason))
                 {
                     taskHistory.Add(
@@ -708,6 +970,12 @@ public sealed class ComputerOperatorTaskService(
                     progress.Add(
                         "replan",
                         $"Không lặp lại chiến lược vừa thất bại: {avoidReason}",
+                        decision.Action,
+                        decision.Confidence);
+
+                    progress.AddDiagnostic(
+                        "recovery",
+                        $"cycle={index}; scene={sceneDiagnosticId}; strategy={strategyDiagnosticId}; decision=REJECT-BEFORE-EXECUTE; reason={LimitDiagnostic(avoidReason, 260)}.",
                         decision.Action,
                         decision.Confidence);
 
@@ -726,6 +994,7 @@ public sealed class ComputerOperatorTaskService(
                     decision.Confidence);
 
                 DesktopScreenshotFrame? verificationBaseline = null;
+                VerificationCaptureContext? verificationCaptureContext = null;
                 DesktopFastObserverSample? fastObserverBaseline = null;
                 TextInteractionResult? textInteractionResult = null;
 
@@ -736,11 +1005,18 @@ public sealed class ComputerOperatorTaskService(
                     try
                     {
                         verificationBaseline = await CapturePostActionFrameAsync(linked.Token);
+                        verificationCaptureContext =
+                            VerificationCaptureContext.From(
+                                verificationBaseline);
                         fastObserverBaseline = fastObserver.CaptureSample(verificationBaseline);
                         progress.Add(
                             "frame-baseline",
-                            $"Đã chụp baseline trước hành động {verificationBaseline.Width}x{verificationBaseline.Height}; scope={verificationBaseline.CaptureScope}.",
+                            $"Đã khóa Verification Capture Context: scope={verificationCaptureContext.CaptureScope}; window={verificationCaptureContext.WindowId ?? "-"}; monitor={verificationCaptureContext.MonitorDevice ?? "-"}; origin=({verificationCaptureContext.Left},{verificationCaptureContext.Top}); size={verificationCaptureContext.Width}x{verificationCaptureContext.Height}; dpi={verificationCaptureContext.DpiX}x{verificationCaptureContext.DpiY}.",
                             observation: true);
+
+                        progress.AddDiagnostic(
+                            "capture",
+                            $"cycle={index}; phase=before-action; scene={sceneDiagnosticId}; strategy={strategyDiagnosticId}; scope={verificationCaptureContext.CaptureScope}; window={verificationCaptureContext.WindowId ?? "-"}; monitor={verificationCaptureContext.MonitorDevice ?? "-"}; origin=({verificationCaptureContext.Left},{verificationCaptureContext.Top}); size={verificationCaptureContext.Width}x{verificationCaptureContext.Height}; dpi={verificationCaptureContext.DpiX}x{verificationCaptureContext.DpiY}.");
                     }
                     catch (Exception exception) when (
                         exception is ToolExecutionInputException or
@@ -757,6 +1033,19 @@ public sealed class ComputerOperatorTaskService(
                         "text-engine",
                         "Type-text dùng Generic Text Interaction Engine; bỏ baseline Vision để ưu tiên local write/readback.",
                         "local");
+                }
+
+                if (!control.EnsureScopedAutomationLease(
+                        ScopedLeaseActions,
+                        ScopedLeaseSeconds,
+                        ScopedLeaseRenewalThresholdSeconds))
+                {
+                    verificationBaseline?.Clear();
+                    MarkCheckpointStatusSafely(
+                        checkpoint,
+                        ComputerOperatorCheckpointStatuses.Interrupted);
+                    throw new ToolExecutionStoppedByUserException(
+                        "Safety gate đã bị người dùng khóa hoặc phím dừng không còn khả dụng trước khi execute.");
                 }
 
                 ComputerActionResponse action;
@@ -835,11 +1124,53 @@ public sealed class ComputerOperatorTaskService(
                         index,
                         exception.Message);
 
+                    var failurePolicy =
+                        reliableOperator.ClassifyFailure(
+                            exception.Message,
+                            sideEffectMayHaveOccurred: false);
+
+                    progress.Add(
+                        "failure-policy",
+                        $"Universal failure policy: {failurePolicy.Action} / {failurePolicy.Category} — {failurePolicy.Reason}",
+                        failurePolicy.Action,
+                        decision.Confidence);
+
+                    taskHistory.Add(
+                        $"FAILURE-POLICY: {failurePolicy.Action}; {failurePolicy.Category}; {failurePolicy.Reason}");
+
+                    if (failurePolicy.Action ==
+                        UniversalFailureActions.Stop)
+                    {
+                        MarkCheckpointStatusSafely(
+                            checkpoint,
+                            ComputerOperatorCheckpointStatuses.Blocked);
+
+                        progress.Block(
+                            $"Dừng theo failure policy: {failurePolicy.Reason}");
+
+                        return Finish(
+                            false,
+                            $"Computer Operator dừng an toàn: {failurePolicy.Reason}");
+                    }
+
+                    if (failurePolicy.Action ==
+                        UniversalFailureActions.Wait)
+                    {
+                        _ = actionState.MoveTo(
+                            ComputerOperatorActionState.Replan,
+                            "Failure policy yêu cầu chờ và quan sát lại.");
+
+                        await Task.Delay(
+                            750,
+                            linked.Token);
+                        continue;
+                    }
+
                     var failures = recovery.RecordFailure(
                         actionSignature,
                         decision.Action,
                         ComputerOperatorFailureKinds.ActionRejected,
-                        decision.State,
+                        sceneFingerprint,
                         exception.Message,
                         decision.ExpectedEffect,
                         decision.Confidence);
@@ -851,6 +1182,7 @@ public sealed class ComputerOperatorTaskService(
                         loopGuard,
                         taskHistory,
                         decision,
+                        sceneFingerprint,
                         actionSignature,
                         exception.Message);
 
@@ -919,7 +1251,7 @@ public sealed class ComputerOperatorTaskService(
                         actionSignature,
                         decision.Action,
                         ComputerOperatorFailureKinds.NotApplied,
-                        decision.State,
+                        sceneFingerprint,
                         action.Detail,
                         decision.ExpectedEffect,
                         decision.Confidence);
@@ -931,6 +1263,7 @@ public sealed class ComputerOperatorTaskService(
                         loopGuard,
                         taskHistory,
                         decision,
+                        sceneFingerprint,
                         actionSignature,
                         action.Detail);
 
@@ -1044,6 +1377,7 @@ public sealed class ComputerOperatorTaskService(
                             decision,
                             frame,
                             verificationBaseline,
+                            verificationCaptureContext,
                             fastObserverBaseline,
                             linked.Token);
 
@@ -1095,6 +1429,46 @@ public sealed class ComputerOperatorTaskService(
                     }
                 }
 
+                progress.AddDiagnostic(
+                    "evidence",
+                    $"cycle={index}; scene={sceneDiagnosticId}; strategy={strategyDiagnosticId}; verified={verification.Verified}; inconclusive={verification.Inconclusive}; confidence={verification.Confidence:0.000}; detail={LimitDiagnostic(verification.Detail, 300)}.",
+                    decision.Action,
+                    verification.Confidence);
+
+                if (!verification.Verified &&
+                    verification.Inconclusive)
+                {
+                    taskHistory.Add(
+                        $"STEP {index}: VERIFY-INCONCLUSIVE {actionSignature} — {verification.Detail}");
+
+                    taskHistory.Add(
+                        "CHỈ DẪN: Semantic verifier tạm thời không khả dụng. Không được replay side effect vừa thực hiện. Phải quan sát lại desktop hiện tại, ưu tiên structured/local evidence và chỉ gọi semantic verifier lại khi cần.");
+
+                    progress.Add(
+                        "replan",
+                        $"Xác minh chưa thể kết luận: {verification.Detail}",
+                        "inconclusive",
+                        verification.Confidence);
+
+                    var diagnoseState = actionState.MoveTo(
+                        ComputerOperatorActionState.Diagnose,
+                        "Verification chưa thể kết luận; không replay side effect.");
+
+                    var replanState = actionState.MoveTo(
+                        ComputerOperatorActionState.Replan,
+                        "Verification inconclusive; quan sát lại trước action mới.");
+
+                    progress.Add(
+                        "action-state",
+                        $"State machine: {diagnoseState.State} -> {replanState.State} — không replay action đã thực hiện.",
+                        "replan");
+
+                    await Task.Delay(
+                        350,
+                        linked.Token);
+                    continue;
+                }
+
                 if (!verification.Verified)
                 {
                     if (IsKeyboardAction(decision.Action))
@@ -1121,7 +1495,7 @@ public sealed class ComputerOperatorTaskService(
                         actionSignature,
                         decision.Action,
                         ComputerOperatorFailureKinds.VerificationFailed,
-                        decision.State,
+                        sceneFingerprint,
                         verification.Detail,
                         decision.ExpectedEffect,
                         verification.Confidence);
@@ -1133,6 +1507,7 @@ public sealed class ComputerOperatorTaskService(
                         loopGuard,
                         taskHistory,
                         decision,
+                        sceneFingerprint,
                         actionSignature,
                         verification.Detail);
 
@@ -1167,6 +1542,12 @@ public sealed class ComputerOperatorTaskService(
 
                     taskHistory.Add(
                         $"RECOVERY-PLAN: {recoveryPlan.PrimaryAction}; {recoveryPlan.Reason}");
+
+                    progress.AddDiagnostic(
+                        "recovery",
+                        $"cycle={index}; scene={sceneDiagnosticId}; strategy={strategyDiagnosticId}; failureKind={ClassifyFailureKind(decision.Action, verification.Detail, actionApplied: true, verificationFailed: true)}; failures={failures}; retrySame={recoveryPlan.AllowSameStrategyRetry}; primary={recoveryPlan.PrimaryAction}; fallbacks={string.Join(",", recoveryPlan.Fallbacks)}; reason={LimitDiagnostic(recoveryPlan.Reason, 240)}.",
+                        decision.Action,
+                        verification.Confidence);
 
                     progress.Add(
                         "recovery",
@@ -1330,12 +1711,14 @@ public sealed class ComputerOperatorTaskService(
     private sealed record ActionVerificationResult(
         bool Verified,
         double Confidence,
-        string Detail);
+        string Detail,
+        bool Inconclusive = false);
 
     private async Task<ActionVerificationResult> VerifyAppliedActionAsync(
         DesktopOperatorDecision decision,
         DesktopScreenshotFrame previousFrame,
         DesktopScreenshotFrame? verificationBaseline,
+        VerificationCaptureContext? verificationCaptureContext,
         DesktopFastObserverSample? fastObserverBaseline,
         CancellationToken cancellationToken)
     {
@@ -1352,8 +1735,10 @@ public sealed class ComputerOperatorTaskService(
             cancellationToken);
         await execution.WaitIfPausedAsync(cancellationToken);
 
-        DesktopScreenshotFrame after = await CapturePostActionFrameAsync(
-            cancellationToken);
+        DesktopScreenshotFrame after =
+            await CapturePostActionFrameAsync(
+                verificationCaptureContext,
+                cancellationToken);
 
         try
         {
@@ -1380,11 +1765,26 @@ public sealed class ComputerOperatorTaskService(
                         : $"Đã chụp lại màn hình; con trỏ ở ({actual.X},{actual.Y}), lệch khỏi điểm mong đợi ({expected.DesktopX},{expected.DesktopY}).");
             }
 
-            var frameDifference = verificationBaseline is null
-                ? null
-                : frameDifferences.Compare(
-                    verificationBaseline,
-                    after);
+            var verificationContextChanged =
+                verificationCaptureContext is not null &&
+                !verificationCaptureContext.Matches(after);
+
+            if (verificationContextChanged)
+            {
+                progress.Add(
+                    "capture-context-changed",
+                    $"Verification Capture Context đã thay đổi sau action: trước={verificationCaptureContext!.CaptureScope}/{verificationCaptureContext.Width}x{verificationCaptureContext.Height}/window={verificationCaptureContext.WindowId ?? "-"}; sau={after.CaptureScope}/{after.Width}x{after.Height}/window={after.WindowId ?? "-"}. Không so sánh pixel giữa hai context khác nhau; coi đây là transition evidence và tiếp tục structured/semantic verification.",
+                    "transition",
+                    observation: true);
+            }
+
+            var frameDifference =
+                verificationBaseline is null ||
+                verificationContextChanged
+                    ? null
+                    : frameDifferences.Compare(
+                        verificationBaseline,
+                        after);
 
             if (frameDifference is not null)
             {
@@ -1395,6 +1795,8 @@ public sealed class ComputerOperatorTaskService(
                         : $"Frame difference không khả dụng: {frameDifference.Reason}",
                     observation: true);
             }
+
+            DesktopVerificationRoutingResult? localRouteForFusion = null;
 
             if (fastObserverBaseline is not null)
             {
@@ -1424,10 +1826,31 @@ public sealed class ComputerOperatorTaskService(
 
                 if (route.Route == DesktopVerificationRoute.LocalVerified)
                 {
-                    return new(
-                        true,
-                        route.Confidence,
-                        $"Xác minh cục bộ: {route.Reason}");
+                    localRouteForFusion = route;
+
+                    var localDecision =
+                        reliableOperator.EvaluateLocalVerification(
+                            decision,
+                            route);
+
+                    progress.Add(
+                        "evidence-fusion",
+                        $"Evidence Fusion local: {localDecision.Source} — {localDecision.Reason}",
+                        localDecision.Verified
+                            ? "verified"
+                            : "semantic-required",
+                        localDecision.Confidence);
+
+                    if (localDecision.Verified)
+                    {
+                        return new(
+                            true,
+                            localDecision.Confidence,
+                            $"Universal Reliable Operator xác minh local: {localDecision.Reason}");
+                    }
+
+                    // Một strong-local source đơn lẻ (ví dụ scroll/frame)
+                    // không được tự complete. Tiếp tục semantic verification.
                 }
 
                 var shouldAdaptiveWait =
@@ -1446,6 +1869,7 @@ public sealed class ComputerOperatorTaskService(
                         await WaitForAdaptiveTransitionAsync(
                             decision,
                             verificationBaseline ?? previousFrame,
+                            verificationCaptureContext,
                             fastObserverBaseline ??
                                 fastObserver.CaptureSample(
                                     verificationBaseline ?? previousFrame),
@@ -1460,14 +1884,30 @@ public sealed class ComputerOperatorTaskService(
                     // semantic verification, tuyệt đối không dùng frame cũ.
                     after.Clear();
                     after = await CapturePostActionFrameAsync(
+                        verificationCaptureContext,
                         cancellationToken);
 
+                    verificationContextChanged =
+                        verificationCaptureContext is not null &&
+                        !verificationCaptureContext.Matches(after);
+
                     frameDifference =
-                        (verificationBaseline ?? previousFrame) is { } reference
-                            ? frameDifferences.Compare(
-                                reference,
-                                after)
-                            : null;
+                        verificationContextChanged
+                            ? null
+                            : (verificationBaseline ?? previousFrame) is { } reference
+                                ? frameDifferences.Compare(
+                                    reference,
+                                    after)
+                                : null;
+
+                    if (verificationContextChanged)
+                    {
+                        progress.Add(
+                            "capture-context-changed",
+                            "Context capture đã thay đổi trong lúc chờ thích ứng; bỏ pixel diff cũ và chuyển sang xác minh trạng thái mới.",
+                            "transition",
+                            observation: true);
+                    }
 
                     progress.Add(
                         "adaptive-wait",
@@ -1531,6 +1971,7 @@ public sealed class ComputerOperatorTaskService(
                         decision.Action);
 
                 DesktopVisionVerification result;
+                var verifierStopwatch = Stopwatch.StartNew();
                 try
                 {
                     result = await vision.VerifyAsync(
@@ -1539,9 +1980,58 @@ public sealed class ComputerOperatorTaskService(
                         frameDifference,
                         cancellationToken);
 
+                    verifierStopwatch.Stop();
                     geminiVerifyTelemetry.Complete(
                         result.Satisfied,
                         "gemini");
+
+                    progress.AddDiagnostic(
+                        "provider",
+                        $"provider=Gemini; purpose=verify; latencyMs={verifierStopwatch.ElapsedMilliseconds}; satisfied={result.Satisfied}; confidence={result.Confidence:0.000}; route={visionFrame.Source}.");
+                }
+                catch (HttpRequestException exception)
+                    when (IsTransientVisionFailure(exception))
+                {
+                    verifierStopwatch.Stop();
+                    progress.AddDiagnostic(
+                        "provider",
+                        $"provider=Gemini; purpose=verify; latencyMs={verifierStopwatch.ElapsedMilliseconds}; result=transient-error; http={(int?)exception.StatusCode ?? 0}; replaySideEffect=false.");
+
+                    progress.Add(
+                        "vision-transient",
+                        $"Gemini Vision tạm thời không khả dụng ({(int?)exception.StatusCode ?? 0}). Chờ ngắn rồi thử xác minh lại một lần; không replay action.",
+                        "wait");
+
+                    await Task.Delay(
+                        900,
+                        cancellationToken);
+
+                    try
+                    {
+                        result = await vision.VerifyAsync(
+                            visionFrame.Frame,
+                            decision.ExpectedEffect,
+                            frameDifference,
+                            cancellationToken);
+
+                        geminiVerifyTelemetry.Complete(
+                            result.Satisfied,
+                            "gemini-retry");
+                    }
+                    catch (HttpRequestException retryException)
+                        when (IsTransientVisionFailure(retryException))
+                    {
+                        geminiVerifyTelemetry.Complete(
+                            success: false,
+                            route: "gemini-transient");
+
+                        return new(
+                            Verified: false,
+                            Confidence: 0,
+                            Detail:
+                                $"Gemini Vision tạm thời không khả dụng sau lần thử lại (HTTP {(int?)retryException.StatusCode ?? 0}). Kết quả hành động chưa thể kết luận; phải quan sát lại trạng thái hiện tại và tuyệt đối không replay side effect.",
+                            Inconclusive: true);
+                    }
                 }
                 catch
                 {
@@ -1551,14 +2041,26 @@ public sealed class ComputerOperatorTaskService(
                     throw;
                 }
 
-                var verifiedByVision =
-                    result.Satisfied &&
-                    result.Confidence >= MinimumConfidence;
+                var reliableVerification =
+                    reliableOperator.EvaluateSemanticVerification(
+                        decision,
+                        localRouteForFusion,
+                        result.Satisfied,
+                        result.Confidence,
+                        result.Reason);
+
+                progress.Add(
+                    "evidence-fusion",
+                    $"Evidence Fusion semantic: {reliableVerification.Source} — {reliableVerification.Reason}",
+                    reliableVerification.Verified
+                        ? "verified"
+                        : "not-verified",
+                    reliableVerification.Confidence);
 
                 return new(
-                    verifiedByVision,
-                    result.Confidence,
-                    $"Gemini Vision ({visionFrame.Source}): {result.Reason}");
+                    reliableVerification.Verified,
+                    reliableVerification.Confidence,
+                    $"Universal Reliable Operator ({visionFrame.Source}): {reliableVerification.Reason}");
             }
             finally
             {
@@ -1571,9 +2073,90 @@ public sealed class ComputerOperatorTaskService(
         }
     }
 
+    private static bool IsProviderDegradedPlannerDecision(
+        DesktopOperatorDecision decision)
+    {
+        if (!decision.Action.Equals(
+                "wait",
+                StringComparison.OrdinalIgnoreCase))
+        {
+            return false;
+        }
+
+        var reason =
+            decision.Reason ?? string.Empty;
+
+        return reason.Contains(
+                   "Gemini planning tạm thời không khả dụng",
+                   StringComparison.OrdinalIgnoreCase) ||
+               reason.Contains(
+                   "Gemini trả JSON chưa hoàn chỉnh",
+                   StringComparison.OrdinalIgnoreCase) ||
+               reason.Contains(
+                   "Gemini chưa trả được JSON",
+                   StringComparison.OrdinalIgnoreCase) ||
+               reason.Contains(
+                   "Gemini planning chưa trả",
+                   StringComparison.OrdinalIgnoreCase) ||
+               reason.Contains(
+                   "Gemini planning không trả",
+                   StringComparison.OrdinalIgnoreCase);
+    }
+
+    private static DesktopOperatorDecision CreatePlannerCooldownWaitDecision(
+        DateTimeOffset backoffUntil) =>
+        new(
+            State: "Provider semantic đang cooldown; scene hiện tại chưa đổi.",
+            Plan: "Không gọi lại provider trên cùng scene. Chờ ngắn hoặc dùng local capability nếu có.",
+            CurrentSubgoal: string.Empty,
+            GoalProgress: 0,
+            VerifiedMilestones: Array.Empty<string>(),
+            Action: "wait",
+            Query: string.Empty,
+            Text: string.Empty,
+            Key: string.Empty,
+            Keys: Array.Empty<string>(),
+            Url: string.Empty,
+            TargetLabel: string.Empty,
+            CoordinateSpace: ComputerCoordinateSpaces.ImagePixel,
+            CoordinateWindowId: string.Empty,
+            ImageX: 0,
+            ImageY: 0,
+            EndImageX: 0,
+            EndImageY: 0,
+            NormalizedX: 0,
+            NormalizedY: 0,
+            EndNormalizedX: 0,
+            EndNormalizedY: 0,
+            BoxLeft: 0,
+            BoxTop: 0,
+            BoxWidth: 0,
+            BoxHeight: 0,
+            BoxNormalizedLeft: 0,
+            BoxNormalizedTop: 0,
+            BoxNormalizedWidth: 0,
+            BoxNormalizedHeight: 0,
+            ScrollDelta: 0,
+            ExpectedEffect: string.Empty,
+            Confidence: 1.0,
+            Reason: $"Gemini đang cooldown đến {backoffUntil:HH:mm:ss}; không gọi lặp khi scene chưa thay đổi.",
+            SceneElements: Array.Empty<DesktopSceneElement>(),
+            TargetElementId: string.Empty);
+
+    private static bool IsTransientVisionFailure(
+        HttpRequestException exception)
+    {
+        if (exception.StatusCode is null)
+            return true;
+
+        var code = (int)exception.StatusCode.Value;
+        return code is 408 or 429 or 500 or 502 or 503 or 504;
+    }
+
     private async Task<ActionVerificationResult?> WaitForAdaptiveTransitionAsync(
         DesktopOperatorDecision decision,
         DesktopScreenshotFrame referenceFrame,
+        VerificationCaptureContext? verificationCaptureContext,
         DesktopFastObserverSample referenceSample,
         CancellationToken cancellationToken)
     {
@@ -1598,14 +2181,31 @@ public sealed class ComputerOperatorTaskService(
                 await execution.WaitIfPausedAsync(token);
 
                 var frame =
-                    await CapturePostActionFrameAsync(token);
+                    await CapturePostActionFrameAsync(
+                        verificationCaptureContext,
+                        token);
 
                 try
                 {
+                    var contextChanged =
+                        verificationCaptureContext is not null &&
+                        !verificationCaptureContext.Matches(frame);
+
                     var difference =
-                        frameDifferences.Compare(
-                            referenceFrame,
-                            frame);
+                        contextChanged
+                            ? null
+                            : frameDifferences.Compare(
+                                referenceFrame,
+                                frame);
+
+                    if (contextChanged)
+                    {
+                        progress.Add(
+                            "capture-context-changed",
+                            "Adaptive Wait phát hiện capture context thay đổi; không so pixel giữa hai geometry khác nhau. Đây là transition evidence.",
+                            "transition",
+                            observation: true);
+                    }
 
                     var currentSample =
                         fastObserver.CaptureSample(frame);
@@ -1698,6 +2298,59 @@ public sealed class ComputerOperatorTaskService(
         // Stalled/Pending không đồng nghĩa Failed. Caller sẽ dùng frame mới
         // nhất và semantic verifier trước khi được phép replan.
         return null;
+    }
+
+    private async Task<DesktopScreenshotFrame> CapturePostActionFrameAsync(
+        VerificationCaptureContext? context,
+        CancellationToken cancellationToken)
+    {
+        if (context is null)
+            return await CapturePostActionFrameAsync(cancellationToken);
+
+        try
+        {
+            if (context.CaptureScope.Equals(
+                    "window",
+                    StringComparison.OrdinalIgnoreCase) &&
+                !string.IsNullOrWhiteSpace(context.WindowId))
+            {
+                return await screenshots.CaptureStableWindowAsync(
+                    context.WindowId,
+                    maximumWaitMs: 5000,
+                    cancellationToken);
+            }
+
+            if (context.CaptureScope.Equals(
+                    "monitor",
+                    StringComparison.OrdinalIgnoreCase) &&
+                !string.IsNullOrWhiteSpace(context.MonitorDevice))
+            {
+                return await screenshots.CaptureStableMonitorAsync(
+                    context.MonitorDevice,
+                    maximumWaitMs: 5000,
+                    cancellationToken);
+            }
+
+            if (context.CaptureScope.Equals(
+                    "virtual-desktop",
+                    StringComparison.OrdinalIgnoreCase))
+            {
+                return await screenshots.CaptureStableVirtualScreenAsync(
+                    maximumWaitMs: 5000,
+                    cancellationToken);
+            }
+        }
+        catch (Exception exception) when (
+            exception is ToolExecutionInputException or
+            InvalidOperationException)
+        {
+            logger.LogDebug(
+                exception,
+                "Không giữ được Verification Capture Context; fallback về capture động rồi đánh dấu context changed.");
+        }
+
+        return await CapturePostActionFrameAsync(
+            cancellationToken);
     }
 
     private async Task<DesktopScreenshotFrame> CapturePostActionFrameAsync(
@@ -1847,11 +2500,12 @@ public sealed class ComputerOperatorTaskService(
         ComputerOperatorLoopGuardSession loopGuard,
         ICollection<string> taskHistory,
         DesktopOperatorDecision decision,
+        string sceneFingerprint,
         string actionSignature,
         string outcome)
     {
         var assessment = loopGuard.ObserveOutcome(
-            decision.State,
+            sceneFingerprint,
             actionSignature,
             outcome);
 
@@ -2230,34 +2884,94 @@ public sealed class ComputerOperatorTaskService(
             recovery.BuildContext();
     }
 
-    private static string BuildActionSignature(
+    private static string BuildSemanticActionSignature(
         DesktopOperatorDecision decision)
     {
-        static string Clip(string value, int length) =>
-            string.IsNullOrWhiteSpace(value)
-                ? string.Empty
-                : value.Trim().Length <= length
-                    ? value.Trim()
-                    : value.Trim()[..length];
-
-        return decision.Action switch
+        static string Clip(string? value, int length)
         {
-            "move-pointer" or
+            var normalized = string.Join(
+                " ",
+                (value ?? string.Empty)
+                    .Trim()
+                    .ToLowerInvariant()
+                    .Split(
+                        [' ', '\t', '\r', '\n', '.', ',', ';', ':'],
+                        StringSplitOptions.RemoveEmptyEntries));
+
+            return normalized.Length <= length
+                ? normalized
+                : normalized[..length];
+        }
+
+        var action = (decision.Action ?? string.Empty)
+            .Trim()
+            .ToLowerInvariant();
+
+        var targetIdentity =
+            !string.IsNullOrWhiteSpace(decision.TargetElementId)
+                ? $"id={Clip(decision.TargetElementId, 80)}"
+                : !string.IsNullOrWhiteSpace(decision.TargetLabel)
+                    ? $"label={Clip(decision.TargetLabel, 120)}"
+                    : $"coarse={CoarseCoordinateSignature(decision)}";
+
+        var expected =
+            Clip(decision.ExpectedEffect, 180);
+
+        return action switch
+        {
             "click-left" or
             "double-click-left" or
             "click-right" =>
-                $"{decision.Action}:{CoordinateSignature(decision, false)}:{Clip(decision.TargetLabel, 80)}",
+                $"{action}|{targetIdentity}|effect={expected}",
+
             "scroll" =>
-                $"scroll:{CoordinateSignature(decision, false)}:{decision.ScrollDelta}",
+                $"scroll|target={targetIdentity}|direction={Math.Sign(decision.ScrollDelta)}|effect={expected}",
+
             "drag-left" =>
-                $"drag-left:{CoordinateSignature(decision, false)}->{CoordinateSignature(decision, true)}",
-            "focus-window" => $"focus-window:{Clip(decision.Query, 80)}",
-            "type-text" => $"type-text:{Clip(decision.Text, 80)}",
-            "press-key" => $"press-key:{Clip(decision.Key, 20)}",
-            "press-hotkey" => $"press-hotkey:{string.Join("+", decision.Keys)}",
-            "open-browser" => $"open-browser:{Clip(decision.Url, 120)}",
-            _ => decision.Action
+                $"drag-left|target={targetIdentity}|effect={expected}",
+
+            "focus-window" =>
+                $"focus-window|query={Clip(decision.Query, 100)}|effect={expected}",
+
+            "type-text" =>
+                $"type-text|target={targetIdentity}|effect={expected}",
+
+            "press-key" =>
+                $"press-key|key={Clip(decision.Key, 24)}|effect={expected}",
+
+            "press-hotkey" =>
+                $"press-hotkey|keys={string.Join("+", decision.Keys.Select(key => Clip(key, 24)))}|effect={expected}",
+
+            "open-browser" =>
+                $"open-browser|url={Clip(decision.Url, 120)}|effect={expected}",
+
+            "move-pointer" =>
+                $"move-pointer|{targetIdentity}",
+
+            _ => $"{action}|{targetIdentity}|effect={expected}"
         };
+    }
+
+    private static string CoarseCoordinateSignature(
+        DesktopOperatorDecision decision)
+    {
+        var x = Math.Clamp(
+            decision.NormalizedX > 0
+                ? decision.NormalizedX
+                : decision.ImageX / 1920.0,
+            0,
+            1);
+        var y = Math.Clamp(
+            decision.NormalizedY > 0
+                ? decision.NormalizedY
+                : decision.ImageY / 1080.0,
+            0,
+            1);
+
+        var bucketX = (int)Math.Floor(x * 8);
+        var bucketY = (int)Math.Floor(y * 6);
+
+        return $"{Math.Clamp(bucketX, 0, 7)},{Math.Clamp(bucketY, 0, 5)}";
     }
 
     private static string CoordinateSignature(
@@ -2288,26 +3002,101 @@ public sealed class ComputerOperatorTaskService(
     }
 
 
-    private string BuildObservation()
+    private static string BuildDiagnosticId(
+        string value)
     {
-        var active = computer.GetActiveWindow();
-        var windows = computer.GetWindows(30).Windows;
+        var bytes = SHA256.HashData(
+            Encoding.UTF8.GetBytes(
+                value ?? string.Empty));
 
-        var lines = new List<string>
-        {
-            active is null
-                ? "Foreground: không xác định"
-                : $"Foreground: id={active.WindowId}; title={active.Title}; process={active.ProcessName ?? "?"}; rect={active.Left},{active.Top},{active.Width},{active.Height}",
-            "Cửa sổ đang hiển thị:"
-        };
+        return Convert.ToHexString(bytes)[..12];
+    }
 
-        foreach (var window in windows)
-        {
-            lines.Add(
-                $"- id={window.WindowId}; title={window.Title}; process={window.ProcessName ?? "?"}; foreground={window.IsForeground}; rect={window.Left},{window.Top},{window.Width},{window.Height}");
-        }
+    private static string LimitDiagnostic(
+        string? value,
+        int maximum)
+    {
+        var normalized = string.Join(
+            " ",
+            (value ?? string.Empty)
+                .Split(
+                    [' ', '\t', '\r', '\n'],
+                    StringSplitOptions.RemoveEmptyEntries));
 
-        return string.Join("\n", lines);
+        return normalized.Length <= maximum
+            ? normalized
+            : normalized[..Math.Max(1, maximum - 1)] + "…";
+    }
+
+    private static string BuildDesktopSceneFingerprint(
+        ComputerOperatorDesktopState state)
+    {
+        var foreground = state.ForegroundWindow is null
+            ? "foreground:none"
+            : $"foreground:{NormalizeSceneToken(state.ForegroundWindow.ProcessName)}|{NormalizeSceneToken(state.ForegroundWindow.Title)}|{Quantize(state.ForegroundWindow.Left, 32)},{Quantize(state.ForegroundWindow.Top, 32)},{Quantize(state.ForegroundWindow.Width, 32)},{Quantize(state.ForegroundWindow.Height, 32)}";
+
+        var visible = state.Windows
+            .Where(window => window.Width > 0 && window.Height > 0)
+            .OrderBy(window => window.ProcessName ?? string.Empty, StringComparer.OrdinalIgnoreCase)
+            .ThenBy(window => window.Title, StringComparer.OrdinalIgnoreCase)
+            .Take(16)
+            .Select(window =>
+                $"{NormalizeSceneToken(window.ProcessName)}:{NormalizeSceneToken(window.Title)}:{Quantize(window.Left, 64)},{Quantize(window.Top, 64)},{Quantize(window.Width, 64)},{Quantize(window.Height, 64)}");
+
+        return string.Join(
+            "|",
+            new[]
+            {
+                foreground,
+                $"frame:{state.CaptureScope}:{Quantize(state.FrameLeft, 32)},{Quantize(state.FrameTop, 32)},{Quantize(state.FrameWidth, 32)},{Quantize(state.FrameHeight, 32)}",
+                $"windows:{string.Join(";", visible)}"
+            });
+    }
+
+    private static string NormalizeSceneToken(
+        string? value)
+    {
+        var normalized = string.Join(
+            " ",
+            (value ?? string.Empty)
+                .Trim()
+                .ToLowerInvariant()
+                .Split(
+                    [' ', '\t', '\r', '\n'],
+                    StringSplitOptions.RemoveEmptyEntries));
+
+        return normalized.Length <= 80
+            ? normalized
+            : normalized[..80];
+    }
+
+    private static int Quantize(
+        int value,
+        int quantum) =>
+        quantum <= 1
+            ? value
+            : (int)Math.Round(
+                value / (double)quantum,
+                MidpointRounding.AwayFromZero) * quantum;
+
+    private ComputerOperatorDesktopState BuildDesktopState(
+        DesktopScreenshotFrame frame)
+    {
+        var windows = computer.GetWindows(50).Windows;
+        var active = windows.FirstOrDefault(window => window.IsForeground)
+            ?? computer.GetActiveWindow();
+
+        return new ComputerOperatorDesktopState(
+            frame.CapturedAtUtc,
+            active,
+            windows,
+            frame.Left,
+            frame.Top,
+            frame.Width,
+            frame.Height,
+            frame.CaptureScope,
+            frame.WindowId,
+            frame.WindowWasForeground);
     }
 
     private static string RequireActive(

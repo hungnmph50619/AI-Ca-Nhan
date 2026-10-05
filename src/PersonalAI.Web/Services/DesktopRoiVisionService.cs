@@ -41,6 +41,25 @@ public sealed class DesktopRoiVisionService
         ArgumentNullException.ThrowIfNull(planningFrame);
         ArgumentNullException.ThrowIfNull(currentFrame);
 
+        var action = (decision.Action ?? string.Empty)
+            .Trim()
+            .ToLowerInvariant();
+
+        // Hành động bàn phím thường thay đổi UI ngoài vùng target cũ
+        // (ví dụ WIN mở Start/Search). ROI hẹp dễ bỏ mất bằng chứng thực tế.
+        // Khi local verifier chưa đủ, ưu tiên toàn cửa sổ hiện tại hoặc toàn frame.
+        if (action is "press-key" or "press-hotkey" or "type-text")
+        {
+            return new(
+                currentFrame,
+                currentFrame.CaptureScope.Equals(
+                    "window",
+                    StringComparison.OrdinalIgnoreCase)
+                    ? "keyboard-active-window"
+                    : "keyboard-full-frame",
+                false);
+        }
+
         if (CanReusePlanningPixelBox(
                 decision,
                 planningFrame,

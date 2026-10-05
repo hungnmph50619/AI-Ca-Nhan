@@ -51,7 +51,8 @@ public sealed record ToolDefinition(
     IReadOnlyList<string>? Capabilities = null,
     string? RiskLevel = null,
     bool SupportsVerification = false,
-    bool SupportsRollback = false);
+    bool SupportsRollback = false,
+    bool LongRunning = false);
 
 public sealed record ToolExecutionRequest(
     string ToolName,

@@ -62,12 +62,30 @@ public sealed class DesktopDynamicTargetTracker
         if (plannedWindow is null ||
             currentWindow is null)
         {
+            if (IsVisualPixelFallbackSafe(
+                    decision,
+                    planningFrame))
+            {
+                var fallbackConfidence = Math.Min(
+                    0.93,
+                    Math.Max(
+                        0.90,
+                        decision.Confidence));
+
+                return new(
+                    decision,
+                    false,
+                    true,
+                    fallbackConfidence,
+                    "Không có đủ metadata cửa sổ để remap, nhưng target pixel vẫn nằm hoàn toàn trong frame lập kế hoạch, bbox hợp lệ và planner có confidence cao. Cho phép visual-safe fallback trên chính frame vừa quan sát; bước hậu hành động vẫn phải được xác minh trước khi tiếp tục.");
+            }
+
             return new(
                 decision,
                 false,
                 false,
                 0.0,
-                "Không đủ metadata cửa sổ để remap target pixel an toàn.");
+                "Không đủ metadata cửa sổ để remap target pixel an toàn và target chưa đạt điều kiện visual-safe fallback.");
         }
 
         if (!plannedWindow.WindowId.Equals(
@@ -218,6 +236,63 @@ public sealed class DesktopDynamicTargetTracker
             true,
             confidence,
             $"Đã remap target theo cửa sổ: pos=({newBoxLeft},{newBoxTop}); size=({newWidth}x{newHeight}); scale=({scaleX:0.00},{scaleY:0.00}).");
+    }
+
+    private static bool IsVisualPixelFallbackSafe(
+        DesktopOperatorDecision decision,
+        DesktopScreenshotFrame frame)
+    {
+        const double MinimumPlannerConfidence = 0.92;
+        const double MaximumTargetFrameAreaRatio = 0.40;
+
+        if (!double.IsFinite(decision.Confidence) ||
+            decision.Confidence < MinimumPlannerConfidence ||
+            frame.Width <= 0 ||
+            frame.Height <= 0 ||
+            decision.BoxWidth <= 1 ||
+            decision.BoxHeight <= 1)
+        {
+            return false;
+        }
+
+        var left = decision.BoxLeft;
+        var top = decision.BoxTop;
+        var right = left + decision.BoxWidth;
+        var bottom = top + decision.BoxHeight;
+
+        if (left < 0 ||
+            top < 0 ||
+            right > frame.Width ||
+            bottom > frame.Height)
+        {
+            return false;
+        }
+
+        var centerX = decision.ImageX;
+        var centerY = decision.ImageY;
+
+        if (centerX < left ||
+            centerX > right ||
+            centerY < top ||
+            centerY > bottom)
+        {
+            return false;
+        }
+
+        var frameArea = (double)frame.Width * frame.Height;
+        var targetArea = (double)decision.BoxWidth * decision.BoxHeight;
+
+        if (!double.IsFinite(frameArea) ||
+            !double.IsFinite(targetArea) ||
+            frameArea <= 0 ||
+            targetArea <= 0 ||
+            targetArea / frameArea > MaximumTargetFrameAreaRatio)
+        {
+            return false;
+        }
+
+        return !string.IsNullOrWhiteSpace(decision.TargetLabel) ||
+               !string.IsNullOrWhiteSpace(decision.TargetElementId);
     }
 
     private static bool WithinReasonableWindowRange(

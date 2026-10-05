@@ -3,6 +3,11 @@ using System.Runtime.InteropServices;
 using System.Text.Json;
 using FlaUI.Core.AutomationElements;
 using FlaUI.UIA3;
+using Microsoft.Graphics.Canvas;
+using Windows.Graphics.Capture;
+using Windows.Graphics.DirectX;
+using Windows.Storage.Streams;
+using WinRT;
 
 namespace PersonalAI.WindowsAutomation;
 
@@ -25,11 +30,15 @@ internal sealed record AutomationResponse(
     long NativeWindowHandle,
     string TargetToken,
     string? Value,
-    string Detail);
+    string Detail,
+    string? JpegBase64 = null,
+    int CaptureWidth = 0,
+    int CaptureHeight = 0,
+    string CaptureBackend = "");
 
 internal static class Program
 {
-    private static int Main()
+    private static async Task<int> Main()
     {
         try
         {
@@ -39,12 +48,23 @@ internal static class Program
                 JsonOptions());
 
             if (request is null)
-                return WriteError("Không đọc được yêu cầu FlaUI UIA3.");
+                return WriteError("Không đọc được yêu cầu Windows Automation.");
 
-            using var automation = new UIA3Automation();
-            var response = Execute(
-                automation,
-                request);
+            AutomationResponse response;
+            if (request.Operation.Trim().Equals(
+                    "capture-window",
+                    StringComparison.OrdinalIgnoreCase))
+            {
+                response = await CaptureWindowAsync(
+                    request);
+            }
+            else
+            {
+                using var automation = new UIA3Automation();
+                response = Execute(
+                    automation,
+                    request);
+            }
 
             Console.Out.Write(
                 JsonSerializer.Serialize(
@@ -56,7 +76,213 @@ internal static class Program
         catch (Exception exception)
         {
             return WriteError(
-                $"FlaUI UIA3 gặp lỗi: {exception.GetType().Name}: {exception.Message}");
+                $"Windows Automation gặp lỗi: {exception.GetType().Name}: {exception.Message}");
+        }
+    }
+
+    private static async Task<AutomationResponse> CaptureWindowAsync(
+        AutomationRequest request)
+    {
+        if (!OperatingSystem.IsWindowsVersionAtLeast(
+                10,
+                0,
+                18362))
+        {
+            return Empty(
+                request,
+                "Windows Graphics Capture yêu cầu Windows 10 build 18362 trở lên.");
+        }
+
+        var hwnd = ParseWindowId(
+            request.WindowId);
+
+        if (hwnd == nint.Zero ||
+            !IsWindow(hwnd))
+        {
+            return Empty(
+                request,
+                "HWND cần capture không còn hợp lệ.");
+        }
+
+        if (!GraphicsCaptureSession.IsSupported())
+        {
+            return Empty(
+                request,
+                "Windows Graphics Capture không được hệ thống hỗ trợ.");
+        }
+
+        GraphicsCaptureItem? item = null;
+        Direct3D11CaptureFramePool? framePool = null;
+        GraphicsCaptureSession? session = null;
+        Direct3D11CaptureFrame? frame = null;
+
+        try
+        {
+            item = CreateCaptureItemForWindow(
+                hwnd);
+
+            if (item is null ||
+                item.Size.Width <= 0 ||
+                item.Size.Height <= 0)
+            {
+                return Empty(
+                    request,
+                    "Không tạo được GraphicsCaptureItem hợp lệ cho cửa sổ.");
+            }
+
+            var device = CanvasDevice.GetSharedDevice();
+            framePool = Direct3D11CaptureFramePool.CreateFreeThreaded(
+                device,
+                DirectXPixelFormat.B8G8R8A8UIntNormalized,
+                2,
+                item.Size);
+
+            session = framePool.CreateCaptureSession(
+                item);
+
+            try
+            {
+                session.IsCursorCaptureEnabled = false;
+            }
+            catch
+            {
+                // Tùy phiên bản Windows; không phải điều kiện bắt buộc để capture.
+            }
+
+            var frameReady =
+                new TaskCompletionSource<Direct3D11CaptureFrame>(
+                    TaskCreationOptions.RunContinuationsAsynchronously);
+
+            framePool.FrameArrived += OnFrameArrived;
+            session.StartCapture();
+
+            var completed = await Task.WhenAny(
+                frameReady.Task,
+                Task.Delay(
+                    TimeSpan.FromMilliseconds(2500)));
+
+            if (completed != frameReady.Task)
+            {
+                return Empty(
+                    request,
+                    "Windows Graphics Capture không trả frame trong 2500 ms.");
+            }
+
+            frame = await frameReady.Task;
+            using var bitmap = CanvasBitmap.CreateFromDirect3D11Surface(
+                device,
+                frame.Surface);
+
+            using var stream =
+                new InMemoryRandomAccessStream();
+
+            await bitmap.SaveAsync(
+                stream,
+                CanvasBitmapFileFormat.Jpeg,
+                0.82f);
+
+            stream.Seek(0);
+            using var reader =
+                new DataReader(
+                    stream.GetInputStreamAt(0));
+
+            if (stream.Size is 0 or > 8 * 1024 * 1024)
+            {
+                return Empty(
+                    request,
+                    "Frame WGC có kích thước byte không hợp lệ.");
+            }
+
+            await reader.LoadAsync(
+                checked((uint)stream.Size));
+
+            var bytes =
+                new byte[checked((int)stream.Size)];
+
+            reader.ReadBytes(
+                bytes);
+
+            return new(
+                Success: true,
+                IsFocused: GetForegroundWindow() == hwnd,
+                CanRead: false,
+                CanDirectSet: false,
+                SupportsSelection: false,
+                IsReadOnly: false,
+                IsSensitive: false,
+                ControlClass: string.Empty,
+                NativeWindowHandle: hwnd.ToInt64(),
+                TargetToken: string.Empty,
+                Value: null,
+                Detail:
+                    "Đã capture cửa sổ bằng Windows Graphics Capture.",
+                JpegBase64: Convert.ToBase64String(bytes),
+                CaptureWidth: frame.ContentSize.Width,
+                CaptureHeight: frame.ContentSize.Height,
+                CaptureBackend: "windows-graphics-capture");
+
+            void OnFrameArrived(
+                Direct3D11CaptureFramePool sender,
+                object args)
+            {
+                try
+                {
+                    var next = sender.TryGetNextFrame();
+                    if (next is not null &&
+                        !frameReady.TrySetResult(next))
+                    {
+                        next.Dispose();
+                    }
+                }
+                catch (Exception exception)
+                {
+                    frameReady.TrySetException(
+                        exception);
+                }
+            }
+        }
+        catch (Exception exception) when (
+            exception is
+                COMException or
+                InvalidOperationException or
+                ArgumentException or
+                UnauthorizedAccessException)
+        {
+            return Empty(
+                request,
+                $"Windows Graphics Capture không khả dụng: {exception.GetType().Name}: {exception.Message}");
+        }
+        finally
+        {
+            frame?.Dispose();
+            session?.Dispose();
+            framePool?.Dispose();
+        }
+    }
+
+    private static GraphicsCaptureItem? CreateCaptureItemForWindow(
+        nint hwnd)
+    {
+        var interop =
+            GraphicsCaptureItem.As<IGraphicsCaptureItemInterop>();
+
+        var itemPointer =
+            interop.CreateForWindow(
+                hwnd,
+                GraphicsCaptureItemGuid);
+
+        if (itemPointer == nint.Zero)
+            return null;
+
+        try
+        {
+            return GraphicsCaptureItem.FromAbi(
+                itemPointer);
+        }
+        finally
+        {
+            Marshal.Release(
+                itemPointer);
         }
     }
 
@@ -404,6 +630,28 @@ internal static class Program
             PropertyNameCaseInsensitive = true
         };
 
+    private static readonly Guid GraphicsCaptureItemGuid =
+        new("79C3F95B-31F7-4EC2-A464-632EF5D30760");
+
+    [ComImport]
+    [Guid("3628E81B-3CAC-4C60-B7F4-23CE0E0C3356")]
+    [InterfaceType(ComInterfaceType.InterfaceIsIUnknown)]
+    private interface IGraphicsCaptureItemInterop
+    {
+        nint CreateForWindow(
+            [In] nint window,
+            in Guid iid);
+
+        nint CreateForMonitor(
+            [In] nint monitor,
+            in Guid iid);
+    }
+
     [DllImport("user32.dll")]
     private static extern nint GetForegroundWindow();
+
+    [DllImport("user32.dll")]
+    [return: MarshalAs(UnmanagedType.Bool)]
+    private static extern bool IsWindow(
+        nint hWnd);
 }

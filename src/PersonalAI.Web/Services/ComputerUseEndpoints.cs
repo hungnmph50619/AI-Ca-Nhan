@@ -32,10 +32,13 @@ public static class ComputerUseEndpoints
         services.AddSingleton<IComputerOperatorAcceptanceService, ComputerOperatorAcceptanceService>();
         services.AddSingleton<IComputerOperatorCheckpointStore, SqliteComputerOperatorCheckpointStore>();
         services.AddSingleton<IComputerOperatorTelemetry, ComputerOperatorTelemetry>();
+        services.AddSingleton<IUniversalReliableOperatorCoordinator, UniversalReliableOperatorCoordinator>();
         services.AddSingleton<IComputerOperatorTaskService, ComputerOperatorTaskService>();
         services.AddSingleton<IExecutionAgent, ComputerOperatorExecutionAgent>();
         services.AddSingleton<IExecutionAgentRegistry, ExecutionAgentRegistry>();
         services.AddSingleton<IMicrosoftAgentFrameworkAdapter, MicrosoftAgentFrameworkAdapter>();
+        services.AddSingleton<IWindowsGraphicsCaptureClient, WindowsGraphicsCaptureClient>();
+        services.AddSingleton<IDesktopCaptureBackendRouter, DesktopCaptureBackendRouter>();
         services.AddSingleton<IDesktopScreenshotService, WindowsDesktopScreenshotService>();
         services.AddSingleton<IDesktopFrameDifferenceService, DesktopFrameDifferenceService>();
         services.AddSingleton<IDesktopLocalFastObserver, DesktopLocalFastObserver>();
@@ -84,6 +87,29 @@ public static class ComputerUseEndpoints
         app.MapGet("/api/computer/operator-progress", (
             ComputerOperatorProgressStore progress) =>
             Results.Ok(progress.Get()));
+
+        app.MapGet("/api/computer/capture-backends", (
+            HttpContext context,
+            IDesktopCaptureBackendRouter captureRouter) =>
+        {
+            if (!IsLocalRequest(context))
+                return Results.StatusCode(StatusCodes.Status403Forbidden);
+
+            var snapshot = captureRouter.GetSnapshot();
+            return Results.Ok(new
+            {
+                phienBan = snapshot.Version,
+                backend = snapshot.Backends.Select(item => new
+                {
+                    ten = item.Name,
+                    uuTien = item.Priority,
+                    khaDung = item.Available,
+                    phamVi = item.Scopes,
+                    chiTiet = item.Detail
+                }),
+                uuTienTheoPhamVi = snapshot.PreferredBackendByScope
+            });
+        });
 
         app.MapGet("/api/computer/operator-telemetry", (
             HttpContext context,
@@ -148,6 +174,46 @@ public static class ComputerUseEndpoints
                 daXoa = true,
                 message =
                     "Đã xóa telemetry hiệu năng trong bộ nhớ. Không có nội dung task hoặc ảnh màn hình được lưu."
+            });
+        });
+
+        app.MapGet("/api/computer/operator-runtime", (
+            HttpContext context,
+            IUniversalReliableOperatorCoordinator reliableOperator) =>
+        {
+            if (!IsLocalRequest(context))
+                return Results.StatusCode(StatusCodes.Status403Forbidden);
+
+            var runtime =
+                reliableOperator.GetRuntimeSnapshot();
+
+            return Results.Ok(new
+            {
+                phienBan = runtime.Version,
+                sanSang = runtime.Ready,
+                lyDo = runtime.Reason,
+                khaNangDesktop = runtime.AvailableComputerCapabilities,
+                capabilityCache = new
+                {
+                    generation = runtime.CapabilityCache.Generation,
+                    hits = runtime.CapabilityCache.Hits,
+                    misses = runtime.CapabilityCache.Misses,
+                    dangCache = runtime.CapabilityCache.RuntimeSnapshotCached,
+                    tamNgungAdapter = runtime.CapabilityCache.TemporaryUnavailabilityCount
+                },
+                resilience = runtime.ResilienceDomains.Select(item => new
+                {
+                    mien = item.Domain,
+                    trangThaiMach = item.CircuitState
+                }),
+                nguyenTac = new[]
+                {
+                    "Structured/deterministic evidence được ưu tiên trước Vision.",
+                    "Strong-local đơn lẻ không được tự hoàn thành nếu chưa đủ bằng chứng.",
+                    "Permission denial dừng; pending thì chờ; context đổi thì replan.",
+                    "Không replay action có side effect chỉ vì lỗi kỹ thuật.",
+                    "Resume luôn quan sát lại desktop hiện tại trước action mới."
+                }
             });
         });
 

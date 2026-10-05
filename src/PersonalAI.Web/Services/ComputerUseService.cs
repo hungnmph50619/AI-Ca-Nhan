@@ -89,6 +89,7 @@ public sealed class WindowsComputerUseService(
     private const uint MouseRightDown = 0x0008;
     private const uint MouseRightUp = 0x0010;
     private const uint MouseWheel = 0x0800;
+    private const uint GaRoot = 2;
 
     public ComputerUseStatusResponse GetStatus()
     {
@@ -215,15 +216,17 @@ public sealed class WindowsComputerUseService(
             }
 
             var title = GetWindowTitle(handle);
-            if (string.IsNullOrWhiteSpace(title))
+            var isForeground = handle == foreground;
+            if (string.IsNullOrWhiteSpace(title) &&
+                !isForeground)
             {
                 return true;
             }
 
             windows.Add(BuildWindowInfo(
                 handle,
-                title,
-                handle == foreground));
+                GetWindowDisplayTitle(handle, title),
+                isForeground));
             return true;
         }, IntPtr.Zero);
 
@@ -245,14 +248,10 @@ public sealed class WindowsComputerUseService(
         }
 
         var title = GetWindowTitle(handle);
-        if (string.IsNullOrWhiteSpace(title))
-        {
-            return null;
-        }
 
         return BuildWindowInfo(
             handle,
-            title,
+            GetWindowDisplayTitle(handle, title),
             true);
     }
 
@@ -262,12 +261,21 @@ public sealed class WindowsComputerUseService(
     {
         EnsureAvailable();
 
-        var windows = GetWindows(MaximumWindows).Windows;
-        return windows.FirstOrDefault(window =>
-            x >= window.Left &&
-            y >= window.Top &&
-            x < window.Left + window.Width &&
-            y < window.Top + window.Height);
+        var root = GetRootWindowAtPoint(x, y);
+        if (root == IntPtr.Zero ||
+            !IsWindow(root) ||
+            !IsWindowVisible(root))
+        {
+            return null;
+        }
+
+        var foreground = GetForegroundWindow();
+        var title = GetWindowTitle(root);
+
+        return BuildWindowInfo(
+            root,
+            GetWindowDisplayTitle(root, title),
+            root == foreground);
     }
 
     public ComputerActionResponse FocusWindow(
@@ -578,18 +586,27 @@ public sealed class WindowsComputerUseService(
             throw new ToolExecutionInputException("Tọa độ nhấp nằm ngoài màn hình hiện tại.");
 
         var target = ParseWindowId(windowId);
-        if (!IsWindow(target) || !IsWindowVisible(target)
-            || target != GetForegroundWindow()
-            || !GetWindowRect(target, out var rect)
-            || x < rect.Left || x >= rect.Right
-            || y < rect.Top || y >= rect.Bottom)
+        var topmostAtPoint = GetRootWindowAtPoint(x, y);
+        if (!IsWindow(target) ||
+            !IsWindowVisible(target) ||
+            topmostAtPoint == IntPtr.Zero ||
+            topmostAtPoint != target ||
+            !GetWindowRect(target, out var rect) ||
+            x < rect.Left || x >= rect.Right ||
+            y < rect.Top || y >= rect.Bottom)
+        {
             throw new ToolExecutionInputException(
-                "Cửa sổ đích không còn ở phía trước hoặc tọa độ nằm ngoài cửa sổ. Hãy kiểm tra lại trước khi xác nhận.");
+                "Target dưới con trỏ đã thay đổi hoặc tọa độ không còn nằm trong cửa sổ đích. Không gửi click vào target cũ.");
+        }
 
-        // Không tự chọn cửa sổ, không di chuyển chuột tới nơi khác nếu cửa sổ đã đổi.
-        if (!SetCursorPos(x, y) || GetForegroundWindow() != target)
+        // Click có thể chủ động chuyển foreground (ví dụ taskbar/background window).
+        // An toàn dựa trên target topmost tại đúng điểm, không buộc target đã foreground trước click.
+        if (!SetCursorPos(x, y) ||
+            GetRootWindowAtPoint(x, y) != target)
+        {
             throw new ToolExecutionInputException(
-                "Không thể xác nhận vị trí con trỏ và cửa sổ đích trước khi nhấp.");
+                "Không thể xác nhận target topmost tại vị trí con trỏ ngay trước khi nhấp.");
+        }
 
         var inputs = new[]
         {
@@ -640,9 +657,10 @@ public sealed class WindowsComputerUseService(
         control.RunAllowed(() =>
         {
             ValidatePointerTarget(windowId, x, y, out var target);
-            if (!SetCursorPos(x, y) || GetForegroundWindow() != target)
+            if (!SetCursorPos(x, y) ||
+                GetRootWindowAtPoint(x, y) != target)
                 throw new ToolExecutionInputException(
-                    "Không thể xác nhận vị trí con trỏ và cửa sổ đích trước khi nhấp đúp.");
+                    "Không thể xác nhận target topmost trước khi nhấp đúp.");
 
             for (var click = 0; click < 2; click++)
             {
@@ -669,9 +687,10 @@ public sealed class WindowsComputerUseService(
                 throw new ToolExecutionInputException(
                     "Độ cuộn phải nằm trong khoảng -2400..2400 và khác 0.");
 
-            if (!SetCursorPos(x, y) || GetForegroundWindow() != target)
+            if (!SetCursorPos(x, y) ||
+                GetRootWindowAtPoint(x, y) != target)
                 throw new ToolExecutionInputException(
-                    "Không thể xác nhận con trỏ/cửa sổ trước khi cuộn.");
+                    "Không thể xác nhận target topmost trước khi cuộn.");
 
             var input = new[]
             {
@@ -731,25 +750,25 @@ public sealed class WindowsComputerUseService(
             var sleep = Math.Max(8, safeDuration / steps);
 
             if (!SetCursorPos(startX, startY) ||
-                GetForegroundWindow() != target)
+                GetRootWindowAtPoint(startX, startY) != target)
                 throw new ToolExecutionInputException(
-                    "Không thể đặt con trỏ tại điểm bắt đầu kéo.");
+                    "Không thể xác nhận target topmost tại điểm bắt đầu kéo.");
 
             SendMouseDown(MouseLeftDown);
             try
             {
                 for (var index = 1; index <= steps; index++)
                 {
-                    if (GetForegroundWindow() != target)
-                        throw new ToolExecutionInputException(
-                            "Cửa sổ foreground đã thay đổi trong lúc kéo-thả.");
-
                     var p = index / (double)steps;
                     var eased = p * p * (3d - 2d * p);
                     var nextX = (int)Math.Round(
                         startX + ((endX - startX) * eased));
                     var nextY = (int)Math.Round(
                         startY + ((endY - startY) * eased));
+
+                    if (GetRootWindowAtPoint(nextX, nextY) != target)
+                        throw new ToolExecutionInputException(
+                            "Target dưới con trỏ đã thay đổi trong lúc kéo-thả.");
 
                     if (!SetCursorPos(nextX, nextY))
                         throw new ToolExecutionInputException(
@@ -808,14 +827,18 @@ public sealed class WindowsComputerUseService(
                 "Tọa độ thao tác nằm ngoài desktop ảo.");
 
         target = ParseWindowId(windowId);
+        var topmostAtPoint = GetRootWindowAtPoint(x, y);
         if (!IsWindow(target) ||
             !IsWindowVisible(target) ||
-            target != GetForegroundWindow() ||
+            topmostAtPoint == IntPtr.Zero ||
+            topmostAtPoint != target ||
             !GetWindowRect(target, out var rect) ||
             x < rect.Left || x >= rect.Right ||
             y < rect.Top || y >= rect.Bottom)
+        {
             throw new ToolExecutionInputException(
-                "Cửa sổ đích không còn ở phía trước hoặc tọa độ nằm ngoài cửa sổ.");
+                "Target topmost dưới con trỏ đã thay đổi hoặc tọa độ nằm ngoài cửa sổ đích.");
+        }
     }
 
     private static void SendMouseButton(
@@ -1363,6 +1386,61 @@ public sealed class WindowsComputerUseService(
             .Trim();
     }
 
+    private static string GetWindowDisplayTitle(
+        IntPtr handle,
+        string? title = null)
+    {
+        var visibleTitle = string.IsNullOrWhiteSpace(title)
+            ? GetWindowTitle(handle)
+            : title.Trim();
+
+        if (!string.IsNullOrWhiteSpace(visibleTitle))
+            return visibleTitle;
+
+        var className = GetWindowClassName(handle);
+        if (!string.IsNullOrWhiteSpace(className))
+            return $"[{className}]";
+
+        return "[cửa sổ không tiêu đề]";
+    }
+
+    private static string GetWindowClassName(
+        IntPtr handle)
+    {
+        var buffer = new StringBuilder(256);
+        var length = GetClassName(
+            handle,
+            buffer,
+            buffer.Capacity);
+
+        return length > 0
+            ? buffer.ToString().Trim()
+            : string.Empty;
+    }
+
+    private static IntPtr GetRootWindowAtPoint(
+        int x,
+        int y)
+    {
+        var child = WindowFromPoint(
+            new Point
+            {
+                X = x,
+                Y = y
+            });
+
+        if (child == IntPtr.Zero)
+            return IntPtr.Zero;
+
+        var root = GetAncestor(
+            child,
+            GaRoot);
+
+        return root != IntPtr.Zero
+            ? root
+            : child;
+    }
+
     private static IntPtr ParseWindowId(
         string windowId)
     {
@@ -1532,6 +1610,21 @@ public sealed class WindowsComputerUseService(
 
     [DllImport("user32.dll")]
     private static extern IntPtr GetForegroundWindow();
+
+    [DllImport("user32.dll")]
+    private static extern IntPtr WindowFromPoint(
+        Point point);
+
+    [DllImport("user32.dll")]
+    private static extern IntPtr GetAncestor(
+        IntPtr hWnd,
+        uint flags);
+
+    [DllImport("user32.dll", CharSet = CharSet.Unicode)]
+    private static extern int GetClassName(
+        IntPtr hWnd,
+        StringBuilder className,
+        int maximumCount);
 
     [DllImport("user32.dll")]
     [return: MarshalAs(UnmanagedType.Bool)]

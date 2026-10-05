@@ -715,35 +715,74 @@ Các field không dùng để chuỗi rỗng hoặc [].
             }
         };
 
-        using var request = new HttpRequestMessage(
-            HttpMethod.Post,
-            $"models/{model}:generateContent")
+        HttpResponseMessage? planningResponse = null;
+        for (var attempt = 1; attempt <= 2; attempt++)
         {
-            Content = new StringContent(
-                JsonSerializer.Serialize(payload),
-                Encoding.UTF8,
-                "application/json")
-        };
-        request.Headers.Add("x-goog-api-key", key);
+            using var request = new HttpRequestMessage(
+                HttpMethod.Post,
+                $"models/{model}:generateContent")
+            {
+                Content = new StringContent(
+                    JsonSerializer.Serialize(payload),
+                    Encoding.UTF8,
+                    "application/json")
+            };
+            request.Headers.Add("x-goog-api-key", key);
 
-        using var response = await httpClient.SendAsync(
-            request,
-            cancellationToken);
-        if (!response.IsSuccessStatusCode)
+            planningResponse = await httpClient.SendAsync(
+                request,
+                cancellationToken);
+
+            if (planningResponse.IsSuccessStatusCode)
+                break;
+
+            var statusCode = (int)planningResponse.StatusCode;
+            var transient =
+                statusCode is 408 or 429 or 500 or 502 or 503 or 504;
+
+            if (transient && attempt == 1)
+            {
+                planningResponse.Dispose();
+                planningResponse = null;
+                await Task.Delay(900, cancellationToken);
+                continue;
+            }
+
+            if (transient)
+            {
+                planningResponse.Dispose();
+                return CreateSafeWaitDecision(
+                    $"Gemini planning tạm thời không khả dụng sau lần thử lại (HTTP {statusCode}). Không thực thi action mới; sẽ quan sát lại trạng thái desktop hiện tại.");
+            }
+
+            planningResponse.Dispose();
             throw new HttpRequestException(
-                $"Desktop Vision chưa đọc được ảnh (HTTP {(int)response.StatusCode}).",
+                $"Desktop Vision chưa đọc được ảnh (HTTP {statusCode}).",
                 null,
-                response.StatusCode);
+                (System.Net.HttpStatusCode)statusCode);
+        }
 
-        using var document = JsonDocument.Parse(
-            await response.Content.ReadAsStreamAsync(cancellationToken));
-        var text = ExtractText(document.RootElement);
+        if (planningResponse is null)
+        {
+            return CreateSafeWaitDecision(
+                "Gemini planning chưa trả được phản hồi hợp lệ. Không thực thi action mới; sẽ quan sát lại trạng thái desktop hiện tại.");
+        }
+
+        string text;
+        using (planningResponse)
+        {
+            using var document = JsonDocument.Parse(
+                await planningResponse.Content.ReadAsStreamAsync(cancellationToken));
+            text = ExtractText(document.RootElement);
+        }
+
         if (string.IsNullOrWhiteSpace(text))
-            throw new InvalidOperationException(
-                "Desktop Vision không trả kết quả.");
+        {
+            return CreateSafeWaitDecision(
+                "Gemini planning không trả nội dung quyết định. Không thực thi action mới; sẽ quan sát lại trạng thái desktop hiện tại.");
+        }
 
-        var decision = ParseDesktopOperatorDecision(
-            ExtractJsonObject(text));
+        var decision = ParseDesktopOperatorDecisionOrWait(text);
 
         if (decision.Action.Equals(
                 "type-text",
@@ -1440,6 +1479,48 @@ Các field không dùng để chuỗi rỗng hoặc [].
 
         number = 0;
         return false;
+    }
+
+    private static DesktopOperatorDecision ParseDesktopOperatorDecisionOrWait(
+        string rawText)
+    {
+        try
+        {
+            return ParseDesktopOperatorDecision(
+                ExtractJsonObject(rawText));
+        }
+        catch (JsonException exception)
+        {
+            return CreateSafeWaitDecision(
+                $"Gemini trả JSON chưa hoàn chỉnh hoặc sai cấu trúc (dòng {exception.LineNumber}, vị trí {exception.BytePositionInLine}). Không thực thi action từ payload lỗi; sẽ quan sát lại trạng thái hiện tại.");
+        }
+        catch (InvalidOperationException exception)
+        {
+            return CreateSafeWaitDecision(
+                $"Gemini chưa trả được JSON quyết định hợp lệ: {exception.Message} Không thực thi action; sẽ quan sát lại trạng thái hiện tại.");
+        }
+    }
+
+    private static DesktopOperatorDecision CreateSafeWaitDecision(
+        string reason)
+    {
+        var safeJson = JsonSerializer.Serialize(
+            new
+            {
+                state = "Kết quả suy luận chưa đủ tin cậy vì payload quyết định không hợp lệ.",
+                plan = "Quan sát lại trạng thái desktop hiện tại và yêu cầu quyết định mới trước khi thực thi bất kỳ side effect nào.",
+                currentSubgoal = string.Empty,
+                goalProgress = 0.0,
+                verifiedMilestones = Array.Empty<string>(),
+                sceneElements = Array.Empty<object>(),
+                targetElementId = string.Empty,
+                action = "wait",
+                expectedEffect = string.Empty,
+                confidence = 0.0,
+                reason
+            });
+
+        return ParseDesktopOperatorDecision(safeJson);
     }
 
     private static DesktopOperatorDecision ParseDesktopOperatorDecision(

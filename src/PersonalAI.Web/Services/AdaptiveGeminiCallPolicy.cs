@@ -40,6 +40,22 @@ public sealed class AdaptiveGeminiCallPolicy
             .Trim()
             .ToLowerInvariant();
 
+        if (action is "press-key" or "press-hotkey")
+        {
+            var hasIndependentTransitionEvidence =
+                observation.ForegroundWindowChanged &&
+                frameDifference?.Comparable == true &&
+                frameDifference.ChangedRatio >= StrongVisualChangeRatio;
+
+            if (hasIndependentTransitionEvidence)
+            {
+                return new(
+                    AdaptiveGeminiDecision.SkipAndPass,
+                    0.96,
+                    $"Thao tác bàn phím tạo transition rõ: foreground đổi và frame thay đổi {frameDifference!.ChangedRatio * 100:0.00}%; không cần Gemini xác minh lại side effect.");
+            }
+        }
+
         if (observation.TargetLikelyOccluded ||
             observation.TargetMissing ||
             observation.ForegroundWindowChanged ||

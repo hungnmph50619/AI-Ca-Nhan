@@ -28,6 +28,16 @@ public sealed class ComputerOperatorAcceptanceService
 
         RunCheck(
             checks,
+            "capture backend router giữ thứ tự WGC → DXGI → PrintWindow → CopyFromScreen",
+            CheckCaptureBackendRouterOrder);
+
+        RunCheck(
+            checks,
+            "capture backend router chỉ chọn backend đã khả dụng",
+            CheckCaptureBackendRouterAvailableFallback);
+
+        RunCheck(
+            checks,
             "tọa độ pixel trên desktop ảo có gốc âm",
             CheckImagePixelWithNegativeVirtualOrigin);
 
@@ -133,6 +143,17 @@ public sealed class ComputerOperatorAcceptanceService
 
         RunCheck(
             checks,
+            "adaptive Gemini bỏ qua model khi keyboard transition có hai bằng chứng local",
+            CheckAdaptiveGeminiSkipsKeyboardTransition);
+
+        RunCheck(
+            checks,
+            "local planner dùng Windows Search generic khi provider degraded",
+            CheckLocalPlannerUsesGenericWindowsSearch);
+
+
+        RunCheck(
+            checks,
             "dynamic target tracker remap bbox khi cửa sổ di chuyển",
             CheckDynamicTargetTrackerMovesWithWindow);
 
@@ -160,6 +181,13 @@ public sealed class ComputerOperatorAcceptanceService
             checks,
             "action state machine chặn execute trước target",
             CheckActionStateMachineRejectsInvalidTransition);
+
+        RunCheck(
+            checks,
+            "verification inconclusive đi qua diagnose trước replan",
+            CheckActionStateMachineInconclusiveVerificationReplansSafely);
+
+
 
         RunCheck(
             checks,
@@ -458,6 +486,26 @@ public sealed class ComputerOperatorAcceptanceService
 
         RunCheck(
             checks,
+            "reliable operator runtime chỉ ready khi có desktop capability",
+            CheckReliableOperatorRuntimeReadiness);
+
+        RunCheck(
+            checks,
+            "reliable operator runtime chặn khi không có desktop capability",
+            CheckReliableOperatorRuntimeNotReady);
+
+        RunCheck(
+            checks,
+            "reliable operator chấp nhận verifier cửa sổ deterministic",
+            CheckReliableOperatorAcceptsDeterministicWindowVerification);
+
+        RunCheck(
+            checks,
+            "reliable operator yêu cầu semantic cho strong-local đơn lẻ",
+            CheckReliableOperatorRequiresSemanticForStrongLocal);
+
+        RunCheck(
+            checks,
             "capability first router phát hiện direct tool an toàn",
             CheckUniversalRouterDetectsDirectToolOpportunity);
 
@@ -693,6 +741,56 @@ public sealed class ComputerOperatorAcceptanceService
                     false,
                     exception.Message));
         }
+    }
+
+    private static void CheckCaptureBackendRouterOrder()
+    {
+        var router = new DesktopCaptureBackendRouter();
+        var candidates = router.GetOrderedCandidates(
+            DesktopCaptureScopes.Window);
+
+        Require(
+            candidates.SequenceEqual(
+                [
+                    DesktopCaptureBackends.WindowsGraphicsCapture,
+                    DesktopCaptureBackends.PrintWindow,
+                    DesktopCaptureBackends.CopyFromScreen
+                ]),
+            "Capture router không giữ đúng thứ tự ưu tiên backend cho window.");
+
+        var monitorCandidates = router.GetOrderedCandidates(
+            DesktopCaptureScopes.Monitor);
+
+        Require(
+            monitorCandidates.SequenceEqual(
+                [
+                    DesktopCaptureBackends.DxgiDesktopDuplication,
+                    DesktopCaptureBackends.CopyFromScreen
+                ]),
+            "Capture router không giữ đúng thứ tự ưu tiên backend cho monitor khi WGC monitor chưa được kích hoạt.");
+    }
+
+    private static void CheckCaptureBackendRouterAvailableFallback()
+    {
+        var router = new DesktopCaptureBackendRouter();
+
+        Require(
+            router.GetPreferredAvailableBackend(
+                DesktopCaptureScopes.Window) ==
+            DesktopCaptureBackends.PrintWindow,
+            "Window capture chưa được chọn PrintWindow khi WGC chưa kích hoạt.");
+
+        Require(
+            router.GetPreferredAvailableBackend(
+                DesktopCaptureScopes.Monitor) ==
+            DesktopCaptureBackends.CopyFromScreen,
+            "Monitor capture chưa fallback CopyFromScreen khi WGC/DXGI chưa kích hoạt.");
+
+        Require(
+            router.GetPreferredAvailableBackend(
+                DesktopCaptureScopes.VirtualDesktop) ==
+            DesktopCaptureBackends.CopyFromScreen,
+            "Virtual desktop chưa fallback CopyFromScreen khi DXGI chưa kích hoạt.");
     }
 
     private static void CheckImagePixelWithNegativeVirtualOrigin()
@@ -1568,6 +1666,93 @@ public sealed class ComputerOperatorAcceptanceService
             "Adaptive Gemini bỏ qua model dù foreground/context vừa thay đổi.");
     }
 
+    private static void CheckAdaptiveGeminiSkipsKeyboardTransition()
+    {
+        var policy = new AdaptiveGeminiCallPolicy();
+        var decision = BuildClickDecision(
+            ComputerCoordinateSpaces.ImagePixel) with
+        {
+            Action = "press-key",
+            Key = "WIN",
+            ExpectedEffect = "Windows shell xuất hiện"
+        };
+
+        var observation = new DesktopFastObservation(
+            ScreenChanged: true,
+            ChangeRatio: 0.11,
+            ForegroundWindowChanged: true,
+            WindowBoundsChanged: true,
+            CursorMoved: false,
+            MonitorChanged: false,
+            DpiChanged: false,
+            TargetMoved: false,
+            TargetMissing: true,
+            TargetLikelyOccluded: true,
+            Summary: "acceptance");
+
+        var result = policy.EvaluateVerification(
+            decision,
+            observation,
+            new DesktopFrameDifference(
+                true,
+                0.11,
+                110,
+                1000,
+                0,
+                0,
+                500,
+                400,
+                18,
+                "acceptance"));
+
+        Require(
+            result.Decision == AdaptiveGeminiDecision.SkipAndPass &&
+            result.Confidence >= 0.9,
+            "Adaptive Gemini vẫn gọi model dù keyboard transition có foreground + frame evidence mạnh.");
+    }
+
+    private static void CheckLocalPlannerUsesGenericWindowsSearch()
+    {
+        var planner = new DesktopLocalActionPlanner();
+        var foreground = new ComputerWindowInfo(
+            "0x100",
+            "Trình duyệt",
+            "msedge",
+            100,
+            true,
+            0,
+            0,
+            1280,
+            720);
+
+        var state = new ComputerOperatorDesktopState(
+            DateTimeOffset.UtcNow,
+            foreground,
+            [foreground],
+            0,
+            0,
+            1920,
+            1080,
+            DesktopCaptureScopes.VirtualDesktop,
+            null,
+            false);
+
+        var planned = planner.TryPlan(
+            "Mở Calculator, sau đó dừng lại.",
+            state,
+            string.Empty,
+            out var decision);
+
+        Require(
+            planned &&
+            decision.Action == "press-hotkey" &&
+            decision.Keys.SequenceEqual(["WIN", "S"]) &&
+            decision.ExpectedEffect.Contains(
+                "Windows Search",
+                StringComparison.OrdinalIgnoreCase),
+            "Local planner không chọn Windows Search generic cho intent mở ứng dụng.");
+    }
+
     private static void CheckDynamicTargetTrackerMovesWithWindow()
     {
         var tracker = new DesktopDynamicTargetTracker();
@@ -1751,6 +1936,30 @@ public sealed class ComputerOperatorAcceptanceService
             success.State == ComputerOperatorActionState.Success &&
             success.TransitionCount == 6,
             "Action state machine không hoàn thành đúng happy path.");
+    }
+
+    private static void CheckActionStateMachineInconclusiveVerificationReplansSafely()
+    {
+        var machine = new ComputerOperatorActionStateMachine();
+
+        machine.StartObservation("test");
+        machine.MoveTo(ComputerOperatorActionState.Plan, "test");
+        machine.MoveTo(ComputerOperatorActionState.Target, "test");
+        machine.MoveTo(ComputerOperatorActionState.Execute, "test");
+        machine.MoveTo(ComputerOperatorActionState.Verify, "test");
+
+        var diagnose = machine.MoveTo(
+            ComputerOperatorActionState.Diagnose,
+            "verification inconclusive");
+
+        var replan = machine.MoveTo(
+            ComputerOperatorActionState.Replan,
+            "observe again");
+
+        Require(
+            diagnose.State == ComputerOperatorActionState.Diagnose &&
+            replan.State == ComputerOperatorActionState.Replan,
+            "Verification inconclusive phải đi Verify -> Diagnose -> Replan.");
     }
 
     private static void CheckActionStateMachineRejectsInvalidTransition()
@@ -3606,6 +3815,158 @@ public sealed class ComputerOperatorAcceptanceService
                 ComputerOperatorTelemetry.MaximumRecentEvents + 25,
             "Telemetry recent-event buffer hoặc aggregate count không đúng giới hạn.");
     }
+
+    private static void CheckReliableOperatorRuntimeReadiness()
+    {
+        var coordinator =
+            BuildReliableOperatorCoordinator(
+                new UniversalCapabilitySnapshot(
+                    PersonalAI.Web.Models.PersonalAiRelease.Version,
+                    DateTimeOffset.UtcNow,
+                    [
+                        new UniversalCapabilitySignal(
+                            "desktop.win32-accessibility",
+                            ExecutionAgentChannels.Computer,
+                            "Win32 Accessibility",
+                            Available: true,
+                            UniversalCapabilityReliability.Deterministic,
+                            0.02,
+                            Priority: 1,
+                            "acceptance")
+                    ]));
+
+        var runtime =
+            coordinator.GetRuntimeSnapshot();
+
+        Require(
+            runtime.Ready &&
+            runtime.AvailableComputerCapabilities.Contains(
+                "desktop.win32-accessibility",
+                StringComparer.OrdinalIgnoreCase),
+            "Reliable Operator chưa ready khi có desktop capability hợp lệ.");
+    }
+
+    private static void CheckReliableOperatorRuntimeNotReady()
+    {
+        var coordinator =
+            BuildReliableOperatorCoordinator(
+                new UniversalCapabilitySnapshot(
+                    PersonalAI.Web.Models.PersonalAiRelease.Version,
+                    DateTimeOffset.UtcNow,
+                    [
+                        new UniversalCapabilitySignal(
+                            "desktop.flaui-uia3",
+                            ExecutionAgentChannels.Computer,
+                            "FlaUI",
+                            Available: false,
+                            UniversalCapabilityReliability.Structured,
+                            0,
+                            Priority: 1,
+                            "acceptance unavailable")
+                    ]));
+
+        var runtime =
+            coordinator.GetRuntimeSnapshot();
+
+        Require(
+            !runtime.Ready &&
+            runtime.AvailableComputerCapabilities.Count == 0,
+            "Reliable Operator vẫn ready dù không có desktop capability khả dụng.");
+    }
+
+    private static void CheckReliableOperatorAcceptsDeterministicWindowVerification()
+    {
+        var coordinator =
+            BuildReliableOperatorCoordinator(
+                AcceptanceDesktopCapabilitySnapshot());
+
+        var decision =
+            BuildClickDecision("virtual-desktop") with
+            {
+                Action = "focus-window",
+                ExpectedEffect = "Cửa sổ đích ở foreground."
+            };
+
+        var result =
+            coordinator.EvaluateLocalVerification(
+                decision,
+                new DesktopVerificationRoutingResult(
+                    DesktopVerificationRoute.LocalVerified,
+                    0.97,
+                    "Foreground window đã thay đổi."));
+
+        Require(
+            result.Verified &&
+            !result.RequiresSemanticVerification,
+            "Verifier cửa sổ deterministic chưa được Reliable Operator chấp nhận.");
+    }
+
+    private static void CheckReliableOperatorRequiresSemanticForStrongLocal()
+    {
+        var coordinator =
+            BuildReliableOperatorCoordinator(
+                AcceptanceDesktopCapabilitySnapshot());
+
+        var decision =
+            BuildClickDecision("virtual-desktop") with
+            {
+                Action = "scroll",
+                ExpectedEffect = "Nội dung đã cuộn."
+            };
+
+        var local =
+            new DesktopVerificationRoutingResult(
+                DesktopVerificationRoute.LocalVerified,
+                0.94,
+                "Frame thay đổi sau thao tác cuộn.");
+
+        var localResult =
+            coordinator.EvaluateLocalVerification(
+                decision,
+                local);
+
+        Require(
+            !localResult.Verified &&
+            localResult.RequiresSemanticVerification,
+            "Strong-local đơn lẻ đang tự complete mà chưa có semantic corroboration.");
+
+        var semantic =
+            coordinator.EvaluateSemanticVerification(
+                decision,
+                local,
+                semanticPassed: true,
+                semanticConfidence: 0.95,
+                semanticReason: "Vision xác nhận nội dung đã cuộn.");
+
+        Require(
+            semantic.Verified,
+            "Strong-local + semantic cùng kết luận nhưng Evidence Fusion chưa verify.");
+    }
+
+    private static UniversalReliableOperatorCoordinator BuildReliableOperatorCoordinator(
+        UniversalCapabilitySnapshot snapshot) =>
+        new(
+            new AcceptanceCapabilityDiscoveryService(snapshot),
+            new UniversalCapabilityCache(),
+            new UniversalEvidenceFusionEngine(),
+            new UniversalResilienceExecutor(
+                new UniversalFailureClassifier()));
+
+    private static UniversalCapabilitySnapshot AcceptanceDesktopCapabilitySnapshot() =>
+        new(
+            PersonalAI.Web.Models.PersonalAiRelease.Version,
+            DateTimeOffset.UtcNow,
+            [
+                new UniversalCapabilitySignal(
+                    "desktop.win32-accessibility",
+                    ExecutionAgentChannels.Computer,
+                    "Win32 Accessibility",
+                    Available: true,
+                    UniversalCapabilityReliability.Deterministic,
+                    0.02,
+                    Priority: 1,
+                    "acceptance")
+            ]);
 
     private static void CheckOperatorCheckpointRedactsSensitiveContext()
     {

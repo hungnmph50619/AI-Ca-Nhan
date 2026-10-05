@@ -180,7 +180,7 @@ public sealed class ComputerControlGate
         {
             ExpireIfNeeded();
             if (!_stopHotkeyAvailable)
-                PauseInternal();
+                PauseInternal(ComputerControlPauseReasons.HotkeyUnavailable);
             if (_paused)
             {
                 throw new ToolExecutionInputException(

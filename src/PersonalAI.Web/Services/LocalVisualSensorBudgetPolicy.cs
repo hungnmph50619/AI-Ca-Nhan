@@ -164,12 +164,17 @@ public sealed class LocalVisualSensorBudgetPolicy
             return false;
         }
 
-        if (health.LastLatencyMilliseconds > 0 &&
-            health.LastLatencyMilliseconds >
-                providerLimit * 2L)
+        var historicalLatency =
+            health.AverageLatencyMilliseconds > 0
+                ? health.AverageLatencyMilliseconds
+                : health.LastLatencyMilliseconds;
+
+        if (historicalLatency > 0 &&
+            historicalLatency >
+                providerLimit * 2.0)
         {
             reason =
-                $"{provider} có latency lịch sử {health.LastLatencyMilliseconds}ms quá cao so với budget {providerLimit}ms.";
+                $"{provider} có EWMA latency {historicalLatency:0}ms quá cao so với budget {providerLimit}ms.";
             return false;
         }
 

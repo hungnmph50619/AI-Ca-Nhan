@@ -1157,8 +1157,7 @@ internal static class Program
             Depth: depth,
             Role:
                 element.Properties.ControlType.ValueOrDefault
-                    ?.ToString()
-                ?? "Unknown",
+                    .ToString(),
             Name:
                 element.Properties.Name.ValueOrDefault
                 ?? string.Empty,

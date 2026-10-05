@@ -40,7 +40,8 @@ public interface IDesktopCaptureBackendRouter
 }
 
 public sealed class DesktopCaptureBackendRouter(
-    IWindowsGraphicsCaptureClient? wgc = null)
+    IWindowsGraphicsCaptureClient? wgc = null,
+    IDxgiDesktopDuplicationClient? dxgi = null)
     : IDesktopCaptureBackendRouter
 {
     private IReadOnlyList<DesktopCaptureBackendStatus> Backends =>
@@ -56,9 +57,11 @@ public sealed class DesktopCaptureBackendRouter(
         new(
             DesktopCaptureBackends.DxgiDesktopDuplication,
             2,
-            Available: false,
-            [DesktopCaptureScopes.VirtualDesktop, DesktopCaptureScopes.Monitor, DesktopCaptureScopes.Region],
-            "Adapter DXGI Desktop Duplication chưa được kích hoạt trong bước nền tảng router."),
+            Available: dxgi?.Available == true,
+            [DesktopCaptureScopes.Monitor],
+            dxgi?.Available == true
+                ? "DXGI Desktop Duplication sẵn sàng làm fallback monitor capture."
+                : "DXGI Desktop Duplication chưa khả dụng; router sẽ dùng backend dự phòng."),
         new(
             DesktopCaptureBackends.PrintWindow,
             3,

@@ -173,6 +173,13 @@ public sealed class ComputerOperatorAcceptanceService
 
         RunCheck(
             checks,
+            "verification inconclusive đi qua diagnose trước replan",
+            CheckActionStateMachineInconclusiveVerificationReplansSafely);
+
+
+
+        RunCheck(
+            checks,
             "confidence engine cho execute khi scene target action đều đủ chắc",
             CheckConfidenceEngineAllowsExecution);
 
@@ -1832,6 +1839,30 @@ public sealed class ComputerOperatorAcceptanceService
             success.State == ComputerOperatorActionState.Success &&
             success.TransitionCount == 6,
             "Action state machine không hoàn thành đúng happy path.");
+    }
+
+    private static void CheckActionStateMachineInconclusiveVerificationReplansSafely()
+    {
+        var machine = new ComputerOperatorActionStateMachine();
+
+        machine.StartObservation("test");
+        machine.MoveTo(ComputerOperatorActionState.Plan, "test");
+        machine.MoveTo(ComputerOperatorActionState.Target, "test");
+        machine.MoveTo(ComputerOperatorActionState.Execute, "test");
+        machine.MoveTo(ComputerOperatorActionState.Verify, "test");
+
+        var diagnose = machine.MoveTo(
+            ComputerOperatorActionState.Diagnose,
+            "verification inconclusive");
+
+        var replan = machine.MoveTo(
+            ComputerOperatorActionState.Replan,
+            "observe again");
+
+        Require(
+            diagnose.State == ComputerOperatorActionState.Diagnose &&
+            replan.State == ComputerOperatorActionState.Replan,
+            "Verification inconclusive phải đi Verify -> Diagnose -> Replan.");
     }
 
     private static void CheckActionStateMachineRejectsInvalidTransition()

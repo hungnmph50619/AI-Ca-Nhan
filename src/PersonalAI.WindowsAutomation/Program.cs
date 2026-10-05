@@ -1193,7 +1193,66 @@ internal static class Program
             Height:
                 bounds.Height,
             Patterns:
-                patterns.ToArray());
+                patterns.ToArray(),
+            ToggleState:
+                ReadToggleState(element),
+            ExpandCollapseState:
+                ReadExpandCollapseState(element),
+            IsSelected:
+                ReadSelectionState(element));
+    }
+
+    private static string ReadToggleState(
+        AutomationElement element)
+    {
+        if (!element.Patterns.Toggle.IsSupported)
+            return string.Empty;
+
+        try
+        {
+            return element.Patterns.Toggle.Pattern
+                .ToggleState.ValueOrDefault
+                .ToString();
+        }
+        catch
+        {
+            return string.Empty;
+        }
+    }
+
+    private static string ReadExpandCollapseState(
+        AutomationElement element)
+    {
+        if (!element.Patterns.ExpandCollapse.IsSupported)
+            return string.Empty;
+
+        try
+        {
+            return element.Patterns.ExpandCollapse.Pattern
+                .ExpandCollapseState.ValueOrDefault
+                .ToString();
+        }
+        catch
+        {
+            return string.Empty;
+        }
+    }
+
+    private static bool? ReadSelectionState(
+        AutomationElement element)
+    {
+        if (!element.Patterns.SelectionItem.IsSupported)
+            return null;
+
+        try
+        {
+            return element.Patterns.SelectionItem.Pattern
+                .IsSelected.ValueOrDefault;
+        }
+        catch
+        {
+            return null;
+        }
     }
 
     private sealed record StructuredUiNode(
@@ -1211,7 +1270,10 @@ internal static class Program
         int Top,
         int Width,
         int Height,
-        string[] Patterns);
+        string[] Patterns,
+        string ToggleState = "",
+        string ExpandCollapseState = "",
+        bool? IsSelected = null);
 
     private sealed record StructuredUiSnapshot(
         string WindowId,

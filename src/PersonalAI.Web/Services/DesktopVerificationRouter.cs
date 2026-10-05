@@ -113,6 +113,55 @@ public sealed class DesktopVerificationRouter
                 "Foreground không đổi; cần Vision xác minh cửa sổ đích có thể đã được focus sẵn.");
         }
 
+        if (action is
+            "structured-invoke" or
+            "structured-legacy-default")
+        {
+            var strongTransition =
+                observation.ForegroundWindowChanged ||
+                observation.WindowBoundsChanged ||
+                (frameDifference?.Comparable == true &&
+                 frameDifference.ChangedRatio >= StrongVisualChangeRatio);
+
+            if (strongTransition)
+            {
+                return new(
+                    DesktopVerificationRoute.LocalVerified,
+                    0.95,
+                    "Structured invoke tạo transition desktop quan sát được; có thể xác minh local sau khi event wake/correlation đã dẫn tới observation mới.");
+            }
+
+            if (frameDifference?.Comparable == true &&
+                frameDifference.ChangedRatio <= NoVisualChangeRatio &&
+                !observation.ForegroundWindowChanged &&
+                !observation.WindowBoundsChanged)
+            {
+                return new(
+                    DesktopVerificationRoute.GeminiRequired,
+                    0.0,
+                    "Structured invoke chưa tạo transition local đủ rõ; không kết luận fail ngay, tiếp tục adaptive wait/semantic verification.");
+            }
+        }
+
+        if (action is
+            "structured-toggle" or
+            "structured-select" or
+            "structured-expand" or
+            "structured-collapse" or
+            "structured-set-value")
+        {
+            // Các action này ưu tiên StructuredDesktopVerificationService.
+            // Nếu đã rơi xuống router nghĩa là structured evidence chưa đủ.
+            if (frameDifference?.Comparable == true &&
+                frameDifference.ChangedRatio >= StrongVisualChangeRatio)
+            {
+                return new(
+                    DesktopVerificationRoute.LocalVerified,
+                    0.90,
+                    "Structured state chưa đủ nhưng UI có thay đổi local rõ ràng; coi đây là bằng chứng phụ, vẫn qua Evidence Fusion trước khi complete.");
+            }
+        }
+
         if (action == "scroll")
         {
             if (frameDifference?.Comparable == true &&

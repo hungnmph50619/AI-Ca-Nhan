@@ -458,6 +458,26 @@ public sealed class ComputerOperatorAcceptanceService
 
         RunCheck(
             checks,
+            "reliable operator runtime chỉ ready khi có desktop capability",
+            CheckReliableOperatorRuntimeReadiness);
+
+        RunCheck(
+            checks,
+            "reliable operator runtime chặn khi không có desktop capability",
+            CheckReliableOperatorRuntimeNotReady);
+
+        RunCheck(
+            checks,
+            "reliable operator chấp nhận verifier cửa sổ deterministic",
+            CheckReliableOperatorAcceptsDeterministicWindowVerification);
+
+        RunCheck(
+            checks,
+            "reliable operator yêu cầu semantic cho strong-local đơn lẻ",
+            CheckReliableOperatorRequiresSemanticForStrongLocal);
+
+        RunCheck(
+            checks,
             "capability first router phát hiện direct tool an toàn",
             CheckUniversalRouterDetectsDirectToolOpportunity);
 
@@ -3606,6 +3626,158 @@ public sealed class ComputerOperatorAcceptanceService
                 ComputerOperatorTelemetry.MaximumRecentEvents + 25,
             "Telemetry recent-event buffer hoặc aggregate count không đúng giới hạn.");
     }
+
+    private static void CheckReliableOperatorRuntimeReadiness()
+    {
+        var coordinator =
+            BuildReliableOperatorCoordinator(
+                new UniversalCapabilitySnapshot(
+                    PersonalAI.Web.Models.PersonalAiRelease.Version,
+                    DateTimeOffset.UtcNow,
+                    [
+                        new UniversalCapabilitySignal(
+                            "desktop.win32-accessibility",
+                            ExecutionAgentChannels.Computer,
+                            "Win32 Accessibility",
+                            Available: true,
+                            UniversalCapabilityReliability.Deterministic,
+                            0.02,
+                            Priority: 1,
+                            "acceptance")
+                    ]));
+
+        var runtime =
+            coordinator.GetRuntimeSnapshot();
+
+        Require(
+            runtime.Ready &&
+            runtime.AvailableComputerCapabilities.Contains(
+                "desktop.win32-accessibility",
+                StringComparer.OrdinalIgnoreCase),
+            "Reliable Operator chưa ready khi có desktop capability hợp lệ.");
+    }
+
+    private static void CheckReliableOperatorRuntimeNotReady()
+    {
+        var coordinator =
+            BuildReliableOperatorCoordinator(
+                new UniversalCapabilitySnapshot(
+                    PersonalAI.Web.Models.PersonalAiRelease.Version,
+                    DateTimeOffset.UtcNow,
+                    [
+                        new UniversalCapabilitySignal(
+                            "desktop.flaui-uia3",
+                            ExecutionAgentChannels.Computer,
+                            "FlaUI",
+                            Available: false,
+                            UniversalCapabilityReliability.Structured,
+                            0,
+                            Priority: 1,
+                            "acceptance unavailable")
+                    ]));
+
+        var runtime =
+            coordinator.GetRuntimeSnapshot();
+
+        Require(
+            !runtime.Ready &&
+            runtime.AvailableComputerCapabilities.Count == 0,
+            "Reliable Operator vẫn ready dù không có desktop capability khả dụng.");
+    }
+
+    private static void CheckReliableOperatorAcceptsDeterministicWindowVerification()
+    {
+        var coordinator =
+            BuildReliableOperatorCoordinator(
+                AcceptanceDesktopCapabilitySnapshot());
+
+        var decision =
+            BuildClickDecision("virtual-desktop") with
+            {
+                Action = "focus-window",
+                ExpectedEffect = "Cửa sổ đích ở foreground."
+            };
+
+        var result =
+            coordinator.EvaluateLocalVerification(
+                decision,
+                new DesktopVerificationRoutingResult(
+                    DesktopVerificationRoute.LocalVerified,
+                    0.97,
+                    "Foreground window đã thay đổi."));
+
+        Require(
+            result.Verified &&
+            !result.RequiresSemanticVerification,
+            "Verifier cửa sổ deterministic chưa được Reliable Operator chấp nhận.");
+    }
+
+    private static void CheckReliableOperatorRequiresSemanticForStrongLocal()
+    {
+        var coordinator =
+            BuildReliableOperatorCoordinator(
+                AcceptanceDesktopCapabilitySnapshot());
+
+        var decision =
+            BuildClickDecision("virtual-desktop") with
+            {
+                Action = "scroll",
+                ExpectedEffect = "Nội dung đã cuộn."
+            };
+
+        var local =
+            new DesktopVerificationRoutingResult(
+                DesktopVerificationRoute.LocalVerified,
+                0.94,
+                "Frame thay đổi sau thao tác cuộn.");
+
+        var localResult =
+            coordinator.EvaluateLocalVerification(
+                decision,
+                local);
+
+        Require(
+            !localResult.Verified &&
+            localResult.RequiresSemanticVerification,
+            "Strong-local đơn lẻ đang tự complete mà chưa có semantic corroboration.");
+
+        var semantic =
+            coordinator.EvaluateSemanticVerification(
+                decision,
+                local,
+                semanticPassed: true,
+                semanticConfidence: 0.95,
+                semanticReason: "Vision xác nhận nội dung đã cuộn.");
+
+        Require(
+            semantic.Verified,
+            "Strong-local + semantic cùng kết luận nhưng Evidence Fusion chưa verify.");
+    }
+
+    private static UniversalReliableOperatorCoordinator BuildReliableOperatorCoordinator(
+        UniversalCapabilitySnapshot snapshot) =>
+        new(
+            new AcceptanceCapabilityDiscoveryService(snapshot),
+            new UniversalCapabilityCache(),
+            new UniversalEvidenceFusionEngine(),
+            new UniversalResilienceExecutor(
+                new UniversalFailureClassifier()));
+
+    private static UniversalCapabilitySnapshot AcceptanceDesktopCapabilitySnapshot() =>
+        new(
+            PersonalAI.Web.Models.PersonalAiRelease.Version,
+            DateTimeOffset.UtcNow,
+            [
+                new UniversalCapabilitySignal(
+                    "desktop.win32-accessibility",
+                    ExecutionAgentChannels.Computer,
+                    "Win32 Accessibility",
+                    Available: true,
+                    UniversalCapabilityReliability.Deterministic,
+                    0.02,
+                    Priority: 1,
+                    "acceptance")
+            ]);
 
     private static void CheckOperatorCheckpointRedactsSensitiveContext()
     {

@@ -408,7 +408,10 @@ public sealed class DesktopLocalActionPlanner
             currentSubgoal:
                 $"Tương tác với phần tử '{DisplayNode(node)}' bằng Unified Structured Scene Graph.",
             expectedEffect:
-                $"Phần tử '{DisplayNode(node)}' phản hồi sau thao tác {actionCapability}.",
+                BuildStructuredExpectedEffect(
+                    node,
+                    actionCapability,
+                    desiredState),
             reason:
                 $"Structured resolver đã ánh xạ mục tiêu '{requestedTarget}' thành node '{node.Id}' (score={resolution.Score}, capability={actionCapability}); không cần gửi toàn màn hình cho Vision/Gemini.",
             plan:
@@ -505,6 +508,35 @@ public sealed class DesktopLocalActionPlanner
         action = string.Empty;
         desiredState = string.Empty;
         return false;
+    }
+
+    private static string BuildStructuredExpectedEffect(
+        UnifiedStructuredSceneNode node,
+        string capability,
+        string desiredState)
+    {
+        var marker =
+            capability.Equals(
+                "Toggle",
+                StringComparison.OrdinalIgnoreCase) &&
+            !string.IsNullOrWhiteSpace(desiredState)
+                ? $"structured-state:toggle={desiredState}; "
+                : capability.Equals(
+                    "ExpandCollapse",
+                    StringComparison.OrdinalIgnoreCase) &&
+                  !string.IsNullOrWhiteSpace(desiredState)
+                    ? $"structured-state:expandCollapse={desiredState}; "
+                    : capability.Equals(
+                        "SelectionItem",
+                        StringComparison.OrdinalIgnoreCase) &&
+                      desiredState.Equals(
+                          "Selected",
+                          StringComparison.OrdinalIgnoreCase)
+                        ? "structured-state:selected=true; "
+                        : string.Empty;
+
+        return
+            $"{marker}Phần tử '{DisplayNode(node)}' phản hồi sau thao tác {capability}.";
     }
 
     private static bool CanSafelyApplyRequestedStructuredState(

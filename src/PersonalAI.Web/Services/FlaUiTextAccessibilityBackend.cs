@@ -8,7 +8,8 @@ public sealed record FlaUiAutomationRequest(
     string WindowId,
     string? TargetToken = null,
     string? Text = null,
-    string? WriteMode = null);
+    string? WriteMode = null,
+    int WaitMilliseconds = 0);
 
 public sealed record FlaUiAutomationResponse(
     bool Success,
@@ -22,7 +23,9 @@ public sealed record FlaUiAutomationResponse(
     long NativeWindowHandle,
     string TargetToken,
     string? Value,
-    string Detail);
+    string Detail,
+    string EventKind = "",
+    string EventWindowId = "");
 
 public interface IFlaUiAutomationClient
 {

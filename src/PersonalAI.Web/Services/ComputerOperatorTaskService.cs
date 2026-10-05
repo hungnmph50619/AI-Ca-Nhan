@@ -2258,6 +2258,9 @@ public sealed class ComputerOperatorTaskService(
                 }
             },
             policy,
+            verificationCaptureContext?.WindowId,
+            decision.Action,
+            decision.ExpectedEffect,
             cancellationToken);
 
         adaptiveWaitTelemetry.Complete(
@@ -2269,7 +2272,7 @@ public sealed class ComputerOperatorTaskService(
             result.Status switch
             {
                 AdaptiveWaitStatuses.Verified =>
-                    $"Đã xác minh sau {result.Elapsed.TotalSeconds:0.0}s; samples={result.Samples}; heartbeat={result.ProgressHeartbeats}; eventWakeups={result.EventWakeups}. {result.Reason}",
+                    $"Đã xác minh sau {result.Elapsed.TotalSeconds:0.0}s; samples={result.Samples}; heartbeat={result.ProgressHeartbeats}; eventWakeups={result.EventWakeups}; ignoredEvents={result.IgnoredEventWakeups}. {result.Reason}",
                 AdaptiveWaitStatuses.Stalled =>
                     $"Chưa có tiến triển đủ mạnh sau {result.Elapsed.TotalSeconds:0.0}s; chưa kết luận action thất bại. Chuyển sang semantic verifier. {result.Reason}",
                 AdaptiveWaitStatuses.Failed =>

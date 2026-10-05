@@ -433,6 +433,42 @@ public sealed class ComputerOperatorAcceptanceService
 
         RunCheck(
             checks,
+            "event observation snapshot công bố counters an toàn",
+            CheckEventObservationSnapshotContract);
+
+        RunCheck(
+            checks,
+            "adaptive wait truyền đúng window target cho event wake",
+            CheckAdaptiveWaitUsesTargetAwareWake);
+
+        RunCheck(
+            checks,
+            "event relevance ưu tiên tín hiệu phù hợp với action",
+            CheckEventRelevancePrioritizesExpectedSignals);
+
+        RunCheck(
+            checks,
+            "event correlation dùng expected effect để tăng độ liên quan",
+            CheckEventRelevanceUsesExpectedEffect);
+
+        RunCheck(
+            checks,
+            "event source fusion tăng confidence khi WinEvent và UIA3 xác nhận nhau",
+            CheckEventSourceFusionConfidence);
+
+        RunCheck(
+            checks,
+            "event burst gom tín hiệu dồn dập thành một transaction UI",
+            CheckEventBurstGrouping);
+
+
+
+
+
+
+
+        RunCheck(
+            checks,
             "capability cache hit không gọi raw discovery lần hai",
             CheckCapabilityCacheAvoidsRepeatedDiscovery);
 
@@ -3524,6 +3560,209 @@ public sealed class ComputerOperatorAcceptanceService
             "Không có event nhưng polling fallback chưa hoạt động.");
     }
 
+    private static void CheckEventObservationSnapshotContract()
+    {
+        var source =
+            new AcceptanceObservationWakeSource(
+                emitEvent: true);
+
+        var snapshot =
+            source.GetSnapshot();
+
+        Require(
+            snapshot.EventDrivenAvailable &&
+            snapshot.ReceivedEvents >= 0 &&
+            snapshot.CoalescedEvents >= 0 &&
+            snapshot.DroppedEvents >= 0 &&
+            snapshot.DeliveredWakeups >= 0 &&
+            snapshot.PollFallbacks >= 0 &&
+            snapshot.QueuedEvents >= 0,
+            "Event observation snapshot trả counters không hợp lệ.");
+    }
+
+    private static void CheckAdaptiveWaitUsesTargetAwareWake()
+    {
+        var wake =
+            new AcceptanceObservationWakeSource(
+                emitEvent: true);
+
+        var engine =
+            new AdaptiveVerificationWaitEngine(
+                wake);
+
+        var result =
+            engine.WaitAsync(
+                    _ => Task.FromResult(
+                        new AdaptiveProgressSample(
+                            AdaptiveWaitStatuses.Pending,
+                            0.3,
+                            "acceptance pending")),
+                    new AdaptiveWaitPolicy(
+                        TimeSpan.FromMilliseconds(1),
+                        TimeSpan.FromMilliseconds(20),
+                        TimeSpan.FromMilliseconds(40),
+                        0.7),
+                    "0xCAFE",
+                    CancellationToken.None)
+                .GetAwaiter()
+                .GetResult();
+
+        Require(
+            wake.LastTargetWindowId == "0xCAFE" &&
+            wake.WaitCount > 0 &&
+            result.EventWakeups > 0,
+            "Adaptive wait chưa truyền đúng target window vào event wake source.");
+    }
+
+    private static void CheckEventRelevancePrioritizesExpectedSignals()
+    {
+        var valueEvent =
+            new DesktopSystemEvent(
+                DesktopSystemEventKinds.ValueChanged,
+                "0x1",
+                DateTimeOffset.UtcNow,
+                0,
+                "acceptance value changed",
+                SourceConfidence: 1.0);
+
+        var moveEvent =
+            new DesktopSystemEvent(
+                DesktopSystemEventKinds.WindowMovedOrResized,
+                "0x1",
+                DateTimeOffset.UtcNow,
+                0,
+                "acceptance moved",
+                SourceConfidence: 1.0);
+
+        var typeValue =
+            ComputerOperatorEventRelevance.Score(
+                "type-text",
+                valueEvent);
+
+        var typeMove =
+            ComputerOperatorEventRelevance.Score(
+                "type-text",
+                moveEvent);
+
+        var maximizeMove =
+            ComputerOperatorEventRelevance.Score(
+                "maximize",
+                moveEvent);
+
+        Require(
+            typeValue >= 0.9 &&
+            typeMove < 0.55 &&
+            maximizeMove >= 0.9,
+            "Event relevance chưa phân biệt đúng tín hiệu theo action.");
+    }
+
+    private static void CheckEventRelevanceUsesExpectedEffect()
+    {
+        var structureEvent =
+            new DesktopSystemEvent(
+                DesktopSystemEventKinds.StructureChanged,
+                "0x1",
+                DateTimeOffset.UtcNow,
+                0,
+                "acceptance structure changed",
+                SourceConfidence: 1.0);
+
+        var withoutEffect =
+            ComputerOperatorEventRelevance.Score(
+                "press-hotkey",
+                structureEvent);
+
+        var withEffect =
+            ComputerOperatorEventRelevance.Score(
+                "press-hotkey",
+                "Windows Search xuất hiện.",
+                structureEvent);
+
+        Require(
+            withEffect > withoutEffect &&
+            withEffect >= 0.9,
+            "Expected effect chưa tăng độ ưu tiên cho event phù hợp.");
+    }
+
+    private static void CheckEventSourceFusionConfidence()
+    {
+        var singleSource =
+            new DesktopSystemEvent(
+                DesktopSystemEventKinds.ValueChanged,
+                "0x1",
+                DateTimeOffset.UtcNow,
+                0,
+                "single source",
+                Source: "uia3",
+                SourceConfidence: 0.75,
+                Corroborated: false);
+
+        var corroborated =
+            singleSource with
+            {
+                SourceConfidence = 0.90,
+                Corroborated = true
+            };
+
+        var singleScore =
+            ComputerOperatorEventRelevance.Score(
+                "type-text",
+                "text được nhập",
+                singleSource);
+
+        var fusedScore =
+            ComputerOperatorEventRelevance.Score(
+                "type-text",
+                "text được nhập",
+                corroborated);
+
+        Require(
+            fusedScore > singleScore &&
+            fusedScore >= 0.90,
+            "Event source fusion chưa tăng độ tin cậy khi có hai nguồn độc lập xác nhận.");
+    }
+
+    private static void CheckEventBurstGrouping()
+    {
+        var started =
+            DateTimeOffset.UtcNow;
+
+        var first =
+            new DesktopSystemEvent(
+                DesktopSystemEventKinds.FocusChanged,
+                "0xBEEF",
+                started,
+                0,
+                "first");
+
+        var second =
+            new DesktopSystemEvent(
+                DesktopSystemEventKinds.ValueChanged,
+                "0xBEEF",
+                started.AddMilliseconds(80),
+                0,
+                "second");
+
+        var later =
+            new DesktopSystemEvent(
+                DesktopSystemEventKinds.ValueChanged,
+                "0xBEEF",
+                started.AddMilliseconds(250),
+                0,
+                "later");
+
+        Require(
+            DesktopEventBurstPolicy.BelongsToSameBurst(
+                first,
+                second,
+                TimeSpan.FromMilliseconds(120)) &&
+            !DesktopEventBurstPolicy.BelongsToSameBurst(
+                second,
+                later,
+                TimeSpan.FromMilliseconds(120)),
+            "Event burst policy chưa gom đúng các event dồn dập theo cửa sổ và thời gian.");
+    }
+
     private static void CheckCapabilityCacheAvoidsRepeatedDiscovery()
     {
         var raw =
@@ -6400,7 +6639,33 @@ public sealed class ComputerOperatorAcceptanceService
     {
         public int WaitCount { get; private set; }
 
+        public string? LastTargetWindowId { get; private set; }
+
         public bool EventDrivenAvailable => true;
+
+        public DesktopEventObservationSnapshot GetSnapshot() =>
+            new(
+                EventDrivenAvailable: true,
+                ReceivedEvents: emitEvent ? 1 : 0,
+                CoalescedEvents: 0,
+                DroppedEvents: 0,
+                DeliveredWakeups: emitEvent ? WaitCount : 0,
+                PollFallbacks: emitEvent ? 0 : WaitCount,
+                QueuedEvents: 0,
+                LastEvent: null);
+
+        public Task<DesktopObservationWakeResult> WaitForWindowAsync(
+            string? windowId,
+            TimeSpan fallbackDelay,
+            CancellationToken cancellationToken = default)
+        {
+            LastTargetWindowId =
+                windowId;
+
+            return WaitAsync(
+                fallbackDelay,
+                cancellationToken);
+        }
 
         public async Task<DesktopObservationWakeResult> WaitAsync(
             TimeSpan fallbackDelay,

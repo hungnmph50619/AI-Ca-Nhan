@@ -39,7 +39,8 @@ public sealed record AdaptiveWaitResult(
     int ProgressHeartbeats,
     TimeSpan Elapsed,
     string Reason,
-    int EventWakeups = 0);
+    int EventWakeups = 0,
+    int IgnoredEventWakeups = 0);
 
 public interface IAdaptiveVerificationWaitEngine
 {
@@ -47,16 +48,76 @@ public interface IAdaptiveVerificationWaitEngine
         Func<CancellationToken, Task<AdaptiveProgressSample>> sampleProvider,
         AdaptiveWaitPolicy? policy = null,
         CancellationToken cancellationToken = default);
+
+    Task<AdaptiveWaitResult> WaitAsync(
+        Func<CancellationToken, Task<AdaptiveProgressSample>> sampleProvider,
+        AdaptiveWaitPolicy? policy,
+        string? targetWindowId,
+        CancellationToken cancellationToken);
+
+    Task<AdaptiveWaitResult> WaitAsync(
+        Func<CancellationToken, Task<AdaptiveProgressSample>> sampleProvider,
+        AdaptiveWaitPolicy? policy,
+        string? targetWindowId,
+        string? action,
+        CancellationToken cancellationToken);
+
+    Task<AdaptiveWaitResult> WaitAsync(
+        Func<CancellationToken, Task<AdaptiveProgressSample>> sampleProvider,
+        AdaptiveWaitPolicy? policy,
+        string? targetWindowId,
+        string? action,
+        string? expectedEffect,
+        CancellationToken cancellationToken);
 }
 
 public sealed class AdaptiveVerificationWaitEngine(
     IAdaptiveObservationWakeSource? wakeSource = null)
     : IAdaptiveVerificationWaitEngine
 {
-    public async Task<AdaptiveWaitResult> WaitAsync(
+    public Task<AdaptiveWaitResult> WaitAsync(
         Func<CancellationToken, Task<AdaptiveProgressSample>> sampleProvider,
         AdaptiveWaitPolicy? policy = null,
-        CancellationToken cancellationToken = default)
+        CancellationToken cancellationToken = default) =>
+        WaitAsync(
+            sampleProvider,
+            policy,
+            targetWindowId: null,
+            cancellationToken);
+
+    public Task<AdaptiveWaitResult> WaitAsync(
+        Func<CancellationToken, Task<AdaptiveProgressSample>> sampleProvider,
+        AdaptiveWaitPolicy? policy,
+        string? targetWindowId,
+        CancellationToken cancellationToken) =>
+        WaitAsync(
+            sampleProvider,
+            policy,
+            targetWindowId,
+            action: null,
+            cancellationToken);
+
+    public Task<AdaptiveWaitResult> WaitAsync(
+        Func<CancellationToken, Task<AdaptiveProgressSample>> sampleProvider,
+        AdaptiveWaitPolicy? policy,
+        string? targetWindowId,
+        string? action,
+        CancellationToken cancellationToken) =>
+        WaitAsync(
+            sampleProvider,
+            policy,
+            targetWindowId,
+            action,
+            expectedEffect: null,
+            cancellationToken);
+
+    public async Task<AdaptiveWaitResult> WaitAsync(
+        Func<CancellationToken, Task<AdaptiveProgressSample>> sampleProvider,
+        AdaptiveWaitPolicy? policy,
+        string? targetWindowId,
+        string? action,
+        string? expectedEffect,
+        CancellationToken cancellationToken)
     {
         ArgumentNullException.ThrowIfNull(sampleProvider);
 
@@ -77,6 +138,7 @@ public sealed class AdaptiveVerificationWaitEngine(
         var samples = 0;
         var heartbeats = 0;
         var eventWakeups = 0;
+        var ignoredEventWakeups = 0;
         var lastReason =
             "Chưa có bằng chứng kết quả hoặc tiến triển.";
 
@@ -97,7 +159,8 @@ public sealed class AdaptiveVerificationWaitEngine(
                     heartbeats,
                     elapsed,
                     $"Đã chạm giới hạn chờ tuyệt đối {resolved.AbsoluteTimeout.TotalSeconds:0}s. {lastReason}",
-                    eventWakeups);
+                    eventWakeups,
+                    ignoredEventWakeups);
             }
 
             var sample =
@@ -119,7 +182,8 @@ public sealed class AdaptiveVerificationWaitEngine(
                     heartbeats,
                     DateTimeOffset.UtcNow - started,
                     sample.Reason,
-                    eventWakeups);
+                    eventWakeups,
+                    ignoredEventWakeups);
             }
 
             if (sample.Status.Equals(
@@ -134,7 +198,8 @@ public sealed class AdaptiveVerificationWaitEngine(
                     heartbeats,
                     DateTimeOffset.UtcNow - started,
                     sample.Reason,
-                    eventWakeups);
+                    eventWakeups,
+                    ignoredEventWakeups);
             }
 
             var strongProgress =
@@ -163,17 +228,42 @@ public sealed class AdaptiveVerificationWaitEngine(
                     heartbeats,
                     DateTimeOffset.UtcNow - started,
                     $"Không có tiến triển đủ mạnh trong {resolved.StallTimeout.TotalSeconds:0}s. {sample.Reason}",
-                    eventWakeups);
+                    eventWakeups,
+                    ignoredEventWakeups);
             }
 
             if (wakeSource is not null)
             {
-                var wake = await wakeSource.WaitAsync(
+                var wake = await wakeSource.WaitForWindowAsync(
+                    targetWindowId,
                     resolved.PollInterval,
                     cancellationToken);
 
                 if (wake.EventReceived)
-                    eventWakeups++;
+                {
+                    var relevance =
+                        ComputerOperatorEventRelevance.Score(
+                            action,
+                            expectedEffect,
+                            wake.Event);
+
+                    if (relevance >= 0.55)
+                    {
+                        eventWakeups++;
+                    }
+                    else
+                    {
+                        ignoredEventWakeups++;
+
+                        // Tránh event không liên quan gây vòng lặp capture nóng.
+                        await Task.Delay(
+                            TimeSpan.FromMilliseconds(
+                                Math.Min(
+                                    50,
+                                    resolved.PollInterval.TotalMilliseconds)),
+                            cancellationToken);
+                    }
+                }
             }
             else
             {
@@ -182,6 +272,254 @@ public sealed class AdaptiveVerificationWaitEngine(
                     cancellationToken);
             }
         }
+    }
+}
+
+public static class ComputerOperatorEventRelevance
+{
+    public static double Score(
+        string? action,
+        DesktopSystemEvent? desktopEvent) =>
+        Score(
+            action,
+            expectedEffect: null,
+            desktopEvent);
+
+    public static double Score(
+        string? action,
+        string? expectedEffect,
+        DesktopSystemEvent? desktopEvent)
+    {
+        if (desktopEvent is null)
+            return 0;
+
+        var normalizedAction =
+            (action ?? string.Empty)
+                .Trim()
+                .ToLowerInvariant();
+
+        var kind =
+            desktopEvent.Kind;
+        var effect =
+            (expectedEffect ?? string.Empty)
+                .Trim()
+                .ToLowerInvariant();
+
+        var semanticBoost =
+            0.0;
+
+        if (effect.Length > 0)
+        {
+            if ((effect.Contains("focus") ||
+                 effect.Contains("foreground")) &&
+                kind is
+                    DesktopSystemEventKinds.FocusChanged or
+                    DesktopSystemEventKinds.ForegroundChanged)
+            {
+                semanticBoost = 0.20;
+            }
+            else if ((effect.Contains("text") ||
+                      effect.Contains("type") ||
+                      effect.Contains("value") ||
+                      effect.Contains("nhập") ||
+                      effect.Contains("gõ")) &&
+                     kind is
+                         DesktopSystemEventKinds.ValueChanged or
+                         DesktopSystemEventKinds.PropertyChanged)
+            {
+                semanticBoost = 0.20;
+            }
+            else if ((effect.Contains("open") ||
+                      effect.Contains("mở") ||
+                      effect.Contains("appear") ||
+                      effect.Contains("xuất hiện") ||
+                      effect.Contains("menu") ||
+                      effect.Contains("dialog")) &&
+                     kind is
+                         DesktopSystemEventKinds.WindowCreated or
+                         DesktopSystemEventKinds.WindowShown or
+                         DesktopSystemEventKinds.StructureChanged)
+            {
+                semanticBoost = 0.20;
+            }
+            else if ((effect.Contains("close") ||
+                      effect.Contains("đóng") ||
+                      effect.Contains("disappear") ||
+                      effect.Contains("biến mất")) &&
+                     kind is
+                         DesktopSystemEventKinds.WindowDestroyed or
+                         DesktopSystemEventKinds.WindowHidden)
+            {
+                semanticBoost = 0.20;
+            }
+            else if ((effect.Contains("select") ||
+                      effect.Contains("chọn")) &&
+                     kind == DesktopSystemEventKinds.SelectionChanged)
+            {
+                semanticBoost = 0.20;
+            }
+            else if ((effect.Contains("resize") ||
+                      effect.Contains("maximize") ||
+                      effect.Contains("restore") ||
+                      effect.Contains("kích thước")) &&
+                     kind == DesktopSystemEventKinds.WindowMovedOrResized)
+            {
+                semanticBoost = 0.20;
+            }
+        }
+
+        if (normalizedAction is
+            "type-text")
+        {
+            var score = kind switch
+            {
+                DesktopSystemEventKinds.ValueChanged => 1.0,
+                DesktopSystemEventKinds.PropertyChanged => 0.95,
+                DesktopSystemEventKinds.FocusChanged => 0.75,
+                DesktopSystemEventKinds.SelectionChanged => 0.70,
+                _ => 0.35
+            };
+
+            return ApplySourceConfidence(
+                Math.Min(
+                    1.0,
+                    score + semanticBoost),
+                desktopEvent);
+        }
+
+        if (normalizedAction is
+            "focus-window")
+        {
+            var score = kind switch
+            {
+                DesktopSystemEventKinds.ForegroundChanged => 1.0,
+                DesktopSystemEventKinds.FocusChanged => 0.95,
+                DesktopSystemEventKinds.WindowShown => 0.75,
+                _ => 0.30
+            };
+
+            return ApplySourceConfidence(
+                Math.Min(
+                    1.0,
+                    score + semanticBoost),
+                desktopEvent);
+        }
+
+        if (normalizedAction is
+            "restore" or
+            "maximize")
+        {
+            var score = kind switch
+            {
+                DesktopSystemEventKinds.WindowMovedOrResized => 1.0,
+                DesktopSystemEventKinds.ForegroundChanged => 0.90,
+                DesktopSystemEventKinds.WindowShown => 0.80,
+                DesktopSystemEventKinds.PropertyChanged => 0.65,
+                _ => 0.30
+            };
+
+            return ApplySourceConfidence(
+                Math.Min(
+                    1.0,
+                    score + semanticBoost),
+                desktopEvent);
+        }
+
+        if (normalizedAction is
+            "press-key" or
+            "press-hotkey")
+        {
+            var score = kind switch
+            {
+                DesktopSystemEventKinds.ForegroundChanged => 1.0,
+                DesktopSystemEventKinds.WindowCreated => 0.95,
+                DesktopSystemEventKinds.WindowShown => 0.95,
+                DesktopSystemEventKinds.FocusChanged => 0.85,
+                DesktopSystemEventKinds.ValueChanged => 0.80,
+                DesktopSystemEventKinds.SelectionChanged => 0.75,
+                DesktopSystemEventKinds.StructureChanged => 0.75,
+                DesktopSystemEventKinds.PropertyChanged => 0.70,
+                _ => 0.45
+            };
+
+            return ApplySourceConfidence(
+                Math.Min(
+                    1.0,
+                    score + semanticBoost),
+                desktopEvent);
+        }
+
+        if (normalizedAction is
+            "click-left" or
+            "double-click-left")
+        {
+            var score = kind switch
+            {
+                DesktopSystemEventKinds.ForegroundChanged => 1.0,
+                DesktopSystemEventKinds.WindowCreated => 0.95,
+                DesktopSystemEventKinds.WindowDestroyed => 0.95,
+                DesktopSystemEventKinds.WindowShown => 0.90,
+                DesktopSystemEventKinds.WindowHidden => 0.90,
+                DesktopSystemEventKinds.StructureChanged => 0.90,
+                DesktopSystemEventKinds.SelectionChanged => 0.85,
+                DesktopSystemEventKinds.ValueChanged => 0.80,
+                DesktopSystemEventKinds.PropertyChanged => 0.75,
+                DesktopSystemEventKinds.FocusChanged => 0.70,
+                _ => 0.50
+            };
+
+            return ApplySourceConfidence(
+                Math.Min(
+                    1.0,
+                    score + semanticBoost),
+                desktopEvent);
+        }
+
+        // Không biết action: ưu tiên event thay đổi trạng thái lớn,
+        // nhưng không coi mọi tín hiệu nhỏ là đáng wake.
+        var fallbackScore = kind switch
+        {
+            DesktopSystemEventKinds.ForegroundChanged => 0.95,
+            DesktopSystemEventKinds.WindowCreated => 0.90,
+            DesktopSystemEventKinds.WindowDestroyed => 0.90,
+            DesktopSystemEventKinds.WindowShown => 0.85,
+            DesktopSystemEventKinds.WindowHidden => 0.85,
+            DesktopSystemEventKinds.StructureChanged => 0.70,
+            DesktopSystemEventKinds.PropertyChanged => 0.65,
+            _ => 0.50
+        };
+
+        return ApplySourceConfidence(
+            Math.Min(
+                1.0,
+                fallbackScore +
+                semanticBoost),
+            desktopEvent);
+    }
+
+    private static double ApplySourceConfidence(
+        double relevance,
+        DesktopSystemEvent desktopEvent)
+    {
+        var sourceWeight =
+            Math.Clamp(
+                desktopEvent.SourceConfidence,
+                0.50,
+                1.0);
+
+        var fused =
+            relevance *
+            sourceWeight;
+
+        if (desktopEvent.Corroborated)
+        {
+            fused =
+                Math.Min(
+                    1.0,
+                    fused + 0.10);
+        }
+
+        return fused;
     }
 }
 

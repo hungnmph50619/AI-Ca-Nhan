@@ -3229,7 +3229,7 @@ jobs:
           grep -Fq 'SetWinEventHook' src/PersonalAI.Web/Services/WindowsDesktopEventWakeSource.cs
           grep -Fq 'GetMessage' src/PersonalAI.Web/Services/WindowsDesktopEventWakeSource.cs
           grep -Fq 'IAdaptiveObservationWakeSource' src/PersonalAI.Web/Services/WindowsDesktopEventWakeSource.cs
-          grep -Fq 'wakeSource.WaitAsync' src/PersonalAI.Web/Services/AdaptiveVerificationWaitEngine.cs
+          grep -Fq 'wakeSource.WaitForWindowAsync' src/PersonalAI.Web/Services/AdaptiveVerificationWaitEngine.cs
           grep -Fq 'EventWakeups' src/PersonalAI.Web/Services/AdaptiveVerificationWaitEngine.cs
           grep -Fq 'WindowsDesktopEventWakeSource' src/PersonalAI.Web/Services/ComputerUseEndpoints.cs
           grep -Fq 'CheckEventDrivenWakeAcceleratesObservation' src/PersonalAI.Web/Services/ComputerOperatorAcceptanceService.cs

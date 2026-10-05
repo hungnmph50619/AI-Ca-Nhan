@@ -228,6 +228,75 @@ public static class ComputerUseEndpoints
             });
         });
 
+        app.MapGet("/api/computer/event-observation", (
+            HttpContext context,
+            IAdaptiveObservationWakeSource wakeSource) =>
+        {
+            if (!IsLocalRequest(context))
+                return Results.StatusCode(StatusCodes.Status403Forbidden);
+
+            var snapshot =
+                wakeSource.GetSnapshot();
+
+            return Results.Ok(new
+            {
+                phienBan = PersonalAiRelease.Version,
+                eventDriven = snapshot.EventDrivenAvailable,
+                daNhan = snapshot.ReceivedEvents,
+                daGop = snapshot.CoalescedEvents,
+                daLoai = snapshot.DroppedEvents,
+                daDanhThuc = snapshot.DeliveredWakeups,
+                pollingFallback = snapshot.PollFallbacks,
+                dangCho = snapshot.QueuedEvents,
+                suKienGanNhat = snapshot.LastEvent is null
+                    ? null
+                    : new
+                    {
+                        loai = snapshot.LastEvent.Kind,
+                        cuaSo = snapshot.LastEvent.WindowId,
+                        lucUtc = snapshot.LastEvent.OccurredAtUtc,
+                        lyDo = snapshot.LastEvent.Reason,
+                        nguon = snapshot.LastEvent.Source,
+                        doTinCayNguon = Math.Round(snapshot.LastEvent.SourceConfidence, 2),
+                        daDuocNguonKhacXacNhan = snapshot.LastEvent.Corroborated,
+                        nhomSuKien = snapshot.LastEvent.BurstId,
+                        soSuKienTrongNhom = snapshot.LastEvent.BurstSize
+                    }
+            });
+        });
+
+        app.MapGet("/api/computer/uia-events/wait", (
+            HttpContext context,
+            string windowId,
+            int? waitMs,
+            IFlaUiAutomationClient flaUi) =>
+        {
+            if (!IsLocalRequest(context))
+                return Results.StatusCode(StatusCodes.Status403Forbidden);
+
+            var resolvedWait =
+                Math.Clamp(
+                    waitMs ?? 500,
+                    100,
+                    3000);
+
+            var response =
+                flaUi.Invoke(
+                    new FlaUiAutomationRequest(
+                        "wait-uia-event",
+                        windowId,
+                        WaitMilliseconds: resolvedWait));
+
+            return Results.Ok(new
+            {
+                phienBan = PersonalAiRelease.Version,
+                thanhCong = response.Success,
+                loaiSuKien = response.EventKind,
+                cuaSo = response.EventWindowId,
+                chiTiet = response.Detail
+            });
+        });
+
         app.MapGet("/api/computer/operator-runtime", (
             HttpContext context,
             IUniversalReliableOperatorCoordinator reliableOperator) =>

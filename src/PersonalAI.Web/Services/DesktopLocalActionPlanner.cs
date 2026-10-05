@@ -124,6 +124,33 @@ public sealed class DesktopLocalActionPlanner
             IsWindowsSearchSurface(
                 state.ForegroundWindow);
 
+        if (state.ForegroundWindow is null &&
+            HasVerifiedSearchLaunchAttempt(
+                taskHistory) &&
+            CountLaunchGraceWaits(
+                taskHistory) < 3)
+        {
+            decision = Build(
+                action: "wait",
+                currentSubgoal: $"Chờ {target} hoàn tất khởi chạy.",
+                expectedEffect: string.Empty,
+                reason: "LOCAL-LAUNCH-GRACE: Windows Search đã khởi chạy ứng dụng và transition đã được xác minh, nhưng foreground đang tạm thời chưa xác định. Chờ ngắn để tiến trình/cửa sổ mới xuất hiện thay vì mở lại Search ngay.",
+                plan: "Chờ trạng thái desktop ổn định rồi quan sát lại cửa sổ mới.");
+
+            return true;
+        }
+
+        if (state.ForegroundWindow is null &&
+            HasVerifiedSearchLaunchAttempt(
+                taskHistory) &&
+            CountLaunchGraceWaits(
+                taskHistory) >= 3)
+        {
+            // Đã chờ launch có giới hạn nhưng vẫn chưa có foreground/cửa sổ đích.
+            // Nhường quyền cho OCR/Gemini/recovery thay vì quay lại Windows Search.
+            return false;
+        }
+
         var typedMarker =
             $"LOCAL-SHELL-TYPED:{target}";
 
@@ -635,6 +662,61 @@ public sealed class DesktopLocalActionPlanner
                 StringComparison.OrdinalIgnoreCase) ||
             HasFailedSearchLaunchAttempt(
                 taskHistory);
+    }
+
+    private static bool HasVerifiedSearchLaunchAttempt(
+        string taskHistory)
+    {
+        if (string.IsNullOrWhiteSpace(
+                taskHistory))
+        {
+            return false;
+        }
+
+        var normalized =
+            taskHistory.ToLowerInvariant();
+
+        return
+            normalized.Contains(
+                "verified press-key|key=enter",
+                StringComparison.Ordinal) &&
+            (normalized.Contains(
+                 "windows search khởi chạy ứng dụng",
+                 StringComparison.Ordinal) ||
+             normalized.Contains(
+                 "windows search khoi chay ung dung",
+                 StringComparison.Ordinal) ||
+             normalized.Contains(
+                 "search launch",
+                 StringComparison.Ordinal));
+    }
+
+    private static int CountLaunchGraceWaits(
+        string taskHistory)
+    {
+        if (string.IsNullOrWhiteSpace(
+                taskHistory))
+        {
+            return 0;
+        }
+
+        const string marker =
+            "LOCAL-LAUNCH-GRACE";
+
+        var count = 0;
+        var offset = 0;
+
+        while ((offset =
+                    taskHistory.IndexOf(
+                        marker,
+                        offset,
+                        StringComparison.OrdinalIgnoreCase)) >= 0)
+        {
+            count++;
+            offset += marker.Length;
+        }
+
+        return count;
     }
 
     private static bool HasFailedSearchLaunchAttempt(

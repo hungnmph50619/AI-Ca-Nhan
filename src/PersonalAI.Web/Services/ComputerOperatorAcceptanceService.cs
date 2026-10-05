@@ -189,6 +189,21 @@ public sealed class ComputerOperatorAcceptanceService
             "structured invoke fallback LegacyIAccessible khi thiếu InvokePattern",
             CheckStructuredInvokeFallsBackToLegacyAccessible);
 
+        RunCheck(
+            checks,
+            "structured verifier xác minh Toggle bằng state hậu hành động",
+            CheckStructuredVerifierToggleState);
+
+        RunCheck(
+            checks,
+            "structured verifier xác minh ValuePattern bằng readback",
+            CheckStructuredVerifierValueReadback);
+
+        RunCheck(
+            checks,
+            "structured verifier coi Invoke transition là inconclusive thay vì fail mù",
+            CheckStructuredVerifierInvokeIsInconclusive);
+
 
         RunCheck(
             checks,
@@ -1951,6 +1966,176 @@ public sealed class ComputerOperatorAcceptanceService
                 StringComparison.OrdinalIgnoreCase),
             "Local planner không chọn Windows Search generic cho intent mở ứng dụng.");
     }
+
+    private static void CheckStructuredVerifierToggleState()
+    {
+        var verifier =
+            new StructuredDesktopVerificationService();
+
+        var node =
+            new UnifiedStructuredSceneNode(
+                Id: "root:wifi",
+                ParentId: "root",
+                Depth: 1,
+                Role: "CheckBox",
+                Name: "WiFi",
+                AutomationId: "wifi",
+                ClassName: "CheckBox",
+                IsEnabled: true,
+                IsFocused: false,
+                IsVisible: true,
+                DesktopLeft: 100,
+                DesktopTop: 100,
+                Width: 120,
+                Height: 30,
+                FrameLeft: 100,
+                FrameTop: 100,
+                Capabilities: ["Toggle"],
+                Children: Array.Empty<string>(),
+                ToggleState: "On");
+
+        var graph =
+            new UnifiedStructuredSceneGraph(
+                WindowId: "0x1234",
+                WindowTitle: "Acceptance",
+                ProcessName: "acceptance",
+                RootId: "root",
+                CapturedAtUtc: DateTimeOffset.UtcNow,
+                Nodes: [node],
+                Source: "acceptance",
+                Detail: "acceptance");
+
+        var decision = BuildStructuredDecision(
+            "structured-toggle",
+            "root:wifi",
+            "structured-state:toggle=On; WiFi phải bật.");
+
+        var result = verifier.Verify(
+            decision,
+            graph);
+
+        Require(
+            result.Status == StructuredVerificationStatus.Verified &&
+            result.Confidence >= 0.99,
+            "Structured verifier chưa xác minh Toggle state deterministic.");
+    }
+
+    private static void CheckStructuredVerifierValueReadback()
+    {
+        var verifier =
+            new StructuredDesktopVerificationService();
+
+        var node =
+            new UnifiedStructuredSceneNode(
+                Id: "root:name",
+                ParentId: "root",
+                Depth: 1,
+                Role: "Edit",
+                Name: "Name",
+                AutomationId: "name",
+                ClassName: "Edit",
+                IsEnabled: true,
+                IsFocused: true,
+                IsVisible: true,
+                DesktopLeft: 100,
+                DesktopTop: 100,
+                Width: 240,
+                Height: 36,
+                FrameLeft: 100,
+                FrameTop: 100,
+                Capabilities: ["Value"],
+                Children: Array.Empty<string>(),
+                Value: "Alice",
+                IsSensitive: false);
+
+        var graph =
+            new UnifiedStructuredSceneGraph(
+                WindowId: "0x1234",
+                WindowTitle: "Acceptance",
+                ProcessName: "acceptance",
+                RootId: "root",
+                CapturedAtUtc: DateTimeOffset.UtcNow,
+                Nodes: [node],
+                Source: "acceptance",
+                Detail: "acceptance");
+
+        var decision = BuildStructuredDecision(
+            "structured-set-value",
+            "root:name",
+            "Name phải có giá trị Alice",
+            text: "Alice");
+
+        var result = verifier.Verify(
+            decision,
+            graph);
+
+        Require(
+            result.Status == StructuredVerificationStatus.Verified &&
+            result.Confidence >= 0.99,
+            "Structured verifier chưa xác minh ValuePattern bằng readback.");
+    }
+
+    private static void CheckStructuredVerifierInvokeIsInconclusive()
+    {
+        var verifier =
+            new StructuredDesktopVerificationService();
+
+        var decision = BuildStructuredDecision(
+            "structured-invoke",
+            "root:next",
+            "Trang tiếp theo xuất hiện.");
+
+        var result = verifier.Verify(
+            decision,
+            graph: null);
+
+        Require(
+            result.Status == StructuredVerificationStatus.Inconclusive,
+            "Structured invoke không được coi là failure chỉ vì scene graph sau transition chưa có target.");
+    }
+
+    private static DesktopOperatorDecision BuildStructuredDecision(
+        string action,
+        string targetElementId,
+        string expectedEffect,
+        string text = "") =>
+        new(
+            State: "acceptance",
+            Plan: "acceptance",
+            CurrentSubgoal: "acceptance",
+            GoalProgress: 0,
+            VerifiedMilestones: Array.Empty<string>(),
+            Action: action,
+            Query: string.Empty,
+            Text: text,
+            Key: string.Empty,
+            Keys: Array.Empty<string>(),
+            Url: string.Empty,
+            TargetLabel: "acceptance",
+            CoordinateSpace: ComputerCoordinateSpaces.ImagePixel,
+            CoordinateWindowId: "0x1234",
+            ImageX: 0,
+            ImageY: 0,
+            EndImageX: 0,
+            EndImageY: 0,
+            NormalizedX: 0,
+            NormalizedY: 0,
+            EndNormalizedX: 0,
+            EndNormalizedY: 0,
+            BoxLeft: 0,
+            BoxTop: 0,
+            BoxWidth: 0,
+            BoxHeight: 0,
+            BoxNormalizedLeft: 0,
+            BoxNormalizedTop: 0,
+            BoxNormalizedWidth: 0,
+            BoxNormalizedHeight: 0,
+            ScrollDelta: 0,
+            ExpectedEffect: expectedEffect,
+            Confidence: 0.99,
+            Reason: "acceptance",
+            SceneElements: Array.Empty<DesktopSceneElement>(),
+            TargetElementId: targetElementId);
 
     private static void CheckStructuredInvokeFallsBackToLegacyAccessible()
     {

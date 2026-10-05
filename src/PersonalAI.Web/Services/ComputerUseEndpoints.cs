@@ -92,29 +92,32 @@ public static class ComputerUseEndpoints
                 return Results.StatusCode(StatusCodes.Status403Forbidden);
 
             var checkpoint = checkpoints.GetLatest();
-            return Results.Ok(checkpoint is null
-                ? new
+            if (checkpoint is null)
+            {
+                return Results.Ok(new
                 {
                     coCheckpoint = false,
                     thoiHanKhoiPhucGio =
                         SqliteComputerOperatorCheckpointStore.ResumeLifetime.TotalHours
-                }
-                : new
-                {
-                    coCheckpoint = true,
-                    ma = checkpoint.Id,
-                    trangThai = checkpoint.Status,
-                    soMocDaXacMinh =
-                        checkpoint.VerifiedMilestones.Count,
-                    tienDo =
-                        checkpoint.GoalProgress,
-                    capNhatLuc =
-                        checkpoint.UpdatedAt,
-                    thoiHanKhoiPhucGio =
-                        SqliteComputerOperatorCheckpointStore.ResumeLifetime.TotalHours,
-                    nguyenTac =
-                        "Checkpoint chỉ khôi phục bằng chứng đã xác minh. Computer Operator luôn quan sát lại desktop trước action mới và không replay action cuối."
                 });
+            }
+
+            return Results.Ok(new
+            {
+                coCheckpoint = true,
+                ma = checkpoint.Id,
+                trangThai = checkpoint.Status,
+                soMocDaXacMinh =
+                    checkpoint.VerifiedMilestones.Count,
+                tienDo =
+                    checkpoint.GoalProgress,
+                capNhatLuc =
+                    checkpoint.UpdatedAt,
+                thoiHanKhoiPhucGio =
+                    SqliteComputerOperatorCheckpointStore.ResumeLifetime.TotalHours,
+                nguyenTac =
+                    "Checkpoint chỉ khôi phục bằng chứng đã xác minh. Computer Operator luôn quan sát lại desktop trước action mới và không replay action cuối."
+            });
         });
 
         app.MapGet("/api/execution-agents", (

@@ -142,6 +142,8 @@ public sealed class ComputerOperatorTaskService(
         new ComputerOperatorConfidenceEngine();
     private static readonly IComputerOperatorFailureRecoveryEngine RecoveryEngine =
         new ComputerOperatorFailureRecoveryEngine();
+    private static readonly IDesktopLocalActionPlanner LocalPlanner =
+        new DesktopLocalActionPlanner();
 
     private static readonly string[] SecretTerms =
     [
@@ -250,6 +252,9 @@ public sealed class ComputerOperatorTaskService(
         var keyboardRepairFailures = 0;
         var keyboardResetRequired = false;
         var keyboardSelectionReady = false;
+        string? plannerDegradedScene = null;
+        var plannerDegradedCount = 0;
+        var plannerBackoffUntil = DateTimeOffset.MinValue;
         IReadOnlyList<DesktopSceneElement> previousScene = Array.Empty<DesktopSceneElement>();
         var temporalSceneContext = string.Empty;
 
@@ -375,33 +380,127 @@ public sealed class ComputerOperatorTaskService(
                     telemetry.Begin(
                         ComputerOperatorTelemetryStages.GeminiPlan);
 
+                var sameDegradedScene =
+                    plannerDegradedScene is not null &&
+                    plannerDegradedScene.Equals(
+                        sceneFingerprint,
+                        StringComparison.Ordinal);
+
+                if (!sameDegradedScene)
+                {
+                    plannerDegradedCount = 0;
+                    plannerBackoffUntil = DateTimeOffset.MinValue;
+                }
+
+                var providerBackoffActive =
+                    sameDegradedScene &&
+                    DateTimeOffset.UtcNow < plannerBackoffUntil;
+
                 try
                 {
-                    progress.Add(
-                        "analyze",
-                        $"Đang gửi ảnh desktop {frame.Width}x{frame.Height} cho Vision để phân tích.");
+                    if (providerBackoffActive)
+                    {
+                        var localHistory =
+                            string.Join(
+                                "\n",
+                                taskHistory.TakeLast(40));
 
-                    decision = await vision.DecideComputerOperatorActionAsync(
-                        frame,
-                        normalizedGoal,
-                        windowsContext,
-                        BuildHistoryContext(
-                            taskHistory,
-                            recovery,
-                            verifiedMilestones,
-                            currentSubgoal,
-                            latestGoalProgress),
-                        temporalSceneContext,
-                        linked.Token);
+                        if (LocalPlanner.TryPlan(
+                                normalizedGoal,
+                                desktopState,
+                                localHistory,
+                                out decision))
+                        {
+                            plannerStopwatch.Stop();
+                            planTelemetry.Complete(
+                                success: true,
+                                route: "local-planner");
 
-                    plannerStopwatch.Stop();
-                    planTelemetry.Complete(
-                        success: true,
-                        route: "gemini");
+                            progress.Add(
+                                "local-planner",
+                                $"Provider đang cooldown trên scene không đổi; dùng Local Planner: {decision.Reason}",
+                                decision.Action,
+                                decision.Confidence);
 
-                    progress.AddDiagnostic(
-                        "provider",
-                        $"provider=Gemini; purpose=plan; cycle={index}; latencyMs={plannerStopwatch.ElapsedMilliseconds}; action={decision.Action}; confidence={decision.Confidence:0.000}; payload=parsed.");
+                            progress.AddDiagnostic(
+                                "provider",
+                                $"provider=Gemini; purpose=plan; cycle={index}; circuit=open; scene={sceneDiagnosticId}; backoffUntil={plannerBackoffUntil:O}; fallback=local-planner; action={decision.Action}.");
+                        }
+                        else
+                        {
+                            decision = CreatePlannerCooldownWaitDecision(
+                                plannerBackoffUntil);
+
+                            plannerStopwatch.Stop();
+                            planTelemetry.Complete(
+                                success: true,
+                                route: "provider-cooldown");
+
+                            progress.Add(
+                                "provider-cooldown",
+                                $"Scene chưa đổi và Gemini đang cooldown đến {plannerBackoffUntil:HH:mm:ss}; không gọi lặp provider.",
+                                "wait");
+
+                            progress.AddDiagnostic(
+                                "provider",
+                                $"provider=Gemini; purpose=plan; cycle={index}; circuit=open; scene={sceneDiagnosticId}; backoffUntil={plannerBackoffUntil:O}; fallback=safe-wait.");
+                        }
+                    }
+                    else
+                    {
+                        progress.Add(
+                            "analyze",
+                            $"Đang gửi ảnh desktop {frame.Width}x{frame.Height} cho Vision để phân tích.");
+
+                        decision = await vision.DecideComputerOperatorActionAsync(
+                            frame,
+                            normalizedGoal,
+                            windowsContext,
+                            BuildHistoryContext(
+                                taskHistory,
+                                recovery,
+                                verifiedMilestones,
+                                currentSubgoal,
+                                latestGoalProgress),
+                            temporalSceneContext,
+                            linked.Token);
+
+                        plannerStopwatch.Stop();
+                        planTelemetry.Complete(
+                            success: true,
+                            route: "gemini");
+
+                        if (IsProviderDegradedPlannerDecision(
+                                decision))
+                        {
+                            plannerDegradedScene =
+                                sceneFingerprint;
+                            plannerDegradedCount++;
+
+                            var backoffSeconds =
+                                Math.Min(
+                                    20,
+                                    5 * plannerDegradedCount);
+
+                            plannerBackoffUntil =
+                                DateTimeOffset.UtcNow.AddSeconds(
+                                    backoffSeconds);
+
+                            progress.AddDiagnostic(
+                                "provider",
+                                $"provider=Gemini; purpose=plan; cycle={index}; latencyMs={plannerStopwatch.ElapsedMilliseconds}; result=degraded; scene={sceneDiagnosticId}; circuit=open; backoffSeconds={backoffSeconds}; action={decision.Action}; replaySideEffect=false.");
+                        }
+                        else
+                        {
+                            plannerDegradedScene = null;
+                            plannerDegradedCount = 0;
+                            plannerBackoffUntil = DateTimeOffset.MinValue;
+
+                            progress.AddDiagnostic(
+                                "provider",
+                                $"provider=Gemini; purpose=plan; cycle={index}; latencyMs={plannerStopwatch.ElapsedMilliseconds}; action={decision.Action}; confidence={decision.Confidence:0.000}; payload=parsed.");
+                        }
+                    }
                 }
                 catch
                 {
@@ -1973,6 +2072,76 @@ public sealed class ComputerOperatorTaskService(
             after.Clear();
         }
     }
+
+    private static bool IsProviderDegradedPlannerDecision(
+        DesktopOperatorDecision decision)
+    {
+        if (!decision.Action.Equals(
+                "wait",
+                StringComparison.OrdinalIgnoreCase))
+        {
+            return false;
+        }
+
+        var reason =
+            decision.Reason ?? string.Empty;
+
+        return reason.Contains(
+                   "Gemini planning tạm thời không khả dụng",
+                   StringComparison.OrdinalIgnoreCase) ||
+               reason.Contains(
+                   "Gemini trả JSON chưa hoàn chỉnh",
+                   StringComparison.OrdinalIgnoreCase) ||
+               reason.Contains(
+                   "Gemini chưa trả được JSON",
+                   StringComparison.OrdinalIgnoreCase) ||
+               reason.Contains(
+                   "Gemini planning chưa trả",
+                   StringComparison.OrdinalIgnoreCase) ||
+               reason.Contains(
+                   "Gemini planning không trả",
+                   StringComparison.OrdinalIgnoreCase);
+    }
+
+    private static DesktopOperatorDecision CreatePlannerCooldownWaitDecision(
+        DateTimeOffset backoffUntil) =>
+        new(
+            State: "Provider semantic đang cooldown; scene hiện tại chưa đổi.",
+            Plan: "Không gọi lại provider trên cùng scene. Chờ ngắn hoặc dùng local capability nếu có.",
+            CurrentSubgoal: string.Empty,
+            GoalProgress: 0,
+            VerifiedMilestones: Array.Empty<string>(),
+            Action: "wait",
+            Query: string.Empty,
+            Text: string.Empty,
+            Key: string.Empty,
+            Keys: Array.Empty<string>(),
+            Url: string.Empty,
+            TargetLabel: string.Empty,
+            CoordinateSpace: ComputerCoordinateSpaces.ImagePixel,
+            CoordinateWindowId: string.Empty,
+            ImageX: 0,
+            ImageY: 0,
+            EndImageX: 0,
+            EndImageY: 0,
+            NormalizedX: 0,
+            NormalizedY: 0,
+            EndNormalizedX: 0,
+            EndNormalizedY: 0,
+            BoxLeft: 0,
+            BoxTop: 0,
+            BoxWidth: 0,
+            BoxHeight: 0,
+            BoxNormalizedLeft: 0,
+            BoxNormalizedTop: 0,
+            BoxNormalizedWidth: 0,
+            BoxNormalizedHeight: 0,
+            ScrollDelta: 0,
+            ExpectedEffect: string.Empty,
+            Confidence: 1.0,
+            Reason: $"Gemini đang cooldown đến {backoffUntil:HH:mm:ss}; không gọi lặp khi scene chưa thay đổi.",
+            SceneElements: Array.Empty<DesktopSceneElement>(),
+            TargetElementId: string.Empty);
 
     private static bool IsTransientVisionFailure(
         HttpRequestException exception)

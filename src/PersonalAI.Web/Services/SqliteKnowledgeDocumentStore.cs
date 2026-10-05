@@ -16,7 +16,12 @@ public sealed class SqliteKnowledgeDocumentStore(
     private const int MaximumSearchLength = 200;
 
     private static readonly HashSet<string> AllowedExtensions =
-        new(StringComparer.OrdinalIgnoreCase) { ".txt", ".md", ".pdf", ".docx" };
+        new(StringComparer.OrdinalIgnoreCase)
+        {
+            ".txt", ".md", ".pdf", ".docx", ".xlsx", ".pptx",
+            ".csv", ".json", ".xml", ".yaml", ".yml", ".sql",
+            ".cs", ".js", ".ts", ".py", ".html", ".css"
+        };
 
     private static readonly HashSet<string> SearchStopWords =
         new(StringComparer.OrdinalIgnoreCase)
@@ -482,7 +487,7 @@ public sealed class SqliteKnowledgeDocumentStore(
         if (string.IsNullOrWhiteSpace(safeFileName) || safeFileName.Length > 180)
             throw new KnowledgeDocumentValidationException("Tên tệp không hợp lệ hoặc quá dài.");
         if (!AllowedExtensions.Contains(Path.GetExtension(safeFileName)))
-            throw new KnowledgeDocumentValidationException("Phiên bản 0.7.1 chỉ nhận PDF, DOCX, TXT và Markdown (.md).");
+            throw new KnowledgeDocumentValidationException("Kho dữ liệu hỗ trợ PDF, DOCX, XLSX, PPTX, TXT/Markdown, CSV/JSON và các tệp mã nguồn phổ biến.");
     }
 
     private static async Task<string> CalculateHashAsync(IFormFile file, CancellationToken cancellationToken)

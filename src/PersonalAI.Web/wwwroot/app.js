@@ -1080,11 +1080,23 @@ function formatAttachmentSize(bytes) {
 
 async function sendCurrentMessage(event) {
   event.preventDefault();
-  const content = elements.input.value.trim();
-  if (!content || state.busy) return;
+  const rawContent = elements.input.value.trim();
+  const readyAttachments = state.pendingAttachments
+    .filter(item => !item.uploading && !item.error && item.attachment)
+    .map(item => item.attachment);
+
+  if (state.busy) return;
+  if (state.pendingAttachments.some(item => item.uploading || item.error)) return;
+  if (!rawContent && readyAttachments.length === 0) return;
+
+  const content = rawContent || "Hãy xem và phân tích tệp đính kèm này.";
 
   const conversation = getActiveConversation();
-  conversation.messages.push({ role: "user", content });
+  conversation.messages.push({
+    role: "user",
+    content,
+    attachments: readyAttachments
+  });
   if (conversation.messages.filter(message => message.role === "user").length === 1) {
     conversation.title = createConversationTitle(content);
   }
@@ -1092,6 +1104,7 @@ async function sendCurrentMessage(event) {
   trimMessages(conversation);
   persistWorkspace();
   elements.input.value = "";
+  clearPendingAttachments();
   resizeInput();
   renderConversationList();
   renderConversation();
@@ -1106,7 +1119,10 @@ async function sendCurrentMessage(event) {
       body: JSON.stringify({
         messages: conversation.messages.map(message => ({
           role: message.role,
-          content: message.content
+          content: message.content,
+          attachments: message.role === "user"
+            ? normalizeChatAttachments(message.attachments)
+            : []
         })),
         useTools: elements.useTools?.checked === true,
         useTaskContext: true,
@@ -1153,13 +1169,14 @@ function renderConversation() {
         message.sources,
         message.toolProposal,
         message.toolExecution,
-        message.context));
+        message.context,
+        message.attachments));
   });
 
   scrollToBottom();
 }
 
-function createMessageNode(role, content, sources = [], toolProposal = null, toolExecution = null, contextReport = null) {
+function createMessageNode(role, content, sources = [], toolProposal = null, toolExecution = null, contextReport = null, attachments = []) {
   const row = document.createElement("article");
   row.className = `message-row ${role}`;
 
@@ -1170,6 +1187,11 @@ function createMessageNode(role, content, sources = [], toolProposal = null, too
   const bubble = document.createElement("div");
   bubble.className = "bubble";
   bubble.innerHTML = role === "assistant" ? renderMarkdown(content) : escapeHtml(content).replaceAll("\n", "<br>");
+
+  const normalizedAttachments = normalizeChatAttachments(attachments);
+  if (normalizedAttachments.length > 0) {
+    bubble.appendChild(createMessageAttachmentsNode(normalizedAttachments));
+  }
 
   const normalizedContext = normalizeContextReport(contextReport);
   if (role === "assistant" && normalizedContext) {
@@ -1191,6 +1213,33 @@ function createMessageNode(role, content, sources = [], toolProposal = null, too
 
   row.append(avatar, bubble);
   return row;
+}
+
+function createMessageAttachmentsNode(attachments) {
+  const wrap = documentElement("div", "message-attachments");
+
+  attachments.forEach(attachment => {
+    const card = documentElement("div", "message-attachment-card");
+    const icon = documentElement(
+      "div",
+      "message-attachment-icon",
+      attachment.kind === "image" ? "▧" : "▤");
+    const meta = documentElement("div", "message-attachment-meta");
+    const name = documentElement(
+      "span",
+      "message-attachment-name",
+      attachment.fileName);
+    const size = documentElement(
+      "span",
+      "message-attachment-size",
+      `${formatAttachmentSize(attachment.size)} · ${attachment.kind === "image" ? "Ảnh" : "Tệp"}`);
+
+    meta.append(name, size);
+    card.append(icon, meta);
+    wrap.appendChild(card);
+  });
+
+  return wrap;
 }
 
 function createContextReportNode(report) {
@@ -1946,8 +1995,8 @@ async function clearActiveConversation() {
 
 function setBusy(value) {
   state.busy = value;
-  elements.send.disabled = value;
   elements.input.disabled = value;
+  updateComposerAvailability();
 }
 
 function resizeInput() {
@@ -2213,6 +2262,7 @@ function normalizeMessages(value) {
       .map(item => ({
         role: item.role,
         content: item.content,
+        attachments: item.role === "user" ? normalizeChatAttachments(item.attachments) : [],
         sources: item.role === "assistant" ? normalizeSources(item.sources) : [],
         toolProposal: item.role === "assistant" ? normalizeToolProposal(item.toolProposal) : null,
         toolExecution: item.role === "assistant" ? normalizeToolExecution(item.toolExecution) : null,

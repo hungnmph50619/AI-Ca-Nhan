@@ -308,6 +308,11 @@ public sealed class ComputerOperatorAcceptanceService
             "local planner nhường quyền ngay sau Search Enter launch thất bại",
             CheckLocalPlannerYieldsAfterFailedSearchLaunch);
 
+        RunCheck(
+            checks,
+            "local planner chờ launch có giới hạn sau Search Enter đã xác minh",
+            CheckLocalPlannerWaitsAfterVerifiedSearchLaunch);
+
 
         RunCheck(
             checks,
@@ -3321,6 +3326,62 @@ STEP 2: VERIFY-FAILED press-key|key=enter|effect=windows search khởi chạy �
         Require(
             !planned,
             "Local planner vẫn lặp Enter sau khi Search launch đã verification-failed.");
+    }
+
+    private static void CheckLocalPlannerWaitsAfterVerifiedSearchLaunch()
+    {
+        var planner =
+            new DesktopLocalActionPlanner();
+
+        var state =
+            new ComputerOperatorDesktopState(
+                DateTimeOffset.UtcNow,
+                ForegroundWindow: null,
+                Windows: Array.Empty<ComputerWindowInfo>(),
+                FrameLeft: 0,
+                FrameTop: 0,
+                FrameWidth: 1920,
+                FrameHeight: 1080,
+                CaptureScope: DesktopCaptureScopes.VirtualDesktop,
+                CaptureWindowId: null,
+                CaptureWindowWasForeground: false);
+
+        var verifiedHistory =
+            """
+LOCAL-SHELL-TYPED:Demo App
+STEP 2: VERIFIED press-key|key=enter|effect=windows search khởi chạy ứng dụng phù hợp với từ khóa demo app — transition rõ; EXPECTED: Windows Search khởi chạy ứng dụng phù hợp với từ khóa Demo App.
+""";
+
+        var firstPlanned =
+            planner.TryPlan(
+                "Mở Demo App. Vào màn hình tiếp theo.",
+                state,
+                verifiedHistory,
+                out var firstDecision);
+
+        var exhaustedHistory =
+            verifiedHistory +
+            """
+STEP 3: WAIT — LOCAL-LAUNCH-GRACE: chờ 1
+STEP 4: WAIT — LOCAL-LAUNCH-GRACE: chờ 2
+STEP 5: WAIT — LOCAL-LAUNCH-GRACE: chờ 3
+""";
+
+        var exhaustedPlanned =
+            planner.TryPlan(
+                "Mở Demo App. Vào màn hình tiếp theo.",
+                state,
+                exhaustedHistory,
+                out _);
+
+        Require(
+            firstPlanned &&
+            firstDecision.Action == "wait" &&
+            firstDecision.Reason.Contains(
+                "LOCAL-LAUNCH-GRACE",
+                StringComparison.OrdinalIgnoreCase) &&
+            !exhaustedPlanned,
+            "Local planner chưa chờ launch có giới hạn hoặc vẫn quay lại Search sau khi grace đã cạn.");
     }
 
     private static void CheckStructuredVerifierToggleState()

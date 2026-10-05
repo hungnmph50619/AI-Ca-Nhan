@@ -27,7 +27,9 @@ public sealed record DesktopSystemEvent(
     string Reason,
     string Source = "win-event",
     double SourceConfidence = 0.80,
-    bool Corroborated = false);
+    bool Corroborated = false,
+    string BurstId = "",
+    int BurstSize = 1);
 
 public sealed record DesktopObservationWakeResult(
     bool EventReceived,
@@ -44,6 +46,27 @@ public sealed record DesktopEventObservationSnapshot(
     long PollFallbacks,
     int QueuedEvents,
     DesktopSystemEvent? LastEvent);
+
+public static class DesktopEventBurstPolicy
+{
+    public static bool BelongsToSameBurst(
+        DesktopSystemEvent previous,
+        DesktopSystemEvent current,
+        TimeSpan maximumGap)
+    {
+        ArgumentNullException.ThrowIfNull(previous);
+        ArgumentNullException.ThrowIfNull(current);
+
+        if (maximumGap <= TimeSpan.Zero)
+            return false;
+
+        return previous.WindowId.Equals(
+                   current.WindowId,
+                   StringComparison.OrdinalIgnoreCase) &&
+               current.OccurredAtUtc >= previous.OccurredAtUtc &&
+               current.OccurredAtUtc - previous.OccurredAtUtc <= maximumGap;
+    }
+}
 
 public interface IAdaptiveObservationWakeSource
 {
@@ -86,6 +109,7 @@ public sealed class WindowsDesktopEventWakeSource
     private const int MaximumQueuedEvents = 256;
     private const long DuplicateWindowMilliseconds = 60;
     private const long CrossSourceCorrelationMilliseconds = 250;
+    private const long BurstGroupingMilliseconds = 120;
 
     private readonly ConcurrentQueue<DesktopSystemEvent> events = new();
     private readonly SemaphoreSlim signal = new(0, int.MaxValue);
@@ -106,6 +130,9 @@ public sealed class WindowsDesktopEventWakeSource
     private string lastEventIdentity = string.Empty;
     private DesktopSystemEvent? lastEvent;
     private readonly ConcurrentDictionary<string, DesktopSystemEvent> recentEvidence =
+        new(StringComparer.OrdinalIgnoreCase);
+    private readonly object burstSync = new();
+    private readonly Dictionary<string, DesktopSystemEvent> recentBursts =
         new(StringComparer.OrdinalIgnoreCase);
     private readonly IFlaUiAutomationClient? flaUi;
 
@@ -429,10 +456,65 @@ public sealed class WindowsDesktopEventWakeSource
                 Corroborated = corroborated
             };
 
+        enriched =
+            AssignBurst(
+                enriched);
+
         recentEvidence[key] =
             enriched;
 
         return enriched;
+    }
+
+    private DesktopSystemEvent AssignBurst(
+        DesktopSystemEvent next)
+    {
+        lock (burstSync)
+        {
+            if (recentBursts.TryGetValue(
+                    next.WindowId,
+                    out var previous) &&
+                DesktopEventBurstPolicy.BelongsToSameBurst(
+                    previous,
+                    next,
+                    TimeSpan.FromMilliseconds(
+                        BurstGroupingMilliseconds)))
+            {
+                var burstId =
+                    string.IsNullOrWhiteSpace(
+                        previous.BurstId)
+                        ? $"{previous.WindowId}-{previous.OccurredAtUtc.ToUnixTimeMilliseconds()}"
+                        : previous.BurstId;
+
+                var grouped =
+                    next with
+                    {
+                        BurstId = burstId,
+                        BurstSize =
+                            Math.Max(
+                                1,
+                                previous.BurstSize) + 1
+                    };
+
+                recentBursts[next.WindowId] =
+                    grouped;
+
+                return grouped;
+            }
+
+            var first =
+                next with
+                {
+                    BurstId =
+                        $"{next.WindowId}-{next.OccurredAtUtc.ToUnixTimeMilliseconds()}",
+                    BurstSize = 1
+                };
+
+            recentBursts[next.WindowId] =
+                first;
+
+            return first;
+        }
     }
 
     private static string GetEventFamily(

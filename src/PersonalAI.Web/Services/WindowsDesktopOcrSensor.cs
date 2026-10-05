@@ -318,16 +318,23 @@ public sealed class DesktopOcrSensorRouter(
             last =
                 result;
 
-            if (result.Available &&
-                (result.WordCount > 0 ||
-                 !string.IsNullOrWhiteSpace(
-                     result.Text)))
+            if (result.Available)
             {
                 health.RecordSuccess(
                     provider.Name,
                     stopwatch.ElapsedMilliseconds,
                     result.Reason);
-                return result;
+
+                if (result.WordCount > 0 ||
+                    !string.IsNullOrWhiteSpace(
+                        result.Text))
+                {
+                    return result;
+                }
+
+                // Provider chạy bình thường nhưng ảnh không có text:
+                // đây không phải health failure; thử provider kế tiếp nếu có.
+                continue;
             }
 
             health.RecordFailure(

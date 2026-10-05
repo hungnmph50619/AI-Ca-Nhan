@@ -1151,11 +1151,20 @@ public sealed class ComputerOperatorTaskService(
                                 desktopState.FrameWidth,
                                 desktopState.FrameHeight);
 
+                        using var structuredRevalidateTelemetry =
+                            telemetry.Begin(
+                                ComputerOperatorTelemetryStages.StructuredRevalidate,
+                                decision.Action);
+
                         var revalidated =
                             StructuredTargetRevalidator.Revalidate(
                                 decision,
                                 freshGraph,
                                 DateTimeOffset.UtcNow);
+
+                        structuredRevalidateTelemetry.Complete(
+                            revalidated.SafeToExecute,
+                            revalidated.Status.ToString().ToLowerInvariant());
 
                         progress.Add(
                             "structured-revalidate",
@@ -1885,10 +1894,20 @@ public sealed class ComputerOperatorTaskService(
                 var structuredAfter =
                     BuildDesktopState(after);
 
+                using var structuredVerifyTelemetry =
+                    telemetry.Begin(
+                        ComputerOperatorTelemetryStages.StructuredVerify,
+                        decision.Action);
+
                 var structuredResult =
                     structuredVerification.Verify(
                         decision,
                         structuredAfter.StructuredGraph);
+
+                structuredVerifyTelemetry.Complete(
+                    structuredResult.Status !=
+                        StructuredVerificationStatus.Failed,
+                    structuredResult.Status.ToString().ToLowerInvariant());
 
                 progress.Add(
                     "structured-verification",
@@ -1924,10 +1943,20 @@ public sealed class ComputerOperatorTaskService(
                     var structuredRetryState =
                         BuildDesktopState(after);
 
+                    using var structuredVerifyRetryTelemetry =
+                        telemetry.Begin(
+                            ComputerOperatorTelemetryStages.StructuredVerify,
+                            decision.Action);
+
                     var structuredRetry =
                         structuredVerification.Verify(
                             decision,
                             structuredRetryState.StructuredGraph);
+
+                    structuredVerifyRetryTelemetry.Complete(
+                        structuredRetry.Status !=
+                            StructuredVerificationStatus.Failed,
+                        $"retry-{structuredRetry.Status.ToString().ToLowerInvariant()}");
 
                     progress.Add(
                         "structured-verification-retry",

@@ -26,8 +26,9 @@ public static class ChatRequestRules
 
         if (request.Messages.Any(message =>
             !AllowedRoles.Contains(message.Role)
-            || string.IsNullOrWhiteSpace(message.Content)
-            || message.Content.Length > 12_000))
+            || (string.IsNullOrWhiteSpace(message.Content)
+                && (message.Attachments?.Count ?? 0) == 0)
+            || (message.Content?.Length ?? 0) > 12_000))
         {
             return "Nội dung hội thoại không hợp lệ.";
         }

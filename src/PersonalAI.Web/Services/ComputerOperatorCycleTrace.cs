@@ -82,13 +82,19 @@ public sealed class ComputerOperatorCycleTrace(
     public string Next { get; set; } =
         "-";
 
+    public bool Emitted { get; private set; }
+
+    public void MarkEmitted() =>
+        Emitted =
+            true;
+
     public string RenderSummary()
     {
         var builder =
             new StringBuilder();
 
         builder.AppendLine(
-            $"[CYCLE {Cycle} SUMMARY]");
+            $"[SUMMARY][CYCLE {Cycle}]");
         builder.AppendLine(
             $"Goal: {Limit(Goal, 180)}");
         builder.AppendLine(

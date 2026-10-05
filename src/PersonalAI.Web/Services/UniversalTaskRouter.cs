@@ -50,7 +50,8 @@ public interface IUniversalTaskRouter
 public sealed class UniversalTaskRouter(
     IExecutionAgentRegistry executionAgents,
     IExecutionGateway gateway,
-    IToolCapabilityRegistry? toolCapabilities = null)
+    IToolCapabilityRegistry? toolCapabilities = null,
+    IUniversalCapabilityDiscoveryService? capabilityDiscovery = null)
     : IUniversalTaskRouter
 {
     private const double MinimumSelectionConfidence = 0.66;
@@ -146,24 +147,31 @@ public sealed class UniversalTaskRouter(
         var preferred = Normalize(
             request.PreferredChannel);
 
+        var runtimeCapabilities =
+            capabilityDiscovery?.Discover();
+
         var candidates = new[]
         {
             Score(
                 ExecutionAgentChannels.Browser,
                 goal,
-                preferred),
+                preferred,
+                runtimeCapabilities),
             Score(
                 ExecutionAgentChannels.Coding,
                 goal,
-                preferred),
+                preferred,
+                runtimeCapabilities),
             Score(
                 ExecutionAgentChannels.Computer,
                 goal,
-                preferred),
+                preferred,
+                runtimeCapabilities),
             Score(
                 ExecutionAgentChannels.Connector,
                 goal,
-                preferred)
+                preferred,
+                runtimeCapabilities)
         }
         .OrderByDescending(item =>
             item.UtilityScore)
@@ -243,7 +251,8 @@ public sealed class UniversalTaskRouter(
     private UniversalTaskRouteCandidate Score(
         string channel,
         string goal,
-        string preferred)
+        string preferred,
+        UniversalCapabilitySnapshot? runtimeCapabilities)
     {
         var normalized = goal.ToLowerInvariant();
         var confidence = 0.20;
@@ -324,6 +333,31 @@ public sealed class UniversalTaskRouter(
                     reasons,
                     ref confidence);
                 break;
+        }
+
+        if (runtimeCapabilities is not null)
+        {
+            var runtimeSignals =
+                runtimeCapabilities.ForChannel(channel)
+                    .Where(item => item.Available)
+                    .ToArray();
+
+            var runtimeBonus =
+                runtimeCapabilities.ConfidenceBonusFor(
+                    channel);
+
+            if (runtimeBonus > 0)
+            {
+                confidence += runtimeBonus;
+                reasons.Add(
+                    $"runtime-capability-bonus:{runtimeBonus:0.00}");
+            }
+
+            foreach (var signal in runtimeSignals.Take(3))
+            {
+                reasons.Add(
+                    $"capability:{signal.Key}");
+            }
         }
 
         confidence = Math.Clamp(

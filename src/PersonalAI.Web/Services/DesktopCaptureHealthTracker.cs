@@ -39,6 +39,11 @@ public interface IDesktopCaptureHealthTracker
         long latencyMs,
         string? detail = null);
 
+    int GetBackendPenalty(
+        string scope,
+        string target,
+        string backend);
+
     DesktopCaptureHealthSnapshot GetSnapshot();
 
     void Reset();
@@ -145,6 +150,62 @@ public sealed class DesktopCaptureHealthTracker
                     : detail.Trim();
             entry.LastUpdatedUtc =
                 DateTimeOffset.UtcNow;
+        }
+    }
+
+    public int GetBackendPenalty(
+        string scope,
+        string target,
+        string backend)
+    {
+        var key = BuildKey(
+            Normalize(scope),
+            NormalizeTarget(target),
+            Normalize(backend));
+
+        if (!_entries.TryGetValue(
+                key,
+                out var entry))
+        {
+            return 0;
+        }
+
+        lock (entry.Sync)
+        {
+            var attempts =
+                entry.SuccessCount +
+                entry.FailureCount;
+
+            var failureRate =
+                attempts == 0
+                    ? 0
+                    : entry.FailureCount /
+                      (double)attempts;
+
+            var averageLatency =
+                entry.SuccessCount == 0
+                    ? 0
+                    : entry.TotalLatencyMs /
+                      (double)entry.SuccessCount;
+
+            var penalty = 0;
+
+            if (entry.ConsecutiveUnchangedFrames >= 4)
+                penalty += 100;
+
+            if (entry.FailureCount >= 3 &&
+                failureRate >= 0.5)
+                penalty += 50;
+
+            if (averageLatency >= 2000)
+                penalty += 20;
+            else if (averageLatency >= 1000)
+                penalty += 10;
+
+            if (entry.FallbackCount >= 3)
+                penalty += 10;
+
+            return penalty;
         }
     }
 

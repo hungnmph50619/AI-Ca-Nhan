@@ -195,10 +195,6 @@ public sealed class ComputerOperatorTaskService(
             throw new ToolExecutionInputException(
                 "Computer Operator không tự nhập mật khẩu, OTP, token, khóa hoặc bí mật.");
 
-        if (!vision.Ready)
-            throw new ToolExecutionInputException(
-                "Computer Operator cần Desktop Vision/Gemini đã sẵn sàng.");
-
         using var taskTelemetry =
             telemetry.Begin(
                 ComputerOperatorTelemetryStages.Task);
@@ -463,6 +459,25 @@ public sealed class ComputerOperatorTaskService(
                             structuredRoute
                                 ? $"provider=local-structured; purpose=plan; cycle={index}; scene={sceneDiagnosticId}; structuredNodes={desktopState.StructuredScene?.NodeCount ?? 0}; action={decision.Action}; elementId={LimitDiagnostic(decision.TargetElementId, 80)}; geminiCalled=false."
                                 : $"provider=local; purpose=plan; cycle={index}; scene={sceneDiagnosticId}; action={decision.Action}; geminiCalled=false.");
+                    }
+                    else if (!vision.Ready)
+                    {
+                        decision =
+                            CreateProviderUnavailableBlockedDecision();
+
+                        plannerStopwatch.Stop();
+                        planTelemetry.Complete(
+                            success: true,
+                            route: "provider-unavailable");
+
+                        progress.Add(
+                            "provider-unavailable",
+                            "Structured/local planner chưa đủ để giải quyết bước hiện tại và Gemini/Vision không khả dụng. Dừng an toàn thay vì làm hỏng toàn bộ Computer Operator từ đầu.",
+                            "blocked");
+
+                        progress.AddDiagnostic(
+                            "provider",
+                            $"provider=Gemini; purpose=plan; cycle={index}; ready=false; scene={sceneDiagnosticId}; fallback=local-structured-exhausted; taskCrash=false.");
                     }
                     else if (providerBackoffActive)
                     {
@@ -2227,6 +2242,45 @@ public sealed class ComputerOperatorTaskService(
                    "Gemini planning không trả",
                    StringComparison.OrdinalIgnoreCase);
     }
+
+    private static DesktopOperatorDecision CreateProviderUnavailableBlockedDecision() =>
+        new(
+            State: "Structured/local capability không đủ cho bước hiện tại và semantic provider không khả dụng.",
+            Plan: "Không thực hiện hành động không chắc chắn. Giữ nguyên desktop và báo provider unavailable để có thể tiếp tục khi provider phục hồi.",
+            CurrentSubgoal: string.Empty,
+            GoalProgress: 0,
+            VerifiedMilestones: Array.Empty<string>(),
+            Action: "blocked",
+            Query: string.Empty,
+            Text: string.Empty,
+            Key: string.Empty,
+            Keys: Array.Empty<string>(),
+            Url: string.Empty,
+            TargetLabel: string.Empty,
+            CoordinateSpace: ComputerCoordinateSpaces.ImagePixel,
+            CoordinateWindowId: string.Empty,
+            ImageX: 0,
+            ImageY: 0,
+            EndImageX: 0,
+            EndImageY: 0,
+            NormalizedX: 0,
+            NormalizedY: 0,
+            EndNormalizedX: 0,
+            EndNormalizedY: 0,
+            BoxLeft: 0,
+            BoxTop: 0,
+            BoxWidth: 0,
+            BoxHeight: 0,
+            BoxNormalizedLeft: 0,
+            BoxNormalizedTop: 0,
+            BoxNormalizedWidth: 0,
+            BoxNormalizedHeight: 0,
+            ScrollDelta: 0,
+            ExpectedEffect: string.Empty,
+            Confidence: 1.0,
+            Reason: "Gemini/Vision hiện không khả dụng và structured/local planner không có action đủ chắc chắn. Đây là provider unavailable, không phải lỗi của local Computer Operator.",
+            SceneElements: Array.Empty<DesktopSceneElement>(),
+            TargetElementId: string.Empty);
 
     private static DesktopOperatorDecision CreatePlannerCooldownWaitDecision(
         DateTimeOffset backoffUntil) =>

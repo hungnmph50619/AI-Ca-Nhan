@@ -161,8 +161,19 @@ public sealed class GenericTextInteractionEngine(
             ? accessibility.TryRead(target)
             : null;
 
-        if (after is not null &&
-            TextMatches(after, expected, mode))
+        if (!target.CanRead || after is null)
+        {
+            return new(
+                Applied: true,
+                Verified: false,
+                primaryStrategy,
+                RepairAttempted: false,
+                RolledBack: false,
+                ActualText: null,
+                $"Đã nhập bằng {primaryStrategy} nhưng accessibility backend chưa đọc lại được; chuyển sang semantic verification thay vì gõ lại.");
+        }
+
+        if (TextMatches(after, expected, mode))
         {
             return new(
                 Applied: true,

@@ -11,7 +11,8 @@ public interface IDesktopOcrActionPlanner
 }
 
 public sealed class DesktopOcrActionPlanner(
-    IDesktopOcrSensor ocrSensor)
+    IDesktopOcrSensor ocrSensor,
+    ILocalVisualTargetResolver visualResolver)
     : IDesktopOcrActionPlanner
 {
     private static readonly DesktopOcrTargetResolver Resolver =
@@ -75,14 +76,16 @@ public sealed class DesktopOcrActionPlanner(
                 observation,
                 requestedText);
 
-        if (!resolution.Resolved ||
-            resolution.Target is null)
+        var fused =
+            visualResolver.Resolve(
+                resolution,
+                template: null,
+                visualObservation: null);
+
+        if (!fused.Resolved)
         {
             return false;
         }
-
-        var target =
-            resolution.Target;
 
         var scaleX =
             window.Width /
@@ -94,21 +97,21 @@ public sealed class DesktopOcrActionPlanner(
         var desktopLeft =
             window.Left +
             (int)Math.Round(
-                target.Left * scaleX);
+                fused.Left * scaleX);
         var desktopTop =
             window.Top +
             (int)Math.Round(
-                target.Top * scaleY);
+                fused.Top * scaleY);
         var width =
             Math.Max(
                 4,
                 (int)Math.Round(
-                    target.Width * scaleX));
+                    fused.Width * scaleX));
         var height =
             Math.Max(
                 4,
                 (int)Math.Round(
-                    target.Height * scaleY));
+                    fused.Height * scaleY));
 
         var frameLeft =
             desktopLeft -
@@ -128,16 +131,15 @@ public sealed class DesktopOcrActionPlanner(
         }
 
         var confidence =
-            target.Score >= 115
-                ? 0.93
-                : target.Score >= 110
-                    ? 0.90
-                    : 0.82;
+            Math.Clamp(
+                fused.Confidence,
+                0.0,
+                0.95);
 
         decision =
             new DesktopOperatorDecision(
                 State:
-                    $"Windows OCR thấy duy nhất text '{target.Text}' trong foreground window.",
+                    $"Windows OCR thấy duy nhất text '{requestedText}' trong foreground window.",
                 Plan:
                     $"Click một lần vào bounding box OCR của '{target.Text}', sau đó quan sát lại trước hành động tiếp theo.",
                 CurrentSubgoal:
@@ -153,7 +155,7 @@ public sealed class DesktopOcrActionPlanner(
                     Array.Empty<string>(),
                 Url: string.Empty,
                 TargetLabel:
-                    target.Text,
+                    requestedText,
                 CoordinateSpace:
                     ComputerCoordinateSpaces.ImagePixel,
                 CoordinateWindowId:
@@ -188,7 +190,7 @@ public sealed class DesktopOcrActionPlanner(
                 Confidence:
                     confidence,
                 Reason:
-                    $"Structured/local planner không tìm được target; Windows OCR resolver chọn duy nhất '{target.Text}' score={target.Score}, source={target.Source}.",
+                    $"Structured/local planner không tìm được target; Local Visual Evidence Fusion xác định '{requestedText}' bằng OCR-local. {fused.Reason}",
                 SceneElements:
                     Array.Empty<DesktopSceneElement>(),
                 TargetElementId:

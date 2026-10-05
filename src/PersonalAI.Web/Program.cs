@@ -54,6 +54,7 @@ builder.Services.AddSingleton<IKnowledgeGroundingService, KnowledgeGroundingServ
 builder.Services.AddSingleton<KnowledgeSourceReader>();
 builder.Services.AddSingleton<IPersonalMemoryStore, PersonalMemoryStore>();
 builder.Services.AddSingleton<IPersonalMemoryGroundingService, PersonalMemoryGroundingService>();
+builder.Services.AddSingleton<IChatAttachmentStore, ChatAttachmentStore>();
 builder.Services.AddScoped<IContextManagerService, ContextManagerService>();
 builder.Services.AddHttpClient<GeminiChatService>(client =>
 {
@@ -549,6 +550,55 @@ app.MapPost("/api/context/preview", async (
     catch (KnowledgeDocumentValidationException exception)
     {
         return Results.BadRequest(new ApiError(exception.Message));
+    }
+});
+
+app.MapPost("/api/chat/attachments", async (
+    HttpRequest request,
+    IChatAttachmentStore attachmentStore,
+    CancellationToken cancellationToken) =>
+{
+    if (!request.HasFormContentType)
+        return Results.BadRequest(
+            new ApiError("Yêu cầu tải tệp đính kèm không hợp lệ."));
+
+    try
+    {
+        var form =
+            await request.ReadFormAsync(
+                cancellationToken);
+
+        var file =
+            form.Files.GetFile(
+                "file");
+
+        if (file is null ||
+            form.Files.Count != 1)
+        {
+            return Results.BadRequest(
+                new ApiError("Hãy chọn đúng một tệp để đính kèm."));
+        }
+
+        var attachment =
+            await attachmentStore.AddAsync(
+                file,
+                cancellationToken);
+
+        return Results.Created(
+            $"/api/chat/attachments/{attachment.Id:D}",
+            attachment);
+    }
+    catch (InvalidDataException)
+    {
+        return Results.Json(
+            new ApiError("Tệp đính kèm vượt quá giới hạn hoặc không hợp lệ."),
+            statusCode:
+                StatusCodes.Status413PayloadTooLarge);
+    }
+    catch (ChatValidationException exception)
+    {
+        return Results.BadRequest(
+            new ApiError(exception.Message));
     }
 });
 

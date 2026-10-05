@@ -1819,6 +1819,9 @@ public sealed class ComputerOperatorTaskService(
                     decision.Confidence,
                     actionTaken: true);
 
+                cycleTrace.Evidence.Add(
+                    $"execute=applied; detail={LimitDiagnostic(action.Detail, 160)}");
+
                 var verifyState = actionState.MoveTo(
                     ComputerOperatorActionState.Verify,
                     $"Xác minh kết quả của action {decision.Action}.");
@@ -1921,6 +1924,33 @@ public sealed class ComputerOperatorTaskService(
                     }
                 }
 
+                var afterForeground =
+                    computer.GetActiveWindow();
+                var afterWindows =
+                    computer.GetWindows(50).Windows;
+
+                cycleTrace.AfterForeground =
+                    ComputerOperatorCycleTrace.DescribeWindow(
+                        afterForeground);
+                cycleTrace.WindowDelta =
+                    ComputerOperatorCycleTrace.DescribeWindowDelta(
+                        desktopState.Windows,
+                        afterWindows);
+                cycleTrace.Verification =
+                    verification.Inconclusive
+                        ? $"Inconclusive: {verification.Detail}"
+                        : verification.Verified
+                            ? $"Verified: {verification.Detail}"
+                            : $"Failed: {verification.Detail}";
+                cycleTrace.VerificationConfidence =
+                    verification.Confidence;
+                cycleTrace.Evidence.Add(
+                    $"verification={(verification.Verified ? "support" : verification.Inconclusive ? "inconclusive" : "contradict")}; confidence={verification.Confidence:0.000}; detail={LimitDiagnostic(verification.Detail, 180)}");
+
+                progress.AddDiagnostic(
+                    "window-delta",
+                    $"cycle={index}; before={LimitDiagnostic(cycleTrace.BeforeForeground, 180)}; after={LimitDiagnostic(cycleTrace.AfterForeground, 180)}; delta={LimitDiagnostic(cycleTrace.WindowDelta, 260)}.");
+
                 progress.AddDiagnostic(
                     "evidence",
                     $"cycle={index}; scene={sceneDiagnosticId}; strategy={strategyDiagnosticId}; verified={verification.Verified}; inconclusive={verification.Inconclusive}; confidence={verification.Confidence:0.000}; detail={LimitDiagnostic(verification.Detail, 300)}.",
@@ -1954,6 +1984,18 @@ public sealed class ComputerOperatorTaskService(
                         "action-state",
                         $"State machine: {diagnoseState.State} -> {replanState.State} — không replay action đã thực hiện.",
                         "replan");
+
+                    cycleTrace.RecoveryCode =
+                        "verification-inconclusive";
+                    cycleTrace.RecoveryDetail =
+                        verification.Detail;
+                    cycleTrace.Result =
+                        "waiting";
+                    cycleTrace.Next =
+                        "observe-no-replay";
+                    EmitCycleForensicSummary(
+                        progress,
+                        cycleTrace);
 
                     await Task.Delay(
                         350,
@@ -2058,6 +2100,23 @@ public sealed class ComputerOperatorTaskService(
                             verification.Confidence);
                     }
 
+                    cycleTrace.RecoveryCode =
+                        ClassifyFailureKind(
+                            decision.Action,
+                            verification.Detail,
+                            actionApplied: true,
+                            verificationFailed: true)
+                            .ToString();
+                    cycleTrace.RecoveryDetail =
+                        recoveryPlan.Reason;
+                    cycleTrace.Result =
+                        "verification-failed";
+                    cycleTrace.Next =
+                        recoveryPlan.PrimaryAction.ToString();
+                    EmitCycleForensicSummary(
+                        progress,
+                        cycleTrace);
+
                     await Task.Delay(350, linked.Token);
                     continue;
                 }
@@ -2134,6 +2193,18 @@ public sealed class ComputerOperatorTaskService(
                     verification.Detail,
                     "verified",
                     verification.Confidence);
+
+                cycleTrace.RecoveryCode =
+                    "none";
+                cycleTrace.RecoveryDetail =
+                    "-";
+                cycleTrace.Result =
+                    "verified";
+                cycleTrace.Next =
+                    "observe-next-cycle";
+                EmitCycleForensicSummary(
+                    progress,
+                    cycleTrace);
             }
 
             progress.Block(

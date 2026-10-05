@@ -3163,7 +3163,18 @@ jobs:
           grep -Fq '"id": "pause-resume-stop"' tests/computer-use/v3.4.9-acceptance-scenarios.json
           grep -Fq '"id": "loop-recovery"' tests/computer-use/v3.4.9-acceptance-scenarios.json
           grep -Fq '"id": "multi-step-open-and-type"' tests/computer-use/v3.4.9-acceptance-scenarios.json
-          grep -Fq 'totalCount -lt 123' .github/workflows/desktop-control.yml
+          grep -Fq 'totalCount -lt 127' .github/workflows/desktop-control.yml
+          # v4.0.24 — Telemetry & Performance Profiling
+          grep -Fq 'ActivitySource' src/PersonalAI.Web/Services/ComputerOperatorTelemetry.cs
+          grep -Fq 'Meter.CreateHistogram' src/PersonalAI.Web/Services/ComputerOperatorTelemetry.cs
+          grep -Fq 'ContainsGoals: false' src/PersonalAI.Web/Services/ComputerOperatorTelemetry.cs
+          grep -Fq 'ContainsTextPayloads: false' src/PersonalAI.Web/Services/ComputerOperatorTelemetry.cs
+          grep -Fq 'ContainsScreenshots: false' src/PersonalAI.Web/Services/ComputerOperatorTelemetry.cs
+          grep -Fq 'IComputerOperatorTelemetry' src/PersonalAI.Web/Services/ComputerOperatorTaskService.cs
+          grep -Fq '/api/computer/operator-telemetry' src/PersonalAI.Web/Services/ComputerUseEndpoints.cs
+          grep -Fq 'CheckOperatorTelemetryDoesNotExposePayloads' src/PersonalAI.Web/Services/ComputerOperatorAcceptanceService.cs
+          grep -Fq 'CheckOperatorTelemetrySanitizesUnsafeDimensions' src/PersonalAI.Web/Services/ComputerOperatorAcceptanceService.cs
+          grep -Fq 'CheckOperatorTelemetryBoundsRecentEvents' src/PersonalAI.Web/Services/ComputerOperatorAcceptanceService.cs
           # v4.0.23 — Checkpoint / Resume
           grep -Fq 'IComputerOperatorCheckpointStore' src/PersonalAI.Web/Services/ComputerOperatorCheckpointStore.cs
           grep -Fq 'Microsoft.Data.Sqlite' src/PersonalAI.Web/Services/ComputerOperatorCheckpointStore.cs
@@ -3175,6 +3186,8 @@ jobs:
           grep -Fq 'CheckOperatorCheckpointRecoversInterruptedRun' src/PersonalAI.Web/Services/ComputerOperatorAcceptanceService.cs
           grep -Fq 'CheckOperatorCheckpointWorkspaceIsolation' src/PersonalAI.Web/Services/ComputerOperatorAcceptanceService.cs
           grep -Fq 'CheckOperatorCheckpointCompletedIsNotResumable' src/PersonalAI.Web/Services/ComputerOperatorAcceptanceService.cs
+          grep -Fq 'CheckOperatorCheckpointRedactsSensitiveContext' src/PersonalAI.Web/Services/ComputerOperatorAcceptanceService.cs
+          grep -Fq 'Mục tiêu không lưu plaintext' src/PersonalAI.Web/Services/ComputerOperatorCheckpointStore.cs
           # v4.0.22 — Circuit Breaker & Smart Retry
           grep -Fq 'PackageReference Include="Polly"' src/PersonalAI.Web/PersonalAI.Web.csproj
           grep -Fq 'IUniversalResilienceExecutor' src/PersonalAI.Web/Services/UniversalResilienceExecutor.cs

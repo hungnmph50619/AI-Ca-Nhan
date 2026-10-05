@@ -1351,9 +1351,18 @@ public sealed class ComputerOperatorTaskService(
                         "inconclusive",
                         verification.Confidence);
 
-                    _ = actionState.MoveTo(
+                    var diagnoseState = actionState.MoveTo(
+                        ComputerOperatorActionState.Diagnose,
+                        "Verification chưa thể kết luận; không replay side effect.");
+
+                    var replanState = actionState.MoveTo(
                         ComputerOperatorActionState.Replan,
                         "Verification inconclusive; quan sát lại trước action mới.");
+
+                    progress.Add(
+                        "action-state",
+                        $"State machine: {diagnoseState.State} -> {replanState.State} — không replay action đã thực hiện.",
+                        "replan");
 
                     await Task.Delay(
                         350,

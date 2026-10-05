@@ -38,6 +38,12 @@ public sealed class ComputerOperatorAcceptanceService
 
         RunCheck(
             checks,
+            "capture health phát hiện chuỗi frame lặp và giữ latency telemetry",
+            CheckCaptureHealthDetectsRepeatedFrames);
+
+
+        RunCheck(
+            checks,
             "tọa độ pixel trên desktop ảo có gốc âm",
             CheckImagePixelWithNegativeVirtualOrigin);
 
@@ -792,6 +798,48 @@ public sealed class ComputerOperatorAcceptanceService
                 DesktopCaptureScopes.VirtualDesktop) ==
             DesktopCaptureBackends.CopyFromScreen,
             "Virtual desktop chưa fallback CopyFromScreen khi DXGI chưa kích hoạt.");
+    }
+
+    private static void CheckCaptureHealthDetectsRepeatedFrames()
+    {
+        var tracker =
+            new DesktopCaptureHealthTracker();
+
+        var signature =
+            new byte[] { 10, 20, 30, 40 };
+
+        for (var index = 0; index < 5; index++)
+        {
+            tracker.RecordSuccess(
+                DesktopCaptureScopes.Monitor,
+                @"\\.\DISPLAY1",
+                DesktopCaptureBackends.WindowsGraphicsCapture,
+                10 + index,
+                signature,
+                index == 0
+                    ? null
+                    : "acceptance fallback marker");
+        }
+
+        var snapshot =
+            tracker.GetSnapshot();
+
+        var entry =
+            snapshot.Entries.Single();
+
+        Require(
+            entry.SuccessCount == 5 &&
+            entry.ConsecutiveUnchangedFrames == 4 &&
+            entry.StaleSuspected &&
+            entry.AverageLatencyMs > 0 &&
+            entry.FallbackCount == 4,
+            "Capture health chưa phát hiện đúng chuỗi frame lặp hoặc telemetry latency/fallback.");
+
+        tracker.Reset();
+
+        Require(
+            tracker.GetSnapshot().Entries.Count == 0,
+            "Capture health reset chưa xóa telemetry trong bộ nhớ.");
     }
 
     private static void CheckImagePixelWithNegativeVirtualOrigin()

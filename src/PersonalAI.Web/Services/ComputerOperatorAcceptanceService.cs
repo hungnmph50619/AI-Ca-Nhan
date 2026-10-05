@@ -468,6 +468,16 @@ public sealed class ComputerOperatorAcceptanceService
 
         RunCheck(
             checks,
+            "coding verification context pass đưa lifecycle tới complete",
+            CheckCodingVerificationContextCompletesLifecycle);
+
+        RunCheck(
+            checks,
+            "coding verification context fail buộc lifecycle replan",
+            CheckCodingVerificationContextFailureReplans);
+
+        RunCheck(
+            checks,
             "pause resume stop giữ đúng trạng thái và cancellation",
             CheckExecutionPauseResumeStop);
 
@@ -3729,6 +3739,143 @@ public sealed class ComputerOperatorAcceptanceService
                 UniversalVerificationContinuationStatuses.Pending &&
             result.Evidence is null,
             "Coding continuation thiếu target/repository context nhưng vẫn tự chạy verifier hoặc bịa evidence.");
+    }
+
+    private static void CheckCodingVerificationContextCompletesLifecycle()
+    {
+        var agents =
+            new ExecutionAgentRegistry(
+                new IExecutionAgent[]
+                {
+                    new AcceptanceExecutionAgent(
+                        "execution.coding.context-pass",
+                        ExecutionAgentChannels.Coding,
+                        verifiedResult: false)
+                });
+
+        var router =
+            new UniversalTaskRouter(
+                agents,
+                new ExecutionGateway(agents));
+
+        var verifier =
+            new UniversalOutcomeVerificationService(
+                new ToolCapabilityRegistry(
+                    new ToolRegistry(
+                        Array.Empty<IPersonalAiTool>())),
+                agents);
+
+        var development =
+            new AcceptanceDevelopmentAgentService();
+
+        var lifecycle =
+            new UniversalExecutionLifecycleCoordinator(
+                router,
+                verifier,
+                new UniversalVerificationContinuationPlanner(),
+                new UniversalVerificationContinuationExecutor(
+                    new AcceptanceBrowserAgentService(
+                        "https://example.com",
+                        "Example",
+                        "Readable content"),
+                    new CodingVerificationGate(
+                        development)));
+
+        var result = lifecycle.ExecuteAsync(
+                new UniversalExecutionLifecycleRequest(
+                    "code test project",
+                    PreferredChannel:
+                        ExecutionAgentChannels.Coding,
+                    ConfirmExecution: true,
+                    VerificationContext:
+                        new UniversalVerificationContinuationContext(
+                            new CodingVerificationRequest(
+                                "src/PersonalAI.Web/PersonalAI.Web.csproj",
+                                "."))))
+            .GetAwaiter()
+            .GetResult();
+
+        Require(
+            result.GoalComplete &&
+            result.Action ==
+                UniversalExecutionLifecycleActions.Complete &&
+            result.Verification.Status ==
+                UniversalOutcomeStatuses.Verified &&
+            result.ContinuationExecution?.Evidence?.Source ==
+                "coding-verification-gate" &&
+            development.RestoreCount == 1 &&
+            development.BuildCount == 1 &&
+            development.TestCount == 1 &&
+            development.DiffCount == 1,
+            "Coding context PASS chưa chạy đủ verification gate hoặc chưa complete lifecycle.");
+    }
+
+    private static void CheckCodingVerificationContextFailureReplans()
+    {
+        var agents =
+            new ExecutionAgentRegistry(
+                new IExecutionAgent[]
+                {
+                    new AcceptanceExecutionAgent(
+                        "execution.coding.context-fail",
+                        ExecutionAgentChannels.Coding,
+                        verifiedResult: false)
+                });
+
+        var router =
+            new UniversalTaskRouter(
+                agents,
+                new ExecutionGateway(agents));
+
+        var verifier =
+            new UniversalOutcomeVerificationService(
+                new ToolCapabilityRegistry(
+                    new ToolRegistry(
+                        Array.Empty<IPersonalAiTool>())),
+                agents);
+
+        var development =
+            new AcceptanceDevelopmentAgentService(
+                failBuild: true);
+
+        var lifecycle =
+            new UniversalExecutionLifecycleCoordinator(
+                router,
+                verifier,
+                new UniversalVerificationContinuationPlanner(),
+                new UniversalVerificationContinuationExecutor(
+                    new AcceptanceBrowserAgentService(
+                        "https://example.com",
+                        "Example",
+                        "Readable content"),
+                    new CodingVerificationGate(
+                        development)));
+
+        var result = lifecycle.ExecuteAsync(
+                new UniversalExecutionLifecycleRequest(
+                    "code test project",
+                    PreferredChannel:
+                        ExecutionAgentChannels.Coding,
+                    ConfirmExecution: true,
+                    VerificationContext:
+                        new UniversalVerificationContinuationContext(
+                            new CodingVerificationRequest(
+                                "src/PersonalAI.Web/PersonalAI.Web.csproj",
+                                "."))))
+            .GetAwaiter()
+            .GetResult();
+
+        Require(
+            !result.GoalComplete &&
+            result.Action ==
+                UniversalExecutionLifecycleActions.ReplanGoal &&
+            result.Verification.Status ==
+                UniversalOutcomeStatuses.NotAchieved &&
+            result.ContinuationExecution?.Evidence?.Passed == false &&
+            development.RestoreCount == 1 &&
+            development.BuildCount == 1 &&
+            development.TestCount == 0,
+            "Coding context FAIL không dừng đúng gate hoặc chưa buộc replan.");
     }
 
     private static void CheckExecutionPauseResumeStop()

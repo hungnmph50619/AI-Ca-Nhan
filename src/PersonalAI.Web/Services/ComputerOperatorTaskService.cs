@@ -149,9 +149,14 @@ public sealed class ComputerOperatorTaskService(
                 linked.Token.ThrowIfCancellationRequested();
 
                 if (control.GetStatus().Paused)
+                {
+                    MarkCheckpointStatusSafely(
+                        checkpoint,
+                        ComputerOperatorCheckpointStatuses.Interrupted);
                     return Finish(
                         false,
                         "Computer Operator đã dừng vì phiên điều khiển hết hạn, hết ngân sách hoặc bị dừng khẩn cấp.");
+                }
 
                 await execution.WaitIfPausedAsync(linked.Token);
 

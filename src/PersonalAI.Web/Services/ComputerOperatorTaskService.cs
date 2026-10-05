@@ -482,13 +482,13 @@ public sealed class ComputerOperatorTaskService(
 
                         progress.Add(
                             "ocr-local",
-                            $"Windows OCR fallback planner đã chọn action: {decision.Reason}",
+                            $"OCR-local fallback planner đã chọn action: {decision.Reason}",
                             decision.Action,
                             decision.Confidence);
 
                         progress.AddDiagnostic(
                             "provider",
-                            $"provider=windows-ocr; purpose=plan; cycle={index}; scene={sceneDiagnosticId}; action={decision.Action}; confidence={decision.Confidence:0.000}; geminiCalled=false.");
+                            $"provider=ocr-local; purpose=plan; cycle={index}; scene={sceneDiagnosticId}; action={decision.Action}; confidence={decision.Confidence:0.000}; detail={LimitDiagnostic(decision.Reason, 180)}; geminiCalled=false.");
                     }
                     else if (!vision.Ready)
                     {
@@ -1047,7 +1047,7 @@ public sealed class ComputerOperatorTaskService(
                         }
 
                         tracking =
-                            visualRecovery;
+                            visualRecovery!;
                         trackingResult =
                             visualRecovery;
                     }

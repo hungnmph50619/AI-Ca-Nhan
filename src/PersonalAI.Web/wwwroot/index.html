@@ -40,6 +40,7 @@
   <link rel="stylesheet" href="v088.css">
   <link rel="stylesheet" href="v226-dialog-layout.css">
   <link rel="stylesheet" href="v300.css?rev=league-progress-1">
+  <link rel="stylesheet" href="v440-attachments.css?rev=1">
 </head>
 <body>
   <div class="app-shell">
@@ -82,7 +83,13 @@
         </div>
       </section>
       <footer class="composer-wrap">
-        <form class="composer" id="chatForm"><textarea id="messageInput" rows="1" maxlength="12000" placeholder="Nhắn tin cho AI của bạn…" aria-label="Tin nhắn"></textarea><button class="send-button" id="sendButton" type="submit" aria-label="Gửi tin nhắn">↑</button></form>
+        <div class="chat-attachment-preview" id="chatAttachmentPreview" aria-live="polite" hidden></div>
+        <form class="composer attachment-composer" id="chatForm">
+          <button class="attachment-button" id="attachmentButton" type="button" aria-label="Đính kèm ảnh hoặc tệp" title="Đính kèm ảnh hoặc tệp">＋</button>
+          <input class="visually-hidden" id="chatAttachmentInput" type="file" multiple accept=".png,.jpg,.jpeg,.webp,.pdf,.txt,.md,image/png,image/jpeg,image/webp,application/pdf,text/plain,text/markdown">
+          <textarea id="messageInput" rows="1" maxlength="12000" placeholder="Nhắn tin cho AI của bạn…" aria-label="Tin nhắn"></textarea>
+          <button class="send-button" id="sendButton" type="submit" aria-label="Gửi tin nhắn">↑</button>
+        </form>
         <div class="tool-orchestration-toggle-row">
           <label class="tool-orchestration-toggle" title="Cho phép AI đề xuất một công cụ phù hợp; công cụ chưa chạy cho tới khi bạn bấm chạy">
             <input id="useToolsToggle" type="checkbox">

@@ -255,7 +255,10 @@ public static class ComputerUseEndpoints
                         loai = snapshot.LastEvent.Kind,
                         cuaSo = snapshot.LastEvent.WindowId,
                         lucUtc = snapshot.LastEvent.OccurredAtUtc,
-                        lyDo = snapshot.LastEvent.Reason
+                        lyDo = snapshot.LastEvent.Reason,
+                        nguon = snapshot.LastEvent.Source,
+                        doTinCayNguon = Math.Round(snapshot.LastEvent.SourceConfidence, 2),
+                        daDuocNguonKhacXacNhan = snapshot.LastEvent.Corroborated
                     }
             });
         });

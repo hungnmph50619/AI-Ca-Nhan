@@ -38,6 +38,7 @@ public sealed class ComputerOperatorTaskService(
     IComputerOperatorActionExecutor actionExecutor,
     IGenericTextInteractionEngine textInteraction,
     IAdaptiveVerificationWaitEngine adaptiveWait,
+    IComputerOperatorCheckpointStore checkpoints,
     ILogger<ComputerOperatorTaskService> logger)
     : IComputerOperatorTaskService
 {
@@ -95,15 +96,44 @@ public sealed class ComputerOperatorTaskService(
         progress.Start(
             $"Bắt đầu tác vụ: {normalizedGoal}");
 
+        var resumableCheckpoint =
+            checkpoints.FindResumable(
+                normalizedGoal);
+
+        var checkpoint =
+            checkpoints.StartOrResume(
+                normalizedGoal);
+
         var steps = new List<ComputerOperatorTaskStep>();
         var taskHistory = new List<string>();
         var recovery = new ComputerOperatorRecoverySession();
         var loopGuard = new ComputerOperatorLoopGuardSession();
         var actionState = new ComputerOperatorActionStateMachine();
         var verifiedMilestones = new HashSet<string>(
+            checkpoint.VerifiedMilestones,
             StringComparer.OrdinalIgnoreCase);
-        var currentSubgoal = string.Empty;
-        var latestGoalProgress = 0.0;
+        var currentSubgoal =
+            checkpoint.CurrentSubgoal;
+        var latestGoalProgress =
+            checkpoint.GoalProgress;
+
+        if (resumableCheckpoint is not null)
+        {
+            taskHistory.Add(
+                "CHECKPOINT-RESUME: Có checkpoint bị gián đoạn. Chỉ coi các mốc đã xác minh là lịch sử; BẮT BUỘC quan sát lại trạng thái desktop hiện tại trước khi làm action mới. Không replay action cuối từ checkpoint.");
+
+            foreach (var milestone in checkpoint.VerifiedMilestones)
+            {
+                taskHistory.Add(
+                    $"MỐC-CHECKPOINT-ĐÃ-XÁC-MINH: {milestone}");
+            }
+
+            progress.Add(
+                "checkpoint-resume",
+                $"Đã nạp checkpoint {checkpoint.Id:D}: {checkpoint.VerifiedMilestones.Count} mốc đã xác minh. Hệ thống sẽ quan sát lại desktop trước khi tiếp tục.",
+                "resume",
+                checkpoint.GoalProgress);
+        }
         var lowConfidenceCount = 0;
         var blockedReplanCount = 0;
         var keyboardRepairFailures = 0;
@@ -269,6 +299,12 @@ public sealed class ComputerOperatorTaskService(
                         decision.Confidence);
                 }
 
+                checkpoint = SaveCheckpointSafely(
+                    checkpoint,
+                    verifiedMilestones,
+                    currentSubgoal,
+                    latestGoalProgress);
+
                 var loopStrategy =
                     decision.Action is "complete" or "blocked" or "wait"
                         ? string.Empty
@@ -343,6 +379,9 @@ public sealed class ComputerOperatorTaskService(
                         $"BƯỚC {index}: COMPLETE — {decision.Reason}");
                     progress.Complete(
                         $"Vision xác nhận mục tiêu đã đạt: {decision.Reason}");
+                    MarkCheckpointStatusSafely(
+                        checkpoint,
+                        ComputerOperatorCheckpointStatuses.Completed);
                     return Finish(
                         true,
                         steps.Count == 0
@@ -388,6 +427,9 @@ public sealed class ComputerOperatorTaskService(
 
                     progress.Block(
                         $"Vision đã quan sát/lập lại phương án nhiều lần nhưng vẫn không còn bước an toàn: {decision.Reason}");
+                    MarkCheckpointStatusSafely(
+                        checkpoint,
+                        ComputerOperatorCheckpointStatuses.Blocked);
                     return Finish(
                         false,
                         $"Vision dừng an toàn sau nhiều lần thử lại: {decision.Reason}");
@@ -1095,6 +1137,14 @@ public sealed class ComputerOperatorTaskService(
                 taskHistory.Add(
                     $"STEP {index}: VERIFIED {actionSignature} — {verification.Detail}; EXPECTED: {decision.ExpectedEffect}");
 
+                checkpoint = SaveCheckpointSafely(
+                    checkpoint,
+                    verifiedMilestones,
+                    currentSubgoal,
+                    latestGoalProgress,
+                    decision.Action,
+                    decision.ExpectedEffect);
+
                 if (!string.IsNullOrWhiteSpace(decision.ExpectedEffect) &&
                     verifiedMilestones.Add(decision.ExpectedEffect.Trim()))
                 {
@@ -1127,23 +1177,35 @@ public sealed class ComputerOperatorTaskService(
 
             progress.Block(
                 $"Đạt giới hạn {MaximumSteps} bước để tránh vòng lặp.");
+            MarkCheckpointStatusSafely(
+                checkpoint,
+                ComputerOperatorCheckpointStatuses.Interrupted);
             return Finish(
                 false,
                 $"Đã đạt giới hạn {MaximumSteps} bước nên dừng để tránh vòng lặp.");
         }
         catch (OperationCanceledException) when (operatorToken.IsCancellationRequested)
         {
+            MarkCheckpointStatusSafely(
+                checkpoint,
+                ComputerOperatorCheckpointStatuses.Interrupted);
             progress.StopByUser();
             throw new ToolExecutionStoppedByUserException(
                 "Người dùng đã dừng Computer Operator từ AI Operator Console.");
         }
         catch (OperationCanceledException)
         {
+            MarkCheckpointStatusSafely(
+                checkpoint,
+                ComputerOperatorCheckpointStatuses.Interrupted);
             progress.Block("Computer Operator đã bị hủy.");
             throw;
         }
         catch (Exception exception)
         {
+            MarkCheckpointStatusSafely(
+                checkpoint,
+                ComputerOperatorCheckpointStatuses.Interrupted);
             progress.Block(
                 $"Computer Operator gặp lỗi: {exception.Message}");
             throw;
@@ -1603,6 +1665,53 @@ public sealed class ComputerOperatorTaskService(
         return insideActive
             ? activeAtPlanning
             : null;
+    }
+
+    private ComputerOperatorCheckpoint SaveCheckpointSafely(
+        ComputerOperatorCheckpoint checkpoint,
+        IReadOnlyCollection<string> verifiedMilestones,
+        string currentSubgoal,
+        double goalProgress,
+        string? lastVerifiedAction = null,
+        string? lastVerifiedExpectedEffect = null)
+    {
+        try
+        {
+            return checkpoints.SaveProgress(
+                checkpoint,
+                verifiedMilestones,
+                currentSubgoal,
+                goalProgress,
+                lastVerifiedAction,
+                lastVerifiedExpectedEffect);
+        }
+        catch (Exception exception)
+        {
+            logger.LogWarning(
+                exception,
+                "Không lưu được Computer Operator checkpoint {CheckpointId}.",
+                checkpoint.Id);
+            return checkpoint;
+        }
+    }
+
+    private void MarkCheckpointStatusSafely(
+        ComputerOperatorCheckpoint checkpoint,
+        string status)
+    {
+        try
+        {
+            checkpoints.MarkStatus(
+                checkpoint,
+                status);
+        }
+        catch (Exception exception)
+        {
+            logger.LogWarning(
+                exception,
+                "Không cập nhật được trạng thái Computer Operator checkpoint {CheckpointId}.",
+                checkpoint.Id);
+        }
     }
 
     private void RecordOutcomeLoop(

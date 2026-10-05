@@ -141,6 +141,7 @@ public sealed class ComputerOperatorTaskService(
     IDesktopFrameDifferenceService frameDifferences,
     IDesktopLocalVisualSensor localVisualSensor,
     ILocalVisualVerificationService localVisualVerification,
+    IDesktopVisualTargetPersistenceService visualTargetPersistence,
     IDesktopOcrActionPlanner ocrActionPlanner,
     IDesktopLocalFastObserver fastObserver,
     IDesktopTemporalSceneService temporalScenes,
@@ -425,6 +426,9 @@ public sealed class ComputerOperatorTaskService(
                     sameDegradedScene &&
                     DateTimeOffset.UtcNow < plannerBackoffUntil;
 
+                DesktopVisualTargetTemplate? plannedVisualTemplate =
+                    null;
+
                 try
                 {
                     var localHistory =
@@ -578,6 +582,31 @@ public sealed class ComputerOperatorTaskService(
                                 "provider",
                                 $"provider=Gemini; purpose=plan; cycle={index}; latencyMs={plannerStopwatch.ElapsedMilliseconds}; action={decision.Action}; confidence={decision.Confidence:0.000}; payload=parsed.");
                         }
+                    }
+
+                    if (IsClickAction(
+                            decision.Action) &&
+                        decision.BoxWidth > 5 &&
+                        decision.BoxHeight > 5 &&
+                        frame.Jpeg is { Length: > 0 })
+                    {
+                        plannedVisualTemplate =
+                            visualTargetPersistence.CreateTemplate(
+                                frame,
+                                decision.BoxLeft,
+                                decision.BoxTop,
+                                decision.BoxWidth,
+                                decision.BoxHeight);
+
+                        progress.Add(
+                            "visual-target-template",
+                            plannedVisualTemplate.Available
+                                ? $"Đã lưu visual target template {plannedVisualTemplate.SourceWidth}x{plannedVisualTemplate.SourceHeight} để recovery nếu target dịch chuyển."
+                                : $"Không lưu visual target template: {plannedVisualTemplate.Reason}",
+                            plannedVisualTemplate.Available
+                                ? "ready"
+                                : "unavailable",
+                            observation: true);
                     }
                 }
                 catch
@@ -867,25 +896,160 @@ public sealed class ComputerOperatorTaskService(
 
                     if (!tracking.SafeToExecute)
                     {
-                        taskHistory.Add(
-                            $"TARGET-TRACKING-REPLAN: {tracking.Reason}");
-                        progress.Add(
-                            "replan",
-                            $"Target không còn an toàn để click: {tracking.Reason} Sẽ quan sát lại thay vì dùng tọa độ cũ.",
-                            "replan",
-                            tracking.Confidence);
+                        DesktopTargetTrackingResult? visualRecovery =
+                            null;
 
-                        var replanState = actionState.MoveTo(
-                            ComputerOperatorActionState.Replan,
-                            tracking.Reason);
+                        var sameWindow =
+                            plannedWindow is not null &&
+                            currentWindow is not null &&
+                            plannedWindow.WindowId.Equals(
+                                currentWindow.WindowId,
+                                StringComparison.OrdinalIgnoreCase);
 
-                        progress.Add(
-                            "action-state",
-                            $"State machine: {replanState.State} — {replanState.Detail}",
-                            "replan");
+                        if (sameWindow &&
+                            plannedVisualTemplate?.Available == true)
+                        {
+                            DesktopScreenshotFrame? reacquireFrame =
+                                null;
 
-                        await Task.Delay(200, linked.Token);
-                        continue;
+                            try
+                            {
+                                reacquireFrame =
+                                    await screenshots.CaptureStableVirtualScreenAsync(
+                                        maximumWaitMs: 3000,
+                                        linked.Token);
+
+                                var relocation =
+                                    visualTargetPersistence.Relocate(
+                                        reacquireFrame,
+                                        plannedVisualTemplate,
+                                        minimumScore: 0.90);
+
+                                if (relocation.Relocated &&
+                                    !relocation.Ambiguous &&
+                                    relocation.Confidence >= 0.90)
+                                {
+                                    var centerDesktopX =
+                                        reacquireFrame.Left +
+                                        relocation.Left +
+                                        relocation.Width / 2;
+                                    var centerDesktopY =
+                                        reacquireFrame.Top +
+                                        relocation.Top +
+                                        relocation.Height / 2;
+
+                                    var insideSameWindow =
+                                        centerDesktopX >= currentWindow!.Left &&
+                                        centerDesktopX <
+                                            currentWindow.Left +
+                                            currentWindow.Width &&
+                                        centerDesktopY >= currentWindow.Top &&
+                                        centerDesktopY <
+                                            currentWindow.Top +
+                                            currentWindow.Height;
+
+                                    if (insideSameWindow)
+                                    {
+                                        var recoveredDecision =
+                                            decision with
+                                            {
+                                                BoxLeft =
+                                                    relocation.Left,
+                                                BoxTop =
+                                                    relocation.Top,
+                                                BoxWidth =
+                                                    relocation.Width,
+                                                BoxHeight =
+                                                    relocation.Height,
+                                                ImageX =
+                                                    relocation.Left +
+                                                    relocation.Width / 2,
+                                                ImageY =
+                                                    relocation.Top +
+                                                    relocation.Height / 2,
+                                                Confidence =
+                                                    Math.Min(
+                                                        decision.Confidence,
+                                                        relocation.Confidence)
+                                            };
+
+                                        visualRecovery =
+                                            new(
+                                                recoveredDecision,
+                                                Adjusted: true,
+                                                SafeToExecute: true,
+                                                Confidence:
+                                                    relocation.Confidence,
+                                                Reason:
+                                                    $"Geometry tracker không đủ nhưng OpenCV reacquire tìm lại target duy nhất trong cùng WindowId. {relocation.Reason}");
+
+                                        // Executor cần geometry của capture mới,
+                                        // nhưng không cần giữ JPEG sau khi reacquire.
+                                        frame =
+                                            reacquireFrame;
+                                        frame.Clear();
+                                        reacquireFrame =
+                                            null;
+                                    }
+                                }
+
+                                progress.Add(
+                                    "visual-target-recovery",
+                                    visualRecovery is not null
+                                        ? visualRecovery.Reason
+                                        : $"Visual reacquire chưa đủ an toàn: {relocation.Reason}",
+                                    visualRecovery is not null
+                                        ? "reacquired"
+                                        : relocation.Ambiguous
+                                            ? "ambiguous"
+                                            : "not-found",
+                                    relocation.Confidence,
+                                    observation: true);
+                            }
+                            catch (Exception exception) when (
+                                exception is
+                                    ToolExecutionInputException or
+                                    InvalidOperationException)
+                            {
+                                logger.LogDebug(
+                                    exception,
+                                    "Visual target reacquire không khả dụng; giữ nguyên hành vi replan.");
+                            }
+                            finally
+                            {
+                                reacquireFrame?.Clear();
+                            }
+                        }
+
+                        if (visualRecovery is null)
+                        {
+                            taskHistory.Add(
+                                $"TARGET-TRACKING-REPLAN: {tracking.Reason}");
+                            progress.Add(
+                                "replan",
+                                $"Target không còn an toàn để click: {tracking.Reason} Visual persistence cũng không xác minh lại được target duy nhất; sẽ quan sát lại.",
+                                "replan",
+                                tracking.Confidence);
+
+                            var replanState = actionState.MoveTo(
+                                ComputerOperatorActionState.Replan,
+                                tracking.Reason);
+
+                            progress.Add(
+                                "action-state",
+                                $"State machine: {replanState.State} — {replanState.Detail}",
+                                "replan");
+
+                            await Task.Delay(
+                                200,
+                                linked.Token);
+                            continue;
+                        }
+
+                        tracking =
+                            visualRecovery;
+                        trackingResult =
+                            visualRecovery;
                     }
 
                     decision = tracking.Decision;

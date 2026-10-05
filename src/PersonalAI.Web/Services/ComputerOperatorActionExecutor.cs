@@ -12,7 +12,8 @@ public interface IComputerOperatorActionExecutor
 public sealed class ComputerOperatorActionExecutor(
     IComputerUseService computer,
     IComputerCoordinateTransformService coordinates,
-    IComputerSafeTargetingService targeting)
+    IComputerSafeTargetingService targeting,
+    IFlaUiAutomationClient flaUi)
     : IComputerOperatorActionExecutor
 {
     public ComputerActionResponse Execute(
@@ -125,9 +126,95 @@ public sealed class ComputerOperatorActionExecutor(
                     ? null
                     : decision.Url),
 
+            "structured-focus" => ExecuteStructured(
+                decision,
+                "structured-focus"),
+
+            "structured-invoke" => ExecuteStructured(
+                decision,
+                "structured-invoke"),
+
+            "structured-select" => ExecuteStructured(
+                decision,
+                "structured-select"),
+
+            "structured-toggle" => ExecuteStructured(
+                decision,
+                "structured-toggle"),
+
+            "structured-expand" => ExecuteStructured(
+                decision,
+                "structured-expand"),
+
+            "structured-collapse" => ExecuteStructured(
+                decision,
+                "structured-collapse"),
+
+            "structured-set-value" => ExecuteStructured(
+                decision,
+                "structured-set-value"),
+
+            "structured-legacy-default" => ExecuteStructured(
+                decision,
+                "structured-legacy-default"),
+
             _ => throw new ToolExecutionInputException(
                 $"Computer Operator trả hành động không được hỗ trợ: {decision.Action}.")
         };
+    }
+
+    private ComputerActionResponse ExecuteStructured(
+        DesktopOperatorDecision decision,
+        string operation)
+    {
+        if (!flaUi.Available)
+        {
+            throw new ToolExecutionInputException(
+                "FlaUI/UIA3 structured executor hiện không khả dụng.");
+        }
+
+        var active = computer.GetActiveWindow()
+            ?? throw new ToolExecutionInputException(
+                "Không xác định được foreground trước structured action.");
+
+        var windowId = RequireValue(
+            decision.CoordinateWindowId,
+            "coordinateWindowId");
+
+        if (!active.WindowId.Equals(
+                windowId,
+                StringComparison.OrdinalIgnoreCase))
+        {
+            throw new ToolExecutionInputException(
+                "Foreground đã thay đổi trước structured action; từ chối thao tác trên target cũ.");
+        }
+
+        var token = RequireValue(
+            decision.TargetElementId,
+            "targetElementId");
+
+        var response = flaUi.Invoke(
+            new FlaUiAutomationRequest(
+                Operation: operation,
+                WindowId: windowId,
+                TargetToken: token,
+                Text: operation == "structured-set-value"
+                    ? decision.Text
+                    : null,
+                WriteMode: operation == "structured-set-value"
+                    ? "replace-all"
+                    : null));
+
+        if (!response.Success)
+        {
+            throw new ToolExecutionInputException(
+                response.Detail);
+        }
+
+        return new ComputerActionResponse(
+            operation,
+            true,
+            response.Detail);
     }
 
     private ComputerActionResponse ExecutePointerClick(

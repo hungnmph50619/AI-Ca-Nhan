@@ -80,7 +80,9 @@ public sealed record ComputerOperatorDesktopState(
     int FrameHeight,
     string CaptureScope,
     string? CaptureWindowId,
-    bool CaptureWindowWasForeground)
+    bool CaptureWindowWasForeground,
+    StructuredDesktopSnapshot? StructuredScene = null,
+    UnifiedStructuredSceneGraph? StructuredGraph = null)
 {
     public string ToPromptSummary()
     {
@@ -97,6 +99,29 @@ public sealed record ComputerOperatorDesktopState(
         {
             lines.Add(
                 $"- id={window.WindowId}; title={window.Title}; process={window.ProcessName ?? "?"}; foreground={window.IsForeground}; rect={window.Left},{window.Top},{window.Width},{window.Height}");
+        }
+
+        if (StructuredGraph is not null)
+        {
+            lines.Add(
+                $"Unified structured scene graph: source={StructuredGraph.Source}; nodes={StructuredGraph.NodeCount}; interactive={StructuredGraph.InteractiveNodeCount}; root={StructuredGraph.RootId}; window={StructuredGraph.WindowTitle}.");
+
+            foreach (var node in StructuredGraph.Nodes
+                         .Where(node =>
+                             node.IsVisible &&
+                             (node.IsFocused ||
+                              node.Interactive ||
+                              !string.IsNullOrWhiteSpace(node.Name)))
+                         .Take(40))
+            {
+                lines.Add(
+                    $"- node={node.Id}; parent={node.ParentId}; depth={node.Depth}; role={node.Role}; name={node.Name}; automationId={node.AutomationId}; enabled={node.IsEnabled}; focused={node.IsFocused}; frameRect={node.FrameLeft},{node.FrameTop},{node.Width},{node.Height}; capabilities={string.Join(",", node.Capabilities)}; toggle={node.ToggleState}; expandCollapse={node.ExpandCollapseState}; selected={node.IsSelected?.ToString() ?? "?"}; children={node.Children.Count}");
+            }
+        }
+        else if (StructuredScene is not null)
+        {
+            lines.Add(
+                $"Structured UIA scene: source={StructuredScene.Source}; nodes={StructuredScene.NodeCount}; root={StructuredScene.RootToken}.");
         }
 
         return string.Join("\n", lines);
@@ -119,6 +144,8 @@ public sealed class ComputerOperatorTaskService(
     IComputerOperatorActionExecutor actionExecutor,
     IGenericTextInteractionEngine textInteraction,
     IAdaptiveVerificationWaitEngine adaptiveWait,
+    IStructuredDesktopSnapshotService structuredDesktop,
+    IStructuredDesktopVerificationService structuredVerification,
     IComputerOperatorCheckpointStore checkpoints,
     IComputerOperatorTelemetry telemetry,
     IUniversalReliableOperatorCoordinator reliableOperator,
@@ -144,6 +171,9 @@ public sealed class ComputerOperatorTaskService(
         new ComputerOperatorFailureRecoveryEngine();
     private static readonly IDesktopLocalActionPlanner LocalPlanner =
         new DesktopLocalActionPlanner();
+    private static readonly StructuredTargetRevalidator StructuredTargetRevalidator =
+        new();
+
 
     private static readonly string[] SecretTerms =
     [
@@ -167,10 +197,6 @@ public sealed class ComputerOperatorTaskService(
                     StringComparison.OrdinalIgnoreCase)))
             throw new ToolExecutionInputException(
                 "Computer Operator không tự nhập mật khẩu, OTP, token, khóa hoặc bí mật.");
-
-        if (!vision.Ready)
-            throw new ToolExecutionInputException(
-                "Computer Operator cần Desktop Vision/Gemini đã sẵn sàng.");
 
         using var taskTelemetry =
             telemetry.Begin(
@@ -364,7 +390,7 @@ public sealed class ComputerOperatorTaskService(
 
                 progress.Add(
                     "desktop-state",
-                    $"Unified Desktop State: foreground={active?.Title ?? "không xác định"}; windows={desktopState.Windows.Count}; frame={desktopState.CaptureScope}/{desktopState.FrameWidth}x{desktopState.FrameHeight}.",
+                    $"Unified Desktop State: foreground={active?.Title ?? "không xác định"}; windows={desktopState.Windows.Count}; structuredNodes={desktopState.StructuredScene?.NodeCount ?? 0}; graphNodes={desktopState.StructuredGraph?.NodeCount ?? 0}; interactive={desktopState.StructuredGraph?.InteractiveNodeCount ?? 0}; frame={desktopState.CaptureScope}/{desktopState.FrameWidth}x{desktopState.FrameHeight}.",
                     observation: true);
 
                 var sceneDiagnosticId =
@@ -372,7 +398,7 @@ public sealed class ComputerOperatorTaskService(
 
                 progress.AddDiagnostic(
                     "cycle",
-                    $"cycle={index}; scene={sceneDiagnosticId}; foreground={active?.ProcessName ?? "?"}/{active?.Title ?? "không xác định"}; windows={desktopState.Windows.Count}; frame={desktopState.CaptureScope}; origin=({desktopState.FrameLeft},{desktopState.FrameTop}); size={desktopState.FrameWidth}x{desktopState.FrameHeight}.");
+                    $"cycle={index}; scene={sceneDiagnosticId}; foreground={active?.ProcessName ?? "?"}/{active?.Title ?? "không xác định"}; windows={desktopState.Windows.Count}; structuredNodes={desktopState.StructuredScene?.NodeCount ?? 0}; graphNodes={desktopState.StructuredGraph?.NodeCount ?? 0}; interactive={desktopState.StructuredGraph?.InteractiveNodeCount ?? 0}; frame={desktopState.CaptureScope}; origin=({desktopState.FrameLeft},{desktopState.FrameTop}); size={desktopState.FrameWidth}x{desktopState.FrameHeight}.");
 
                 DesktopOperatorDecision decision;
                 var plannerStopwatch = Stopwatch.StartNew();
@@ -398,59 +424,88 @@ public sealed class ComputerOperatorTaskService(
 
                 try
                 {
-                    if (providerBackoffActive)
+                    var localHistory =
+                        string.Join(
+                            "\n",
+                            taskHistory.TakeLast(40));
+
+                    if (LocalPlanner.TryPlan(
+                            normalizedGoal,
+                            desktopState,
+                            localHistory,
+                            out decision))
                     {
-                        var localHistory =
-                            string.Join(
-                                "\n",
-                                taskHistory.TakeLast(40));
+                        plannerStopwatch.Stop();
+                        planTelemetry.Complete(
+                            success: true,
+                            route: desktopState.StructuredScene is not null &&
+                                   !string.IsNullOrWhiteSpace(decision.TargetElementId)
+                                ? "structured-first"
+                                : "local-planner");
 
-                        if (LocalPlanner.TryPlan(
-                                normalizedGoal,
-                                desktopState,
-                                localHistory,
-                                out decision))
-                        {
-                            plannerStopwatch.Stop();
-                            planTelemetry.Complete(
-                                success: true,
-                                route: "local-planner");
+                        var structuredRoute =
+                            desktopState.StructuredScene is not null &&
+                            !string.IsNullOrWhiteSpace(decision.TargetElementId);
 
-                            progress.Add(
-                                "local-planner",
-                                $"Provider đang cooldown trên scene không đổi; dùng Local Planner: {decision.Reason}",
-                                decision.Action,
-                                decision.Confidence);
+                        progress.Add(
+                            structuredRoute
+                                ? "structured-first"
+                                : "local-planner",
+                            structuredRoute
+                                ? $"Structured-first planner đã chọn action từ UIA tree: {decision.Reason}"
+                                : $"Local Planner đã xử lý action không cần Vision: {decision.Reason}",
+                            decision.Action,
+                            decision.Confidence);
 
-                            progress.AddDiagnostic(
-                                "provider",
-                                $"provider=Gemini; purpose=plan; cycle={index}; circuit=open; scene={sceneDiagnosticId}; backoffUntil={plannerBackoffUntil:O}; fallback=local-planner; action={decision.Action}.");
-                        }
-                        else
-                        {
-                            decision = CreatePlannerCooldownWaitDecision(
-                                plannerBackoffUntil);
+                        progress.AddDiagnostic(
+                            "provider",
+                            structuredRoute
+                                ? $"provider=local-structured; purpose=plan; cycle={index}; scene={sceneDiagnosticId}; structuredNodes={desktopState.StructuredScene?.NodeCount ?? 0}; action={decision.Action}; elementId={LimitDiagnostic(decision.TargetElementId, 80)}; geminiCalled=false."
+                                : $"provider=local; purpose=plan; cycle={index}; scene={sceneDiagnosticId}; action={decision.Action}; geminiCalled=false.");
+                    }
+                    else if (!vision.Ready)
+                    {
+                        decision =
+                            CreateProviderUnavailableBlockedDecision();
 
-                            plannerStopwatch.Stop();
-                            planTelemetry.Complete(
-                                success: true,
-                                route: "provider-cooldown");
+                        plannerStopwatch.Stop();
+                        planTelemetry.Complete(
+                            success: true,
+                            route: "provider-unavailable");
 
-                            progress.Add(
-                                "provider-cooldown",
-                                $"Scene chưa đổi và Gemini đang cooldown đến {plannerBackoffUntil:HH:mm:ss}; không gọi lặp provider.",
-                                "wait");
+                        progress.Add(
+                            "provider-unavailable",
+                            "Structured/local planner chưa đủ để giải quyết bước hiện tại và Gemini/Vision không khả dụng. Dừng an toàn thay vì làm hỏng toàn bộ Computer Operator từ đầu.",
+                            "blocked");
 
-                            progress.AddDiagnostic(
-                                "provider",
-                                $"provider=Gemini; purpose=plan; cycle={index}; circuit=open; scene={sceneDiagnosticId}; backoffUntil={plannerBackoffUntil:O}; fallback=safe-wait.");
-                        }
+                        progress.AddDiagnostic(
+                            "provider",
+                            $"provider=Gemini; purpose=plan; cycle={index}; ready=false; scene={sceneDiagnosticId}; fallback=local-structured-exhausted; taskCrash=false.");
+                    }
+                    else if (providerBackoffActive)
+                    {
+                        decision = CreatePlannerCooldownWaitDecision(
+                            plannerBackoffUntil);
+
+                        plannerStopwatch.Stop();
+                        planTelemetry.Complete(
+                            success: true,
+                            route: "provider-cooldown");
+
+                        progress.Add(
+                            "provider-cooldown",
+                            $"Scene chưa đổi và Gemini đang cooldown đến {plannerBackoffUntil:HH:mm:ss}; structured/local planner không có action đủ chắc chắn nên chờ an toàn.",
+                            "wait");
+
+                        progress.AddDiagnostic(
+                            "provider",
+                            $"provider=Gemini; purpose=plan; cycle={index}; circuit=open; scene={sceneDiagnosticId}; backoffUntil={plannerBackoffUntil:O}; fallback=safe-wait.");
                     }
                     else
                     {
                         progress.Add(
                             "analyze",
-                            $"Đang gửi ảnh desktop {frame.Width}x{frame.Height} cho Vision để phân tích.");
+                            $"Structured/local planner chưa có action đủ chắc chắn; gửi ảnh desktop {frame.Width}x{frame.Height} cho Vision/Gemini fallback.");
 
                         decision = await vision.DecideComputerOperatorActionAsync(
                             frame,
@@ -1070,6 +1125,72 @@ public sealed class ComputerOperatorTaskService(
                         "execute");
 
                     await execution.WaitIfPausedAsync(linked.Token);
+
+                    if ((decision.Action ?? string.Empty)
+                            .StartsWith(
+                                "structured-",
+                                StringComparison.OrdinalIgnoreCase))
+                    {
+                        var activeForStructured =
+                            computer.GetActiveWindow()
+                            ?? throw new ToolExecutionInputException(
+                                "Không xác định được foreground trước structured target revalidation.");
+
+                        var freshSnapshot =
+                            structuredDesktop.CaptureWindow(
+                                activeForStructured.WindowId,
+                                maximumNodes: 240,
+                                maximumDepth: 7);
+
+                        var freshGraph =
+                            UnifiedStructuredSceneGraphBuilder.Build(
+                                freshSnapshot,
+                                activeForStructured,
+                                desktopState.FrameLeft,
+                                desktopState.FrameTop,
+                                desktopState.FrameWidth,
+                                desktopState.FrameHeight);
+
+                        using var structuredRevalidateTelemetry =
+                            telemetry.Begin(
+                                ComputerOperatorTelemetryStages.StructuredRevalidate,
+                                decision.Action);
+
+                        var revalidated =
+                            StructuredTargetRevalidator.Revalidate(
+                                decision,
+                                freshGraph,
+                                DateTimeOffset.UtcNow);
+
+                        structuredRevalidateTelemetry.Complete(
+                            revalidated.SafeToExecute,
+                            revalidated.Status.ToString().ToLowerInvariant());
+
+                        progress.Add(
+                            "structured-revalidate",
+                            $"Structured target revalidation: {revalidated.Status} — {revalidated.Reason}",
+                            revalidated.Status ==
+                                StructuredTargetRevalidationStatus.Remapped
+                                    ? "remapped"
+                                    : revalidated.Status ==
+                                      StructuredTargetRevalidationStatus.Valid
+                                        ? "valid"
+                                        : "rejected",
+                            revalidated.Confidence);
+
+                        progress.AddDiagnostic(
+                            "structured-target",
+                            $"cycle={index}; status={revalidated.Status}; action={decision.Action}; oldTarget={LimitDiagnostic(decision.TargetElementId, 80)}; newTarget={LimitDiagnostic(revalidated.Decision.TargetElementId, 80)}; confidence={revalidated.Confidence:0.000}; sceneAgeMs={(freshGraph is null ? -1 : Math.Max(0, (DateTimeOffset.UtcNow - freshGraph.CapturedAtUtc).TotalMilliseconds)):0}.");
+
+                        if (!revalidated.SafeToExecute)
+                        {
+                            throw new ToolExecutionInputException(
+                                revalidated.Reason);
+                        }
+
+                        decision =
+                            revalidated.Decision;
+                    }
 
                     if (decision.Action.Equals(
                             "type-text",
@@ -1765,6 +1886,114 @@ public sealed class ComputerOperatorTaskService(
                         : $"Đã chụp lại màn hình; con trỏ ở ({actual.X},{actual.Y}), lệch khỏi điểm mong đợi ({expected.DesktopX},{expected.DesktopY}).");
             }
 
+            if ((decision.Action ?? string.Empty)
+                    .StartsWith(
+                        "structured-",
+                        StringComparison.OrdinalIgnoreCase))
+            {
+                var structuredAfter =
+                    BuildDesktopState(after);
+
+                using var structuredVerifyTelemetry =
+                    telemetry.Begin(
+                        ComputerOperatorTelemetryStages.StructuredVerify,
+                        decision.Action);
+
+                var structuredResult =
+                    structuredVerification.Verify(
+                        decision,
+                        structuredAfter.StructuredGraph);
+
+                structuredVerifyTelemetry.Complete(
+                    structuredResult.Status !=
+                        StructuredVerificationStatus.Failed,
+                    structuredResult.Status.ToString().ToLowerInvariant());
+
+                progress.Add(
+                    "structured-verification",
+                    $"Structured Verification: {structuredResult.Status} — {structuredResult.Reason}",
+                    structuredResult.Status ==
+                        StructuredVerificationStatus.Verified
+                            ? "verified"
+                            : structuredResult.Status ==
+                              StructuredVerificationStatus.Failed
+                                ? "failed"
+                                : "inconclusive",
+                    structuredResult.Confidence);
+
+                if (structuredResult.Status ==
+                    StructuredVerificationStatus.Verified)
+                {
+                    return new(
+                        true,
+                        structuredResult.Confidence,
+                        $"Structured verifier xác minh thành công: {structuredResult.Reason}");
+                }
+
+                if (structuredResult.Status ==
+                    StructuredVerificationStatus.Failed)
+                {
+                    await Task.Delay(
+                        320,
+                        cancellationToken);
+
+                    await execution.WaitIfPausedAsync(
+                        cancellationToken);
+
+                    var structuredRetryState =
+                        BuildDesktopState(after);
+
+                    using var structuredVerifyRetryTelemetry =
+                        telemetry.Begin(
+                            ComputerOperatorTelemetryStages.StructuredVerify,
+                            decision.Action);
+
+                    var structuredRetry =
+                        structuredVerification.Verify(
+                            decision,
+                            structuredRetryState.StructuredGraph);
+
+                    structuredVerifyRetryTelemetry.Complete(
+                        structuredRetry.Status !=
+                            StructuredVerificationStatus.Failed,
+                        $"retry-{structuredRetry.Status.ToString().ToLowerInvariant()}");
+
+                    progress.Add(
+                        "structured-verification-retry",
+                        $"Structured Verification retry: {structuredRetry.Status} — {structuredRetry.Reason}",
+                        structuredRetry.Status ==
+                            StructuredVerificationStatus.Verified
+                                ? "verified"
+                                : structuredRetry.Status ==
+                                  StructuredVerificationStatus.Failed
+                                    ? "failed"
+                                    : "inconclusive",
+                        structuredRetry.Confidence);
+
+                    if (structuredRetry.Status ==
+                        StructuredVerificationStatus.Verified)
+                    {
+                        return new(
+                            true,
+                            structuredRetry.Confidence,
+                            $"Structured verifier xác minh sau lần đọc lại: {structuredRetry.Reason}");
+                    }
+
+                    if (structuredRetry.Status ==
+                        StructuredVerificationStatus.Failed)
+                    {
+                        return new(
+                            false,
+                            structuredRetry.Confidence,
+                            $"Structured verifier xác minh thất bại sau hai lần đọc state: {structuredRetry.Reason}");
+                    }
+
+                    // Retry trở thành inconclusive: tiếp tục event/frame/Gemini.
+                }
+
+                // Inconclusive không phải failure. Tiếp tục event/frame/Gemini.
+            }
+
             var verificationContextChanged =
                 verificationCaptureContext is not null &&
                 !verificationCaptureContext.Matches(after);
@@ -2103,6 +2332,45 @@ public sealed class ComputerOperatorTaskService(
                    StringComparison.OrdinalIgnoreCase);
     }
 
+    private static DesktopOperatorDecision CreateProviderUnavailableBlockedDecision() =>
+        new(
+            State: "Structured/local capability không đủ cho bước hiện tại và semantic provider không khả dụng.",
+            Plan: "Không thực hiện hành động không chắc chắn. Giữ nguyên desktop và báo provider unavailable để có thể tiếp tục khi provider phục hồi.",
+            CurrentSubgoal: string.Empty,
+            GoalProgress: 0,
+            VerifiedMilestones: Array.Empty<string>(),
+            Action: "blocked",
+            Query: string.Empty,
+            Text: string.Empty,
+            Key: string.Empty,
+            Keys: Array.Empty<string>(),
+            Url: string.Empty,
+            TargetLabel: string.Empty,
+            CoordinateSpace: ComputerCoordinateSpaces.ImagePixel,
+            CoordinateWindowId: string.Empty,
+            ImageX: 0,
+            ImageY: 0,
+            EndImageX: 0,
+            EndImageY: 0,
+            NormalizedX: 0,
+            NormalizedY: 0,
+            EndNormalizedX: 0,
+            EndNormalizedY: 0,
+            BoxLeft: 0,
+            BoxTop: 0,
+            BoxWidth: 0,
+            BoxHeight: 0,
+            BoxNormalizedLeft: 0,
+            BoxNormalizedTop: 0,
+            BoxNormalizedWidth: 0,
+            BoxNormalizedHeight: 0,
+            ScrollDelta: 0,
+            ExpectedEffect: string.Empty,
+            Confidence: 1.0,
+            Reason: "Gemini/Vision hiện không khả dụng và structured/local planner không có action đủ chắc chắn. Đây là provider unavailable, không phải lỗi của local Computer Operator.",
+            SceneElements: Array.Empty<DesktopSceneElement>(),
+            TargetElementId: string.Empty);
+
     private static DesktopOperatorDecision CreatePlannerCooldownWaitDecision(
         DateTimeOffset backoffUntil) =>
         new(
@@ -2187,6 +2455,42 @@ public sealed class ComputerOperatorTaskService(
 
                 try
                 {
+                    if ((decision.Action ?? string.Empty)
+                            .StartsWith(
+                                "structured-",
+                                StringComparison.OrdinalIgnoreCase))
+                    {
+                        var structuredState =
+                            BuildDesktopState(frame);
+
+                        var structuredSample =
+                            structuredVerification.Verify(
+                                decision,
+                                structuredState.StructuredGraph);
+
+                        if (structuredSample.Status ==
+                            StructuredVerificationStatus.Verified)
+                        {
+                            return new AdaptiveProgressSample(
+                                AdaptiveWaitStatuses.Verified,
+                                structuredSample.Confidence,
+                                $"Event-driven structured sample đã xác minh: {structuredSample.Reason}",
+                                MeaningfulProgress: true);
+                        }
+
+                        if (structuredSample.Status ==
+                            StructuredVerificationStatus.Failed)
+                        {
+                            return new AdaptiveProgressSample(
+                                AdaptiveWaitStatuses.Pending,
+                                Math.Max(
+                                    0.55,
+                                    structuredSample.Confidence * 0.70),
+                                $"Structured state chưa đạt sau event/poll wake; tiếp tục chờ mà không replay action. {structuredSample.Reason}",
+                                MeaningfulProgress: false);
+                        }
+                    }
+
                     var contextChanged =
                         verificationCaptureContext is not null &&
                         !verificationCaptureContext.Matches(frame);
@@ -3046,13 +3350,33 @@ public sealed class ComputerOperatorTaskService(
             .Select(window =>
                 $"{NormalizeSceneToken(window.ProcessName)}:{NormalizeSceneToken(window.Title)}:{Quantize(window.Left, 64)},{Quantize(window.Top, 64)},{Quantize(window.Width, 64)},{Quantize(window.Height, 64)}");
 
+        var structured = state.StructuredScene is null
+            ? "structured:none"
+            : $"structured:{string.Join(";", state.StructuredScene.Nodes
+                .Where(node => !node.IsOffscreen)
+                .Take(24)
+                .Select(node =>
+                {
+                    var valueFingerprint =
+                        node.IsSensitive
+                            ? "sensitive"
+                            : node.Value is null
+                                ? "-"
+                                : BuildDiagnosticId(
+                                    node.Value);
+
+                    return
+                        $"{NormalizeSceneToken(node.Role)}:{NormalizeSceneToken(node.Name)}:{NormalizeSceneToken(node.AutomationId)}:{Quantize(node.Left, 32)},{Quantize(node.Top, 32)},{Quantize(node.Width, 32)},{Quantize(node.Height, 32)}:toggle={NormalizeSceneToken(node.ToggleState)}:expand={NormalizeSceneToken(node.ExpandCollapseState)}:selected={node.IsSelected?.ToString() ?? "?"}:value={valueFingerprint}:patterns={string.Join(",", node.Patterns.OrderBy(pattern => pattern, StringComparer.OrdinalIgnoreCase))}";
+                }))}";
+
         return string.Join(
             "|",
             new[]
             {
                 foreground,
                 $"frame:{state.CaptureScope}:{Quantize(state.FrameLeft, 32)},{Quantize(state.FrameTop, 32)},{Quantize(state.FrameWidth, 32)},{Quantize(state.FrameHeight, 32)}",
-                $"windows:{string.Join(";", visible)}"
+                $"windows:{string.Join(";", visible)}",
+                structured
             });
     }
 
@@ -3089,6 +3413,27 @@ public sealed class ComputerOperatorTaskService(
         var active = windows.FirstOrDefault(window => window.IsForeground)
             ?? computer.GetActiveWindow();
 
+        StructuredDesktopSnapshot? structuredScene = null;
+
+        if (active is not null &&
+            !string.IsNullOrWhiteSpace(active.WindowId))
+        {
+            structuredScene =
+                structuredDesktop.CaptureWindow(
+                    active.WindowId,
+                    maximumNodes: 240,
+                    maximumDepth: 7);
+        }
+
+        var structuredGraph =
+            UnifiedStructuredSceneGraphBuilder.Build(
+                structuredScene,
+                active,
+                frame.Left,
+                frame.Top,
+                frame.Width,
+                frame.Height);
+
         return new ComputerOperatorDesktopState(
             frame.CapturedAtUtc,
             active,
@@ -3099,7 +3444,9 @@ public sealed class ComputerOperatorTaskService(
             frame.Height,
             frame.CaptureScope,
             frame.WindowId,
-            frame.WindowWasForeground);
+            frame.WindowWasForeground,
+            structuredScene,
+            structuredGraph);
     }
 
     private static string RequireActive(

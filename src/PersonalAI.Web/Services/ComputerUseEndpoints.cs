@@ -19,6 +19,8 @@ public static class ComputerUseEndpoints
         services.AddSingleton<IComputerUseService, WindowsComputerUseService>();
         services.AddSingleton<IWin32TextAccessibilityBackend, WindowsTextAccessibilityBackend>();
         services.AddSingleton<IFlaUiAutomationClient, FlaUiAutomationClient>();
+        services.AddSingleton<IStructuredDesktopSnapshotService, StructuredDesktopSnapshotService>();
+        services.AddSingleton<IStructuredDesktopVerificationService, StructuredDesktopVerificationService>();
         services.AddSingleton<IFlaUiTextAccessibilityBackend, FlaUiTextAccessibilityBackend>();
         services.AddSingleton<ITextAccessibilityBackend, CompositeTextAccessibilityBackend>();
         services.AddSingleton<ITextClipboardWriter, WindowsTextClipboardWriter>();
@@ -294,6 +296,67 @@ public static class ComputerUseEndpoints
                 loaiSuKien = response.EventKind,
                 cuaSo = response.EventWindowId,
                 chiTiet = response.Detail
+            });
+        });
+
+        app.MapGet("/api/computer/structured-tree", (
+            HttpContext context,
+            string windowId,
+            int? maxNodes,
+            int? maxDepth,
+            IStructuredDesktopSnapshotService structured) =>
+        {
+            if (!IsLocalRequest(context))
+                return Results.StatusCode(StatusCodes.Status403Forbidden);
+
+            var snapshot =
+                structured.CaptureWindow(
+                    windowId,
+                    maxNodes ?? 200,
+                    maxDepth ?? 6);
+
+            if (snapshot is null)
+            {
+                return Results.NotFound(new
+                {
+                    phienBan = PersonalAiRelease.Version,
+                    message =
+                        "Không đọc được structured UI tree bằng UIA3 cho cửa sổ này."
+                });
+            }
+
+            return Results.Ok(new
+            {
+                phienBan = PersonalAiRelease.Version,
+                nguon = snapshot.Source,
+                cuaSo = snapshot.WindowId,
+                root = snapshot.RootToken,
+                chupLucUtc = snapshot.CapturedAtUtc,
+                soNode = snapshot.NodeCount,
+                gioiHanNode = snapshot.MaximumNodes,
+                gioiHanDoSau = snapshot.MaximumDepth,
+                chiTiet = snapshot.Detail,
+                node = snapshot.Nodes.Select(item => new
+                {
+                    token = item.Token,
+                    parentToken = item.ParentToken,
+                    doSau = item.Depth,
+                    vaiTro = item.Role,
+                    ten = item.Name,
+                    automationId = item.AutomationId,
+                    className = item.ClassName,
+                    bat = item.IsEnabled,
+                    focus = item.IsFocused,
+                    offscreen = item.IsOffscreen,
+                    bounds = new
+                    {
+                        x = item.Left,
+                        y = item.Top,
+                        width = item.Width,
+                        height = item.Height
+                    },
+                    pattern = item.Patterns
+                })
             });
         });
 

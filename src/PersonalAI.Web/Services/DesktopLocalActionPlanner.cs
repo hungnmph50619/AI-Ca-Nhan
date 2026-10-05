@@ -14,6 +14,14 @@ public interface IDesktopLocalActionPlanner
 public sealed class DesktopLocalActionPlanner
     : IDesktopLocalActionPlanner
 {
+    private static readonly IStructuredDesktopResolver StructuredResolver =
+        new StructuredDesktopResolver();
+
+    private static readonly IReadOnlySet<string> ClickCapabilities =
+        new HashSet<string>(
+            ["Invoke", "SelectionItem", "Toggle", "ExpandCollapse"],
+            StringComparer.OrdinalIgnoreCase);
+
     private static readonly string[] OpenPrefixes =
     [
         "mở ",
@@ -45,6 +53,22 @@ public sealed class DesktopLocalActionPlanner
         ArgumentNullException.ThrowIfNull(state);
 
         decision = Empty();
+
+        if (TryPlanStructuredValueInteraction(
+                goal,
+                state,
+                out decision))
+        {
+            return true;
+        }
+
+        if (TryPlanStructuredInteraction(
+                goal,
+                state,
+                out decision))
+        {
+            return true;
+        }
 
         if (!TryExtractOpenApplicationTarget(
                 goal,
@@ -129,6 +153,501 @@ public sealed class DesktopLocalActionPlanner
 
         return true;
     }
+
+    private static bool TryPlanStructuredValueInteraction(
+        string goal,
+        ComputerOperatorDesktopState state,
+        out DesktopOperatorDecision decision)
+    {
+        decision = Empty();
+
+        if (state.ForegroundWindow is null ||
+            !TryExtractStructuredValueIntent(
+                goal,
+                out var target,
+                out var text))
+        {
+            return false;
+        }
+
+        var graph =
+            state.StructuredGraph ??
+            UnifiedStructuredSceneGraphBuilder.Build(
+                state.StructuredScene,
+                state.ForegroundWindow,
+                state.FrameLeft,
+                state.FrameTop,
+                state.FrameWidth,
+                state.FrameHeight);
+
+        if (graph is null)
+            return false;
+
+        var valueCapabilities =
+            new HashSet<string>(
+                ["Value"],
+                StringComparer.OrdinalIgnoreCase);
+
+        var resolution =
+            StructuredResolver.ResolveInteractiveTarget(
+                graph,
+                target,
+                valueCapabilities);
+
+        if (!resolution.Resolved ||
+            resolution.Node is null)
+        {
+            return false;
+        }
+
+        var node = resolution.Node;
+
+        if (!CanSafelyApplyRequestedStructuredState(
+                node,
+                requestedCapability,
+                desiredState,
+                out var alreadySatisfied))
+        {
+            return false;
+        }
+
+        if (alreadySatisfied)
+        {
+            if (HasAdditionalGoalSteps(goal))
+                return false;
+
+            decision = Build(
+                action: "complete",
+                currentSubgoal:
+                    $"Trạng thái của '{DisplayNode(node)}' đã đúng yêu cầu.",
+                expectedEffect: string.Empty,
+                reason:
+                    $"Structured state evidence xác nhận '{DisplayNode(node)}' đã ở trạng thái {desiredState}; không thực hiện action dư thừa.",
+                plan:
+                    "Không gửi input vì mục tiêu structured đã được thỏa mãn.",
+                targetLabel: DisplayNode(node),
+                targetElementId: node.Id,
+                coordinateWindowId: graph.WindowId,
+                confidence: 0.99);
+
+            return true;
+        }
+
+        decision = Build(
+            action: "structured-set-value",
+            currentSubgoal:
+                $"Nhập giá trị vào '{DisplayNode(node)}' bằng UIA ValuePattern.",
+            expectedEffect:
+                $"Giá trị của '{DisplayNode(node)}' trở thành nội dung yêu cầu.",
+            reason:
+                $"Structured resolver xác định field '{target}' là node '{node.Id}' có ValuePattern với score={resolution.Score}; ưu tiên direct structured write thay vì click + keyboard.",
+            plan:
+                $"Set ValuePattern trên đúng target token '{node.Id}', sau đó quan sát và xác minh lại.",
+            text: text,
+            targetLabel: DisplayNode(node),
+            targetElementId: node.Id,
+            coordinateWindowId: graph.WindowId,
+            imageX: node.FrameLeft + node.Width / 2,
+            imageY: node.FrameTop + node.Height / 2,
+            boxLeft: node.FrameLeft,
+            boxTop: node.FrameTop,
+            boxWidth: node.Width,
+            boxHeight: node.Height,
+            confidence: resolution.Score >= 100 ? 0.99 : 0.94);
+
+        return true;
+    }
+
+    private static bool TryExtractStructuredValueIntent(
+        string goal,
+        out string target,
+        out string text)
+    {
+        var value = (goal ?? string.Empty).Trim();
+        var prefixes = new[]
+        {
+            "nhập ",
+            "nhap ",
+            "gõ ",
+            "go ",
+            "type "
+        };
+
+        foreach (var prefix in prefixes)
+        {
+            if (!value.StartsWith(
+                    prefix,
+                    StringComparison.OrdinalIgnoreCase))
+            {
+                continue;
+            }
+
+            var remainder = value[prefix.Length..].Trim();
+            var separators = new[]
+            {
+                " vào ",
+                " vao ",
+                " into "
+            };
+
+            foreach (var separator in separators)
+            {
+                var index = remainder.IndexOf(
+                    separator,
+                    StringComparison.OrdinalIgnoreCase);
+
+                if (index <= 0)
+                    continue;
+
+                text = remainder[..index]
+                    .Trim()
+                    .Trim('"', '\'', '“', '”');
+
+                target = remainder[(index + separator.Length)..]
+                    .Trim()
+                    .Trim('"', '\'', '“', '”', '.', ':');
+
+                target = StripStructuredTargetPrefix(target);
+
+                return text.Length > 0 &&
+                       text.Length <= 1000 &&
+                       target.Length is >= 1 and <= 120;
+            }
+        }
+
+        target = string.Empty;
+        text = string.Empty;
+        return false;
+    }
+
+    private static bool TryPlanStructuredInteraction(
+        string goal,
+        ComputerOperatorDesktopState state,
+        out DesktopOperatorDecision decision)
+    {
+        decision = Empty();
+
+        if (state.ForegroundWindow is null ||
+            !TryExtractStructuredActionIntent(
+                goal,
+                out var requestedTarget,
+                out var requestedCapability,
+                out var requestedAction,
+                out var desiredState))
+        {
+            return false;
+        }
+
+        var graph =
+            state.StructuredGraph ??
+            UnifiedStructuredSceneGraphBuilder.Build(
+                state.StructuredScene,
+                state.ForegroundWindow,
+                state.FrameLeft,
+                state.FrameTop,
+                state.FrameWidth,
+                state.FrameHeight);
+
+        if (graph is null)
+            return false;
+
+        var preferredCapabilities =
+            new HashSet<string>(
+                [requestedCapability],
+                StringComparer.OrdinalIgnoreCase);
+
+        var resolution =
+            StructuredResolver.ResolveInteractiveTarget(
+                graph,
+                requestedTarget,
+                preferredCapabilities);
+
+        if ((!resolution.Resolved ||
+             resolution.Node is null) &&
+            requestedCapability.Equals(
+                "Invoke",
+                StringComparison.OrdinalIgnoreCase))
+        {
+            resolution =
+                StructuredResolver.ResolveInteractiveTarget(
+                    graph,
+                    requestedTarget,
+                    new HashSet<string>(
+                        ["LegacyIAccessible"],
+                        StringComparer.OrdinalIgnoreCase));
+
+            if (resolution.Resolved &&
+                resolution.Node is not null)
+            {
+                requestedCapability = "LegacyIAccessible";
+                requestedAction = "structured-legacy-default";
+            }
+        }
+
+        if (!resolution.Resolved ||
+            resolution.Node is null)
+        {
+            return false;
+        }
+
+        var node = resolution.Node;
+
+        if (node.FrameLeft < 0 ||
+            node.FrameTop < 0 ||
+            node.FrameLeft + node.Width > state.FrameWidth ||
+            node.FrameTop + node.Height > state.FrameHeight)
+        {
+            return false;
+        }
+
+        var actionCapability = requestedCapability;
+        var structuredAction = requestedAction;
+
+        decision = Build(
+            action: structuredAction,
+            currentSubgoal:
+                $"Tương tác với phần tử '{DisplayNode(node)}' bằng Unified Structured Scene Graph.",
+            expectedEffect:
+                BuildStructuredExpectedEffect(
+                    node,
+                    actionCapability,
+                    desiredState),
+            reason:
+                $"Structured resolver đã ánh xạ mục tiêu '{requestedTarget}' thành node '{node.Id}' (score={resolution.Score}, capability={actionCapability}); không cần gửi toàn màn hình cho Vision/Gemini.",
+            plan:
+                structuredAction.StartsWith("structured-", StringComparison.Ordinal)
+                    ? $"Thực thi {structuredAction} trực tiếp bằng UIA target token '{node.Id}', sau đó quan sát lại trước hành động tiếp theo."
+                    : $"Dùng bounding box đã chuẩn hóa trong scene graph của '{DisplayNode(node)}' để click an toàn rồi quan sát lại.",
+            targetLabel: DisplayNode(node),
+            targetElementId: node.Id,
+            coordinateWindowId: graph.WindowId,
+            imageX: node.FrameLeft + node.Width / 2,
+            imageY: node.FrameTop + node.Height / 2,
+            boxLeft: node.FrameLeft,
+            boxTop: node.FrameTop,
+            boxWidth: node.Width,
+            boxHeight: node.Height,
+            confidence: resolution.Score >= 100 ? 0.99 : 0.94);
+
+        return true;
+    }
+
+    private static bool TryExtractStructuredActionIntent(
+        string goal,
+        out string target,
+        out string capability,
+        out string action,
+        out string desiredState)
+    {
+        var value = (goal ?? string.Empty).Trim();
+
+        var intents = new[]
+        {
+            new { Prefix = "mở rộng ", Capability = "ExpandCollapse", Action = "structured-expand", DesiredState = "Expanded" },
+            new { Prefix = "mo rong ", Capability = "ExpandCollapse", Action = "structured-expand", DesiredState = "Expanded" },
+            new { Prefix = "expand ", Capability = "ExpandCollapse", Action = "structured-expand", DesiredState = "Expanded" },
+            new { Prefix = "thu gọn ", Capability = "ExpandCollapse", Action = "structured-collapse", DesiredState = "Collapsed" },
+            new { Prefix = "thu gon ", Capability = "ExpandCollapse", Action = "structured-collapse", DesiredState = "Collapsed" },
+            new { Prefix = "collapse ", Capability = "ExpandCollapse", Action = "structured-collapse", DesiredState = "Collapsed" },
+            new { Prefix = "bật ", Capability = "Toggle", Action = "structured-toggle", DesiredState = "On" },
+            new { Prefix = "bat ", Capability = "Toggle", Action = "structured-toggle", DesiredState = "On" },
+            new { Prefix = "tắt ", Capability = "Toggle", Action = "structured-toggle", DesiredState = "Off" },
+            new { Prefix = "tat ", Capability = "Toggle", Action = "structured-toggle", DesiredState = "Off" },
+            new { Prefix = "tick ", Capability = "Toggle", Action = "structured-toggle", DesiredState = "On" },
+            new { Prefix = "toggle ", Capability = "Toggle", Action = "structured-toggle", DesiredState = "" },
+            new { Prefix = "chọn ", Capability = "SelectionItem", Action = "structured-select", DesiredState = "Selected" },
+            new { Prefix = "chon ", Capability = "SelectionItem", Action = "structured-select", DesiredState = "Selected" },
+            new { Prefix = "select ", Capability = "SelectionItem", Action = "structured-select", DesiredState = "Selected" },
+            new { Prefix = "bấm ", Capability = "Invoke", Action = "structured-invoke", DesiredState = "" },
+            new { Prefix = "bam ", Capability = "Invoke", Action = "structured-invoke", DesiredState = "" },
+            new { Prefix = "nhấn ", Capability = "Invoke", Action = "structured-invoke", DesiredState = "" },
+            new { Prefix = "nhan ", Capability = "Invoke", Action = "structured-invoke", DesiredState = "" },
+            new { Prefix = "click ", Capability = "Invoke", Action = "structured-invoke", DesiredState = "" },
+            new { Prefix = "press ", Capability = "Invoke", Action = "structured-invoke", DesiredState = "" }
+        };
+
+        foreach (var intent in intents)
+        {
+            if (!value.StartsWith(
+                    intent.Prefix,
+                    StringComparison.OrdinalIgnoreCase))
+            {
+                continue;
+            }
+
+            var remainder = value[intent.Prefix.Length..].Trim();
+            remainder = StripStructuredTargetPrefix(remainder);
+
+            var cut = remainder.Length;
+            foreach (var separator in NextStepSeparators)
+            {
+                var index = remainder.IndexOf(
+                    separator,
+                    StringComparison.OrdinalIgnoreCase);
+
+                if (index >= 0 &&
+                    index < cut)
+                {
+                    cut = index;
+                }
+            }
+
+            target = remainder[..cut]
+                .Trim()
+                .Trim('"', '\'', '“', '”', '.', ':');
+
+            capability = intent.Capability;
+            action = intent.Action;
+            desiredState = intent.DesiredState;
+
+            return target.Length is >= 1 and <= 120;
+        }
+
+        target = string.Empty;
+        capability = string.Empty;
+        action = string.Empty;
+        desiredState = string.Empty;
+        return false;
+    }
+
+    private static string BuildStructuredExpectedEffect(
+        UnifiedStructuredSceneNode node,
+        string capability,
+        string desiredState)
+    {
+        var marker =
+            capability.Equals(
+                "Toggle",
+                StringComparison.OrdinalIgnoreCase) &&
+            !string.IsNullOrWhiteSpace(desiredState)
+                ? $"structured-state:toggle={desiredState}; "
+                : capability.Equals(
+                    "ExpandCollapse",
+                    StringComparison.OrdinalIgnoreCase) &&
+                  !string.IsNullOrWhiteSpace(desiredState)
+                    ? $"structured-state:expandCollapse={desiredState}; "
+                    : capability.Equals(
+                        "SelectionItem",
+                        StringComparison.OrdinalIgnoreCase) &&
+                      desiredState.Equals(
+                          "Selected",
+                          StringComparison.OrdinalIgnoreCase)
+                        ? "structured-state:selected=true; "
+                        : string.Empty;
+
+        return
+            $"{marker}Phần tử '{DisplayNode(node)}' phản hồi sau thao tác {capability}.";
+    }
+
+    private static bool CanSafelyApplyRequestedStructuredState(
+        UnifiedStructuredSceneNode node,
+        string capability,
+        string desiredState,
+        out bool alreadySatisfied)
+    {
+        alreadySatisfied = false;
+
+        if (string.IsNullOrWhiteSpace(desiredState))
+            return true;
+
+        if (capability.Equals(
+                "Toggle",
+                StringComparison.OrdinalIgnoreCase))
+        {
+            if (string.IsNullOrWhiteSpace(node.ToggleState) ||
+                node.ToggleState.Equals(
+                    "Indeterminate",
+                    StringComparison.OrdinalIgnoreCase))
+            {
+                return false;
+            }
+
+            alreadySatisfied =
+                node.ToggleState.Equals(
+                    desiredState,
+                    StringComparison.OrdinalIgnoreCase);
+
+            return true;
+        }
+
+        if (capability.Equals(
+                "ExpandCollapse",
+                StringComparison.OrdinalIgnoreCase))
+        {
+            if (string.IsNullOrWhiteSpace(node.ExpandCollapseState) ||
+                node.ExpandCollapseState.Equals(
+                    "LeafNode",
+                    StringComparison.OrdinalIgnoreCase))
+            {
+                return false;
+            }
+
+            alreadySatisfied =
+                node.ExpandCollapseState.Equals(
+                    desiredState,
+                    StringComparison.OrdinalIgnoreCase);
+
+            return true;
+        }
+
+        if (capability.Equals(
+                "SelectionItem",
+                StringComparison.OrdinalIgnoreCase) &&
+            desiredState.Equals(
+                "Selected",
+                StringComparison.OrdinalIgnoreCase))
+        {
+            if (!node.IsSelected.HasValue)
+                return false;
+
+            alreadySatisfied = node.IsSelected.Value;
+            return true;
+        }
+
+        return true;
+    }
+
+    private static bool HasAdditionalGoalSteps(
+        string goal) =>
+        NextStepSeparators.Any(separator =>
+            (goal ?? string.Empty).IndexOf(
+                separator,
+                StringComparison.OrdinalIgnoreCase) >= 0);
+
+    private static string StripStructuredTargetPrefix(
+        string value)
+    {
+        var prefixes = new[]
+        {
+            "nút ",
+            "nut ",
+            "button ",
+            "mục ",
+            "muc ",
+            "option ",
+            "checkbox "
+        };
+
+        foreach (var prefix in prefixes)
+        {
+            if (value.StartsWith(
+                    prefix,
+                    StringComparison.OrdinalIgnoreCase))
+            {
+                return value[prefix.Length..].Trim();
+            }
+        }
+
+        return value;
+    }
+
+    private static string DisplayNode(
+        UnifiedStructuredSceneNode node) =>
+        !string.IsNullOrWhiteSpace(node.Name)
+            ? node.Name.Trim()
+            : !string.IsNullOrWhiteSpace(node.AutomationId)
+                ? node.AutomationId.Trim()
+                : node.Role;
 
     private static bool TryExtractOpenApplicationTarget(
         string goal,
@@ -255,7 +774,17 @@ public sealed class DesktopLocalActionPlanner
         string query = "",
         string text = "",
         string key = "",
-        IReadOnlyList<string>? keys = null) =>
+        IReadOnlyList<string>? keys = null,
+        string targetLabel = "",
+        string targetElementId = "",
+        string coordinateWindowId = "",
+        int imageX = 0,
+        int imageY = 0,
+        int boxLeft = 0,
+        int boxTop = 0,
+        int boxWidth = 0,
+        int boxHeight = 0,
+        double confidence = 0.97) =>
         new(
             State: "Local planner đang dùng capability Windows có bằng chứng trực tiếp.",
             Plan: plan,
@@ -268,31 +797,31 @@ public sealed class DesktopLocalActionPlanner
             Key: key,
             Keys: keys ?? Array.Empty<string>(),
             Url: string.Empty,
-            TargetLabel: string.Empty,
+            TargetLabel: targetLabel,
             CoordinateSpace: ComputerCoordinateSpaces.ImagePixel,
-            CoordinateWindowId: string.Empty,
-            ImageX: 0,
-            ImageY: 0,
+            CoordinateWindowId: coordinateWindowId,
+            ImageX: imageX,
+            ImageY: imageY,
             EndImageX: 0,
             EndImageY: 0,
             NormalizedX: 0,
             NormalizedY: 0,
             EndNormalizedX: 0,
             EndNormalizedY: 0,
-            BoxLeft: 0,
-            BoxTop: 0,
-            BoxWidth: 0,
-            BoxHeight: 0,
+            BoxLeft: boxLeft,
+            BoxTop: boxTop,
+            BoxWidth: boxWidth,
+            BoxHeight: boxHeight,
             BoxNormalizedLeft: 0,
             BoxNormalizedTop: 0,
             BoxNormalizedWidth: 0,
             BoxNormalizedHeight: 0,
             ScrollDelta: 0,
             ExpectedEffect: expectedEffect,
-            Confidence: 0.97,
+            Confidence: confidence,
             Reason: reason,
             SceneElements: Array.Empty<DesktopSceneElement>(),
-            TargetElementId: string.Empty);
+            TargetElementId: targetElementId);
 
     private static DesktopOperatorDecision Empty() =>
         Build(

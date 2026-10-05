@@ -16,6 +16,8 @@ public static class ComputerOperatorTelemetryStages
     public const string GeminiVerify = "gemini-verify";
     public const string AdaptiveWait = "adaptive-wait";
     public const string TextEngine = "text-engine";
+    public const string StructuredRevalidate = "structured-revalidate";
+    public const string StructuredVerify = "structured-verify";
 }
 
 public sealed record ComputerOperatorTelemetryEvent(
@@ -36,6 +38,13 @@ public sealed record ComputerOperatorTelemetryAggregate(
     double AverageMilliseconds,
     long MaximumMilliseconds);
 
+public sealed record ComputerOperatorTelemetryRouteAggregate(
+    string Stage,
+    string Route,
+    long Count,
+    long SuccessCount,
+    long FailureCount);
+
 public sealed record ComputerOperatorTelemetrySnapshot(
     string Version,
     bool MemoryOnly,
@@ -46,6 +55,7 @@ public sealed record ComputerOperatorTelemetrySnapshot(
     bool ContainsCoordinates,
     int MaximumRecentEvents,
     IReadOnlyList<ComputerOperatorTelemetryAggregate> Aggregates,
+    IReadOnlyList<ComputerOperatorTelemetryRouteAggregate> RouteAggregates,
     IReadOnlyList<ComputerOperatorTelemetryEvent> RecentEvents);
 
 public interface IComputerOperatorTelemetryOperation : IDisposable
@@ -100,6 +110,8 @@ public sealed class ComputerOperatorTelemetry
     private readonly Queue<ComputerOperatorTelemetryEvent> recent = new();
     private readonly Dictionary<string, MutableAggregate> aggregates =
         new(StringComparer.OrdinalIgnoreCase);
+    private readonly Dictionary<string, MutableRouteAggregate> routeAggregates =
+        new(StringComparer.OrdinalIgnoreCase);
     private long sequence;
 
     public IComputerOperatorTelemetryOperation Begin(
@@ -139,6 +151,13 @@ public sealed class ComputerOperatorTelemetry
                         pair.Value.ToPublic(
                             pair.Key))
                     .ToArray(),
+                routeAggregates
+                    .OrderBy(pair =>
+                        pair.Key,
+                        StringComparer.OrdinalIgnoreCase)
+                    .Select(pair =>
+                        pair.Value.ToPublic())
+                    .ToArray(),
                 recent.ToArray());
         }
     }
@@ -149,6 +168,7 @@ public sealed class ComputerOperatorTelemetry
         {
             recent.Clear();
             aggregates.Clear();
+            routeAggregates.Clear();
         }
     }
 
@@ -257,6 +277,27 @@ public sealed class ComputerOperatorTelemetry
                 Math.Max(
                     aggregate.MaximumMilliseconds,
                     milliseconds);
+
+            var routeKey =
+                $"{stage}|{route}";
+
+            if (!routeAggregates.TryGetValue(
+                    routeKey,
+                    out var routeAggregate))
+            {
+                routeAggregate =
+                    new MutableRouteAggregate(
+                        stage,
+                        route);
+                routeAggregates[routeKey] =
+                    routeAggregate;
+            }
+
+            routeAggregate.Count++;
+            if (success)
+                routeAggregate.SuccessCount++;
+            else
+                routeAggregate.FailureCount++;
         }
     }
 
@@ -348,6 +389,23 @@ public sealed class ComputerOperatorTelemetry
                 success: false,
                 route: "incomplete");
         }
+    }
+
+    private sealed class MutableRouteAggregate(
+        string stage,
+        string route)
+    {
+        public long Count { get; set; }
+        public long SuccessCount { get; set; }
+        public long FailureCount { get; set; }
+
+        public ComputerOperatorTelemetryRouteAggregate ToPublic() =>
+            new(
+                stage,
+                route,
+                Count,
+                SuccessCount,
+                FailureCount);
     }
 
     private sealed class MutableAggregate

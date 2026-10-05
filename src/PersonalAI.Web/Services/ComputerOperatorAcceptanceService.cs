@@ -166,6 +166,72 @@ public sealed class ComputerOperatorAcceptanceService
 
         RunCheck(
             checks,
+            "structured-first planner chọn UIA target duy nhất trước Vision",
+            CheckStructuredFirstPlannerUsesUiaTarget);
+
+        RunCheck(
+            checks,
+            "structured-first planner dùng ValuePattern cho field rõ ràng",
+            CheckStructuredFirstPlannerUsesValuePattern);
+
+        RunCheck(
+            checks,
+            "structured-first planner chọn đúng pattern theo intent",
+            CheckStructuredPlannerUsesIntentSpecificPattern);
+
+        RunCheck(
+            checks,
+            "structured toggle không đảo ngược trạng thái đã đúng",
+            CheckStructuredToggleUsesCurrentState);
+
+        RunCheck(
+            checks,
+            "structured invoke fallback LegacyIAccessible khi thiếu InvokePattern",
+            CheckStructuredInvokeFallsBackToLegacyAccessible);
+
+        RunCheck(
+            checks,
+            "structured verifier xác minh Toggle bằng state hậu hành động",
+            CheckStructuredVerifierToggleState);
+
+        RunCheck(
+            checks,
+            "structured verifier xác minh ValuePattern bằng readback",
+            CheckStructuredVerifierValueReadback);
+
+        RunCheck(
+            checks,
+            "structured verifier coi Invoke transition là inconclusive thay vì fail mù",
+            CheckStructuredVerifierInvokeIsInconclusive);
+
+        RunCheck(
+            checks,
+            "structured invoke event relevance ưu tiên transition event",
+            CheckStructuredInvokeEventRelevance);
+
+        RunCheck(
+            checks,
+            "structured invoke local verify chỉ pass khi có transition quan sát được",
+            CheckStructuredInvokeLocalVerificationRequiresTransition);
+
+        RunCheck(
+            checks,
+            "structured target revalidation reject scene stale",
+            CheckStructuredTargetRevalidationRejectsStaleScene);
+
+        RunCheck(
+            checks,
+            "structured target revalidation remap token theo semantic duy nhất",
+            CheckStructuredTargetRevalidationRemapsUniqueSemanticTarget);
+
+        RunCheck(
+            checks,
+            "LegacyIAccessible có confidence thấp hơn UIA native",
+            CheckStructuredCapabilityConfidenceDistinguishesLegacyFallback);
+
+
+        RunCheck(
+            checks,
             "dynamic target tracker remap bbox khi cửa sổ di chuyển",
             CheckDynamicTargetTrackerMovesWithWindow);
 
@@ -461,6 +527,27 @@ public sealed class ComputerOperatorAcceptanceService
             "event burst gom tín hiệu dồn dập thành một transaction UI",
             CheckEventBurstGrouping);
 
+        RunCheck(
+            checks,
+            "unified desktop state mang theo structured UI scene",
+            CheckUnifiedDesktopStateIncludesStructuredScene);
+
+        RunCheck(
+            checks,
+            "structured scene graph giữ parent-child và capability tương tác",
+            CheckStructuredSceneGraphBuildsHierarchy);
+
+        RunCheck(
+            checks,
+            "structured resolver chọn duy nhất target đủ chắc chắn",
+            CheckStructuredResolverChoosesUniqueTarget);
+
+        RunCheck(
+            checks,
+            "structured resolver từ chối target mơ hồ",
+            CheckStructuredResolverRejectsAmbiguousTarget);
+
+
 
 
 
@@ -531,6 +618,11 @@ public sealed class ComputerOperatorAcceptanceService
             checks,
             "telemetry giới hạn danh sách sự kiện gần nhất",
             CheckOperatorTelemetryBoundsRecentEvents);
+
+        RunCheck(
+            checks,
+            "telemetry aggregate phân biệt structured-first và Gemini route",
+            CheckOperatorTelemetryAggregatesRoutes);
 
         RunCheck(
             checks,
@@ -1903,6 +1995,824 @@ public sealed class ComputerOperatorAcceptanceService
                 "Windows Search",
                 StringComparison.OrdinalIgnoreCase),
             "Local planner không chọn Windows Search generic cho intent mở ứng dụng.");
+    }
+
+    private static void CheckStructuredVerifierToggleState()
+    {
+        var verifier =
+            new StructuredDesktopVerificationService();
+
+        var node =
+            new UnifiedStructuredSceneNode(
+                Id: "root:wifi",
+                ParentId: "root",
+                Depth: 1,
+                Role: "CheckBox",
+                Name: "WiFi",
+                AutomationId: "wifi",
+                ClassName: "CheckBox",
+                IsEnabled: true,
+                IsFocused: false,
+                IsVisible: true,
+                DesktopLeft: 100,
+                DesktopTop: 100,
+                Width: 120,
+                Height: 30,
+                FrameLeft: 100,
+                FrameTop: 100,
+                Capabilities: ["Toggle"],
+                Children: Array.Empty<string>(),
+                ToggleState: "On");
+
+        var graph =
+            new UnifiedStructuredSceneGraph(
+                WindowId: "0x1234",
+                WindowTitle: "Acceptance",
+                ProcessName: "acceptance",
+                RootId: "root",
+                CapturedAtUtc: DateTimeOffset.UtcNow,
+                Nodes: [node],
+                Source: "acceptance",
+                Detail: "acceptance");
+
+        var decision = BuildStructuredDecision(
+            "structured-toggle",
+            "root:wifi",
+            "structured-state:toggle=On; WiFi phải bật.");
+
+        var result = verifier.Verify(
+            decision,
+            graph);
+
+        Require(
+            result.Status == StructuredVerificationStatus.Verified &&
+            result.Confidence >= 0.99,
+            "Structured verifier chưa xác minh Toggle state deterministic.");
+    }
+
+    private static void CheckStructuredVerifierValueReadback()
+    {
+        var verifier =
+            new StructuredDesktopVerificationService();
+
+        var node =
+            new UnifiedStructuredSceneNode(
+                Id: "root:name",
+                ParentId: "root",
+                Depth: 1,
+                Role: "Edit",
+                Name: "Name",
+                AutomationId: "name",
+                ClassName: "Edit",
+                IsEnabled: true,
+                IsFocused: true,
+                IsVisible: true,
+                DesktopLeft: 100,
+                DesktopTop: 100,
+                Width: 240,
+                Height: 36,
+                FrameLeft: 100,
+                FrameTop: 100,
+                Capabilities: ["Value"],
+                Children: Array.Empty<string>(),
+                Value: "Alice",
+                IsSensitive: false);
+
+        var graph =
+            new UnifiedStructuredSceneGraph(
+                WindowId: "0x1234",
+                WindowTitle: "Acceptance",
+                ProcessName: "acceptance",
+                RootId: "root",
+                CapturedAtUtc: DateTimeOffset.UtcNow,
+                Nodes: [node],
+                Source: "acceptance",
+                Detail: "acceptance");
+
+        var decision = BuildStructuredDecision(
+            "structured-set-value",
+            "root:name",
+            "Name phải có giá trị Alice",
+            text: "Alice");
+
+        var result = verifier.Verify(
+            decision,
+            graph);
+
+        Require(
+            result.Status == StructuredVerificationStatus.Verified &&
+            result.Confidence >= 0.99,
+            "Structured verifier chưa xác minh ValuePattern bằng readback.");
+    }
+
+    private static void CheckStructuredTargetRevalidationRejectsStaleScene()
+    {
+        var revalidator =
+            new StructuredTargetRevalidator();
+
+        var decision =
+            BuildStructuredDecision(
+                "structured-invoke",
+                "root:save",
+                "Save phản hồi.") with
+            {
+                TargetLabel = "Save"
+            };
+
+        var graph =
+            new UnifiedStructuredSceneGraph(
+                WindowId: "0x1234",
+                WindowTitle: "Acceptance",
+                ProcessName: "acceptance",
+                RootId: "root",
+                CapturedAtUtc: DateTimeOffset.UtcNow.AddSeconds(-10),
+                Nodes:
+                [
+                    new UnifiedStructuredSceneNode(
+                        Id: "root:save",
+                        ParentId: "root",
+                        Depth: 1,
+                        Role: "Button",
+                        Name: "Save",
+                        AutomationId: "save",
+                        ClassName: "Button",
+                        IsEnabled: true,
+                        IsFocused: false,
+                        IsVisible: true,
+                        DesktopLeft: 100,
+                        DesktopTop: 100,
+                        Width: 120,
+                        Height: 36,
+                        FrameLeft: 100,
+                        FrameTop: 100,
+                        Capabilities: ["Invoke"],
+                        Children: Array.Empty<string>())
+                ],
+                Source: "acceptance",
+                Detail: "acceptance");
+
+        var result =
+            revalidator.Revalidate(
+                decision,
+                graph,
+                DateTimeOffset.UtcNow);
+
+        Require(
+            result.Status ==
+                StructuredTargetRevalidationStatus.Rejected &&
+            !result.SafeToExecute,
+            "Structured target revalidation vẫn cho execute scene stale.");
+    }
+
+    private static void CheckStructuredTargetRevalidationRemapsUniqueSemanticTarget()
+    {
+        var revalidator =
+            new StructuredTargetRevalidator();
+
+        var decision =
+            BuildStructuredDecision(
+                "structured-invoke",
+                "root:old-save",
+                "Save phản hồi.") with
+            {
+                TargetLabel = "Save"
+            };
+
+        var graph =
+            new UnifiedStructuredSceneGraph(
+                WindowId: "0x1234",
+                WindowTitle: "Acceptance",
+                ProcessName: "acceptance",
+                RootId: "root",
+                CapturedAtUtc: DateTimeOffset.UtcNow,
+                Nodes:
+                [
+                    new UnifiedStructuredSceneNode(
+                        Id: "root:new-save",
+                        ParentId: "root",
+                        Depth: 1,
+                        Role: "Button",
+                        Name: "Save",
+                        AutomationId: "saveButton",
+                        ClassName: "Button",
+                        IsEnabled: true,
+                        IsFocused: false,
+                        IsVisible: true,
+                        DesktopLeft: 140,
+                        DesktopTop: 120,
+                        Width: 120,
+                        Height: 36,
+                        FrameLeft: 140,
+                        FrameTop: 120,
+                        Capabilities: ["Invoke"],
+                        Children: Array.Empty<string>())
+                ],
+                Source: "acceptance",
+                Detail: "acceptance");
+
+        var result =
+            revalidator.Revalidate(
+                decision,
+                graph,
+                DateTimeOffset.UtcNow);
+
+        Require(
+            result.Status ==
+                StructuredTargetRevalidationStatus.Remapped &&
+            result.SafeToExecute &&
+            result.Decision.TargetElementId ==
+                "root:new-save" &&
+            result.Decision.BoxLeft == 140 &&
+            result.Decision.BoxTop == 120,
+            "Structured target revalidation chưa remap token mới theo semantic target duy nhất.");
+    }
+
+    private static void CheckStructuredCapabilityConfidenceDistinguishesLegacyFallback()
+    {
+        var revalidator =
+            new StructuredTargetRevalidator();
+
+        UnifiedStructuredSceneGraph Graph(
+            string capability) =>
+            new(
+                WindowId: "0x1234",
+                WindowTitle: "Acceptance",
+                ProcessName: "acceptance",
+                RootId: "root",
+                CapturedAtUtc: DateTimeOffset.UtcNow,
+                Nodes:
+                [
+                    new UnifiedStructuredSceneNode(
+                        Id: "root:target",
+                        ParentId: "root",
+                        Depth: 1,
+                        Role: "Button",
+                        Name: "Target",
+                        AutomationId: "target",
+                        ClassName: "Button",
+                        IsEnabled: true,
+                        IsFocused: false,
+                        IsVisible: true,
+                        DesktopLeft: 100,
+                        DesktopTop: 100,
+                        Width: 120,
+                        Height: 36,
+                        FrameLeft: 100,
+                        FrameTop: 100,
+                        Capabilities: [capability],
+                        Children: Array.Empty<string>())
+                ],
+                Source: "acceptance",
+                Detail: "acceptance");
+
+        var native =
+            revalidator.Revalidate(
+                BuildStructuredDecision(
+                    "structured-invoke",
+                    "root:target",
+                    "invoke"),
+                Graph("Invoke"),
+                DateTimeOffset.UtcNow);
+
+        var legacy =
+            revalidator.Revalidate(
+                BuildStructuredDecision(
+                    "structured-legacy-default",
+                    "root:target",
+                    "legacy"),
+                Graph("LegacyIAccessible"),
+                DateTimeOffset.UtcNow);
+
+        Require(
+            native.SafeToExecute &&
+            legacy.SafeToExecute &&
+            native.Confidence > legacy.Confidence &&
+            native.Confidence >= 0.95 &&
+            legacy.Confidence <= 0.80,
+            "Structured capability confidence chưa phân biệt UIA native và LegacyIAccessible fallback.");
+    }
+
+    private static void CheckStructuredInvokeEventRelevance()
+    {
+        var desktopEvent =
+            new DesktopSystemEvent(
+                DesktopSystemEventKinds.StructureChanged,
+                "0x1234",
+                DateTimeOffset.UtcNow,
+                0,
+                "UIA structure changed.",
+                Source: "uia3",
+                SourceConfidence: 0.90,
+                Corroborated: true);
+
+        var score =
+            ComputerOperatorEventRelevance.Score(
+                "structured-invoke",
+                "Mở dialog cài đặt.",
+                desktopEvent);
+
+        Require(
+            score >= 0.90,
+            $"Structured invoke chưa ưu tiên event transition đủ mạnh: {score:0.000}.");
+    }
+
+    private static void CheckStructuredInvokeLocalVerificationRequiresTransition()
+    {
+        var router =
+            new DesktopVerificationRouter();
+
+        var decision =
+            BuildStructuredDecision(
+                "structured-invoke",
+                "root:next",
+                "Trang tiếp theo xuất hiện.");
+
+        var changed =
+            new DesktopFastObservation(
+                ScreenChanged: true,
+                ChangeRatio: 0.05,
+                ForegroundWindowChanged: true,
+                WindowBoundsChanged: false,
+                CursorMoved: false,
+                MonitorChanged: false,
+                DpiChanged: false,
+                TargetMoved: false,
+                TargetMissing: false,
+                TargetLikelyOccluded: false,
+                Summary: "foreground changed");
+
+        var unchanged =
+            new DesktopFastObservation(
+                ScreenChanged: false,
+                ChangeRatio: 0.0,
+                ForegroundWindowChanged: false,
+                WindowBoundsChanged: false,
+                CursorMoved: false,
+                MonitorChanged: false,
+                DpiChanged: false,
+                TargetMoved: false,
+                TargetMissing: false,
+                TargetLikelyOccluded: false,
+                Summary: "unchanged");
+
+        var changedRoute =
+            router.Route(
+                decision,
+                changed,
+                frameDifference: null);
+
+        var unchangedRoute =
+            router.Route(
+                decision,
+                unchanged,
+                new DesktopFrameDifference(
+                    true,
+                    0.0,
+                    0,
+                    100,
+                    0,
+                    0,
+                    0,
+                    0,
+                    0,
+                    "acceptance"));
+
+        Require(
+            changedRoute.Route ==
+                DesktopVerificationRoute.LocalVerified &&
+            unchangedRoute.Route ==
+                DesktopVerificationRoute.GeminiRequired,
+            "Structured invoke verifier đang pass khi chưa có transition local rõ ràng.");
+    }
+
+    private static void CheckStructuredVerifierInvokeIsInconclusive()
+    {
+        var verifier =
+            new StructuredDesktopVerificationService();
+
+        var decision = BuildStructuredDecision(
+            "structured-invoke",
+            "root:next",
+            "Trang tiếp theo xuất hiện.");
+
+        var result = verifier.Verify(
+            decision,
+            graph: null);
+
+        Require(
+            result.Status == StructuredVerificationStatus.Inconclusive,
+            "Structured invoke không được coi là failure chỉ vì scene graph sau transition chưa có target.");
+    }
+
+    private static DesktopOperatorDecision BuildStructuredDecision(
+        string action,
+        string targetElementId,
+        string expectedEffect,
+        string text = "") =>
+        new(
+            State: "acceptance",
+            Plan: "acceptance",
+            CurrentSubgoal: "acceptance",
+            GoalProgress: 0,
+            VerifiedMilestones: Array.Empty<string>(),
+            Action: action,
+            Query: string.Empty,
+            Text: text,
+            Key: string.Empty,
+            Keys: Array.Empty<string>(),
+            Url: string.Empty,
+            TargetLabel: "acceptance",
+            CoordinateSpace: ComputerCoordinateSpaces.ImagePixel,
+            CoordinateWindowId: "0x1234",
+            ImageX: 0,
+            ImageY: 0,
+            EndImageX: 0,
+            EndImageY: 0,
+            NormalizedX: 0,
+            NormalizedY: 0,
+            EndNormalizedX: 0,
+            EndNormalizedY: 0,
+            BoxLeft: 0,
+            BoxTop: 0,
+            BoxWidth: 0,
+            BoxHeight: 0,
+            BoxNormalizedLeft: 0,
+            BoxNormalizedTop: 0,
+            BoxNormalizedWidth: 0,
+            BoxNormalizedHeight: 0,
+            ScrollDelta: 0,
+            ExpectedEffect: expectedEffect,
+            Confidence: 0.99,
+            Reason: "acceptance",
+            SceneElements: Array.Empty<DesktopSceneElement>(),
+            TargetElementId: targetElementId);
+
+    private static void CheckStructuredInvokeFallsBackToLegacyAccessible()
+    {
+        var planner = new DesktopLocalActionPlanner();
+        var foreground = new ComputerWindowInfo(
+            "0x1234",
+            "Legacy App",
+            "legacy",
+            10,
+            true,
+            0,
+            0,
+            1000,
+            700);
+
+        var node = new StructuredDesktopNode(
+            Token: "root:legacy",
+            ParentToken: "root",
+            Depth: 2,
+            Role: "Button",
+            Name: "Legacy Action",
+            AutomationId: string.Empty,
+            ClassName: "LegacyButton",
+            IsEnabled: true,
+            IsFocused: false,
+            IsOffscreen: false,
+            Left: 220,
+            Top: 180,
+            Width: 160,
+            Height: 40,
+            Patterns: ["LegacyIAccessible"]);
+
+        var structured = new StructuredDesktopSnapshot(
+            WindowId: foreground.WindowId,
+            RootToken: "root",
+            CapturedAtUtc: DateTimeOffset.UtcNow,
+            NodeCount: 1,
+            MaximumNodes: 240,
+            MaximumDepth: 7,
+            Nodes: [node],
+            Source: "flaui-uia3",
+            Detail: "acceptance");
+
+        var state = new ComputerOperatorDesktopState(
+            DateTimeOffset.UtcNow,
+            foreground,
+            [foreground],
+            FrameLeft: 0,
+            FrameTop: 0,
+            FrameWidth: 1000,
+            FrameHeight: 700,
+            CaptureScope: DesktopCaptureScopes.Window,
+            CaptureWindowId: foreground.WindowId,
+            CaptureWindowWasForeground: true,
+            StructuredScene: structured);
+
+        var planned = planner.TryPlan(
+            "Bấm Legacy Action",
+            state,
+            string.Empty,
+            out var decision);
+
+        Require(
+            planned &&
+            decision.Action == "structured-legacy-default" &&
+            decision.TargetElementId == "root:legacy",
+            "Structured planner chưa fallback Invoke intent sang LegacyIAccessible đúng cách.");
+    }
+
+    private static void CheckStructuredToggleUsesCurrentState()
+    {
+        var planner = new DesktopLocalActionPlanner();
+        var foreground = new ComputerWindowInfo(
+            "0x1234",
+            "Acceptance App",
+            "acceptance",
+            10,
+            true,
+            0,
+            0,
+            1000,
+            700);
+
+        ComputerOperatorDesktopState BuildState(
+            string toggleState)
+        {
+            var node = new StructuredDesktopNode(
+                Token: "root:wifi",
+                ParentToken: "root",
+                Depth: 2,
+                Role: "CheckBox",
+                Name: "WiFi",
+                AutomationId: "wifiToggle",
+                ClassName: "CheckBox",
+                IsEnabled: true,
+                IsFocused: false,
+                IsOffscreen: false,
+                Left: 200,
+                Top: 160,
+                Width: 180,
+                Height: 36,
+                Patterns: ["Toggle"],
+                ToggleState: toggleState);
+
+            var structured = new StructuredDesktopSnapshot(
+                WindowId: foreground.WindowId,
+                RootToken: "root",
+                CapturedAtUtc: DateTimeOffset.UtcNow,
+                NodeCount: 1,
+                MaximumNodes: 240,
+                MaximumDepth: 7,
+                Nodes: [node],
+                Source: "flaui-uia3",
+                Detail: "acceptance");
+
+            return new ComputerOperatorDesktopState(
+                DateTimeOffset.UtcNow,
+                foreground,
+                [foreground],
+                FrameLeft: 0,
+                FrameTop: 0,
+                FrameWidth: 1000,
+                FrameHeight: 700,
+                CaptureScope: DesktopCaptureScopes.Window,
+                CaptureWindowId: foreground.WindowId,
+                CaptureWindowWasForeground: true,
+                StructuredScene: structured);
+        }
+
+        var offPlanned = planner.TryPlan(
+            "Bật WiFi",
+            BuildState("Off"),
+            string.Empty,
+            out var offDecision);
+
+        var onPlanned = planner.TryPlan(
+            "Bật WiFi",
+            BuildState("On"),
+            string.Empty,
+            out var onDecision);
+
+        Require(
+            offPlanned &&
+            onPlanned &&
+            offDecision.Action == "structured-toggle" &&
+            onDecision.Action == "complete",
+            "Structured toggle chưa dùng current state để tránh đảo ngược trạng thái đã đúng.");
+    }
+
+    private static void CheckStructuredPlannerUsesIntentSpecificPattern()
+    {
+        var planner = new DesktopLocalActionPlanner();
+        var foreground = new ComputerWindowInfo(
+            "0x1234",
+            "Acceptance App",
+            "acceptance",
+            10,
+            true,
+            0,
+            0,
+            1000,
+            700);
+
+        var node = new StructuredDesktopNode(
+            Token: "root:option",
+            ParentToken: "root",
+            Depth: 2,
+            Role: "ListItem",
+            Name: "Option A",
+            AutomationId: "optionA",
+            ClassName: "ListItem",
+            IsEnabled: true,
+            IsFocused: false,
+            IsOffscreen: false,
+            Left: 200,
+            Top: 160,
+            Width: 180,
+            Height: 36,
+            Patterns: ["Invoke", "SelectionItem"]);
+
+        var structured = new StructuredDesktopSnapshot(
+            WindowId: foreground.WindowId,
+            RootToken: "root",
+            CapturedAtUtc: DateTimeOffset.UtcNow,
+            NodeCount: 1,
+            MaximumNodes: 240,
+            MaximumDepth: 7,
+            Nodes: [node],
+            Source: "flaui-uia3",
+            Detail: "acceptance");
+
+        var state = new ComputerOperatorDesktopState(
+            DateTimeOffset.UtcNow,
+            foreground,
+            [foreground],
+            FrameLeft: 0,
+            FrameTop: 0,
+            FrameWidth: 1000,
+            FrameHeight: 700,
+            CaptureScope: DesktopCaptureScopes.Window,
+            CaptureWindowId: foreground.WindowId,
+            CaptureWindowWasForeground: true,
+            StructuredScene: structured);
+
+        var selectPlanned = planner.TryPlan(
+            "Chọn Option A",
+            state,
+            string.Empty,
+            out var selectDecision);
+
+        var invokePlanned = planner.TryPlan(
+            "Bấm Option A",
+            state,
+            string.Empty,
+            out var invokeDecision);
+
+        Require(
+            selectPlanned &&
+            invokePlanned &&
+            selectDecision.Action == "structured-select" &&
+            invokeDecision.Action == "structured-invoke",
+            "Structured planner chưa phân biệt đúng SelectionItem và Invoke theo intent.");
+    }
+
+    private static void CheckStructuredFirstPlannerUsesValuePattern()
+    {
+        var planner = new DesktopLocalActionPlanner();
+        var foreground = new ComputerWindowInfo(
+            "0x1234",
+            "Acceptance App",
+            "acceptance",
+            10,
+            true,
+            100,
+            80,
+            900,
+            700);
+
+        var node = new StructuredDesktopNode(
+            Token: "root:name",
+            ParentToken: "root",
+            Depth: 2,
+            Role: "Edit",
+            Name: "Name",
+            AutomationId: "nameField",
+            ClassName: "Edit",
+            IsEnabled: true,
+            IsFocused: false,
+            IsOffscreen: false,
+            Left: 320,
+            Top: 220,
+            Width: 240,
+            Height: 40,
+            Patterns: ["Value"]);
+
+        var structured = new StructuredDesktopSnapshot(
+            WindowId: foreground.WindowId,
+            RootToken: "root",
+            CapturedAtUtc: DateTimeOffset.UtcNow,
+            NodeCount: 1,
+            MaximumNodes: 240,
+            MaximumDepth: 7,
+            Nodes: [node],
+            Source: "flaui-uia3",
+            Detail: "acceptance");
+
+        var state = new ComputerOperatorDesktopState(
+            DateTimeOffset.UtcNow,
+            foreground,
+            [foreground],
+            FrameLeft: 100,
+            FrameTop: 80,
+            FrameWidth: 900,
+            FrameHeight: 700,
+            CaptureScope: DesktopCaptureScopes.Window,
+            CaptureWindowId: foreground.WindowId,
+            CaptureWindowWasForeground: true,
+            StructuredScene: structured);
+
+        var planned = planner.TryPlan(
+            "Nhập Alice vào ô Name",
+            state,
+            string.Empty,
+            out var decision);
+
+        Require(
+            planned &&
+            decision.Action == "structured-set-value" &&
+            decision.Text == "Alice" &&
+            decision.TargetElementId == "root:name" &&
+            decision.CoordinateWindowId == foreground.WindowId,
+            "Structured-first planner chưa dùng ValuePattern cho field rõ ràng.");
+    }
+
+    private static void CheckStructuredFirstPlannerUsesUiaTarget()
+    {
+        var planner = new DesktopLocalActionPlanner();
+        var foreground = new ComputerWindowInfo(
+            "0x1234",
+            "Acceptance App",
+            "acceptance",
+            10,
+            true,
+            100,
+            80,
+            900,
+            700);
+
+        var node = new StructuredDesktopNode(
+            Token: "root:save",
+            ParentToken: "root",
+            Depth: 2,
+            Role: "Button",
+            Name: "Save",
+            AutomationId: "saveButton",
+            ClassName: "Button",
+            IsEnabled: true,
+            IsFocused: false,
+            IsOffscreen: false,
+            Left: 420,
+            Top: 260,
+            Width: 120,
+            Height: 44,
+            Patterns: ["Invoke"]);
+
+        var structured = new StructuredDesktopSnapshot(
+            WindowId: foreground.WindowId,
+            RootToken: "root",
+            CapturedAtUtc: DateTimeOffset.UtcNow,
+            NodeCount: 1,
+            MaximumNodes: 240,
+            MaximumDepth: 7,
+            Nodes: [node],
+            Source: "flaui-uia3",
+            Detail: "acceptance");
+
+        var state = new ComputerOperatorDesktopState(
+            DateTimeOffset.UtcNow,
+            foreground,
+            [foreground],
+            FrameLeft: 100,
+            FrameTop: 80,
+            FrameWidth: 900,
+            FrameHeight: 700,
+            CaptureScope: DesktopCaptureScopes.Window,
+            CaptureWindowId: foreground.WindowId,
+            CaptureWindowWasForeground: true,
+            StructuredScene: structured);
+
+        var planned = planner.TryPlan(
+            "Bấm nút Save",
+            state,
+            string.Empty,
+            out var decision);
+
+        Require(
+            planned &&
+            decision.Action == "structured-invoke" &&
+            decision.TargetElementId == "root:save" &&
+            decision.TargetLabel == "Save" &&
+            decision.CoordinateWindowId == foreground.WindowId &&
+            decision.BoxLeft == 320 &&
+            decision.BoxTop == 180 &&
+            decision.BoxWidth == 120 &&
+            decision.BoxHeight == 44 &&
+            decision.Confidence >= 0.94,
+            "Structured-first planner chưa chuyển UIA target thành structured Invoke action theo token.");
     }
 
     private static void CheckDynamicTargetTrackerMovesWithWindow()
@@ -3763,6 +4673,290 @@ public sealed class ComputerOperatorAcceptanceService
             "Event burst policy chưa gom đúng các event dồn dập theo cửa sổ và thời gian.");
     }
 
+    private static void CheckStructuredResolverChoosesUniqueTarget()
+    {
+        var resolver = new StructuredDesktopResolver();
+
+        var graph = new UnifiedStructuredSceneGraph(
+            WindowId: "0x1234",
+            WindowTitle: "Acceptance",
+            ProcessName: "acceptance",
+            RootId: "root",
+            CapturedAtUtc: DateTimeOffset.UtcNow,
+            Nodes:
+            [
+                new UnifiedStructuredSceneNode(
+                    Id: "root:save",
+                    ParentId: "root",
+                    Depth: 1,
+                    Role: "Button",
+                    Name: "Save",
+                    AutomationId: "saveButton",
+                    ClassName: "Button",
+                    IsEnabled: true,
+                    IsFocused: false,
+                    IsVisible: true,
+                    DesktopLeft: 420,
+                    DesktopTop: 260,
+                    Width: 120,
+                    Height: 44,
+                    FrameLeft: 320,
+                    FrameTop: 180,
+                    Capabilities: ["Invoke"],
+                    Children: Array.Empty<string>()),
+                new UnifiedStructuredSceneNode(
+                    Id: "root:cancel",
+                    ParentId: "root",
+                    Depth: 1,
+                    Role: "Button",
+                    Name: "Cancel",
+                    AutomationId: "cancelButton",
+                    ClassName: "Button",
+                    IsEnabled: true,
+                    IsFocused: false,
+                    IsVisible: true,
+                    DesktopLeft: 560,
+                    DesktopTop: 260,
+                    Width: 120,
+                    Height: 44,
+                    FrameLeft: 460,
+                    FrameTop: 180,
+                    Capabilities: ["Invoke"],
+                    Children: Array.Empty<string>())
+            ],
+            Source: "acceptance",
+            Detail: "acceptance");
+
+        var result = resolver.ResolveInteractiveTarget(
+            graph,
+            "Save",
+            new HashSet<string>(
+                ["Invoke"],
+                StringComparer.OrdinalIgnoreCase));
+
+        Require(
+            result.Resolved &&
+            result.Status == StructuredResolutionStatus.Resolved &&
+            result.Node?.Id == "root:save" &&
+            result.Score >= 100,
+            "Structured resolver chưa chọn đúng target duy nhất.");
+    }
+
+    private static void CheckStructuredResolverRejectsAmbiguousTarget()
+    {
+        var resolver = new StructuredDesktopResolver();
+
+        var graph = new UnifiedStructuredSceneGraph(
+            WindowId: "0x1234",
+            WindowTitle: "Acceptance",
+            ProcessName: "acceptance",
+            RootId: "root",
+            CapturedAtUtc: DateTimeOffset.UtcNow,
+            Nodes:
+            [
+                new UnifiedStructuredSceneNode(
+                    Id: "root:one",
+                    ParentId: "root",
+                    Depth: 1,
+                    Role: "Button",
+                    Name: "Open",
+                    AutomationId: "openOne",
+                    ClassName: "Button",
+                    IsEnabled: true,
+                    IsFocused: false,
+                    IsVisible: true,
+                    DesktopLeft: 100,
+                    DesktopTop: 100,
+                    Width: 100,
+                    Height: 40,
+                    FrameLeft: 100,
+                    FrameTop: 100,
+                    Capabilities: ["Invoke"],
+                    Children: Array.Empty<string>()),
+                new UnifiedStructuredSceneNode(
+                    Id: "root:two",
+                    ParentId: "root",
+                    Depth: 1,
+                    Role: "Button",
+                    Name: "Open",
+                    AutomationId: "openTwo",
+                    ClassName: "Button",
+                    IsEnabled: true,
+                    IsFocused: false,
+                    IsVisible: true,
+                    DesktopLeft: 240,
+                    DesktopTop: 100,
+                    Width: 100,
+                    Height: 40,
+                    FrameLeft: 240,
+                    FrameTop: 100,
+                    Capabilities: ["Invoke"],
+                    Children: Array.Empty<string>())
+            ],
+            Source: "acceptance",
+            Detail: "acceptance");
+
+        var result = resolver.ResolveInteractiveTarget(
+            graph,
+            "Open",
+            new HashSet<string>(
+                ["Invoke"],
+                StringComparer.OrdinalIgnoreCase));
+
+        Require(
+            !result.Resolved &&
+            result.Status == StructuredResolutionStatus.Ambiguous &&
+            result.Node is null,
+            "Structured resolver vẫn tự đoán khi có nhiều target cùng mức tin cậy.");
+    }
+
+    private static void CheckStructuredSceneGraphBuildsHierarchy()
+    {
+        var foreground = new ComputerWindowInfo(
+            "0x1234",
+            "Acceptance",
+            "acceptance",
+            42,
+            true,
+            100,
+            80,
+            900,
+            700);
+
+        var root = new StructuredDesktopNode(
+            Token: "root",
+            ParentToken: string.Empty,
+            Depth: 0,
+            Role: "Window",
+            Name: "Acceptance",
+            AutomationId: string.Empty,
+            ClassName: "Window",
+            IsEnabled: true,
+            IsFocused: false,
+            IsOffscreen: false,
+            Left: 100,
+            Top: 80,
+            Width: 900,
+            Height: 700,
+            Patterns: Array.Empty<string>());
+
+        var button = new StructuredDesktopNode(
+            Token: "root:save",
+            ParentToken: "root",
+            Depth: 1,
+            Role: "Button",
+            Name: "Save",
+            AutomationId: "saveButton",
+            ClassName: "Button",
+            IsEnabled: true,
+            IsFocused: true,
+            IsOffscreen: false,
+            Left: 420,
+            Top: 260,
+            Width: 120,
+            Height: 44,
+            Patterns: ["Invoke", "Invoke"]);
+
+        var snapshot = new StructuredDesktopSnapshot(
+            WindowId: foreground.WindowId,
+            RootToken: "root",
+            CapturedAtUtc: DateTimeOffset.UtcNow,
+            NodeCount: 2,
+            MaximumNodes: 200,
+            MaximumDepth: 6,
+            Nodes: [root, button],
+            Source: "flaui-uia3",
+            Detail: "acceptance");
+
+        var graph = UnifiedStructuredSceneGraphBuilder.Build(
+            snapshot,
+            foreground,
+            frameLeft: 100,
+            frameTop: 80,
+            frameWidth: 900,
+            frameHeight: 700);
+
+        var rootNode = graph?.Find("root");
+        var buttonNode = graph?.Find("root:save");
+
+        Require(
+            graph is not null &&
+            graph.NodeCount == 2 &&
+            graph.InteractiveNodeCount == 1 &&
+            rootNode is not null &&
+            rootNode.Children.SequenceEqual(["root:save"]) &&
+            buttonNode is not null &&
+            buttonNode.ParentId == "root" &&
+            buttonNode.FrameLeft == 320 &&
+            buttonNode.FrameTop == 180 &&
+            buttonNode.Capabilities.SequenceEqual(["Invoke"]) &&
+            buttonNode.Interactive,
+            "Structured Scene Graph chưa giữ đúng hierarchy, geometry hoặc capability.");
+    }
+
+    private static void CheckUnifiedDesktopStateIncludesStructuredScene()
+    {
+        var node =
+            new StructuredDesktopNode(
+                Token: "root:button",
+                ParentToken: "root",
+                Depth: 1,
+                Role: "Button",
+                Name: "Save",
+                AutomationId: "saveButton",
+                ClassName: "Button",
+                IsEnabled: true,
+                IsFocused: false,
+                IsOffscreen: false,
+                Left: 100,
+                Top: 120,
+                Width: 80,
+                Height: 32,
+                Patterns: ["Invoke"]);
+
+        var structured =
+            new StructuredDesktopSnapshot(
+                WindowId: "0x1234",
+                RootToken: "root",
+                CapturedAtUtc: DateTimeOffset.UtcNow,
+                NodeCount: 1,
+                MaximumNodes: 200,
+                MaximumDepth: 6,
+                Nodes: [node],
+                Source: "flaui-uia3",
+                Detail: "acceptance");
+
+        var state =
+            new ComputerOperatorDesktopState(
+                DateTimeOffset.UtcNow,
+                ForegroundWindow: null,
+                Windows: Array.Empty<ComputerWindowInfo>(),
+                FrameLeft: 0,
+                FrameTop: 0,
+                FrameWidth: 1920,
+                FrameHeight: 1080,
+                CaptureScope: "virtual-desktop",
+                CaptureWindowId: null,
+                CaptureWindowWasForeground: false,
+                StructuredScene: structured);
+
+        var summary =
+            state.ToPromptSummary();
+
+        Require(
+            state.StructuredScene?.NodeCount == 1 &&
+            summary.Contains(
+                "role=Button",
+                StringComparison.Ordinal) &&
+            summary.Contains(
+                "name=Save",
+                StringComparison.Ordinal) &&
+            summary.Contains(
+                "patterns=Invoke",
+                StringComparison.Ordinal),
+            "Unified Desktop State chưa công bố structured UI scene cho planner.");
+    }
+
     private static void CheckCapabilityCacheAvoidsRepeatedDiscovery()
     {
         var raw =
@@ -4134,6 +5328,63 @@ public sealed class ComputerOperatorAcceptanceService
             item.Action == "other" &&
             item.Route == "other",
             "Telemetry chưa chặn dimension có thể chứa nội dung tự do.");
+    }
+
+    private static void CheckOperatorTelemetryAggregatesRoutes()
+    {
+        var telemetry =
+            new ComputerOperatorTelemetry();
+
+        using (var structured =
+               telemetry.Begin(
+                   ComputerOperatorTelemetryStages.GeminiPlan,
+                   "structured-invoke"))
+        {
+            structured.Complete(
+                success: true,
+                route: "structured-first");
+        }
+
+        using (var gemini =
+               telemetry.Begin(
+                   ComputerOperatorTelemetryStages.GeminiPlan,
+                   "click-left"))
+        {
+            gemini.Complete(
+                success: true,
+                route: "gemini");
+        }
+
+        using (var verify =
+               telemetry.Begin(
+                   ComputerOperatorTelemetryStages.StructuredVerify,
+                   "structured-toggle"))
+        {
+            verify.Complete(
+                success: true,
+                route: "verified");
+        }
+
+        var snapshot =
+            telemetry.GetSnapshot();
+
+        Require(
+            snapshot.RouteAggregates.Any(item =>
+                item.Stage ==
+                    ComputerOperatorTelemetryStages.GeminiPlan &&
+                item.Route == "structured-first" &&
+                item.Count == 1) &&
+            snapshot.RouteAggregates.Any(item =>
+                item.Stage ==
+                    ComputerOperatorTelemetryStages.GeminiPlan &&
+                item.Route == "gemini" &&
+                item.Count == 1) &&
+            snapshot.RouteAggregates.Any(item =>
+                item.Stage ==
+                    ComputerOperatorTelemetryStages.StructuredVerify &&
+                item.Route == "verified" &&
+                item.Count == 1),
+            "Telemetry route aggregate chưa tách được structured-first, Gemini và structured verification.");
     }
 
     private static void CheckOperatorTelemetryBoundsRecentEvents()

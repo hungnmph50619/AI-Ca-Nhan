@@ -450,6 +450,89 @@ public static class ComputerOperatorEventRelevance
         }
 
         if (normalizedAction is
+            "structured-invoke" or
+            "structured-legacy-default")
+        {
+            var score = kind switch
+            {
+                DesktopSystemEventKinds.ForegroundChanged => 1.0,
+                DesktopSystemEventKinds.WindowCreated => 0.98,
+                DesktopSystemEventKinds.WindowDestroyed => 0.98,
+                DesktopSystemEventKinds.WindowShown => 0.95,
+                DesktopSystemEventKinds.WindowHidden => 0.95,
+                DesktopSystemEventKinds.StructureChanged => 0.92,
+                DesktopSystemEventKinds.SelectionChanged => 0.82,
+                DesktopSystemEventKinds.ValueChanged => 0.80,
+                DesktopSystemEventKinds.PropertyChanged => 0.78,
+                DesktopSystemEventKinds.FocusChanged => 0.72,
+                _ => 0.45
+            };
+
+            return ApplySourceConfidence(
+                Math.Min(
+                    1.0,
+                    score + semanticBoost),
+                desktopEvent);
+        }
+
+        if (normalizedAction is
+            "structured-set-value")
+        {
+            var score = kind switch
+            {
+                DesktopSystemEventKinds.ValueChanged => 1.0,
+                DesktopSystemEventKinds.PropertyChanged => 0.95,
+                DesktopSystemEventKinds.FocusChanged => 0.65,
+                _ => 0.30
+            };
+
+            return ApplySourceConfidence(
+                Math.Min(
+                    1.0,
+                    score + semanticBoost),
+                desktopEvent);
+        }
+
+        if (normalizedAction is
+            "structured-select")
+        {
+            var score = kind switch
+            {
+                DesktopSystemEventKinds.SelectionChanged => 1.0,
+                DesktopSystemEventKinds.PropertyChanged => 0.88,
+                DesktopSystemEventKinds.StructureChanged => 0.72,
+                _ => 0.30
+            };
+
+            return ApplySourceConfidence(
+                Math.Min(
+                    1.0,
+                    score + semanticBoost),
+                desktopEvent);
+        }
+
+        if (normalizedAction is
+            "structured-toggle" or
+            "structured-expand" or
+            "structured-collapse")
+        {
+            var score = kind switch
+            {
+                DesktopSystemEventKinds.PropertyChanged => 0.98,
+                DesktopSystemEventKinds.ValueChanged => 0.92,
+                DesktopSystemEventKinds.StructureChanged => 0.90,
+                DesktopSystemEventKinds.SelectionChanged => 0.75,
+                _ => 0.30
+            };
+
+            return ApplySourceConfidence(
+                Math.Min(
+                    1.0,
+                    score + semanticBoost),
+                desktopEvent);
+        }
+
+        if (normalizedAction is
             "click-left" or
             "double-click-left")
         {
@@ -540,7 +623,14 @@ public static class ComputerOperatorAdaptiveWaitPolicy
             "press-hotkey" or
             "focus-window" or
             "restore" or
-            "maximize";
+            "maximize" or
+            "structured-invoke" or
+            "structured-legacy-default" or
+            "structured-set-value" or
+            "structured-select" or
+            "structured-toggle" or
+            "structured-expand" or
+            "structured-collapse";
     }
 
     public static AdaptiveWaitPolicy ForAction(
@@ -553,6 +643,25 @@ public static class ComputerOperatorAdaptiveWaitPolicy
 
         return normalized switch
         {
+            "structured-invoke" or
+            "structured-legacy-default" =>
+                new(
+                    TimeSpan.FromMilliseconds(220),
+                    TimeSpan.FromSeconds(6),
+                    TimeSpan.FromSeconds(30),
+                    0.72),
+
+            "structured-set-value" or
+            "structured-select" or
+            "structured-toggle" or
+            "structured-expand" or
+            "structured-collapse" =>
+                new(
+                    TimeSpan.FromMilliseconds(180),
+                    TimeSpan.FromSeconds(3),
+                    TimeSpan.FromSeconds(12),
+                    0.72),
+
             "click-left" or
             "double-click-left" =>
                 new(

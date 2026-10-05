@@ -472,6 +472,11 @@ public sealed class ComputerOperatorAcceptanceService
             "unified desktop state mang theo structured UI scene",
             CheckUnifiedDesktopStateIncludesStructuredScene);
 
+        RunCheck(
+            checks,
+            "structured scene graph giữ parent-child và capability tương tác",
+            CheckStructuredSceneGraphBuildsHierarchy);
+
 
 
 
@@ -3848,6 +3853,90 @@ public sealed class ComputerOperatorAcceptanceService
                 later,
                 TimeSpan.FromMilliseconds(120)),
             "Event burst policy chưa gom đúng các event dồn dập theo cửa sổ và thời gian.");
+    }
+
+    private static void CheckStructuredSceneGraphBuildsHierarchy()
+    {
+        var foreground = new ComputerWindowInfo(
+            "0x1234",
+            "Acceptance",
+            "acceptance",
+            42,
+            true,
+            100,
+            80,
+            900,
+            700);
+
+        var root = new StructuredDesktopNode(
+            Token: "root",
+            ParentToken: string.Empty,
+            Depth: 0,
+            Role: "Window",
+            Name: "Acceptance",
+            AutomationId: string.Empty,
+            ClassName: "Window",
+            IsEnabled: true,
+            IsFocused: false,
+            IsOffscreen: false,
+            Left: 100,
+            Top: 80,
+            Width: 900,
+            Height: 700,
+            Patterns: Array.Empty<string>());
+
+        var button = new StructuredDesktopNode(
+            Token: "root:save",
+            ParentToken: "root",
+            Depth: 1,
+            Role: "Button",
+            Name: "Save",
+            AutomationId: "saveButton",
+            ClassName: "Button",
+            IsEnabled: true,
+            IsFocused: true,
+            IsOffscreen: false,
+            Left: 420,
+            Top: 260,
+            Width: 120,
+            Height: 44,
+            Patterns: ["Invoke", "Invoke"]);
+
+        var snapshot = new StructuredDesktopSnapshot(
+            WindowId: foreground.WindowId,
+            RootToken: "root",
+            CapturedAtUtc: DateTimeOffset.UtcNow,
+            NodeCount: 2,
+            MaximumNodes: 200,
+            MaximumDepth: 6,
+            Nodes: [root, button],
+            Source: "flaui-uia3",
+            Detail: "acceptance");
+
+        var graph = UnifiedStructuredSceneGraphBuilder.Build(
+            snapshot,
+            foreground,
+            frameLeft: 100,
+            frameTop: 80,
+            frameWidth: 900,
+            frameHeight: 700);
+
+        var rootNode = graph?.Find("root");
+        var buttonNode = graph?.Find("root:save");
+
+        Require(
+            graph is not null &&
+            graph.NodeCount == 2 &&
+            graph.InteractiveNodeCount == 1 &&
+            rootNode is not null &&
+            rootNode.Children.SequenceEqual(["root:save"]) &&
+            buttonNode is not null &&
+            buttonNode.ParentId == "root" &&
+            buttonNode.FrameLeft == 320 &&
+            buttonNode.FrameTop == 180 &&
+            buttonNode.Capabilities.SequenceEqual(["Invoke"]) &&
+            buttonNode.Interactive,
+            "Structured Scene Graph chưa giữ đúng hierarchy, geometry hoặc capability.");
     }
 
     private static void CheckUnifiedDesktopStateIncludesStructuredScene()

@@ -1159,6 +1159,31 @@ public sealed class ComputerOperatorTaskService(
                     }
                 }
 
+                if (!verification.Verified &&
+                    verification.Inconclusive)
+                {
+                    taskHistory.Add(
+                        $"STEP {index}: VERIFY-INCONCLUSIVE {actionSignature} — {verification.Detail}");
+
+                    taskHistory.Add(
+                        "CHỈ DẪN: Semantic verifier tạm thời không khả dụng. Không được replay side effect vừa thực hiện. Phải quan sát lại desktop hiện tại, ưu tiên structured/local evidence và chỉ gọi semantic verifier lại khi cần.");
+
+                    progress.Add(
+                        "replan",
+                        $"Xác minh chưa thể kết luận: {verification.Detail}",
+                        "inconclusive",
+                        verification.Confidence);
+
+                    _ = actionState.MoveTo(
+                        ComputerOperatorActionState.Replan,
+                        "Verification inconclusive; quan sát lại trước action mới.");
+
+                    await Task.Delay(
+                        350,
+                        linked.Token);
+                    continue;
+                }
+
                 if (!verification.Verified)
                 {
                     if (IsKeyboardAction(decision.Action))
@@ -1394,7 +1419,8 @@ public sealed class ComputerOperatorTaskService(
     private sealed record ActionVerificationResult(
         bool Verified,
         double Confidence,
-        string Detail);
+        string Detail,
+        bool Inconclusive = false);
 
     private async Task<ActionVerificationResult> VerifyAppliedActionAsync(
         DesktopOperatorDecision decision,
@@ -1630,6 +1656,45 @@ public sealed class ComputerOperatorTaskService(
                         result.Satisfied,
                         "gemini");
                 }
+                catch (HttpRequestException exception)
+                    when (IsTransientVisionFailure(exception))
+                {
+                    progress.Add(
+                        "vision-transient",
+                        $"Gemini Vision tạm thời không khả dụng ({(int?)exception.StatusCode ?? 0}). Chờ ngắn rồi thử xác minh lại một lần; không replay action.",
+                        "wait");
+
+                    await Task.Delay(
+                        900,
+                        cancellationToken);
+
+                    try
+                    {
+                        result = await vision.VerifyAsync(
+                            visionFrame.Frame,
+                            decision.ExpectedEffect,
+                            frameDifference,
+                            cancellationToken);
+
+                        geminiVerifyTelemetry.Complete(
+                            result.Satisfied,
+                            "gemini-retry");
+                    }
+                    catch (HttpRequestException retryException)
+                        when (IsTransientVisionFailure(retryException))
+                    {
+                        geminiVerifyTelemetry.Complete(
+                            success: false,
+                            route: "gemini-transient");
+
+                        return new(
+                            Verified: false,
+                            Confidence: 0,
+                            Detail:
+                                $"Gemini Vision tạm thời không khả dụng sau lần thử lại (HTTP {(int?)retryException.StatusCode ?? 0}). Kết quả hành động chưa thể kết luận; phải quan sát lại trạng thái hiện tại và tuyệt đối không replay side effect.",
+                            Inconclusive: true);
+                    }
+                }
                 catch
                 {
                     geminiVerifyTelemetry.Complete(
@@ -1668,6 +1733,16 @@ public sealed class ComputerOperatorTaskService(
         {
             after.Clear();
         }
+    }
+
+    private static bool IsTransientVisionFailure(
+        HttpRequestException exception)
+    {
+        if (exception.StatusCode is null)
+            return true;
+
+        var code = (int)exception.StatusCode.Value;
+        return code is 408 or 429 or 500 or 502 or 503 or 504;
     }
 
     private async Task<ActionVerificationResult?> WaitForAdaptiveTransitionAsync(

@@ -87,26 +87,60 @@ confidence phải từ 0 đến 1.
             }
         };
 
-        using var request = new HttpRequestMessage(
-            HttpMethod.Post,
-            $"models/{model}:generateContent")
+        HttpResponseMessage? response = null;
+        for (var attempt = 1; attempt <= 2; attempt++)
         {
-            Content = new StringContent(
-                JsonSerializer.Serialize(payload),
-                Encoding.UTF8,
-                "application/json")
-        };
-        request.Headers.Add("x-goog-api-key", key);
+            using var request = new HttpRequestMessage(
+                HttpMethod.Post,
+                $"models/{model}:generateContent")
+            {
+                Content = new StringContent(
+                    JsonSerializer.Serialize(payload),
+                    Encoding.UTF8,
+                    "application/json")
+            };
+            request.Headers.Add("x-goog-api-key", key);
 
-        using var response = await httpClient.SendAsync(
-            request,
-            cancellationToken);
-        if (!response.IsSuccessStatusCode)
+            response = await httpClient.SendAsync(
+                request,
+                cancellationToken);
+
+            if (response.IsSuccessStatusCode)
+                break;
+
+            var statusCode = (int)response.StatusCode;
+            var transient =
+                statusCode is 408 or 429 or 500 or 502 or 503 or 504;
+
+            if (transient && attempt == 1)
+            {
+                response.Dispose();
+                response = null;
+                await Task.Delay(900, cancellationToken);
+                continue;
+            }
+
+            if (transient)
+            {
+                response.Dispose();
+                return CreateSafeWaitDecision(
+                    $"Gemini planning tạm thời không khả dụng sau lần thử lại (HTTP {statusCode}). Không thực thi action mới; sẽ quan sát lại trạng thái desktop hiện tại.");
+            }
+
+            response.Dispose();
             throw new HttpRequestException(
-                $"Desktop Vision chưa đọc được ảnh (HTTP {(int)response.StatusCode}).",
+                $"Desktop Vision chưa đọc được ảnh (HTTP {statusCode}).",
                 null,
-                response.StatusCode);
+                (System.Net.HttpStatusCode)statusCode);
+        }
 
+        if (response is null)
+        {
+            return CreateSafeWaitDecision(
+                "Gemini planning chưa trả được phản hồi hợp lệ. Không thực thi action mới; sẽ quan sát lại trạng thái desktop hiện tại.");
+        }
+
+        using (response)
         using var document = JsonDocument.Parse(
             await response.Content.ReadAsStreamAsync(cancellationToken));
         var text = ExtractText(document.RootElement);

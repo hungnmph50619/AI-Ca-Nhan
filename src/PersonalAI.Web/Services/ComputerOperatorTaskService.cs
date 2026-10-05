@@ -2312,6 +2312,42 @@ public sealed class ComputerOperatorTaskService(
 
                 try
                 {
+                    if ((decision.Action ?? string.Empty)
+                            .StartsWith(
+                                "structured-",
+                                StringComparison.OrdinalIgnoreCase))
+                    {
+                        var structuredState =
+                            BuildDesktopState(frame);
+
+                        var structuredSample =
+                            structuredVerification.Verify(
+                                decision,
+                                structuredState.StructuredGraph);
+
+                        if (structuredSample.Status ==
+                            StructuredVerificationStatus.Verified)
+                        {
+                            return new AdaptiveProgressSample(
+                                AdaptiveWaitStatuses.Verified,
+                                structuredSample.Confidence,
+                                $"Event-driven structured sample đã xác minh: {structuredSample.Reason}",
+                                MeaningfulProgress: true);
+                        }
+
+                        if (structuredSample.Status ==
+                            StructuredVerificationStatus.Failed)
+                        {
+                            return new AdaptiveProgressSample(
+                                AdaptiveWaitStatuses.Pending,
+                                Math.Max(
+                                    0.55,
+                                    structuredSample.Confidence * 0.70),
+                                $"Structured state chưa đạt sau event/poll wake; tiếp tục chờ mà không replay action. {structuredSample.Reason}",
+                                MeaningfulProgress: false);
+                        }
+                    }
+
                     var contextChanged =
                         verificationCaptureContext is not null &&
                         !verificationCaptureContext.Matches(frame);

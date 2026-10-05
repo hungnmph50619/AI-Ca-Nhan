@@ -348,6 +348,21 @@ public sealed class ComputerOperatorAcceptanceService
 
         RunCheck(
             checks,
+            "adaptive wait hoàn thành khi có final evidence",
+            CheckAdaptiveWaitCompletesOnVerifiedEvidence);
+
+        RunCheck(
+            checks,
+            "adaptive wait không gia hạn vì visual animation yếu",
+            CheckAdaptiveWaitIgnoresWeakVisualHeartbeat);
+
+        RunCheck(
+            checks,
+            "adaptive wait stalled không bị coi là failed",
+            CheckAdaptiveWaitStalledIsNotFailure);
+
+        RunCheck(
+            checks,
             "capability first router phát hiện direct tool an toàn",
             CheckUniversalRouterDetectsDirectToolOpportunity);
 
@@ -2801,6 +2816,96 @@ public sealed class ComputerOperatorAcceptanceService
                 "capability:browser.http-html",
                 StringComparison.OrdinalIgnoreCase),
             $"Router vẫn quảng bá capability không khả dụng: {browser.Reason}");
+    }
+
+    private static void CheckAdaptiveWaitCompletesOnVerifiedEvidence()
+    {
+        var engine = new AdaptiveVerificationWaitEngine();
+        var calls = 0;
+
+        var result = engine.WaitAsync(
+                _ =>
+                {
+                    calls++;
+                    return Task.FromResult(
+                        calls >= 2
+                            ? new AdaptiveProgressSample(
+                                AdaptiveWaitStatuses.Verified,
+                                0.99,
+                                "final evidence",
+                                MeaningfulProgress: true)
+                            : new AdaptiveProgressSample(
+                                AdaptiveWaitStatuses.Progressing,
+                                0.95,
+                                "foreground changed",
+                                MeaningfulProgress: true));
+                },
+                new AdaptiveWaitPolicy(
+                    TimeSpan.FromMilliseconds(1),
+                    TimeSpan.FromMilliseconds(50),
+                    TimeSpan.FromMilliseconds(200),
+                    0.70))
+            .GetAwaiter()
+            .GetResult();
+
+        Require(
+            result.Verified &&
+            !result.Failed &&
+            result.Samples == 2 &&
+            result.ProgressHeartbeats == 1,
+            "Adaptive Wait chưa complete đúng khi final evidence xuất hiện.");
+    }
+
+    private static void CheckAdaptiveWaitIgnoresWeakVisualHeartbeat()
+    {
+        var engine = new AdaptiveVerificationWaitEngine();
+
+        var result = engine.WaitAsync(
+                _ => Task.FromResult(
+                    new AdaptiveProgressSample(
+                        AdaptiveWaitStatuses.Progressing,
+                        0.60,
+                        "visual animation",
+                        MeaningfulProgress: false)),
+                new AdaptiveWaitPolicy(
+                    TimeSpan.FromMilliseconds(1),
+                    TimeSpan.FromMilliseconds(15),
+                    TimeSpan.FromMilliseconds(100),
+                    0.70))
+            .GetAwaiter()
+            .GetResult();
+
+        Require(
+            result.Status == AdaptiveWaitStatuses.Stalled &&
+            result.ProgressHeartbeats == 0 &&
+            !result.Failed,
+            "Visual animation yếu vẫn đang gia hạn stall timer.");
+    }
+
+    private static void CheckAdaptiveWaitStalledIsNotFailure()
+    {
+        var engine = new AdaptiveVerificationWaitEngine();
+
+        var result = engine.WaitAsync(
+                _ => Task.FromResult(
+                    new AdaptiveProgressSample(
+                        AdaptiveWaitStatuses.Pending,
+                        0.20,
+                        "waiting",
+                        MeaningfulProgress: false)),
+                new AdaptiveWaitPolicy(
+                    TimeSpan.FromMilliseconds(1),
+                    TimeSpan.FromMilliseconds(12),
+                    TimeSpan.FromMilliseconds(100),
+                    0.70))
+            .GetAwaiter()
+            .GetResult();
+
+        Require(
+            result.Status == AdaptiveWaitStatuses.Stalled &&
+            !result.Verified &&
+            !result.Failed,
+            "Stalled đang bị đánh đồng với Failed.");
     }
 
     private static void CheckUniversalRouterDetectsDirectToolOpportunity()

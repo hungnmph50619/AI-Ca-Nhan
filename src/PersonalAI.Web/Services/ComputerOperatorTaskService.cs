@@ -2586,6 +2586,10 @@ public sealed class ComputerOperatorTaskService(
                     fastObservation,
                     frameDifference);
 
+                progress.AddDiagnostic(
+                    "trace-verification",
+                    $"action={decision.Action}; expected={LimitDiagnostic(decision.ExpectedEffect, 180)}; foregroundChanged={fastObservation.ForegroundWindowChanged}; windowBoundsChanged={fastObservation.WindowBoundsChanged}; screenChanged={fastObservation.ScreenChanged}; fastChangeRatio={fastObservation.ChangeRatio:0.000000}; frameComparable={frameDifference?.Comparable}; frameChangedRatio={frameDifference?.ChangedRatio ?? -1:0.000000}; dHash={localVisual?.HashDistance ?? -1}; visualVerdict={visualVerdict.Status}; visualConfidence={visualVerdict.Confidence:0.000}; route={route.Route}; routeConfidence={route.Confidence:0.000}; reason={LimitDiagnostic(route.Reason, 240)}.");
+
                 progress.Add(
                     "verification-route",
                     $"Verification Router: {route.Route} — {route.Reason}",

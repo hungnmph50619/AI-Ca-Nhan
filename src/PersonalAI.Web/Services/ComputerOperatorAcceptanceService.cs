@@ -436,6 +436,12 @@ public sealed class ComputerOperatorAcceptanceService
             "event observation snapshot công bố counters an toàn",
             CheckEventObservationSnapshotContract);
 
+        RunCheck(
+            checks,
+            "adaptive wait truyền đúng window target cho event wake",
+            CheckAdaptiveWaitUsesTargetAwareWake);
+
+
 
         RunCheck(
             checks,
@@ -3550,6 +3556,40 @@ public sealed class ComputerOperatorAcceptanceService
             "Event observation snapshot trả counters không hợp lệ.");
     }
 
+    private static void CheckAdaptiveWaitUsesTargetAwareWake()
+    {
+        var wake =
+            new AcceptanceObservationWakeSource(
+                emitEvent: true);
+
+        var engine =
+            new AdaptiveVerificationWaitEngine(
+                wake);
+
+        var result =
+            engine.WaitAsync(
+                    _ => Task.FromResult(
+                        new AdaptiveProgressSample(
+                            AdaptiveWaitStatuses.Pending,
+                            0.3,
+                            "acceptance pending")),
+                    new AdaptiveWaitPolicy(
+                        TimeSpan.FromMilliseconds(1),
+                        TimeSpan.FromMilliseconds(20),
+                        TimeSpan.FromMilliseconds(40),
+                        0.7),
+                    "0xCAFE",
+                    CancellationToken.None)
+                .GetAwaiter()
+                .GetResult();
+
+        Require(
+            wake.LastTargetWindowId == "0xCAFE" &&
+            wake.WaitCount > 0 &&
+            result.EventWakeups > 0,
+            "Adaptive wait chưa truyền đúng target window vào event wake source.");
+    }
+
     private static void CheckCapabilityCacheAvoidsRepeatedDiscovery()
     {
         var raw =
@@ -6426,6 +6466,8 @@ public sealed class ComputerOperatorAcceptanceService
     {
         public int WaitCount { get; private set; }
 
+        public string? LastTargetWindowId { get; private set; }
+
         public bool EventDrivenAvailable => true;
 
         public DesktopEventObservationSnapshot GetSnapshot() =>
@@ -6438,6 +6480,19 @@ public sealed class ComputerOperatorAcceptanceService
                 PollFallbacks: emitEvent ? 0 : WaitCount,
                 QueuedEvents: 0,
                 LastEvent: null);
+
+        public Task<DesktopObservationWakeResult> WaitForWindowAsync(
+            string? windowId,
+            TimeSpan fallbackDelay,
+            CancellationToken cancellationToken = default)
+        {
+            LastTargetWindowId =
+                windowId;
+
+            return WaitAsync(
+                fallbackDelay,
+                cancellationToken);
+        }
 
         public async Task<DesktopObservationWakeResult> WaitAsync(
             TimeSpan fallbackDelay,

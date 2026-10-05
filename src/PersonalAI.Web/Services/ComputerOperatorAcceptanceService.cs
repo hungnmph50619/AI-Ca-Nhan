@@ -174,6 +174,11 @@ public sealed class ComputerOperatorAcceptanceService
             "structured-first planner dùng ValuePattern cho field rõ ràng",
             CheckStructuredFirstPlannerUsesValuePattern);
 
+        RunCheck(
+            checks,
+            "structured-first planner chọn đúng pattern theo intent",
+            CheckStructuredPlannerUsesIntentSpecificPattern);
+
 
         RunCheck(
             checks,
@@ -1935,6 +1940,81 @@ public sealed class ComputerOperatorAcceptanceService
                 "Windows Search",
                 StringComparison.OrdinalIgnoreCase),
             "Local planner không chọn Windows Search generic cho intent mở ứng dụng.");
+    }
+
+    private static void CheckStructuredPlannerUsesIntentSpecificPattern()
+    {
+        var planner = new DesktopLocalActionPlanner();
+        var foreground = new ComputerWindowInfo(
+            "0x1234",
+            "Acceptance App",
+            "acceptance",
+            10,
+            true,
+            0,
+            0,
+            1000,
+            700);
+
+        var node = new StructuredDesktopNode(
+            Token: "root:option",
+            ParentToken: "root",
+            Depth: 2,
+            Role: "ListItem",
+            Name: "Option A",
+            AutomationId: "optionA",
+            ClassName: "ListItem",
+            IsEnabled: true,
+            IsFocused: false,
+            IsOffscreen: false,
+            Left: 200,
+            Top: 160,
+            Width: 180,
+            Height: 36,
+            Patterns: ["Invoke", "SelectionItem"]);
+
+        var structured = new StructuredDesktopSnapshot(
+            WindowId: foreground.WindowId,
+            RootToken: "root",
+            CapturedAtUtc: DateTimeOffset.UtcNow,
+            NodeCount: 1,
+            MaximumNodes: 240,
+            MaximumDepth: 7,
+            Nodes: [node],
+            Source: "flaui-uia3",
+            Detail: "acceptance");
+
+        var state = new ComputerOperatorDesktopState(
+            DateTimeOffset.UtcNow,
+            foreground,
+            [foreground],
+            FrameLeft: 0,
+            FrameTop: 0,
+            FrameWidth: 1000,
+            FrameHeight: 700,
+            CaptureScope: DesktopCaptureScopes.Window,
+            CaptureWindowId: foreground.WindowId,
+            CaptureWindowWasForeground: true,
+            StructuredScene: structured);
+
+        var selectPlanned = planner.TryPlan(
+            "Chọn Option A",
+            state,
+            string.Empty,
+            out var selectDecision);
+
+        var invokePlanned = planner.TryPlan(
+            "Bấm Option A",
+            state,
+            string.Empty,
+            out var invokeDecision);
+
+        Require(
+            selectPlanned &&
+            invokePlanned &&
+            selectDecision.Action == "structured-select" &&
+            invokeDecision.Action == "structured-invoke",
+            "Structured planner chưa phân biệt đúng SelectionItem và Invoke theo intent.");
     }
 
     private static void CheckStructuredFirstPlannerUsesValuePattern()

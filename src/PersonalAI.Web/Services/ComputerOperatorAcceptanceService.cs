@@ -621,6 +621,11 @@ public sealed class ComputerOperatorAcceptanceService
 
         RunCheck(
             checks,
+            "telemetry aggregate phân biệt structured-first và Gemini route",
+            CheckOperatorTelemetryAggregatesRoutes);
+
+        RunCheck(
+            checks,
             "reliable operator runtime chỉ ready khi có desktop capability",
             CheckReliableOperatorRuntimeReadiness);
 
@@ -5323,6 +5328,63 @@ public sealed class ComputerOperatorAcceptanceService
             item.Action == "other" &&
             item.Route == "other",
             "Telemetry chưa chặn dimension có thể chứa nội dung tự do.");
+    }
+
+    private static void CheckOperatorTelemetryAggregatesRoutes()
+    {
+        var telemetry =
+            new ComputerOperatorTelemetry();
+
+        using (var structured =
+               telemetry.Begin(
+                   ComputerOperatorTelemetryStages.GeminiPlan,
+                   "structured-invoke"))
+        {
+            structured.Complete(
+                success: true,
+                route: "structured-first");
+        }
+
+        using (var gemini =
+               telemetry.Begin(
+                   ComputerOperatorTelemetryStages.GeminiPlan,
+                   "click-left"))
+        {
+            gemini.Complete(
+                success: true,
+                route: "gemini");
+        }
+
+        using (var verify =
+               telemetry.Begin(
+                   ComputerOperatorTelemetryStages.StructuredVerify,
+                   "structured-toggle"))
+        {
+            verify.Complete(
+                success: true,
+                route: "verified");
+        }
+
+        var snapshot =
+            telemetry.GetSnapshot();
+
+        Require(
+            snapshot.RouteAggregates.Any(item =>
+                item.Stage ==
+                    ComputerOperatorTelemetryStages.GeminiPlan &&
+                item.Route == "structured-first" &&
+                item.Count == 1) &&
+            snapshot.RouteAggregates.Any(item =>
+                item.Stage ==
+                    ComputerOperatorTelemetryStages.GeminiPlan &&
+                item.Route == "gemini" &&
+                item.Count == 1) &&
+            snapshot.RouteAggregates.Any(item =>
+                item.Stage ==
+                    ComputerOperatorTelemetryStages.StructuredVerify &&
+                item.Route == "verified" &&
+                item.Count == 1),
+            "Telemetry route aggregate chưa tách được structured-first, Gemini và structured verification.");
     }
 
     private static void CheckOperatorTelemetryBoundsRecentEvents()

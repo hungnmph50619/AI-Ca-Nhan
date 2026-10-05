@@ -28,6 +28,7 @@ No tools are available in this continuation. Produce only the final user-facing 
     private readonly HttpClient _httpClient;
     private readonly OpenAiOptions _options;
     private readonly IAiSettingsStore _settingsStore;
+    private readonly IChatAttachmentStore _attachmentStore;
     private readonly ILogger<OpenAiChatService> _logger;
     private readonly string _instructions;
 
@@ -35,12 +36,14 @@ No tools are available in this continuation. Produce only the final user-facing 
         HttpClient httpClient,
         IOptions<OpenAiOptions> options,
         IAiSettingsStore settingsStore,
+        IChatAttachmentStore attachmentStore,
         IWebHostEnvironment environment,
         ILogger<OpenAiChatService> logger)
     {
         _httpClient = httpClient;
         _options = options.Value;
         _settingsStore = settingsStore;
+        _attachmentStore = attachmentStore;
         _logger = logger;
 
         var constitutionPath = Path.Combine(environment.ContentRootPath, "AI-CONSTITUTION.md");
@@ -70,11 +73,9 @@ No tools are available in this continuation. Produce only the final user-facing 
         {
             model = Model,
             instructions = _instructions,
-            input = messages.Select(message => new
-            {
-                role = message.Role,
-                content = message.Content
-            }),
+            input = messages
+                .Select(BuildOpenAiInputItem)
+                .ToArray(),
             max_output_tokens = Math.Clamp(_options.MaxOutputTokens, 128, 16_384),
             store = false
         };
@@ -159,6 +160,86 @@ No tools are available in this continuation. Produce only the final user-facing 
         throw new HttpRequestException("OpenAI không thể xử lý yêu cầu sau nhiều lần thử.");
     }
 
+
+    private object BuildOpenAiInputItem(
+        ChatMessage message)
+    {
+        if (message.Attachments is not
+            {
+                Count: > 0
+            })
+        {
+            return new
+            {
+                role =
+                    message.Role,
+                content =
+                    message.Content
+            };
+        }
+
+        var content =
+            new List<object>
+            {
+                new
+                {
+                    type =
+                        "input_text",
+                    text =
+                        message.Content
+                }
+            };
+
+        foreach (var reference in message.Attachments)
+        {
+            var stored =
+                _attachmentStore.GetRequired(
+                    reference.Id);
+
+            var bytes =
+                _attachmentStore.ReadAllBytes(
+                    reference.Id);
+
+            var base64 =
+                Convert.ToBase64String(
+                    bytes);
+
+            if (stored.Kind.Equals(
+                    "image",
+                    StringComparison.OrdinalIgnoreCase))
+            {
+                content.Add(
+                    new
+                    {
+                        type =
+                            "input_image",
+                        image_url =
+                            $"data:{stored.MimeType};base64,{base64}"
+                    });
+            }
+            else
+            {
+                content.Add(
+                    new
+                    {
+                        type =
+                            "input_file",
+                        filename =
+                            stored.FileName,
+                        file_data =
+                            $"data:{stored.MimeType};base64,{base64}"
+                    });
+            }
+        }
+
+        return new
+        {
+            role =
+                message.Role,
+            content =
+                content.ToArray()
+        };
+    }
 
     public async Task<ProviderFunctionCallDecision?> ProposeFunctionCallAsync(
         IReadOnlyList<ChatMessage> messages,

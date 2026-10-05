@@ -1,28 +1,13 @@
-using CoreOCROnnx.SDK;
+using System.Diagnostics;
+using System.Text.Json;
 
 namespace PersonalAI.Web.Services;
 
 public sealed class PaddleOnnxDesktopOcrProvider(
     IFlaUiAutomationClient sidecar)
-    : IDesktopOcrProvider,
-      IDisposable
+    : IDesktopOcrProvider
 {
-    private static readonly string[] RequiredModelFiles =
-    [
-        "PP-OCRv6_tiny_det.onnx",
-        "PP-OCRv6_tiny_rec.onnx",
-        "ch_PP-LCNet_x0_25_textline_ori_cls_mobile.onnx",
-        "ppocrv6tiny_dict.txt"
-    ];
-
-    private readonly object gate =
-        new();
-
-    private OCRService? engine;
-    private string? modelDirectory;
-    private string? initializationFailure;
-    private bool initialized;
-    private bool disposed;
+    private const int WorkerTimeoutMilliseconds = 4500;
 
     public string Name =>
         "paddleocr-onnx";
@@ -30,17 +15,13 @@ public sealed class PaddleOnnxDesktopOcrProvider(
     public DesktopOcrObservation ReadWindow(
         string windowId)
     {
-        if (disposed)
-            return Unavailable(
-                "PaddleOCR/ONNX provider đã được dispose.");
-
         if (!OperatingSystem.IsWindows())
             return Unavailable(
-                "PaddleOCR/ONNX CPU provider hiện chỉ bật trên Windows.");
+                "PaddleOCR/ONNX worker hiện chỉ bật trên Windows.");
 
         if (!Environment.Is64BitProcess)
             return Unavailable(
-                "PaddleOCR/ONNX runtime yêu cầu tiến trình x64.");
+                "PaddleOCR/ONNX worker yêu cầu tiến trình x64.");
 
         if (string.IsNullOrWhiteSpace(
                 windowId))
@@ -54,13 +35,6 @@ public sealed class PaddleOnnxDesktopOcrProvider(
             return Unavailable(
                 "Windows Automation sidecar không khả dụng để capture cửa sổ.");
         }
-
-        var init =
-            EnsureInitialized();
-
-        if (!init.Success)
-            return Unavailable(
-                init.Reason);
 
         FlaUiAutomationResponse capture;
         try
@@ -89,316 +63,271 @@ public sealed class PaddleOnnxDesktopOcrProvider(
                 $"Capture cho PaddleOCR/ONNX thất bại: {capture.Detail}");
         }
 
-        try
-        {
-            var image =
-                Convert.FromBase64String(
-                    capture.JpegBase64);
+        var worker =
+            ResolveWorker();
 
-            OCRResult result;
-            lock (gate)
-            {
-                if (engine is null)
-                {
-                    return Unavailable(
-                        "PaddleOCR/ONNX engine chưa được khởi tạo.");
-                }
-
-                result =
-                    engine.Detect(
-                        image);
-            }
-
-            var lines =
-                (result.TextBlocks ??
-                 new List<JsonResult>())
-                    .Where(block =>
-                        !string.IsNullOrWhiteSpace(
-                            block.Text))
-                    .Select(ToLine)
-                    .Where(line =>
-                        line is not null)
-                    .Cast<DesktopOcrLine>()
-                    .ToArray();
-
-            var text =
-                string.IsNullOrWhiteSpace(
-                    result.StrRes)
-                    ? string.Join(
-                        Environment.NewLine,
-                        lines.Select(line =>
-                            line.Text))
-                    : result.StrRes.Trim();
-
-            return new(
-                Available: true,
-                Text:
-                    text,
-                Language:
-                    "multilingual",
-                Lines:
-                    lines,
-                CaptureWidth:
-                    capture.CaptureWidth,
-                CaptureHeight:
-                    capture.CaptureHeight,
-                Provider:
-                    Name,
-                Reason:
-                    $"PaddleOCR/ONNX đọc được {lines.Length} text block; detect={result.DbNetTime:0.0}ms; recognize={result.DetectTime:0.0}ms.");
-        }
-        catch (Exception exception) when (
-            exception is
-                FormatException or
-                OCRException or
-                DllNotFoundException or
-                EntryPointNotFoundException or
-                BadImageFormatException or
-                TypeInitializationException or
-                InvalidOperationException)
+        if (worker is null)
         {
             return Unavailable(
-                $"PaddleOCR/ONNX inference thất bại: {exception.GetType().Name}: {exception.Message}");
+                "Không tìm thấy PersonalAI.LocalVisionWorker trong output directory.");
         }
+
+        var request =
+            JsonSerializer.Serialize(
+                new WorkerRequest(
+                    "paddle-ocr",
+                    capture.JpegBase64),
+                JsonOptions());
+
+        var result =
+            InvokeWorker(
+                worker,
+                request);
+
+        if (!result.Success ||
+            string.IsNullOrWhiteSpace(
+                result.Output))
+        {
+            return Unavailable(
+                result.Detail);
+        }
+
+        WorkerResponse? response;
+        try
+        {
+            response =
+                JsonSerializer.Deserialize<WorkerResponse>(
+                    result.Output,
+                    JsonOptions());
+        }
+        catch (JsonException exception)
+        {
+            return Unavailable(
+                $"Local vision worker trả JSON không hợp lệ: {exception.Message}");
+        }
+
+        if (response is null ||
+            !response.Success)
+        {
+            return Unavailable(
+                response?.Detail ??
+                "Local vision worker không trả kết quả.");
+        }
+
+        var lines =
+            (response.Lines ??
+             Array.Empty<WorkerLine>())
+                .Select(line =>
+                    new DesktopOcrLine(
+                        line.Text ??
+                        string.Empty,
+                        (line.Words ??
+                         Array.Empty<WorkerWord>())
+                            .Select(word =>
+                                new DesktopOcrWord(
+                                    word.Text ??
+                                    string.Empty,
+                                    word.Left,
+                                    word.Top,
+                                    word.Width,
+                                    word.Height))
+                            .ToArray()))
+                .ToArray();
+
+        return new(
+            Available: true,
+            Text:
+                response.Text ??
+                string.Empty,
+            Language:
+                "multilingual",
+            Lines:
+                lines,
+            CaptureWidth:
+                capture.CaptureWidth,
+            CaptureHeight:
+                capture.CaptureHeight,
+            Provider:
+                Name,
+            Reason:
+                $"Isolated worker: {response.Detail}");
     }
 
-    private (bool Success, string Reason) EnsureInitialized()
+    internal static WorkerInvocationResult InvokeWorkerForAcceptance(
+        string executable,
+        string arguments,
+        string request,
+        int timeoutMilliseconds) =>
+        InvokeWorker(
+            new WorkerLaunch(
+                executable,
+                arguments),
+            request,
+            timeoutMilliseconds);
+
+    private static WorkerInvocationResult InvokeWorker(
+        WorkerLaunch worker,
+        string request,
+        int timeoutMilliseconds =
+            WorkerTimeoutMilliseconds)
     {
-        lock (gate)
-        {
-            if (initialized &&
-                engine is not null)
+        using var process =
+            new Process
             {
-                return (
-                    true,
-                    $"PaddleOCR/ONNX đã sẵn sàng từ {modelDirectory}.");
-            }
-
-            if (!string.IsNullOrWhiteSpace(
-                    initializationFailure))
-            {
-                return (
-                    false,
-                    initializationFailure);
-            }
-
-            var directory =
-                FindModelDirectory(
-                    AppContext.BaseDirectory);
-
-            if (directory is null)
-            {
-                initializationFailure =
-                    "Không tìm thấy bộ model PP-OCRv6 đi kèm CoreOCR runtime trong output directory.";
-                return (
-                    false,
-                    initializationFailure);
-            }
-
-            try
-            {
-                var candidate =
-                    new OCRService();
-
-                var message =
-                    candidate.InitDefaultOCREngine(
-                        directory);
-
-                if (!message.Contains(
-                        "成功",
-                        StringComparison.OrdinalIgnoreCase) &&
-                    !message.Contains(
-                        "success",
-                        StringComparison.OrdinalIgnoreCase))
-                {
-                    candidate.FreeEngine();
-                    initializationFailure =
-                        $"PaddleOCR/ONNX init không thành công: {message}";
-                    return (
-                        false,
-                        initializationFailure);
-                }
-
-                engine =
-                    candidate;
-                modelDirectory =
-                    directory;
-                initialized =
-                    true;
-
-                return (
-                    true,
-                    $"PaddleOCR/ONNX khởi tạo thành công từ {directory}.");
-            }
-            catch (Exception exception) when (
-                exception is
-                    OCRException or
-                    DllNotFoundException or
-                    EntryPointNotFoundException or
-                    BadImageFormatException or
-                    TypeInitializationException or
-                    InvalidOperationException)
-            {
-                initializationFailure =
-                    $"PaddleOCR/ONNX init thất bại: {exception.GetType().Name}: {exception.Message}";
-                return (
-                    false,
-                    initializationFailure);
-            }
-        }
-    }
-
-    internal static string? FindModelDirectory(
-        string baseDirectory)
-    {
-        if (string.IsNullOrWhiteSpace(
-                baseDirectory) ||
-            !Directory.Exists(
-                baseDirectory))
-        {
-            return null;
-        }
-
-        var candidates =
-            new[]
-            {
-                baseDirectory,
-                Path.Combine(
-                    baseDirectory,
-                    "PaddleOCR"),
-                Path.Combine(
-                    baseDirectory,
-                    "models"),
-                Path.Combine(
-                    baseDirectory,
-                    "OCRModels"),
-                Path.Combine(
-                    baseDirectory,
-                    "CoreOCR"),
-                Path.Combine(
-                    baseDirectory,
-                    "runtimes",
-                    "win-x64",
-                    "native")
-            }
-            .Distinct(
-                StringComparer.OrdinalIgnoreCase);
-
-        foreach (var candidate in
-                 candidates)
-        {
-            if (HasAllModels(
-                    candidate))
-            {
-                return candidate;
-            }
-        }
+                StartInfo =
+                    new ProcessStartInfo
+                    {
+                        FileName =
+                            worker.Executable,
+                        Arguments =
+                            worker.Arguments,
+                        RedirectStandardInput = true,
+                        RedirectStandardOutput = true,
+                        RedirectStandardError = true,
+                        UseShellExecute = false,
+                        CreateNoWindow = true
+                    }
+            };
 
         try
         {
-            var detection =
-                Directory
-                    .EnumerateFiles(
-                        baseDirectory,
-                        RequiredModelFiles[0],
-                        SearchOption.AllDirectories)
-                    .Take(8)
-                    .ToArray();
-
-            foreach (var file in
-                     detection)
+            if (!process.Start())
             {
-                var directory =
-                    Path.GetDirectoryName(
-                        file);
-
-                if (!string.IsNullOrWhiteSpace(
-                        directory) &&
-                    HasAllModels(
-                        directory))
-                {
-                    return directory;
-                }
+                return new(
+                    false,
+                    false,
+                    string.Empty,
+                    "Không khởi động được local vision worker.");
             }
+
+            var stdoutTask =
+                process.StandardOutput.ReadToEndAsync();
+            var stderrTask =
+                process.StandardError.ReadToEndAsync();
+
+            process.StandardInput.Write(
+                request);
+            process.StandardInput.Close();
+
+            if (!process.WaitForExit(
+                    Math.Max(
+                        250,
+                        timeoutMilliseconds)))
+            {
+                try
+                {
+                    process.Kill(
+                        entireProcessTree: true);
+                }
+                catch
+                {
+                    // Worker đã chết hoặc OS không cho kill; caller vẫn xem là timeout.
+                }
+
+                return new(
+                    false,
+                    true,
+                    string.Empty,
+                    $"Local vision worker vượt timeout {timeoutMilliseconds}ms và đã bị terminate.");
+            }
+
+            var output =
+                stdoutTask
+                    .GetAwaiter()
+                    .GetResult();
+
+            var error =
+                stderrTask
+                    .GetAwaiter()
+                    .GetResult();
+
+            if (process.ExitCode != 0)
+            {
+                return new(
+                    false,
+                    false,
+                    output,
+                    $"Local vision worker exit code={process.ExitCode}. {error}".Trim());
+            }
+
+            return new(
+                true,
+                false,
+                output,
+                string.IsNullOrWhiteSpace(error)
+                    ? "Worker hoàn tất."
+                    : error.Trim());
         }
         catch (Exception exception) when (
             exception is
-                IOException or
-                UnauthorizedAccessException)
+                InvalidOperationException or
+                System.ComponentModel.Win32Exception or
+                IOException)
         {
-            return null;
+            return new(
+                false,
+                false,
+                string.Empty,
+                $"Không gọi được local vision worker: {exception.GetType().Name}: {exception.Message}");
+        }
+        finally
+        {
+            if (!process.HasExited)
+            {
+                try
+                {
+                    process.Kill(
+                        entireProcessTree: true);
+                }
+                catch
+                {
+                    // Best effort isolation cleanup.
+                }
+            }
+        }
+    }
+
+    private static WorkerLaunch? ResolveWorker()
+    {
+        var baseDirectory =
+            AppContext.BaseDirectory;
+
+        var workerDirectory =
+            Path.Combine(
+                baseDirectory,
+                "local-vision-worker");
+
+        var exe =
+            Path.Combine(
+                workerDirectory,
+                "PersonalAI.LocalVisionWorker.exe");
+
+        if (File.Exists(exe))
+        {
+            return new(
+                exe,
+                string.Empty);
+        }
+
+        var dll =
+            Path.Combine(
+                workerDirectory,
+                "PersonalAI.LocalVisionWorker.dll");
+
+        if (File.Exists(dll))
+        {
+            return new(
+                "dotnet",
+                Quote(
+                    dll));
         }
 
         return null;
     }
 
-    private static bool HasAllModels(
-        string? directory) =>
-        !string.IsNullOrWhiteSpace(
-            directory) &&
-        Directory.Exists(
-            directory) &&
-        RequiredModelFiles.All(file =>
-            File.Exists(
-                Path.Combine(
-                    directory,
-                    file)));
-
-    internal static DesktopOcrLine? ToLine(
-        JsonResult block)
-    {
-        var text =
-            (block.Text ??
-             string.Empty)
-                .Trim();
-
-        if (text.Length == 0)
-            return null;
-
-        var boxes =
-            block.Boxes ??
-            new List<OCRLocation>();
-
-        if (boxes.Count == 0)
-        {
-            return new(
-                text,
-                Array.Empty<DesktopOcrWord>());
-        }
-
-        var left =
-            boxes.Min(point =>
-                point.x);
-        var top =
-            boxes.Min(point =>
-                point.y);
-        var right =
-            boxes.Max(point =>
-                point.x);
-        var bottom =
-            boxes.Max(point =>
-                point.y);
-
-        var width =
-            Math.Max(
-                2,
-                right - left);
-        var height =
-            Math.Max(
-                2,
-                bottom - top);
-
-        return new(
-            text,
-            [
-                new DesktopOcrWord(
-                    text,
-                    left,
-                    top,
-                    width,
-                    height)
-            ]);
-    }
+    private static string Quote(
+        string value) =>
+        $"\"{value.Replace("\"", "\\\"")}\"";
 
     private DesktopOcrObservation Unavailable(
         string reason) =>
@@ -415,26 +344,40 @@ public sealed class PaddleOnnxDesktopOcrProvider(
             Reason:
                 reason);
 
-    public void Dispose()
-    {
-        lock (gate)
+    private static JsonSerializerOptions JsonOptions() =>
+        new(JsonSerializerDefaults.Web)
         {
-            if (disposed)
-                return;
+            PropertyNameCaseInsensitive = true
+        };
 
-            disposed = true;
+    internal sealed record WorkerInvocationResult(
+        bool Success,
+        bool TimedOut,
+        string Output,
+        string Detail);
 
-            try
-            {
-                engine?.FreeEngine();
-            }
-            catch
-            {
-                // Dispose không được làm crash host.
-            }
+    private sealed record WorkerLaunch(
+        string Executable,
+        string Arguments);
 
-            engine =
-                null;
-        }
-    }
+    private sealed record WorkerRequest(
+        string Operation,
+        string JpegBase64);
+
+    private sealed record WorkerResponse(
+        bool Success,
+        string? Detail,
+        string? Text,
+        WorkerLine[]? Lines);
+
+    private sealed record WorkerLine(
+        string? Text,
+        WorkerWord[]? Words);
+
+    private sealed record WorkerWord(
+        string? Text,
+        double Left,
+        double Top,
+        double Width,
+        double Height);
 }

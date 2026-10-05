@@ -56,11 +56,10 @@ public sealed class UniversalVerificationContinuationExecutor(
 
         if (!plan.Required)
         {
-            return Task.FromResult(
-                new UniversalVerificationContinuationExecution(
-                    UniversalVerificationContinuationStatuses.Unsupported,
-                    Evidence: null,
-                    "Continuation verification không được yêu cầu."));
+            return new UniversalVerificationContinuationExecution(
+                UniversalVerificationContinuationStatuses.Unsupported,
+                Evidence: null,
+                "Continuation verification không được yêu cầu.");
         }
 
         switch (plan.Strategy)

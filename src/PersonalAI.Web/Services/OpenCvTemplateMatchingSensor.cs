@@ -6,7 +6,9 @@ namespace PersonalAI.Web.Services;
 public sealed record DesktopTemplateMatchResult(
     bool Available,
     bool Matched,
+    bool Ambiguous,
     double Score,
+    double SecondBestScore,
     int Left,
     int Top,
     int Width,
@@ -26,6 +28,8 @@ public interface IDesktopTemplateMatchingSensor
 public sealed class OpenCvTemplateMatchingSensor
     : IDesktopTemplateMatchingSensor
 {
+    private const double MinimumUniquenessMargin = 0.04;
+
     private static readonly double[] ScaleCandidates =
     [
         1.00,
@@ -83,8 +87,8 @@ public sealed class OpenCvTemplateMatchingSensor
                     "OpenCV không decode được frame/template.");
             }
 
-            MatchCandidate? best =
-                null;
+            var candidates =
+                new List<MatchCandidate>();
 
             foreach (var scale in
                      ScaleCandidates)
@@ -149,32 +153,120 @@ public sealed class OpenCvTemplateMatchingSensor
                         height,
                         scale);
 
-                if (best is null ||
-                    candidate.Score >
-                        best.Score)
-                {
-                    best =
-                        candidate;
-                }
+                candidates.Add(
+                    candidate);
+
+                using var suppressed =
+                    result.Clone();
+
+                var suppressLeft =
+                    Math.Max(
+                        0,
+                        maxLocation.X -
+                        width / 2);
+                var suppressTop =
+                    Math.Max(
+                        0,
+                        maxLocation.Y -
+                        height / 2);
+                var suppressWidth =
+                    Math.Min(
+                        suppressed.Width -
+                        suppressLeft,
+                        Math.Max(
+                            1,
+                            width * 2));
+                var suppressHeight =
+                    Math.Min(
+                        suppressed.Height -
+                        suppressTop,
+                        Math.Max(
+                            1,
+                            height * 2));
+
+                Cv2.Rectangle(
+                    suppressed,
+                    new Rect(
+                        suppressLeft,
+                        suppressTop,
+                        suppressWidth,
+                        suppressHeight),
+                    Scalar.All(-1),
+                    thickness: -1);
+
+                Cv2.MinMaxLoc(
+                    suppressed,
+                    out _,
+                    out var secondValue,
+                    out _,
+                    out var secondLocation);
+
+                candidates.Add(
+                    new MatchCandidate(
+                        secondValue,
+                        secondLocation.X,
+                        secondLocation.Y,
+                        width,
+                        height,
+                        scale));
             }
 
-            if (best is null)
+            if (candidates.Count == 0)
             {
                 return Unavailable(
                     "Không có scale template hợp lệ trong frame.");
             }
 
+            var ordered =
+                candidates
+                    .OrderByDescending(candidate =>
+                        candidate.Score)
+                    .ToArray();
+
+            var best =
+                ordered[0];
+
+            var second =
+                ordered
+                    .Skip(1)
+                    .FirstOrDefault(candidate =>
+                        IsSpatiallyDistinct(
+                            best,
+                            candidate));
+
+            var secondScore =
+                second?.Score ??
+                -1.0;
+
+            var ambiguous =
+                best.Score >=
+                    minimumScore &&
+                second is not null &&
+                second.Score >=
+                    minimumScore &&
+                best.Score -
+                    second.Score <
+                    MinimumUniquenessMargin;
+
             var matched =
                 best.Score >=
-                    minimumScore;
+                    minimumScore &&
+                !ambiguous;
 
             return new(
                 Available: true,
                 Matched:
                     matched,
+                Ambiguous:
+                    ambiguous,
                 Score:
                     Math.Clamp(
                         best.Score,
+                        -1,
+                        1),
+                SecondBestScore:
+                    Math.Clamp(
+                        secondScore,
                         -1,
                         1),
                 Left:
@@ -190,9 +282,11 @@ public sealed class OpenCvTemplateMatchingSensor
                 Provider:
                     "opencv-template",
                 Reason:
-                    matched
-                        ? $"OpenCV template match đạt {best.Score:0.000} ở scale={best.Scale:0.00}."
-                        : $"OpenCV template match tốt nhất {best.Score:0.000} thấp hơn ngưỡng {minimumScore:0.000}.");
+                    ambiguous
+                        ? $"OpenCV có hai match gần ngang nhau: best={best.Score:0.000}; second={secondScore:0.000}; từ chối đoán."
+                        : matched
+                            ? $"OpenCV template match đạt {best.Score:0.000}, second={secondScore:0.000}, scale={best.Scale:0.00}."
+                            : $"OpenCV template match tốt nhất {best.Score:0.000} thấp hơn ngưỡng {minimumScore:0.000}.");
         }
         catch (Exception exception) when (
             exception is
@@ -204,6 +298,41 @@ public sealed class OpenCvTemplateMatchingSensor
             return Unavailable(
                 $"OpenCV không khả dụng: {exception.GetType().Name}: {exception.Message}");
         }
+    }
+
+    private static bool IsSpatiallyDistinct(
+        MatchCandidate left,
+        MatchCandidate right)
+    {
+        var leftCenterX =
+            left.Left +
+            left.Width / 2.0;
+        var leftCenterY =
+            left.Top +
+            left.Height / 2.0;
+        var rightCenterX =
+            right.Left +
+            right.Width / 2.0;
+        var rightCenterY =
+            right.Top +
+            right.Height / 2.0;
+
+        var threshold =
+            Math.Max(
+                8.0,
+                Math.Min(
+                    left.Width,
+                    left.Height) *
+                0.5);
+
+        return Math.Abs(
+                   leftCenterX -
+                   rightCenterX) >
+                   threshold ||
+               Math.Abs(
+                   leftCenterY -
+                   rightCenterY) >
+                   threshold;
     }
 
     internal static IReadOnlyList<double> CandidateScalesForAcceptance() =>
@@ -224,7 +353,9 @@ public sealed class OpenCvTemplateMatchingSensor
         new(
             Available: false,
             Matched: false,
+            Ambiguous: false,
             Score: 0,
+            SecondBestScore: -1,
             Left: 0,
             Top: 0,
             Width: 0,

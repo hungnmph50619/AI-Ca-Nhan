@@ -88,7 +88,7 @@ public sealed class SqliteComputerOperatorCheckpointStore(
         var created = new ComputerOperatorCheckpoint(
             Guid.NewGuid(),
             workspace.CurrentWorkspaceId,
-            NormalizeGoal(goal),
+            "[Mục tiêu không lưu plaintext; đối chiếu bằng SHA-256]",
             Fingerprint(goal),
             ComputerOperatorCheckpointStatuses.Running,
             Array.Empty<string>(),
@@ -125,19 +125,22 @@ public sealed class SqliteComputerOperatorCheckpointStore(
                 .Distinct(StringComparer.OrdinalIgnoreCase)
                 .Take(64)
                 .ToArray(),
-            CurrentSubgoal = Limit(
+            CurrentSubgoal = SanitizeCheckpointText(
                 currentSubgoal,
-                500),
+                500,
+                "[Mục tiêu con nhạy cảm đã được xác minh; nội dung không lưu]"),
             GoalProgress = Math.Clamp(
                 goalProgress,
                 0,
                 1),
-            LastVerifiedAction = LimitNullable(
+            LastVerifiedAction = SanitizeCheckpointTextNullable(
                 lastVerifiedAction,
-                120),
-            LastVerifiedExpectedEffect = LimitNullable(
+                120,
+                "[Action nhạy cảm; nội dung không lưu]"),
+            LastVerifiedExpectedEffect = SanitizeCheckpointTextNullable(
                 lastVerifiedExpectedEffect,
-                500),
+                500,
+                "[Kết quả nhạy cảm đã được xác minh; nội dung không lưu]"),
             UpdatedAt = DateTimeOffset.UtcNow
         };
 
@@ -587,33 +590,60 @@ public sealed class SqliteComputerOperatorCheckpointStore(
         return Convert.ToHexString(bytes);
     }
 
+    private static readonly string[] SensitiveTerms =
+    [
+        "password",
+        "mật khẩu",
+        "otp",
+        "2fa",
+        "mã xác thực",
+        "verification code",
+        "api key",
+        "secret",
+        "access token",
+        "refresh token",
+        "private key",
+        "bearer "
+    ];
+
     private static string SanitizeMilestone(
-        string value)
+        string value) =>
+        SanitizeCheckpointText(
+            value,
+            500,
+            "[Mốc nhạy cảm đã được xác minh; nội dung không lưu]");
+
+    private static string SanitizeCheckpointText(
+        string? value,
+        int maximum,
+        string redacted)
     {
         var text =
             Limit(
                 value,
-                500);
+                maximum);
 
-        var secretTerms =
-            new[]
-            {
-                "password",
-                "mật khẩu",
-                "otp",
-                "2fa",
-                "api key",
-                "secret",
-                "access token",
-                "refresh token",
-                "private key"
-            };
-
-        return secretTerms.Any(term =>
+        return SensitiveTerms.Any(term =>
                 text.Contains(
                     term,
                     StringComparison.OrdinalIgnoreCase))
-            ? "[Mốc nhạy cảm đã được xác minh; nội dung không lưu]"
+            ? redacted
+            : text;
+    }
+
+    private static string? SanitizeCheckpointTextNullable(
+        string? value,
+        int maximum,
+        string redacted)
+    {
+        var text =
+            SanitizeCheckpointText(
+                value,
+                maximum,
+                redacted);
+
+        return text.Length == 0
+            ? null
             : text;
     }
 

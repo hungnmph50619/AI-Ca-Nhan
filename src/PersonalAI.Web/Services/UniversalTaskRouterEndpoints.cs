@@ -7,7 +7,9 @@ public static class UniversalTaskRouterEndpoints
     public static IServiceCollection AddUniversalTaskRouter(
         this IServiceCollection services)
     {
-        services.AddScoped<IUniversalCapabilityDiscoveryService, UniversalCapabilityDiscoveryService>();
+        services.AddSingleton<IUniversalCapabilityCache, UniversalCapabilityCache>();
+        services.AddScoped<IRawUniversalCapabilityDiscoveryService, UniversalCapabilityDiscoveryService>();
+        services.AddScoped<IUniversalCapabilityDiscoveryService, CachedUniversalCapabilityDiscoveryService>();
         services.AddScoped<IUniversalTaskRouter, UniversalTaskRouter>();
         services.AddScoped<IUniversalDirectToolPath, UniversalDirectToolPath>();
         services.AddSingleton<IUniversalFallbackPolicy, UniversalFallbackPolicy>();
@@ -24,6 +26,22 @@ public static class UniversalTaskRouterEndpoints
     public static WebApplication MapUniversalTaskRouter(
         this WebApplication app)
     {
+        app.MapGet("/api/universal-router/capability-cache", (
+            IUniversalCapabilityCache cache) =>
+        {
+            var status = cache.GetStatus();
+            return Results.Ok(new
+            {
+                theHe = status.Generation,
+                trungBoNhoDem = status.Hits,
+                truotBoNhoDem = status.Misses,
+                dangCoSnapshot = status.RuntimeSnapshotCached,
+                hetHanLuc = status.RuntimeExpiresAtUtc,
+                soCapabilityTamNgung = status.TemporaryUnavailabilityCount,
+                lyDoVoHieuHoaGanNhat = status.LastInvalidationReason
+            });
+        });
+
         app.MapGet("/api/universal-router/capabilities", (
             IUniversalCapabilityDiscoveryService discovery) =>
         {

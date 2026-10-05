@@ -3163,7 +3163,17 @@ jobs:
           grep -Fq '"id": "pause-resume-stop"' tests/computer-use/v3.4.9-acceptance-scenarios.json
           grep -Fq '"id": "loop-recovery"' tests/computer-use/v3.4.9-acceptance-scenarios.json
           grep -Fq '"id": "multi-step-open-and-type"' tests/computer-use/v3.4.9-acceptance-scenarios.json
-          grep -Fq 'totalCount -lt 108' .github/workflows/desktop-control.yml
+          grep -Fq 'totalCount -lt 111' .github/workflows/desktop-control.yml
+          # v4.0.19 — Evidence Fusion
+          grep -Fq 'IUniversalEvidenceFusionEngine' src/PersonalAI.Web/Services/UniversalEvidenceFusionEngine.cs
+          grep -Fq 'UniversalEvidenceReliability.Deterministic' src/PersonalAI.Web/Services/UniversalEvidenceFusionEngine.cs
+          grep -Fq 'HasConflict' src/PersonalAI.Web/Services/UniversalEvidenceFusionEngine.cs
+          grep -Fq 'GroupBy' src/PersonalAI.Web/Services/UniversalEvidenceFusionEngine.cs
+          grep -Fq 'EvidenceSignals' src/PersonalAI.Web/Services/UniversalOutcomeVerification.cs
+          grep -Fq '/api/universal-router/fuse-evidence' src/PersonalAI.Web/Services/UniversalTaskRouterEndpoints.cs
+          grep -Fq 'CheckEvidenceFusionAcceptsDeterministicEvidence' src/PersonalAI.Web/Services/ComputerOperatorAcceptanceService.cs
+          grep -Fq 'CheckEvidenceFusionRejectsStrongConflict' src/PersonalAI.Web/Services/ComputerOperatorAcceptanceService.cs
+          grep -Fq 'CheckEvidenceFusionDoesNotDoubleCountCorrelatedVisualEvidence' src/PersonalAI.Web/Services/ComputerOperatorAcceptanceService.cs
           # v4.0.18 — Adaptive Wait & Progress Tracking
           grep -Fq 'IAdaptiveVerificationWaitEngine' src/PersonalAI.Web/Services/AdaptiveVerificationWaitEngine.cs
           grep -Fq 'AdaptiveWaitStatuses.Progressing' src/PersonalAI.Web/Services/AdaptiveVerificationWaitEngine.cs

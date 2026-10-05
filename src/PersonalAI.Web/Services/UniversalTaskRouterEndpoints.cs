@@ -14,6 +14,7 @@ public static class UniversalTaskRouterEndpoints
         services.AddSingleton<IUniversalOutcomeVerificationService, UniversalOutcomeVerificationService>();
         services.AddSingleton<IUniversalVerificationEvidenceRouter, UniversalVerificationEvidenceRouter>();
         services.AddSingleton<IUniversalVerificationEvidenceAdapters, UniversalVerificationEvidenceAdapters>();
+        services.AddSingleton<IUniversalEvidenceFusionEngine, UniversalEvidenceFusionEngine>();
         services.AddScoped<IUniversalExecutionLifecycleCoordinator, UniversalExecutionLifecycleCoordinator>();
         services.AddSingleton<IUniversalVerificationContinuationPlanner, UniversalVerificationContinuationPlanner>();
         services.AddScoped<IUniversalVerificationContinuationExecutor, UniversalVerificationContinuationExecutor>();
@@ -129,6 +130,11 @@ public static class UniversalTaskRouterEndpoints
             IUniversalOutcomeVerificationService verification) =>
             Results.Ok(
                 verification.VerifyAgent(request)));
+
+        app.MapPost("/api/universal-router/fuse-evidence", (
+            IReadOnlyList<UniversalEvidenceSignal> signals,
+            IUniversalEvidenceFusionEngine fusion) =>
+            Results.Ok(fusion.Fuse(signals)));
 
         app.MapPost("/api/universal-router/route-verification-evidence", (
             UniversalVerificationEvidenceRouteRequest request,

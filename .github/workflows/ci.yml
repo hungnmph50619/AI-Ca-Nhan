@@ -3075,7 +3075,7 @@ jobs:
           grep -Fq 'IComputerOperatorActionExecutor' src/PersonalAI.Web/Services/ComputerOperatorActionExecutor.cs
           grep -Fq 'targeting.Resolve(decision, frame)' src/PersonalAI.Web/Services/ComputerOperatorActionExecutor.cs
           grep -Fq 'Foreground đã thay đổi trước thao tác bàn phím' src/PersonalAI.Web/Services/ComputerOperatorActionExecutor.cs
-          grep -Fq 'actionExecutor.Execute(decision, frame)' src/PersonalAI.Web/Services/ComputerOperatorTaskService.cs
+          grep -Fq 'actionExecutor.Execute(' src/PersonalAI.Web/Services/ComputerOperatorTaskService.cs
           grep -Fq 'RevalidateWindowAtPoint' src/PersonalAI.Web/Services/ComputerOperatorActionExecutor.cs
           grep -Fq 'Cửa sổ topmost đã thay đổi ngay trước primitive' src/PersonalAI.Web/Services/ComputerOperatorActionExecutor.cs
           grep -Fq 'TryGetComputerOperatorGoal' src/PersonalAI.Web/Services/ToolOrchestrationService.cs
@@ -3090,7 +3090,7 @@ jobs:
           grep -Fq 'CheckCanonicalInteractionSpace' src/PersonalAI.Web/Services/ComputerOperatorAcceptanceService.cs
           grep -Fq 'blockedReplanCount' src/PersonalAI.Web/Services/ComputerOperatorTaskService.cs
           grep -Fq 'CHỈ DẪN THỬ LẠI KHI BỊ CHẶN' src/PersonalAI.Web/Services/ComputerOperatorTaskService.cs
-          grep -Fq 'VỀ CUỐI ↓' src/PersonalAI.Web/Services/WindowsAiOperatorConsoleService.cs
+          grep -Fq 'CHI TIẾT' src/PersonalAI.Web/Services/WindowsAiOperatorConsoleService.cs
           grep -Fq 'EsMultiline' src/PersonalAI.Web/Services/WindowsAiOperatorConsoleService.cs
           grep -Fq 'EmGetFirstVisibleLine' src/PersonalAI.Web/Services/WindowsAiOperatorConsoleService.cs
           grep -Fq 'TakeLast(160)' src/PersonalAI.Web/Services/WindowsAiOperatorConsoleService.cs
@@ -3163,7 +3163,18 @@ jobs:
           grep -Fq '"id": "pause-resume-stop"' tests/computer-use/v3.4.9-acceptance-scenarios.json
           grep -Fq '"id": "loop-recovery"' tests/computer-use/v3.4.9-acceptance-scenarios.json
           grep -Fq '"id": "multi-step-open-and-type"' tests/computer-use/v3.4.9-acceptance-scenarios.json
-          grep -Fq 'totalCount -lt 93' .github/workflows/desktop-control.yml
+          grep -Fq 'totalCount -lt 96' .github/workflows/desktop-control.yml
+          # v4.0.14 — Generic Text Interaction Engine
+          grep -Fq 'IGenericTextInteractionEngine' src/PersonalAI.Web/Services/GenericTextInteractionEngine.cs
+          grep -Fq 'ITextAccessibilityBackend' src/PersonalAI.Web/Services/GenericTextInteractionEngine.cs
+          grep -Fq 'ITextClipboardWriter' src/PersonalAI.Web/Services/GenericTextInteractionEngine.cs
+          grep -Fq 'TextInteractionStrategies.AccessibilityDirect' src/PersonalAI.Web/Services/GenericTextInteractionEngine.cs
+          grep -Fq 'textInteraction.Execute' src/PersonalAI.Web/Services/ComputerOperatorTaskService.cs
+          grep -Fq 'không gọi screenshot/Gemini' src/PersonalAI.Web/Services/ComputerOperatorTaskService.cs
+          grep -Fq 'type-text là thao tác ATOMIC' src/PersonalAI.Web/Services/DesktopVisionService.cs
+          grep -Fq 'CheckGenericTextEngineDirectSetAndVerify' src/PersonalAI.Web/Services/ComputerOperatorAcceptanceService.cs
+          grep -Fq 'CheckGenericTextEngineRepairsOnce' src/PersonalAI.Web/Services/ComputerOperatorAcceptanceService.cs
+          grep -Fq 'CheckGenericTextEngineRejectsSensitiveTarget' src/PersonalAI.Web/Services/ComputerOperatorAcceptanceService.cs
           # v4.0.13 — Verification Context
           grep -Fq 'UniversalVerificationContinuationContext' src/PersonalAI.Web/Services/UniversalVerificationContinuationExecutor.cs
           grep -Fq 'codingVerification.VerifyAsync' src/PersonalAI.Web/Services/UniversalVerificationContinuationExecutor.cs

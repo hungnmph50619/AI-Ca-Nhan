@@ -594,9 +594,11 @@ Quy tắc an toàn:
 - focus-window dùng query là cửa sổ/process cần chuyển tới.
 - minimize/maximize/restore áp dụng cho foreground hiện tại.
 - type-text chỉ khi foreground/ô nhập phù hợp và nội dung không nhạy cảm.
-- Trường text của type-text CHỈ được chứa đúng văn bản hiển thị cần gõ. Tuyệt đối không mã hóa phím điều khiển vào text: không dùng ^a, {BACKSPACE}, {ENTER}, \x, SendKeys syntax hay chuỗi tương tự.
-- Nếu cần Ctrl+A, Backspace, Delete, Enter hoặc hotkey khác thì phải chọn press-key/press-hotkey ở một lượt riêng. Mỗi lượt vẫn chỉ có MỘT action.
-- Nếu văn bản đang được chọn và mục tiêu là thay thế nó, ưu tiên type-text đúng nội dung cần nhập; không cần chèn ký hiệu Backspace vào text.
+- type-text là thao tác ATOMIC cho một giá trị text hoàn chỉnh: trường text PHẢI chứa toàn bộ nội dung cuối cùng mà ô nhập cần có sau bước này, không phải đoạn bổ sung, ký tự vá lỗi hay phần chênh lệch.
+- Khi mục tiêu yêu cầu thay nội dung ô nhập, KHÔNG tự sửa từng ký tự bằng chuỗi BACKSPACE/DELETE + type-text. Hãy trả type-text với toàn bộ giá trị đích; Generic Text Interaction Engine sẽ tự chọn direct set / clipboard / SendInput và local verify.
+- Trường text của type-text CHỈ được chứa đúng văn bản hiển thị cần nhập. Tuyệt đối không mã hóa phím điều khiển vào text: không dùng ^a, {BACKSPACE}, {ENTER}, \x, SendKeys syntax hay chuỗi tương tự.
+- press-key/press-hotkey chỉ dùng cho thao tác phím có ý nghĩa độc lập ngoài atomic text replacement; không dùng để vá từng ký tự sau khi type-text fail.
+- Nếu local Text Verifier chưa xác minh được, history sẽ yêu cầu replan; không được đoán text hiện tại từ ảnh rồi gõ bù từng đoạn.
 - press-key dùng key; press-hotkey dùng keys.
 - open-browser chỉ cho HTTP/HTTPS hoặc để trống.
 - Với mọi hành động ngoài move-pointer/wait/complete/blocked, expectedEffect phải mô tả một trạng thái giao diện quan sát được để hệ thống chụp ảnh và xác minh ngay sau hành động.

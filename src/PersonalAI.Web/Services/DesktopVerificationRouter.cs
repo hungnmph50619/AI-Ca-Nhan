@@ -40,6 +40,33 @@ public sealed class DesktopVerificationRouter
             .Trim()
             .ToLowerInvariant();
 
+        if (action is "press-key" or "press-hotkey")
+        {
+            var strongTransition =
+                observation.ForegroundWindowChanged &&
+                (observation.WindowBoundsChanged ||
+                 (frameDifference?.Comparable == true &&
+                  frameDifference.ChangedRatio >= StrongVisualChangeRatio));
+
+            if (strongTransition)
+            {
+                return new(
+                    DesktopVerificationRoute.LocalVerified,
+                    0.96,
+                    "Thao tác bàn phím tạo transition desktop rõ ràng: foreground đổi và có thêm bằng chứng hình học/hình ảnh.");
+            }
+
+            if (frameDifference?.Comparable == true &&
+                frameDifference.ChangedRatio <= NoVisualChangeRatio &&
+                !observation.ForegroundWindowChanged)
+            {
+                return new(
+                    DesktopVerificationRoute.LocalFailed,
+                    0.94,
+                    "Thao tác bàn phím không tạo transition desktop quan sát được.");
+            }
+        }
+
         if (observation.TargetLikelyOccluded ||
             observation.TargetMissing)
         {

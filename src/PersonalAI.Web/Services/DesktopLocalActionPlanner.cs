@@ -46,6 +46,14 @@ public sealed class DesktopLocalActionPlanner
 
         decision = Empty();
 
+        if (TryPlanStructuredInteraction(
+                goal,
+                state,
+                out decision))
+        {
+            return true;
+        }
+
         if (!TryExtractOpenApplicationTarget(
                 goal,
                 out var target))
@@ -129,6 +137,228 @@ public sealed class DesktopLocalActionPlanner
 
         return true;
     }
+
+    private static bool TryPlanStructuredInteraction(
+        string goal,
+        ComputerOperatorDesktopState state,
+        out DesktopOperatorDecision decision)
+    {
+        decision = Empty();
+
+        if (state.StructuredScene is null ||
+            state.ForegroundWindow is null ||
+            !TryExtractStructuredClickTarget(
+                goal,
+                out var requestedTarget))
+        {
+            return false;
+        }
+
+        var candidates =
+            state.StructuredScene.Nodes
+                .Where(node =>
+                    !node.IsOffscreen &&
+                    node.IsEnabled &&
+                    node.Width > 3 &&
+                    node.Height > 3 &&
+                    node.Patterns.Any(pattern =>
+                        pattern.Equals("Invoke", StringComparison.OrdinalIgnoreCase) ||
+                        pattern.Equals("SelectionItem", StringComparison.OrdinalIgnoreCase) ||
+                        pattern.Equals("Toggle", StringComparison.OrdinalIgnoreCase) ||
+                        pattern.Equals("ExpandCollapse", StringComparison.OrdinalIgnoreCase)))
+                .Select(node => new
+                {
+                    Node = node,
+                    Score = ScoreStructuredTarget(
+                        node,
+                        requestedTarget)
+                })
+                .Where(item => item.Score >= 80)
+                .OrderByDescending(item => item.Score)
+                .ThenBy(item => item.Node.Depth)
+                .ToArray();
+
+        if (candidates.Length == 0)
+            return false;
+
+        var best = candidates[0];
+        if (candidates.Length > 1 &&
+            candidates[1].Score == best.Score)
+        {
+            return false;
+        }
+
+        var node = best.Node;
+        var boxLeft = node.Left - state.FrameLeft;
+        var boxTop = node.Top - state.FrameTop;
+
+        if (boxLeft < 0 ||
+            boxTop < 0 ||
+            boxLeft + node.Width > state.FrameWidth ||
+            boxTop + node.Height > state.FrameHeight)
+        {
+            return false;
+        }
+
+        var actionPattern =
+            node.Patterns.FirstOrDefault(pattern =>
+                pattern.Equals("Invoke", StringComparison.OrdinalIgnoreCase) ||
+                pattern.Equals("SelectionItem", StringComparison.OrdinalIgnoreCase) ||
+                pattern.Equals("Toggle", StringComparison.OrdinalIgnoreCase) ||
+                pattern.Equals("ExpandCollapse", StringComparison.OrdinalIgnoreCase))
+            ?? "UIA";
+
+        decision = Build(
+            action: "click-left",
+            currentSubgoal:
+                $"Tương tác với phần tử '{DisplayNode(node)}' bằng structured UI.",
+            expectedEffect:
+                $"Phần tử '{DisplayNode(node)}' phản hồi sau thao tác {actionPattern}.",
+            reason:
+                $"Structured-first planner tìm thấy duy nhất một phần tử UIA phù hợp với mục tiêu '{requestedTarget}' (score={best.Score}, pattern={actionPattern}); không cần gửi toàn màn hình cho Vision/Gemini.",
+            plan:
+                $"Dùng bounding box UIA của '{DisplayNode(node)}' để click an toàn rồi quan sát lại trước hành động tiếp theo.",
+            targetLabel: DisplayNode(node),
+            targetElementId: node.Token,
+            coordinateWindowId: state.ForegroundWindow.WindowId,
+            imageX: boxLeft + node.Width / 2,
+            imageY: boxTop + node.Height / 2,
+            boxLeft: boxLeft,
+            boxTop: boxTop,
+            boxWidth: node.Width,
+            boxHeight: node.Height,
+            confidence: best.Score >= 100 ? 0.99 : 0.94);
+
+        return true;
+    }
+
+    private static bool TryExtractStructuredClickTarget(
+        string goal,
+        out string target)
+    {
+        var value = (goal ?? string.Empty).Trim();
+        var prefixes = new[]
+        {
+            "bấm ",
+            "bam ",
+            "nhấn ",
+            "nhan ",
+            "click ",
+            "press ",
+            "chọn ",
+            "chon ",
+            "select ",
+            "tick "
+        };
+
+        foreach (var prefix in prefixes)
+        {
+            if (!value.StartsWith(
+                    prefix,
+                    StringComparison.OrdinalIgnoreCase))
+            {
+                continue;
+            }
+
+            var remainder = value[prefix.Length..].Trim();
+            remainder = StripStructuredTargetPrefix(remainder);
+
+            foreach (var separator in NextStepSeparators)
+            {
+                var index = remainder.IndexOf(
+                    separator,
+                    StringComparison.OrdinalIgnoreCase);
+                if (index >= 0)
+                    remainder = remainder[..index];
+            }
+
+            target = remainder
+                .Trim()
+                .Trim('"', '\'', '“', '”', '.', ':');
+
+            return target.Length is >= 1 and <= 120;
+        }
+
+        target = string.Empty;
+        return false;
+    }
+
+    private static string StripStructuredTargetPrefix(
+        string value)
+    {
+        var prefixes = new[]
+        {
+            "nút ",
+            "nut ",
+            "button ",
+            "mục ",
+            "muc ",
+            "option ",
+            "checkbox "
+        };
+
+        foreach (var prefix in prefixes)
+        {
+            if (value.StartsWith(
+                    prefix,
+                    StringComparison.OrdinalIgnoreCase))
+            {
+                return value[prefix.Length..].Trim();
+            }
+        }
+
+        return value;
+    }
+
+    private static int ScoreStructuredTarget(
+        StructuredDesktopNode node,
+        string requestedTarget)
+    {
+        var target = Normalize(requestedTarget);
+        if (target.Length == 0)
+            return 0;
+
+        var name = Normalize(node.Name);
+        var automationId = Normalize(node.AutomationId);
+        var role = Normalize(node.Role);
+
+        if (name.Equals(target, StringComparison.OrdinalIgnoreCase))
+            return 110;
+
+        if (automationId.Equals(target, StringComparison.OrdinalIgnoreCase))
+            return 105;
+
+        if (name.Length > 0 &&
+            name.Contains(target, StringComparison.OrdinalIgnoreCase))
+            return 95;
+
+        if (automationId.Length > 0 &&
+            automationId.Contains(
+                target.Replace(" ", string.Empty),
+                StringComparison.OrdinalIgnoreCase))
+            return 90;
+
+        if (target.Length >= 4 &&
+            target.Contains(name, StringComparison.OrdinalIgnoreCase) &&
+            name.Length >= 3)
+            return 85;
+
+        if (role.Length > 0 &&
+            $"{role} {name}".Contains(
+                target,
+                StringComparison.OrdinalIgnoreCase))
+            return 80;
+
+        return 0;
+    }
+
+    private static string DisplayNode(
+        StructuredDesktopNode node) =>
+        !string.IsNullOrWhiteSpace(node.Name)
+            ? node.Name.Trim()
+            : !string.IsNullOrWhiteSpace(node.AutomationId)
+                ? node.AutomationId.Trim()
+                : node.Role;
 
     private static bool TryExtractOpenApplicationTarget(
         string goal,
@@ -255,7 +485,17 @@ public sealed class DesktopLocalActionPlanner
         string query = "",
         string text = "",
         string key = "",
-        IReadOnlyList<string>? keys = null) =>
+        IReadOnlyList<string>? keys = null,
+        string targetLabel = "",
+        string targetElementId = "",
+        string coordinateWindowId = "",
+        int imageX = 0,
+        int imageY = 0,
+        int boxLeft = 0,
+        int boxTop = 0,
+        int boxWidth = 0,
+        int boxHeight = 0,
+        double confidence = 0.97) =>
         new(
             State: "Local planner đang dùng capability Windows có bằng chứng trực tiếp.",
             Plan: plan,
@@ -268,31 +508,31 @@ public sealed class DesktopLocalActionPlanner
             Key: key,
             Keys: keys ?? Array.Empty<string>(),
             Url: string.Empty,
-            TargetLabel: string.Empty,
+            TargetLabel: targetLabel,
             CoordinateSpace: ComputerCoordinateSpaces.ImagePixel,
-            CoordinateWindowId: string.Empty,
-            ImageX: 0,
-            ImageY: 0,
+            CoordinateWindowId: coordinateWindowId,
+            ImageX: imageX,
+            ImageY: imageY,
             EndImageX: 0,
             EndImageY: 0,
             NormalizedX: 0,
             NormalizedY: 0,
             EndNormalizedX: 0,
             EndNormalizedY: 0,
-            BoxLeft: 0,
-            BoxTop: 0,
-            BoxWidth: 0,
-            BoxHeight: 0,
+            BoxLeft: boxLeft,
+            BoxTop: boxTop,
+            BoxWidth: boxWidth,
+            BoxHeight: boxHeight,
             BoxNormalizedLeft: 0,
             BoxNormalizedTop: 0,
             BoxNormalizedWidth: 0,
             BoxNormalizedHeight: 0,
             ScrollDelta: 0,
             ExpectedEffect: expectedEffect,
-            Confidence: 0.97,
+            Confidence: confidence,
             Reason: reason,
             SceneElements: Array.Empty<DesktopSceneElement>(),
-            TargetElementId: string.Empty);
+            TargetElementId: targetElementId);
 
     private static DesktopOperatorDecision Empty() =>
         Build(

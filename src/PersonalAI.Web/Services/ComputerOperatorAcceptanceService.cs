@@ -204,6 +204,16 @@ public sealed class ComputerOperatorAcceptanceService
             "structured verifier coi Invoke transition là inconclusive thay vì fail mù",
             CheckStructuredVerifierInvokeIsInconclusive);
 
+        RunCheck(
+            checks,
+            "structured invoke event relevance ưu tiên transition event",
+            CheckStructuredInvokeEventRelevance);
+
+        RunCheck(
+            checks,
+            "structured invoke local verify chỉ pass khi có transition quan sát được",
+            CheckStructuredInvokeLocalVerificationRequiresTransition);
+
 
         RunCheck(
             checks,
@@ -2073,6 +2083,85 @@ public sealed class ComputerOperatorAcceptanceService
             result.Status == StructuredVerificationStatus.Verified &&
             result.Confidence >= 0.99,
             "Structured verifier chưa xác minh ValuePattern bằng readback.");
+    }
+
+    private static void CheckStructuredInvokeEventRelevance()
+    {
+        var desktopEvent =
+            new DesktopSystemEvent(
+                DesktopSystemEventKinds.StructureChanged,
+                "0x1234",
+                DateTimeOffset.UtcNow,
+                0,
+                "UIA structure changed.",
+                Source: "uia3",
+                SourceConfidence: 0.90,
+                Corroborated: true);
+
+        var score =
+            ComputerOperatorEventRelevance.Score(
+                "structured-invoke",
+                "Mở dialog cài đặt.",
+                desktopEvent);
+
+        Require(
+            score >= 0.90,
+            $"Structured invoke chưa ưu tiên event transition đủ mạnh: {score:0.000}.");
+    }
+
+    private static void CheckStructuredInvokeLocalVerificationRequiresTransition()
+    {
+        var router =
+            new DesktopVerificationRouter();
+
+        var decision =
+            BuildStructuredDecision(
+                "structured-invoke",
+                "root:next",
+                "Trang tiếp theo xuất hiện.");
+
+        var changed =
+            new DesktopFastObservation(
+                ForegroundWindowChanged: true,
+                WindowBoundsChanged: false,
+                TargetMissing: false,
+                TargetLikelyOccluded: false,
+                Summary: "foreground changed");
+
+        var unchanged =
+            new DesktopFastObservation(
+                ForegroundWindowChanged: false,
+                WindowBoundsChanged: false,
+                TargetMissing: false,
+                TargetLikelyOccluded: false,
+                Summary: "unchanged");
+
+        var changedRoute =
+            router.Route(
+                decision,
+                changed,
+                frameDifference: null);
+
+        var unchangedRoute =
+            router.Route(
+                decision,
+                unchanged,
+                new DesktopFrameDifference(
+                    Comparable: true,
+                    ChangedRatio: 0.0,
+                    MeanChannelDelta: 0,
+                    BoxLeft: 0,
+                    BoxTop: 0,
+                    BoxWidth: 0,
+                    BoxHeight: 0,
+                    Reason: "acceptance"));
+
+        Require(
+            changedRoute.Route ==
+                DesktopVerificationRoute.LocalVerified &&
+            unchangedRoute.Route ==
+                DesktopVerificationRoute.GeminiRequired,
+            "Structured invoke verifier đang pass khi chưa có transition local rõ ràng.");
     }
 
     private static void CheckStructuredVerifierInvokeIsInconclusive()

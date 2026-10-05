@@ -756,6 +756,16 @@ public sealed class ComputerOperatorAcceptanceService
 
         RunCheck(
             checks,
+            "forensic cycle summary giữ đủ trường chẩn đoán cốt lõi",
+            CheckForensicCycleSummaryCoreFields);
+
+        RunCheck(
+            checks,
+            "forensic window delta ghi appeared disappeared và moved",
+            CheckForensicWindowDelta);
+
+        RunCheck(
+            checks,
             "reliable operator runtime chỉ ready khi có desktop capability",
             CheckReliableOperatorRuntimeReadiness);
 
@@ -6593,6 +6603,147 @@ public sealed class ComputerOperatorAcceptanceService
                 item.Route == "verified" &&
                 item.Count == 1),
             "Telemetry route aggregate chưa tách được structured-first, Gemini và structured verification.");
+    }
+
+    private static void CheckForensicCycleSummaryCoreFields()
+    {
+        var trace =
+            new ComputerOperatorCycleTrace(
+                7,
+                "Mở ứng dụng rồi thao tác")
+            {
+                SceneId = "ABC123",
+                CurrentSubgoal = "Chờ client mở",
+                BeforeForeground = "old/window",
+                AfterForeground = "new/window",
+                WindowDelta = "appeared=[Client]; disappeared=[]; moved=[]; count=1->2",
+                PlannerRoute = "gemini",
+                Action = "click-left",
+                Target = "Client",
+                TargetElementId = "-",
+                TargetBox = "10,20,100,40",
+                DecisionConfidence = 0.91,
+                ExpectedEffect = "Ứng dụng bắt đầu khởi chạy",
+                DecisionReason = "Click kết quả tìm kiếm",
+                Executed = true,
+                ExecutionMilliseconds = 84,
+                Executor = "computer-input",
+                Verification = "Verified: launch transition",
+                VerificationConfidence = 0.96,
+                RecoveryCode = "none",
+                RecoveryDetail = "-",
+                Result = "verified",
+                Next = "observe-next-cycle"
+            };
+
+        trace.PlannerTrace.Add(
+            "Structured/Local=NotResolved");
+        trace.PlannerTrace.Add(
+            "Gemini=Called");
+        trace.Evidence.Add(
+            "frameDelta=0.1482");
+        trace.Evidence.Add(
+            "foregroundChanged=true");
+
+        var summary =
+            trace.RenderSummary();
+
+        Require(
+            summary.Contains(
+                "[SUMMARY][CYCLE 7]",
+                StringComparison.Ordinal) &&
+            summary.Contains(
+                "PlannerRoute: gemini",
+                StringComparison.Ordinal) &&
+            summary.Contains(
+                "Decision: action=click-left",
+                StringComparison.Ordinal) &&
+            summary.Contains(
+                "Execution: applied=True",
+                StringComparison.Ordinal) &&
+            summary.Contains(
+                "Evidence:",
+                StringComparison.Ordinal) &&
+            summary.Contains(
+                "Recovery: code=none",
+                StringComparison.Ordinal) &&
+            summary.Contains(
+                "Next: observe-next-cycle",
+                StringComparison.Ordinal),
+            "Forensic cycle summary đang thiếu trường cốt lõi.");
+    }
+
+    private static void CheckForensicWindowDelta()
+    {
+        var before =
+            new[]
+            {
+                new ComputerWindowInfo(
+                    "1",
+                    "A",
+                    "a",
+                    1,
+                    true,
+                    0,
+                    0,
+                    100,
+                    100),
+                new ComputerWindowInfo(
+                    "2",
+                    "B",
+                    "b",
+                    2,
+                    false,
+                    200,
+                    0,
+                    100,
+                    100)
+            };
+
+        var after =
+            new[]
+            {
+                new ComputerWindowInfo(
+                    "1",
+                    "A",
+                    "a",
+                    1,
+                    false,
+                    10,
+                    10,
+                    120,
+                    100),
+                new ComputerWindowInfo(
+                    "3",
+                    "C",
+                    "c",
+                    3,
+                    true,
+                    400,
+                    0,
+                    100,
+                    100)
+            };
+
+        var delta =
+            ComputerOperatorCycleTrace.DescribeWindowDelta(
+                before,
+                after);
+
+        Require(
+            delta.Contains(
+                "appeared=[C]",
+                StringComparison.Ordinal) &&
+            delta.Contains(
+                "disappeared=[B]",
+                StringComparison.Ordinal) &&
+            delta.Contains(
+                "moved=[A]",
+                StringComparison.Ordinal) &&
+            delta.Contains(
+                "count=2->2",
+                StringComparison.Ordinal),
+            "Forensic window delta chưa mô tả đủ appeared/disappeared/moved.");
     }
 
     private static void CheckOperatorTelemetryBoundsRecentEvents()

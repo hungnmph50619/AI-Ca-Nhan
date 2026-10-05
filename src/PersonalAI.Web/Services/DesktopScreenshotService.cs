@@ -40,7 +40,8 @@ public sealed class WindowsDesktopScreenshotService(
     WindowsAiOperatorConsoleService operatorConsole,
     IComputerUseService computer,
     IComputerDisplayTopologyService displays,
-    IComputerWindowVisibilityService visibility)
+    IComputerWindowVisibilityService visibility,
+    IAdaptiveObservationWakeSource wakeSource)
     : IDesktopScreenshotService
 {
     public DesktopScreenshotFrame CaptureVirtualScreen()
@@ -54,53 +55,13 @@ public sealed class WindowsDesktopScreenshotService(
         return CaptureRegion(left, top, width, height);
     }
 
-    public async Task<DesktopScreenshotFrame> CaptureStableVirtualScreenAsync(
+    public Task<DesktopScreenshotFrame> CaptureStableVirtualScreenAsync(
         int maximumWaitMs = 5000,
-        CancellationToken cancellationToken = default)
-    {
-        EnsureAvailable();
-
-        var timeout = Math.Clamp(maximumWaitMs, 800, 10_000);
-        var started = Environment.TickCount64;
-        CaptureSample? previous = null;
-
-        try
-        {
-            while (Environment.TickCount64 - started < timeout)
-            {
-                cancellationToken.ThrowIfCancellationRequested();
-
-                var current = CaptureVirtualSample();
-                if (previous is not null)
-                {
-                    var difference = MeanSignatureDifference(
-                        previous.Signature,
-                        current.Signature);
-
-                    if (difference <= 7.5)
-                    {
-                        previous.Frame.Clear();
-                        return current.Frame;
-                    }
-
-                    previous.Frame.Clear();
-                }
-
-                previous = current;
-                await Task.Delay(450, cancellationToken);
-            }
-
-            if (previous is not null)
-                return previous.Frame;
-
-            return CaptureVirtualScreen();
-        }
-        catch
-        {
-            previous?.Frame.Clear();
-            throw;
-        }
-    }
+        CancellationToken cancellationToken = default) =>
+        CaptureStableAsync(
+            CaptureVirtualSample,
+            maximumWaitMs,
+            cancellationToken);
 
     public DesktopScreenshotFrame CaptureMonitor(
         string deviceName)
@@ -113,19 +74,42 @@ public sealed class WindowsDesktopScreenshotService(
             monitor);
     }
 
-    public async Task<DesktopScreenshotFrame> CaptureStableMonitorAsync(
+    public Task<DesktopScreenshotFrame> CaptureStableMonitorAsync(
         string deviceName,
         int maximumWaitMs = 5000,
-        CancellationToken cancellationToken = default)
+        CancellationToken cancellationToken = default) =>
+        CaptureStableAsync(
+            () =>
+            {
+                var monitor =
+                    ResolveMonitor(
+                        deviceName);
+                return CaptureMonitorSample(
+                    monitor);
+            },
+            maximumWaitMs,
+            cancellationToken);
+
+    private async Task<DesktopScreenshotFrame> CaptureStableAsync(
+        Func<CaptureSample> captureSample,
+        int maximumWaitMs,
+        CancellationToken cancellationToken)
     {
         EnsureAvailable();
+        ArgumentNullException.ThrowIfNull(
+            captureSample);
 
-        var timeout = Math.Clamp(
-            maximumWaitMs,
-            800,
-            10_000);
-        var started = Environment.TickCount64;
+        var timeout =
+            Math.Clamp(
+                maximumWaitMs,
+                800,
+                10_000);
+
+        var started =
+            Environment.TickCount64;
         CaptureSample? previous = null;
+        var tracker =
+            new DesktopAdaptiveStabilityTracker();
 
         try
         {
@@ -133,26 +117,27 @@ public sealed class WindowsDesktopScreenshotService(
             {
                 cancellationToken.ThrowIfCancellationRequested();
 
-                var monitor = ResolveMonitor(
-                    deviceName);
-                var current = CaptureMonitorSample(
-                    monitor);
+                var current =
+                    captureSample();
 
                 if (previous is not null)
                 {
-                    var sameGeometry =
+                    var comparable =
                         previous.Frame.Left == current.Frame.Left &&
                         previous.Frame.Top == current.Frame.Top &&
                         previous.Frame.Width == current.Frame.Width &&
                         previous.Frame.Height == current.Frame.Height;
 
-                    var difference = sameGeometry
-                        ? MeanSignatureDifference(
-                            previous.Signature,
-                            current.Signature)
-                        : double.MaxValue;
+                    var difference =
+                        comparable
+                            ? MeanSignatureDifference(
+                                previous.Signature,
+                                current.Signature)
+                            : double.MaxValue;
 
-                    if (difference <= 7.5)
+                    if (tracker.Observe(
+                            comparable,
+                            difference))
                     {
                         previous.Frame.Clear();
                         return current.Frame;
@@ -162,21 +147,69 @@ public sealed class WindowsDesktopScreenshotService(
                 }
 
                 previous = current;
-                await Task.Delay(
-                    450,
+
+                var elapsed =
+                    Environment.TickCount64 -
+                    started;
+
+                var remaining =
+                    timeout -
+                    elapsed;
+
+                if (remaining <= 0)
+                    break;
+
+                await WaitForNextStabilitySampleAsync(
+                    TimeSpan.FromMilliseconds(
+                        Math.Min(
+                            remaining,
+                            (long)DesktopAdaptiveStabilizationPolicy
+                                .MaximumSampleInterval
+                                .TotalMilliseconds)),
                     cancellationToken);
             }
 
             if (previous is not null)
                 return previous.Frame;
 
-            return CaptureMonitor(deviceName);
+            return captureSample().Frame;
         }
         catch
         {
             previous?.Frame.Clear();
             throw;
         }
+    }
+
+    private async Task WaitForNextStabilitySampleAsync(
+        TimeSpan maximumWait,
+        CancellationToken cancellationToken)
+    {
+        if (maximumWait <= TimeSpan.Zero)
+            return;
+
+        var floor =
+            maximumWait <
+            DesktopAdaptiveStabilizationPolicy
+                .MinimumSampleFloor
+                ? maximumWait
+                : DesktopAdaptiveStabilizationPolicy
+                    .MinimumSampleFloor;
+
+        await Task.Delay(
+            floor,
+            cancellationToken);
+
+        var remaining =
+            maximumWait -
+            floor;
+
+        if (remaining <= TimeSpan.Zero)
+            return;
+
+        await wakeSource.WaitAsync(
+            remaining,
+            cancellationToken);
     }
 
     private CaptureSample CaptureMonitorSample(
@@ -272,69 +305,15 @@ public sealed class WindowsDesktopScreenshotService(
         return CaptureWindowFrame(window);
     }
 
-    public async Task<DesktopScreenshotFrame> CaptureStableWindowAsync(
+    public Task<DesktopScreenshotFrame> CaptureStableWindowAsync(
         string windowId,
         int maximumWaitMs = 5000,
-        CancellationToken cancellationToken = default)
-    {
-        EnsureAvailable();
-
-        var timeout = Math.Clamp(
+        CancellationToken cancellationToken = default) =>
+        CaptureStableAsync(
+            () => CaptureWindowSample(
+                windowId),
             maximumWaitMs,
-            800,
-            10_000);
-        var started = Environment.TickCount64;
-        CaptureSample? previous = null;
-
-        try
-        {
-            while (Environment.TickCount64 - started < timeout)
-            {
-                cancellationToken.ThrowIfCancellationRequested();
-
-                var current = CaptureWindowSample(
-                    windowId);
-
-                if (previous is not null)
-                {
-                    var sameGeometry =
-                        previous.Frame.Left == current.Frame.Left &&
-                        previous.Frame.Top == current.Frame.Top &&
-                        previous.Frame.Width == current.Frame.Width &&
-                        previous.Frame.Height == current.Frame.Height;
-
-                    var difference = sameGeometry
-                        ? MeanSignatureDifference(
-                            previous.Signature,
-                            current.Signature)
-                        : double.MaxValue;
-
-                    if (difference <= 7.5)
-                    {
-                        previous.Frame.Clear();
-                        return current.Frame;
-                    }
-
-                    previous.Frame.Clear();
-                }
-
-                previous = current;
-                await Task.Delay(
-                    450,
-                    cancellationToken);
-            }
-
-            if (previous is not null)
-                return previous.Frame;
-
-            return CaptureWindow(windowId);
-        }
-        catch
-        {
-            previous?.Frame.Clear();
-            throw;
-        }
-    }
+            cancellationToken);
 
     private CaptureSample CaptureWindowSample(
         string windowId)

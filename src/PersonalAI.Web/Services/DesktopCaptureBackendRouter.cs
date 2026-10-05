@@ -49,9 +49,9 @@ public sealed class DesktopCaptureBackendRouter(
             DesktopCaptureBackends.WindowsGraphicsCapture,
             1,
             Available: wgc?.Available == true,
-            [DesktopCaptureScopes.Window],
+            [DesktopCaptureScopes.Window, DesktopCaptureScopes.Monitor],
             wgc?.Available == true
-                ? "Windows Graphics Capture sẵn sàng cho window capture."
+                ? "Windows Graphics Capture sẵn sàng cho window và monitor capture."
                 : "Windows Graphics Capture chưa khả dụng; router sẽ dùng backend dự phòng."),
         new(
             DesktopCaptureBackends.DxgiDesktopDuplication,

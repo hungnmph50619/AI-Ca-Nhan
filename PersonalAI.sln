@@ -6,6 +6,8 @@ Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "PersonalAI.Web", "src\Perso
 EndProject
 Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "PersonalAI.WindowsAutomation", "src\PersonalAI.WindowsAutomation\PersonalAI.WindowsAutomation.csproj", "{A6B8EB1C-8AB7-4E0D-A9F7-DA7D463A7B15}"
 EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "PersonalAI.LocalVisionWorker", "src\PersonalAI.LocalVisionWorker\PersonalAI.LocalVisionWorker.csproj", "{C3E0D588-2D22-4DE9-AEDB-B4292ED43CF6}"
+EndProject
 Global
 	GlobalSection(SolutionConfigurationPlatforms) = preSolution
 		Debug|Any CPU = Debug|Any CPU
@@ -20,5 +22,9 @@ Global
 		{A6B8EB1C-8AB7-4E0D-A9F7-DA7D463A7B15}.Debug|Any CPU.Build.0 = Debug|Any CPU
 		{A6B8EB1C-8AB7-4E0D-A9F7-DA7D463A7B15}.Release|Any CPU.ActiveCfg = Release|Any CPU
 		{A6B8EB1C-8AB7-4E0D-A9F7-DA7D463A7B15}.Release|Any CPU.Build.0 = Release|Any CPU
+		{C3E0D588-2D22-4DE9-AEDB-B4292ED43CF6}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{C3E0D588-2D22-4DE9-AEDB-B4292ED43CF6}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{C3E0D588-2D22-4DE9-AEDB-B4292ED43CF6}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{C3E0D588-2D22-4DE9-AEDB-B4292ED43CF6}.Release|Any CPU.Build.0 = Release|Any CPU
 	EndGlobalSection
 EndGlobal

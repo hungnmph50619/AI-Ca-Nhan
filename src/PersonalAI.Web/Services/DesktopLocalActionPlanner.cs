@@ -34,6 +34,11 @@ public sealed class DesktopLocalActionPlanner
 
     private static readonly string[] NextStepSeparators =
     [
+        ". ",
+        ".\r",
+        ".\n",
+        "\r\n",
+        "\n",
         ",",
         ";",
         " sau đó ",
@@ -74,6 +79,14 @@ public sealed class DesktopLocalActionPlanner
                 goal,
                 out var target))
         {
+            return false;
+        }
+
+        if (ShouldYieldOpenApplicationStrategy(
+                taskHistory))
+        {
+            // Loop guard đã loại chiến lược mở/focus ứng dụng trên scene hiện tại.
+            // Trả quyền cho OCR/Gemini thay vì tái tạo cùng Win+S/focus action.
             return false;
         }
 
@@ -602,6 +615,24 @@ public sealed class DesktopLocalActionPlanner
         }
 
         return true;
+    }
+
+    private static bool ShouldYieldOpenApplicationStrategy(
+        string taskHistory)
+    {
+        if (string.IsNullOrWhiteSpace(
+                taskHistory))
+        {
+            return false;
+        }
+
+        return
+            taskHistory.Contains(
+                "CHỈ DẪN THOÁT VÒNG LẶP",
+                StringComparison.OrdinalIgnoreCase) ||
+            taskHistory.Contains(
+                "BẮT BUỘC đổi chiến lược",
+                StringComparison.OrdinalIgnoreCase);
     }
 
     private static bool HasAdditionalGoalSteps(

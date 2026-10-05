@@ -14,6 +14,14 @@ public interface IDesktopLocalActionPlanner
 public sealed class DesktopLocalActionPlanner
     : IDesktopLocalActionPlanner
 {
+    private static readonly IStructuredDesktopResolver StructuredResolver =
+        new StructuredDesktopResolver();
+
+    private static readonly IReadOnlySet<string> ClickCapabilities =
+        new HashSet<string>(
+            ["Invoke", "SelectionItem", "Toggle", "ExpandCollapse"],
+            StringComparer.OrdinalIgnoreCase);
+
     private static readonly string[] OpenPrefixes =
     [
         "mở ",
@@ -166,38 +174,19 @@ public sealed class DesktopLocalActionPlanner
         if (graph is null)
             return false;
 
-        var candidates =
-            graph.Nodes
-                .Where(node =>
-                    node.Interactive &&
-                    node.Capabilities.Any(capability =>
-                        capability.Equals("Invoke", StringComparison.OrdinalIgnoreCase) ||
-                        capability.Equals("SelectionItem", StringComparison.OrdinalIgnoreCase) ||
-                        capability.Equals("Toggle", StringComparison.OrdinalIgnoreCase) ||
-                        capability.Equals("ExpandCollapse", StringComparison.OrdinalIgnoreCase)))
-                .Select(node => new
-                {
-                    Node = node,
-                    Score = ScoreStructuredTarget(
-                        node,
-                        requestedTarget)
-                })
-                .Where(item => item.Score >= 80)
-                .OrderByDescending(item => item.Score)
-                .ThenBy(item => item.Node.Depth)
-                .ToArray();
+        var resolution =
+            StructuredResolver.ResolveInteractiveTarget(
+                graph,
+                requestedTarget,
+                ClickCapabilities);
 
-        if (candidates.Length == 0)
-            return false;
-
-        var best = candidates[0];
-        if (candidates.Length > 1 &&
-            candidates[1].Score == best.Score)
+        if (!resolution.Resolved ||
+            resolution.Node is null)
         {
             return false;
         }
 
-        var node = best.Node;
+        var node = resolution.Node;
 
         if (node.FrameLeft < 0 ||
             node.FrameTop < 0 ||
@@ -222,7 +211,7 @@ public sealed class DesktopLocalActionPlanner
             expectedEffect:
                 $"Phần tử '{DisplayNode(node)}' phản hồi sau thao tác {actionCapability}.",
             reason:
-                $"Structured-first planner tìm thấy duy nhất một node trong scene graph phù hợp với mục tiêu '{requestedTarget}' (score={best.Score}, capability={actionCapability}); không cần gửi toàn màn hình cho Vision/Gemini.",
+                $"Structured resolver đã ánh xạ mục tiêu '{requestedTarget}' thành node '{node.Id}' (score={resolution.Score}, capability={actionCapability}); không cần gửi toàn màn hình cho Vision/Gemini.",
             plan:
                 $"Dùng bounding box đã chuẩn hóa trong scene graph của '{DisplayNode(node)}' để click an toàn rồi quan sát lại.",
             targetLabel: DisplayNode(node),
@@ -234,7 +223,7 @@ public sealed class DesktopLocalActionPlanner
             boxTop: node.FrameTop,
             boxWidth: node.Width,
             boxHeight: node.Height,
-            confidence: best.Score >= 100 ? 0.99 : 0.94);
+            confidence: resolution.Score >= 100 ? 0.99 : 0.94);
 
         return true;
     }
@@ -315,48 +304,6 @@ public sealed class DesktopLocalActionPlanner
         }
 
         return value;
-    }
-
-    private static int ScoreStructuredTarget(
-        UnifiedStructuredSceneNode node,
-        string requestedTarget)
-    {
-        var target = Normalize(requestedTarget);
-        if (target.Length == 0)
-            return 0;
-
-        var name = Normalize(node.Name);
-        var automationId = Normalize(node.AutomationId);
-        var role = Normalize(node.Role);
-
-        if (name.Equals(target, StringComparison.OrdinalIgnoreCase))
-            return 110;
-
-        if (automationId.Equals(target, StringComparison.OrdinalIgnoreCase))
-            return 105;
-
-        if (name.Length > 0 &&
-            name.Contains(target, StringComparison.OrdinalIgnoreCase))
-            return 95;
-
-        if (automationId.Length > 0 &&
-            automationId.Contains(
-                target.Replace(" ", string.Empty),
-                StringComparison.OrdinalIgnoreCase))
-            return 90;
-
-        if (target.Length >= 4 &&
-            target.Contains(name, StringComparison.OrdinalIgnoreCase) &&
-            name.Length >= 3)
-            return 85;
-
-        if (role.Length > 0 &&
-            $"{role} {name}".Contains(
-                target,
-                StringComparison.OrdinalIgnoreCase))
-            return 80;
-
-        return 0;
     }
 
     private static string DisplayNode(

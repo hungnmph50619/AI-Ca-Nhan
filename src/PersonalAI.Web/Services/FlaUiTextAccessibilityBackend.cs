@@ -45,6 +45,7 @@ public sealed class FlaUiAutomationClient(
     : IFlaUiAutomationClient
 {
     private const int MaximumWaitMilliseconds = 4000;
+    private const int OcrWaitMilliseconds = 12000;
 
     public bool Available =>
         OperatingSystem.IsWindows() &&
@@ -98,8 +99,15 @@ public sealed class FlaUiAutomationClient(
             process.StandardInput.Write(payload);
             process.StandardInput.Close();
 
+            var waitMilliseconds =
+                request.Operation.Equals(
+                    "ocr-window",
+                    StringComparison.OrdinalIgnoreCase)
+                    ? OcrWaitMilliseconds
+                    : MaximumWaitMilliseconds;
+
             if (!process.WaitForExit(
-                    MaximumWaitMilliseconds))
+                    waitMilliseconds))
             {
                 try
                 {

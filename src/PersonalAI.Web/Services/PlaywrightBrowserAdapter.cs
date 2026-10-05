@@ -26,7 +26,8 @@ public interface IPlaywrightBrowserAdapter
 public sealed class PlaywrightBrowserAdapter(
     IBrowserAgentService safeBrowser,
     IWorkspaceContextAccessor workspaceContext,
-    ILogger<PlaywrightBrowserAdapter> logger)
+    ILogger<PlaywrightBrowserAdapter> logger,
+    IUniversalCapabilityCache? capabilityCache = null)
     : IPlaywrightBrowserAdapter, IAsyncDisposable
 {
     private const int NavigationTimeoutMs = 15_000;
@@ -158,6 +159,11 @@ public sealed class PlaywrightBrowserAdapter(
             logger.LogDebug(
                 exception,
                 "Playwright Edge adapter không khả dụng.");
+
+            capabilityCache?.MarkTemporarilyUnavailable(
+                "browser.playwright-dom",
+                TimeSpan.FromSeconds(15),
+                exception.Message);
 
             return Failed(
                 url,

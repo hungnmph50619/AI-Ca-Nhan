@@ -1202,7 +1202,31 @@ internal static class Program
             ExpandCollapseState:
                 ReadExpandCollapseState(element),
             IsSelected:
-                ReadSelectionState(element));
+                ReadSelectionState(element),
+            Value:
+                ReadSafeValue(element),
+            IsSensitive:
+                element.Properties.IsPassword.ValueOrDefault);
+    }
+
+    private static string? ReadSafeValue(
+        AutomationElement element)
+    {
+        if (!element.Patterns.Value.IsSupported ||
+            element.Properties.IsPassword.ValueOrDefault)
+        {
+            return null;
+        }
+
+        try
+        {
+            return element.Patterns.Value.Pattern
+                .Value.Value;
+        }
+        catch
+        {
+            return null;
+        }
     }
 
     private static string ReadToggleState(
@@ -1276,7 +1300,9 @@ internal static class Program
         string[] Patterns,
         string ToggleState = "",
         string ExpandCollapseState = "",
-        bool? IsSelected = null);
+        bool? IsSelected = null,
+        string? Value = null,
+        bool IsSensitive = false);
 
     private sealed record StructuredUiSnapshot(
         string WindowId,

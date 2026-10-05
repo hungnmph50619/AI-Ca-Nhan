@@ -39,6 +39,7 @@ public sealed class ComputerOperatorTaskService(
     IGenericTextInteractionEngine textInteraction,
     IAdaptiveVerificationWaitEngine adaptiveWait,
     IComputerOperatorCheckpointStore checkpoints,
+    IComputerOperatorTelemetry telemetry,
     ILogger<ComputerOperatorTaskService> logger)
     : IComputerOperatorTaskService
 {
@@ -83,6 +84,10 @@ public sealed class ComputerOperatorTaskService(
         if (!vision.Ready)
             throw new ToolExecutionInputException(
                 "Computer Operator cần Desktop Vision/Gemini đã sẵn sàng.");
+
+        using var taskTelemetry =
+            telemetry.Begin(
+                ComputerOperatorTelemetryStages.Task);
 
         control.EnableScopedAutomation(
             maximumActions: 12,
@@ -181,11 +186,19 @@ public sealed class ComputerOperatorTaskService(
                         : $"Đang chờ desktop ổn định trước khi quan sát. Foreground: {active.Title}.");
 
                 DesktopScreenshotFrame frame;
+                using var observeTelemetry =
+                    telemetry.Begin(
+                        ComputerOperatorTelemetryStages.Observe);
+
                 try
                 {
                     frame = await screenshots.CaptureStableVirtualScreenAsync(
                         maximumWaitMs: 5000,
                         linked.Token);
+
+                    observeTelemetry.Complete(
+                        success: true,
+                        route: "desktop");
 
                     progress.Add(
                         "observe",
@@ -198,6 +211,10 @@ public sealed class ComputerOperatorTaskService(
                 }
                 catch (Exception exception)
                 {
+                    observeTelemetry.Complete(
+                        success: false,
+                        route: "error");
+
                     progress.Block(
                         $"Không chụp được desktop: {exception.Message}");
                     return Finish(
@@ -206,6 +223,10 @@ public sealed class ComputerOperatorTaskService(
                 }
 
                 DesktopOperatorDecision decision;
+                using var planTelemetry =
+                    telemetry.Begin(
+                        ComputerOperatorTelemetryStages.GeminiPlan);
+
                 try
                 {
                     progress.Add(
@@ -224,6 +245,17 @@ public sealed class ComputerOperatorTaskService(
                             latestGoalProgress),
                         temporalSceneContext,
                         linked.Token);
+
+                    planTelemetry.Complete(
+                        success: true,
+                        route: "gemini");
+                }
+                catch
+                {
+                    planTelemetry.Complete(
+                        success: false,
+                        route: "gemini");
+                    throw;
                 }
                 finally
                 {

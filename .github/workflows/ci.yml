@@ -3163,7 +3163,19 @@ jobs:
           grep -Fq '"id": "pause-resume-stop"' tests/computer-use/v3.4.9-acceptance-scenarios.json
           grep -Fq '"id": "loop-recovery"' tests/computer-use/v3.4.9-acceptance-scenarios.json
           grep -Fq '"id": "multi-step-open-and-type"' tests/computer-use/v3.4.9-acceptance-scenarios.json
-          grep -Fq 'totalCount -lt 134' .github/workflows/desktop-control.yml
+          grep -Fq 'totalCount -lt 137' .github/workflows/desktop-control.yml
+          # v4.0.27 — Fast Operator Loop / Latency SLO
+          grep -Fq 'IComputerOperatorFastReobserveGate' src/PersonalAI.Web/Services/ComputerOperatorFastReobserveGate.cs
+          grep -Fq 'TimeSpan.FromMilliseconds(120)' src/PersonalAI.Web/Services/ComputerOperatorFastReobserveGate.cs
+          grep -Fq 'TimeSpan.FromMilliseconds(180)' src/PersonalAI.Web/Services/ComputerOperatorFastReobserveGate.cs
+          grep -Fq 'TimeSpan.FromMilliseconds(220)' src/PersonalAI.Web/Services/ComputerOperatorFastReobserveGate.cs
+          grep -Fq 'TimeSpan.FromMilliseconds(40)' src/PersonalAI.Web/Services/ComputerOperatorFastReobserveGate.cs
+          grep -Fq 'ComputerOperatorTelemetryStages.FastReobserve' src/PersonalAI.Web/Services/ComputerOperatorTaskService.cs
+          grep -Fq 'Fast Reobserve:' src/PersonalAI.Web/Services/ComputerOperatorTaskService.cs
+          ! grep -Fq 'decision.Action == "move-pointer" ? 180 : 550' src/PersonalAI.Web/Services/ComputerOperatorTaskService.cs
+          grep -Fq 'CheckFastReobserveUsesDesktopEvent' src/PersonalAI.Web/Services/ComputerOperatorAcceptanceService.cs
+          grep -Fq 'CheckFastReobserveKeepsShortFallback' src/PersonalAI.Web/Services/ComputerOperatorAcceptanceService.cs
+          grep -Fq 'CheckFastReobserveMovePointerIsLocalFastPath' src/PersonalAI.Web/Services/ComputerOperatorAcceptanceService.cs
           # v4.0.26 — Gemini Call Budget & Cost Guard
           grep -Fq 'IComputerOperatorGeminiBudgetSession' src/PersonalAI.Web/Services/ComputerOperatorGeminiBudget.cs
           grep -Fq 'MaximumPlanningCalls: 12' src/PersonalAI.Web/Services/ComputerOperatorGeminiBudget.cs

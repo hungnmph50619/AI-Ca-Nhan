@@ -23,6 +23,7 @@ public static class ComputerUseEndpoints
         services.AddSingleton<ITextAccessibilityBackend, CompositeTextAccessibilityBackend>();
         services.AddSingleton<ITextClipboardWriter, WindowsTextClipboardWriter>();
         services.AddSingleton<IGenericTextInteractionEngine, GenericTextInteractionEngine>();
+        services.AddSingleton<IAdaptiveVerificationWaitEngine, AdaptiveVerificationWaitEngine>();
         services.AddSingleton<IComputerDisplayTopologyService, WindowsComputerDisplayTopologyService>();
         services.AddSingleton<IComputerDpiCalibrationService, ComputerDpiCalibrationService>();
         services.AddSingleton<IComputerCoordinateTransformService, ComputerCoordinateTransformService>();

@@ -25,6 +25,7 @@ public sealed class KnowledgeDocumentExtractor
     private const int MaximumExtractedCharacters = 2_000_000;
     private const int MaximumPdfPages = 2_000;
     private const long MaximumDocxUncompressedBytes = 50L * 1024 * 1024;
+    private const long MaximumOfficeUncompressedBytes = 80L * 1024 * 1024;
 
     private static readonly IReadOnlyDictionary<string, HashSet<string>> AcceptedContentTypes =
         new Dictionary<string, HashSet<string>>(StringComparer.OrdinalIgnoreCase)
@@ -331,6 +332,11 @@ public sealed class KnowledgeDocumentExtractor
         MemoryStream memory,
         CancellationToken cancellationToken)
     {
+        ValidateOpenXmlContainer(
+            memory,
+            "xl/workbook.xml",
+            "XLSX");
+
         try
         {
             memory.Position = 0;
@@ -422,6 +428,11 @@ public sealed class KnowledgeDocumentExtractor
         MemoryStream memory,
         CancellationToken cancellationToken)
     {
+        ValidateOpenXmlContainer(
+            memory,
+            "ppt/presentation.xml",
+            "PPTX");
+
         try
         {
             memory.Position = 0;
@@ -669,6 +680,51 @@ public sealed class KnowledgeDocumentExtractor
         {
             throw new KnowledgeDocumentValidationException(
                 "Phần mở rộng là PDF nhưng nội dung tệp không có chữ ký PDF hợp lệ.");
+        }
+    }
+
+    private static void ValidateOpenXmlContainer(
+        MemoryStream stream,
+        string requiredEntry,
+        string label)
+    {
+        try
+        {
+            stream.Position = 0;
+            using var archive =
+                new ZipArchive(
+                    stream,
+                    ZipArchiveMode.Read,
+                    leaveOpen: true);
+
+            var totalUncompressedBytes =
+                archive.Entries.Sum(entry => entry.Length);
+
+            if (totalUncompressedBytes > MaximumOfficeUncompressedBytes)
+            {
+                throw new KnowledgeDocumentValidationException(
+                    $"{label} giải nén quá lớn. Hãy chia tệp thành các phần nhỏ hơn.");
+            }
+
+            if (archive.GetEntry("[Content_Types].xml") is null ||
+                archive.GetEntry(requiredEntry) is null)
+            {
+                throw new KnowledgeDocumentValidationException(
+                    $"Phần mở rộng là {label} nhưng cấu trúc tệp không hợp lệ.");
+            }
+        }
+        catch (KnowledgeDocumentValidationException)
+        {
+            throw;
+        }
+        catch (InvalidDataException)
+        {
+            throw new KnowledgeDocumentValidationException(
+                $"Phần mở rộng là {label} nhưng tệp không phải gói OpenXML hợp lệ.");
+        }
+        finally
+        {
+            stream.Position = 0;
         }
     }
 

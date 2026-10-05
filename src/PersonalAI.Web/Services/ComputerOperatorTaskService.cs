@@ -481,7 +481,7 @@ public sealed class ComputerOperatorTaskService(
                         : BuildSemanticActionSignature(decision);
 
                 var loopAssessment = loopGuard.Observe(
-                    decision.State,
+                    sceneFingerprint,
                     loopStrategy);
 
                 progress.Add(
@@ -1040,6 +1040,7 @@ public sealed class ComputerOperatorTaskService(
                         loopGuard,
                         taskHistory,
                         decision,
+                        sceneFingerprint,
                         actionSignature,
                         exception.Message);
 
@@ -1120,6 +1121,7 @@ public sealed class ComputerOperatorTaskService(
                         loopGuard,
                         taskHistory,
                         decision,
+                        sceneFingerprint,
                         actionSignature,
                         action.Detail);
 
@@ -1348,6 +1350,7 @@ public sealed class ComputerOperatorTaskService(
                         loopGuard,
                         taskHistory,
                         decision,
+                        sceneFingerprint,
                         actionSignature,
                         verification.Detail);
 
@@ -1703,6 +1706,7 @@ public sealed class ComputerOperatorTaskService(
                         await WaitForAdaptiveTransitionAsync(
                             decision,
                             verificationBaseline ?? previousFrame,
+                            verificationCaptureContext,
                             fastObserverBaseline ??
                                 fastObserver.CaptureSample(
                                     verificationBaseline ?? previousFrame),
@@ -1908,6 +1912,7 @@ public sealed class ComputerOperatorTaskService(
     private async Task<ActionVerificationResult?> WaitForAdaptiveTransitionAsync(
         DesktopOperatorDecision decision,
         DesktopScreenshotFrame referenceFrame,
+        VerificationCaptureContext? verificationCaptureContext,
         DesktopFastObserverSample referenceSample,
         CancellationToken cancellationToken)
     {
@@ -1932,14 +1937,31 @@ public sealed class ComputerOperatorTaskService(
                 await execution.WaitIfPausedAsync(token);
 
                 var frame =
-                    await CapturePostActionFrameAsync(token);
+                    await CapturePostActionFrameAsync(
+                        verificationCaptureContext,
+                        token);
 
                 try
                 {
+                    var contextChanged =
+                        verificationCaptureContext is not null &&
+                        !verificationCaptureContext.Matches(frame);
+
                     var difference =
-                        frameDifferences.Compare(
-                            referenceFrame,
-                            frame);
+                        contextChanged
+                            ? null
+                            : frameDifferences.Compare(
+                                referenceFrame,
+                                frame);
+
+                    if (contextChanged)
+                    {
+                        progress.Add(
+                            "capture-context-changed",
+                            "Adaptive Wait phát hiện capture context thay đổi; không so pixel giữa hai geometry khác nhau. Đây là transition evidence.",
+                            "transition",
+                            observation: true);
+                    }
 
                     var currentSample =
                         fastObserver.CaptureSample(frame);
@@ -2234,11 +2256,12 @@ public sealed class ComputerOperatorTaskService(
         ComputerOperatorLoopGuardSession loopGuard,
         ICollection<string> taskHistory,
         DesktopOperatorDecision decision,
+        string sceneFingerprint,
         string actionSignature,
         string outcome)
     {
         var assessment = loopGuard.ObserveOutcome(
-            decision.State,
+            sceneFingerprint,
             actionSignature,
             outcome);
 

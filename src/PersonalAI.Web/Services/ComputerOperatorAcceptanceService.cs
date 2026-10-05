@@ -363,6 +363,21 @@ public sealed class ComputerOperatorAcceptanceService
 
         RunCheck(
             checks,
+            "evidence fusion chấp nhận deterministic evidence mạnh",
+            CheckEvidenceFusionAcceptsDeterministicEvidence);
+
+        RunCheck(
+            checks,
+            "evidence fusion không tự kết luận khi nguồn mạnh xung đột",
+            CheckEvidenceFusionRejectsStrongConflict);
+
+        RunCheck(
+            checks,
+            "evidence fusion không double-count cùng source group",
+            CheckEvidenceFusionDoesNotDoubleCountCorrelatedVisualEvidence);
+
+        RunCheck(
+            checks,
             "capability first router phát hiện direct tool an toàn",
             CheckUniversalRouterDetectsDirectToolOpportunity);
 
@@ -2906,6 +2921,84 @@ public sealed class ComputerOperatorAcceptanceService
             !result.Verified &&
             !result.Failed,
             "Stalled đang bị đánh đồng với Failed.");
+    }
+
+    private static void CheckEvidenceFusionAcceptsDeterministicEvidence()
+    {
+        var fusion = new UniversalEvidenceFusionEngine();
+
+        var result = fusion.Fuse(
+            [
+                new UniversalEvidenceSignal(
+                    "uia-value-pattern",
+                    "focused-control-value",
+                    Passed: true,
+                    Confidence: 0.99,
+                    UniversalEvidenceReliability.Deterministic,
+                    "actual text == expected text")
+            ]);
+
+        Require(
+            result.Status == UniversalEvidenceFusionStatuses.Verified &&
+            result.GoalAchieved &&
+            result.IndependentlyVerified,
+            "Deterministic evidence mạnh chưa được fusion chấp nhận.");
+    }
+
+    private static void CheckEvidenceFusionRejectsStrongConflict()
+    {
+        var fusion = new UniversalEvidenceFusionEngine();
+
+        var result = fusion.Fuse(
+            [
+                new UniversalEvidenceSignal(
+                    "uia-structured",
+                    "uia",
+                    Passed: true,
+                    Confidence: 0.95,
+                    UniversalEvidenceReliability.Structured,
+                    "UIA báo đúng"),
+                new UniversalEvidenceSignal(
+                    "process-state",
+                    "process",
+                    Passed: false,
+                    Confidence: 0.94,
+                    UniversalEvidenceReliability.StrongLocal,
+                    "Process state chưa đạt")
+            ]);
+
+        Require(
+            result.Status == UniversalEvidenceFusionStatuses.NeedsVerification &&
+            !result.GoalAchieved,
+            "Evidence Fusion vẫn tự kết luận khi nguồn mạnh xung đột.");
+    }
+
+    private static void CheckEvidenceFusionDoesNotDoubleCountCorrelatedVisualEvidence()
+    {
+        var fusion = new UniversalEvidenceFusionEngine();
+
+        var result = fusion.Fuse(
+            [
+                new UniversalEvidenceSignal(
+                    "frame-diff",
+                    "visual",
+                    Passed: true,
+                    Confidence: 0.92,
+                    UniversalEvidenceReliability.StrongLocal,
+                    "frame changed"),
+                new UniversalEvidenceSignal(
+                    "roi-vision-local",
+                    "visual",
+                    Passed: true,
+                    Confidence: 0.93,
+                    UniversalEvidenceReliability.StrongLocal,
+                    "same visual source group")
+            ]);
+
+        Require(
+            result.Status == UniversalEvidenceFusionStatuses.NeedsVerification &&
+            result.AcceptedSignals.Count == 1,
+            "Evidence Fusion đang double-count tín hiệu visual tương quan.");
     }
 
     private static void CheckUniversalRouterDetectsDirectToolOpportunity()

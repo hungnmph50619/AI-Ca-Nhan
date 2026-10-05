@@ -438,6 +438,21 @@ public sealed class ComputerOperatorAcceptanceService
 
         RunCheck(
             checks,
+            "telemetry không công bố payload nhạy cảm",
+            CheckOperatorTelemetryDoesNotExposePayloads);
+
+        RunCheck(
+            checks,
+            "telemetry đổi dimension không an toàn thành other",
+            CheckOperatorTelemetrySanitizesUnsafeDimensions);
+
+        RunCheck(
+            checks,
+            "telemetry giới hạn danh sách sự kiện gần nhất",
+            CheckOperatorTelemetryBoundsRecentEvents);
+
+        RunCheck(
+            checks,
             "capability first router phát hiện direct tool an toàn",
             CheckUniversalRouterDetectsDirectToolOpportunity);
 
@@ -3496,6 +3511,95 @@ public sealed class ComputerOperatorAcceptanceService
             {
             }
         }
+    }
+
+    private static void CheckOperatorTelemetryDoesNotExposePayloads()
+    {
+        var telemetry =
+            new ComputerOperatorTelemetry();
+
+        using (var operation =
+               telemetry.Begin(
+                   ComputerOperatorTelemetryStages.GeminiPlan))
+        {
+            operation.Complete(
+                success: true,
+                route: "gemini");
+        }
+
+        var snapshot =
+            telemetry.GetSnapshot();
+
+        Require(
+            snapshot.MemoryOnly &&
+            snapshot.OpenTelemetryCompatible &&
+            !snapshot.ContainsGoals &&
+            !snapshot.ContainsTextPayloads &&
+            !snapshot.ContainsScreenshots &&
+            !snapshot.ContainsCoordinates,
+            "Telemetry đang công bố hoặc lưu loại payload không được phép.");
+    }
+
+    private static void CheckOperatorTelemetrySanitizesUnsafeDimensions()
+    {
+        var telemetry =
+            new ComputerOperatorTelemetry();
+
+        using (var operation =
+               telemetry.Begin(
+                   "đây là nội dung task bí mật",
+                   "Xin chào người dùng"))
+        {
+            operation.Complete(
+                success: true,
+                route: "route có khoảng trắng");
+        }
+
+        var item =
+            telemetry.GetSnapshot()
+                .RecentEvents
+                .Single();
+
+        Require(
+            item.Stage == "other" &&
+            item.Action == "other" &&
+            item.Route == "other",
+            "Telemetry chưa chặn dimension có thể chứa nội dung tự do.");
+    }
+
+    private static void CheckOperatorTelemetryBoundsRecentEvents()
+    {
+        var telemetry =
+            new ComputerOperatorTelemetry();
+
+        for (var index = 0;
+             index <
+                 ComputerOperatorTelemetry.MaximumRecentEvents + 25;
+             index++)
+        {
+            using var operation =
+                telemetry.Begin(
+                    ComputerOperatorTelemetryStages.Observe,
+                    "frame");
+
+            operation.Complete(
+                success: true,
+                route: "local");
+        }
+
+        var snapshot =
+            telemetry.GetSnapshot();
+
+        Require(
+            snapshot.RecentEvents.Count ==
+                ComputerOperatorTelemetry.MaximumRecentEvents &&
+            snapshot.Aggregates
+                .Single(item =>
+                    item.Stage ==
+                    ComputerOperatorTelemetryStages.Observe)
+                .Count ==
+                ComputerOperatorTelemetry.MaximumRecentEvents + 25,
+            "Telemetry recent-event buffer hoặc aggregate count không đúng giới hạn.");
     }
 
     private static void CheckUniversalRouterDetectsDirectToolOpportunity()

@@ -378,6 +378,21 @@ public sealed class ComputerOperatorAcceptanceService
 
         RunCheck(
             checks,
+            "event-driven wake đánh thức verifier trước poll deadline",
+            CheckEventDrivenWakeAcceleratesObservation);
+
+        RunCheck(
+            checks,
+            "event wake không tự biến thành verification success",
+            CheckEventWakeDoesNotCreateSuccess);
+
+        RunCheck(
+            checks,
+            "event source không có tín hiệu vẫn polling fallback",
+            CheckEventWakeFallsBackToPolling);
+
+        RunCheck(
+            checks,
             "capability first router phát hiện direct tool an toàn",
             CheckUniversalRouterDetectsDirectToolOpportunity);
 
@@ -3001,6 +3016,124 @@ public sealed class ComputerOperatorAcceptanceService
             "Evidence Fusion đang double-count tín hiệu visual tương quan.");
     }
 
+    private static void CheckEventDrivenWakeAcceleratesObservation()
+    {
+        var wake =
+            new AcceptanceObservationWakeSource(
+                emitEvent: true);
+
+        var engine =
+            new AdaptiveVerificationWaitEngine(
+                wake);
+
+        var calls = 0;
+        var result = engine.WaitAsync(
+                _ =>
+                {
+                    calls++;
+                    return Task.FromResult(
+                        calls >= 2
+                            ? new AdaptiveProgressSample(
+                                AdaptiveWaitStatuses.Verified,
+                                0.99,
+                                "verified",
+                                MeaningfulProgress: true)
+                            : new AdaptiveProgressSample(
+                                AdaptiveWaitStatuses.Pending,
+                                0.20,
+                                "pending",
+                                MeaningfulProgress: false));
+                },
+                new AdaptiveWaitPolicy(
+                    TimeSpan.FromSeconds(1),
+                    TimeSpan.FromSeconds(3),
+                    TimeSpan.FromSeconds(5),
+                    0.70))
+            .GetAwaiter()
+            .GetResult();
+
+        Require(
+            result.Verified &&
+            result.EventWakeups >= 1 &&
+            wake.WaitCount >= 1,
+            "Event-driven wake chưa đánh thức verifier trước polling fallback.");
+    }
+
+    private static void CheckEventWakeDoesNotCreateSuccess()
+    {
+        var wake =
+            new AcceptanceObservationWakeSource(
+                emitEvent: true);
+
+        var engine =
+            new AdaptiveVerificationWaitEngine(
+                wake);
+
+        var result = engine.WaitAsync(
+                _ => Task.FromResult(
+                    new AdaptiveProgressSample(
+                        AdaptiveWaitStatuses.Pending,
+                        0.20,
+                        "event chỉ đánh thức, chưa có evidence",
+                        MeaningfulProgress: false)),
+                new AdaptiveWaitPolicy(
+                    TimeSpan.FromMilliseconds(1),
+                    TimeSpan.FromMilliseconds(15),
+                    TimeSpan.FromMilliseconds(100),
+                    0.70))
+            .GetAwaiter()
+            .GetResult();
+
+        Require(
+            !result.Verified &&
+            !result.Failed &&
+            result.Status == AdaptiveWaitStatuses.Stalled,
+            "Windows event đang bị coi nhầm là verification success.");
+    }
+
+    private static void CheckEventWakeFallsBackToPolling()
+    {
+        var wake =
+            new AcceptanceObservationWakeSource(
+                emitEvent: false);
+
+        var engine =
+            new AdaptiveVerificationWaitEngine(
+                wake);
+
+        var calls = 0;
+        var result = engine.WaitAsync(
+                _ =>
+                {
+                    calls++;
+                    return Task.FromResult(
+                        calls >= 2
+                            ? new AdaptiveProgressSample(
+                                AdaptiveWaitStatuses.Verified,
+                                0.99,
+                                "verified after fallback poll",
+                                MeaningfulProgress: true)
+                            : new AdaptiveProgressSample(
+                                AdaptiveWaitStatuses.Pending,
+                                0.20,
+                                "pending",
+                                MeaningfulProgress: false));
+                },
+                new AdaptiveWaitPolicy(
+                    TimeSpan.FromMilliseconds(1),
+                    TimeSpan.FromMilliseconds(50),
+                    TimeSpan.FromMilliseconds(100),
+                    0.70))
+            .GetAwaiter()
+            .GetResult();
+
+        Require(
+            result.Verified &&
+            result.EventWakeups == 0 &&
+            wake.WaitCount >= 1,
+            "Không có event nhưng polling fallback chưa hoạt động.");
+    }
+
     private static void CheckUniversalRouterDetectsDirectToolOpportunity()
     {
         IPersonalAiTool browserTool =
@@ -5206,6 +5339,47 @@ public sealed class ComputerOperatorAcceptanceService
                     Verified: verifiedResult,
                     Provider: "acceptance",
                     Model: "acceptance"));
+        }
+    }
+
+    private sealed class AcceptanceObservationWakeSource(
+        bool emitEvent)
+        : IAdaptiveObservationWakeSource
+    {
+        public int WaitCount { get; private set; }
+
+        public bool EventDrivenAvailable => true;
+
+        public async Task<DesktopObservationWakeResult> WaitAsync(
+            TimeSpan fallbackDelay,
+            CancellationToken cancellationToken = default)
+        {
+            WaitCount++;
+
+            if (emitEvent)
+            {
+                await Task.Yield();
+                return new(
+                    EventReceived: true,
+                    new DesktopSystemEvent(
+                        DesktopSystemEventKinds.ForegroundChanged,
+                        "0x1",
+                        DateTimeOffset.UtcNow,
+                        0x0003,
+                        "acceptance event"),
+                    TimeSpan.Zero,
+                    "acceptance event");
+            }
+
+            await Task.Delay(
+                fallbackDelay,
+                cancellationToken);
+
+            return new(
+                EventReceived: false,
+                Event: null,
+                fallbackDelay,
+                "acceptance fallback");
         }
     }
 

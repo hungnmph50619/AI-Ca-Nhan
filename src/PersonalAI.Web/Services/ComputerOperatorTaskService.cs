@@ -1031,7 +1031,21 @@ public sealed class ComputerOperatorTaskService(
                         progress,
                         cycleTrace);
 
-                    await Task.Delay(900, linked.Token);
+                    var waitMilliseconds =
+                        cycleTrace.RecoveryCode ==
+                            "provider-cooldown"
+                            ? Math.Clamp(
+                                (int)Math.Ceiling(
+                                    (plannerBackoffUntil -
+                                     DateTimeOffset.UtcNow)
+                                    .TotalMilliseconds),
+                                900,
+                                5000)
+                            : 900;
+
+                    await Task.Delay(
+                        waitMilliseconds,
+                        linked.Token);
                     continue;
                 }
 

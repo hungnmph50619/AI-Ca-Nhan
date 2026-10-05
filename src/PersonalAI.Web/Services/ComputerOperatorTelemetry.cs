@@ -16,6 +16,7 @@ public static class ComputerOperatorTelemetryStages
     public const string GeminiVerify = "gemini-verify";
     public const string AdaptiveWait = "adaptive-wait";
     public const string FastReobserve = "fast-reobserve";
+    public const string ReplanPacing = "replan-pacing";
     public const string TextEngine = "text-engine";
 }
 

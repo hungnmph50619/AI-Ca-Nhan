@@ -709,7 +709,7 @@ Các field không dùng để chuỗi rỗng hoặc [].
             },
             generationConfig = new
             {
-                maxOutputTokens = 1200,
+                maxOutputTokens = 1800,
                 temperature = 0.0,
                 responseMimeType = "application/json"
             }
@@ -1491,6 +1491,25 @@ Các field không dùng để chuỗi rỗng hoặc [].
         }
         catch (JsonException exception)
         {
+            if (TryRepairTruncatedJsonObject(
+                    rawText,
+                    out var repaired))
+            {
+                try
+                {
+                    return ParseDesktopOperatorDecision(
+                        repaired);
+                }
+                catch (Exception repairException) when (
+                    repairException is
+                        JsonException or
+                        InvalidOperationException)
+                {
+                    // Không bịa field/action. Repair chỉ được dùng nếu payload sau
+                    // khi đóng envelope vẫn vượt qua parser/validation hiện có.
+                }
+            }
+
             return CreateSafeWaitDecision(
                 $"Gemini trả JSON chưa hoàn chỉnh hoặc sai cấu trúc (dòng {exception.LineNumber}, vị trí {exception.BytePositionInLine}). Không thực thi action từ payload lỗi; sẽ quan sát lại trạng thái hiện tại.");
         }
@@ -1498,6 +1517,168 @@ Các field không dùng để chuỗi rỗng hoặc [].
         {
             return CreateSafeWaitDecision(
                 $"Gemini chưa trả được JSON quyết định hợp lệ: {exception.Message} Không thực thi action; sẽ quan sát lại trạng thái hiện tại.");
+        }
+    }
+
+    internal static bool TryRepairTruncatedJsonObjectForAcceptance(
+        string rawText,
+        out string repaired) =>
+        TryRepairTruncatedJsonObject(
+            rawText,
+            out repaired);
+
+    private static bool TryRepairTruncatedJsonObject(
+        string rawText,
+        out string repaired)
+    {
+        repaired =
+            string.Empty;
+
+        if (string.IsNullOrWhiteSpace(
+                rawText))
+        {
+            return false;
+        }
+
+        var start =
+            rawText.IndexOf(
+                '{');
+
+        if (start < 0)
+            return false;
+
+        var stack =
+            new Stack<char>();
+
+        var inString =
+            false;
+        var escaped =
+            false;
+
+        for (var index = start;
+             index < rawText.Length;
+             index++)
+        {
+            var ch =
+                rawText[index];
+
+            if (inString)
+            {
+                if (escaped)
+                {
+                    escaped =
+                        false;
+                    continue;
+                }
+
+                if (ch == '\\')
+                {
+                    escaped =
+                        true;
+                    continue;
+                }
+
+                if (ch == '"')
+                {
+                    inString =
+                        false;
+                }
+
+                continue;
+            }
+
+            if (ch == '"')
+            {
+                inString =
+                    true;
+                continue;
+            }
+
+            if (ch is '{' or '[')
+            {
+                stack.Push(
+                    ch);
+                continue;
+            }
+
+            if (ch is '}' or ']')
+            {
+                if (stack.Count == 0)
+                    return false;
+
+                var opener =
+                    stack.Pop();
+
+                var matches =
+                    opener == '{' &&
+                    ch == '}' ||
+                    opener == '[' &&
+                    ch == ']';
+
+                if (!matches)
+                    return false;
+
+                if (stack.Count == 0)
+                {
+                    repaired =
+                        rawText[start..(index + 1)];
+                    return true;
+                }
+            }
+        }
+
+        // Không đóng chuỗi bị cắt giữa chừng vì có thể làm thay đổi semantic.
+        if (inString ||
+            stack.Count == 0)
+        {
+            return false;
+        }
+
+        var candidate =
+            rawText[start..]
+                .TrimEnd();
+
+        if (candidate.EndsWith(
+                ':'))
+        {
+            return false;
+        }
+
+        if (candidate.EndsWith(
+                ','))
+        {
+            candidate =
+                candidate[..^1]
+                    .TrimEnd();
+        }
+
+        var builder =
+            new StringBuilder(
+                candidate);
+
+        while (stack.Count > 0)
+        {
+            builder.Append(
+                stack.Pop() == '{'
+                    ? '}'
+                    : ']');
+        }
+
+        repaired =
+            builder.ToString();
+
+        try
+        {
+            using var _ =
+                JsonDocument.Parse(
+                    repaired);
+            return true;
+        }
+        catch (JsonException)
+        {
+            repaired =
+                string.Empty;
+            return false;
         }
     }
 

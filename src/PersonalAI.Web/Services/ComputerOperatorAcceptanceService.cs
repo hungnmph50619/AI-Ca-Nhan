@@ -179,6 +179,11 @@ public sealed class ComputerOperatorAcceptanceService
             "structured-first planner chọn đúng pattern theo intent",
             CheckStructuredPlannerUsesIntentSpecificPattern);
 
+        RunCheck(
+            checks,
+            "structured toggle không đảo ngược trạng thái đã đúng",
+            CheckStructuredToggleUsesCurrentState);
+
 
         RunCheck(
             checks,
@@ -1940,6 +1945,86 @@ public sealed class ComputerOperatorAcceptanceService
                 "Windows Search",
                 StringComparison.OrdinalIgnoreCase),
             "Local planner không chọn Windows Search generic cho intent mở ứng dụng.");
+    }
+
+    private static void CheckStructuredToggleUsesCurrentState()
+    {
+        var planner = new DesktopLocalActionPlanner();
+        var foreground = new ComputerWindowInfo(
+            "0x1234",
+            "Acceptance App",
+            "acceptance",
+            10,
+            true,
+            0,
+            0,
+            1000,
+            700);
+
+        ComputerOperatorDesktopState BuildState(
+            string toggleState)
+        {
+            var node = new StructuredDesktopNode(
+                Token: "root:wifi",
+                ParentToken: "root",
+                Depth: 2,
+                Role: "CheckBox",
+                Name: "WiFi",
+                AutomationId: "wifiToggle",
+                ClassName: "CheckBox",
+                IsEnabled: true,
+                IsFocused: false,
+                IsOffscreen: false,
+                Left: 200,
+                Top: 160,
+                Width: 180,
+                Height: 36,
+                Patterns: ["Toggle"],
+                ToggleState: toggleState);
+
+            var structured = new StructuredDesktopSnapshot(
+                WindowId: foreground.WindowId,
+                RootToken: "root",
+                CapturedAtUtc: DateTimeOffset.UtcNow,
+                NodeCount: 1,
+                MaximumNodes: 240,
+                MaximumDepth: 7,
+                Nodes: [node],
+                Source: "flaui-uia3",
+                Detail: "acceptance");
+
+            return new ComputerOperatorDesktopState(
+                DateTimeOffset.UtcNow,
+                foreground,
+                [foreground],
+                FrameLeft: 0,
+                FrameTop: 0,
+                FrameWidth: 1000,
+                FrameHeight: 700,
+                CaptureScope: DesktopCaptureScopes.Window,
+                CaptureWindowId: foreground.WindowId,
+                CaptureWindowWasForeground: true,
+                StructuredScene: structured);
+        }
+
+        var offPlanned = planner.TryPlan(
+            "Bật WiFi",
+            BuildState("Off"),
+            string.Empty,
+            out var offDecision);
+
+        var onPlanned = planner.TryPlan(
+            "Bật WiFi",
+            BuildState("On"),
+            string.Empty,
+            out var onDecision);
+
+        Require(
+            offPlanned &&
+            onPlanned &&
+            offDecision.Action == "structured-toggle" &&
+            onDecision.Action == "complete",
+            "Structured toggle chưa dùng current state để tránh đảo ngược trạng thái đã đúng.");
     }
 
     private static void CheckStructuredPlannerUsesIntentSpecificPattern()

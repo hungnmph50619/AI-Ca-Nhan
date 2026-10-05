@@ -3622,7 +3622,8 @@ public sealed class ComputerOperatorAcceptanceService
                 "0x1",
                 DateTimeOffset.UtcNow,
                 0,
-                "acceptance value changed");
+                "acceptance value changed",
+                SourceConfidence: 1.0);
 
         var moveEvent =
             new DesktopSystemEvent(
@@ -3630,7 +3631,8 @@ public sealed class ComputerOperatorAcceptanceService
                 "0x1",
                 DateTimeOffset.UtcNow,
                 0,
-                "acceptance moved");
+                "acceptance moved",
+                SourceConfidence: 1.0);
 
         var typeValue =
             ComputerOperatorEventRelevance.Score(
@@ -3662,7 +3664,8 @@ public sealed class ComputerOperatorAcceptanceService
                 "0x1",
                 DateTimeOffset.UtcNow,
                 0,
-                "acceptance structure changed");
+                "acceptance structure changed",
+                SourceConfidence: 1.0);
 
         var withoutEffect =
             ComputerOperatorEventRelevance.Score(

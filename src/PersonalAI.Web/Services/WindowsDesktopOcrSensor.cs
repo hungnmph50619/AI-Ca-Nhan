@@ -31,7 +31,8 @@ public sealed record DesktopOcrObservation(
 public interface IDesktopOcrSensor
 {
     DesktopOcrObservation ReadWindow(
-        string windowId);
+        string windowId,
+        LocalVisualSensorBudget? budget = null);
 }
 
 public interface IDesktopOcrProvider
@@ -233,7 +234,8 @@ public sealed class WindowsDesktopOcrSensor(
 
 public sealed class DesktopOcrSensorRouter(
     IEnumerable<IDesktopOcrProvider> providers,
-    ILocalVisualProviderHealthRegistry health)
+    ILocalVisualProviderHealthRegistry health,
+    ILocalVisualSensorBudgetPolicy budgetPolicy)
     : IDesktopOcrSensor
 {
     private readonly IReadOnlyList<IDesktopOcrProvider> orderedProviders =
@@ -247,14 +249,56 @@ public sealed class DesktopOcrSensorRouter(
             .ToArray();
 
     public DesktopOcrObservation ReadWindow(
-        string windowId)
+        string windowId,
+        LocalVisualSensorBudget? budget = null)
     {
         DesktopOcrObservation? last =
             null;
 
+        var effectiveBudget =
+            budget ??
+            new LocalVisualSensorBudget(
+                MaximumTotalMilliseconds: 4500,
+                MaximumOcrMilliseconds: 3500,
+                MaximumTemplateMilliseconds: 800,
+                AllowWindowsOcr: true,
+                AllowPaddleOcr: true,
+                AllowOpenCv: true,
+                Reason: "Default OCR budget.");
+
+        var totalStopwatch =
+            System.Diagnostics.Stopwatch.StartNew();
+
         foreach (var provider in
                  orderedProviders)
         {
+            var providerHealth =
+                health.Get(
+                    provider.Name);
+
+            if (!budgetPolicy.CanUseProvider(
+                    provider.Name,
+                    effectiveBudget,
+                    totalStopwatch.ElapsedMilliseconds,
+                    providerHealth,
+                    out var budgetReason))
+            {
+                last =
+                    new(
+                        Available: false,
+                        Text: string.Empty,
+                        Language: string.Empty,
+                        Lines:
+                            Array.Empty<DesktopOcrLine>(),
+                        CaptureWidth: 0,
+                        CaptureHeight: 0,
+                        Provider:
+                            provider.Name,
+                        Reason:
+                            budgetReason);
+                continue;
+            }
+
             if (health.ShouldSkip(
                     provider.Name,
                     DateTimeOffset.UtcNow,

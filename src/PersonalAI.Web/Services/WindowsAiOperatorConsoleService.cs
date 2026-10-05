@@ -400,8 +400,19 @@ public sealed class WindowsAiOperatorConsoleService
                                 IntPtr.Zero).ToInt32()
                             : 0;
 
-                        SetWindowText(_text, text);
-                        _lastText = text;
+                        // SetWindowText trên EDIT có thể tự phát sinh EN_VSCROLL.
+                        // Đánh dấu đây là scroll do chương trình để không làm mất chế độ
+                        // auto-follow đúng lúc task chuyển active -> blocked/completed.
+                        _programmaticLogScroll = true;
+                        try
+                        {
+                            SetWindowText(_text, text);
+                            _lastText = text;
+                        }
+                        finally
+                        {
+                            _programmaticLogScroll = false;
+                        }
 
                         if (_followTail)
                         {

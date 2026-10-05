@@ -3356,7 +3356,18 @@ public sealed class ComputerOperatorTaskService(
                 .Where(node => !node.IsOffscreen)
                 .Take(24)
                 .Select(node =>
-                    $"{NormalizeSceneToken(node.Role)}:{NormalizeSceneToken(node.Name)}:{NormalizeSceneToken(node.AutomationId)}:{Quantize(node.Left, 32)},{Quantize(node.Top, 32)},{Quantize(node.Width, 32)},{Quantize(node.Height, 32)}"))}";
+                {
+                    var valueFingerprint =
+                        node.IsSensitive
+                            ? "sensitive"
+                            : node.Value is null
+                                ? "-"
+                                : BuildDiagnosticId(
+                                    node.Value);
+
+                    return
+                        $"{NormalizeSceneToken(node.Role)}:{NormalizeSceneToken(node.Name)}:{NormalizeSceneToken(node.AutomationId)}:{Quantize(node.Left, 32)},{Quantize(node.Top, 32)},{Quantize(node.Width, 32)},{Quantize(node.Height, 32)}:toggle={NormalizeSceneToken(node.ToggleState)}:expand={NormalizeSceneToken(node.ExpandCollapseState)}:selected={node.IsSelected?.ToString() ?? "?"}:value={valueFingerprint}:patterns={string.Join(",", node.Patterns.OrderBy(pattern => pattern, StringComparer.OrdinalIgnoreCase))}";
+                }))}";
 
         return string.Join(
             "|",

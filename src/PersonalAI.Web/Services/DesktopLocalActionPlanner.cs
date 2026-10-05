@@ -297,9 +297,11 @@ public sealed class DesktopLocalActionPlanner
         decision = Empty();
 
         if (state.ForegroundWindow is null ||
-            !TryExtractStructuredClickTarget(
+            !TryExtractStructuredActionIntent(
                 goal,
-                out var requestedTarget))
+                out var requestedTarget,
+                out var requestedCapability,
+                out var requestedAction))
         {
             return false;
         }
@@ -317,11 +319,16 @@ public sealed class DesktopLocalActionPlanner
         if (graph is null)
             return false;
 
+        var preferredCapabilities =
+            new HashSet<string>(
+                [requestedCapability],
+                StringComparer.OrdinalIgnoreCase);
+
         var resolution =
             StructuredResolver.ResolveInteractiveTarget(
                 graph,
                 requestedTarget,
-                ClickCapabilities);
+                preferredCapabilities);
 
         if (!resolution.Resolved ||
             resolution.Node is null)
@@ -339,32 +346,8 @@ public sealed class DesktopLocalActionPlanner
             return false;
         }
 
-        var actionCapability =
-            node.Capabilities.FirstOrDefault(capability =>
-                capability.Equals("Invoke", StringComparison.OrdinalIgnoreCase) ||
-                capability.Equals("SelectionItem", StringComparison.OrdinalIgnoreCase) ||
-                capability.Equals("Toggle", StringComparison.OrdinalIgnoreCase) ||
-                capability.Equals("ExpandCollapse", StringComparison.OrdinalIgnoreCase))
-            ?? "UIA";
-
-        var structuredAction =
-            actionCapability.Equals(
-                "Invoke",
-                StringComparison.OrdinalIgnoreCase)
-                ? "structured-invoke"
-                : actionCapability.Equals(
-                    "SelectionItem",
-                    StringComparison.OrdinalIgnoreCase)
-                    ? "structured-select"
-                    : actionCapability.Equals(
-                        "Toggle",
-                        StringComparison.OrdinalIgnoreCase)
-                        ? "structured-toggle"
-                        : actionCapability.Equals(
-                            "ExpandCollapse",
-                            StringComparison.OrdinalIgnoreCase)
-                            ? "structured-expand"
-                            : "click-left";
+        var actionCapability = requestedCapability;
+        var structuredAction = requestedAction;
 
         decision = Build(
             action: structuredAction,
@@ -392,54 +375,78 @@ public sealed class DesktopLocalActionPlanner
         return true;
     }
 
-    private static bool TryExtractStructuredClickTarget(
+    private static bool TryExtractStructuredActionIntent(
         string goal,
-        out string target)
+        out string target,
+        out string capability,
+        out string action)
     {
         var value = (goal ?? string.Empty).Trim();
-        var prefixes = new[]
+
+        var intents = new[]
         {
-            "bấm ",
-            "bam ",
-            "nhấn ",
-            "nhan ",
-            "click ",
-            "press ",
-            "chọn ",
-            "chon ",
-            "select ",
-            "tick "
+            new { Prefix = "mở rộng ", Capability = "ExpandCollapse", Action = "structured-expand" },
+            new { Prefix = "mo rong ", Capability = "ExpandCollapse", Action = "structured-expand" },
+            new { Prefix = "expand ", Capability = "ExpandCollapse", Action = "structured-expand" },
+            new { Prefix = "thu gọn ", Capability = "ExpandCollapse", Action = "structured-collapse" },
+            new { Prefix = "thu gon ", Capability = "ExpandCollapse", Action = "structured-collapse" },
+            new { Prefix = "collapse ", Capability = "ExpandCollapse", Action = "structured-collapse" },
+            new { Prefix = "bật ", Capability = "Toggle", Action = "structured-toggle" },
+            new { Prefix = "bat ", Capability = "Toggle", Action = "structured-toggle" },
+            new { Prefix = "tắt ", Capability = "Toggle", Action = "structured-toggle" },
+            new { Prefix = "tat ", Capability = "Toggle", Action = "structured-toggle" },
+            new { Prefix = "tick ", Capability = "Toggle", Action = "structured-toggle" },
+            new { Prefix = "toggle ", Capability = "Toggle", Action = "structured-toggle" },
+            new { Prefix = "chọn ", Capability = "SelectionItem", Action = "structured-select" },
+            new { Prefix = "chon ", Capability = "SelectionItem", Action = "structured-select" },
+            new { Prefix = "select ", Capability = "SelectionItem", Action = "structured-select" },
+            new { Prefix = "bấm ", Capability = "Invoke", Action = "structured-invoke" },
+            new { Prefix = "bam ", Capability = "Invoke", Action = "structured-invoke" },
+            new { Prefix = "nhấn ", Capability = "Invoke", Action = "structured-invoke" },
+            new { Prefix = "nhan ", Capability = "Invoke", Action = "structured-invoke" },
+            new { Prefix = "click ", Capability = "Invoke", Action = "structured-invoke" },
+            new { Prefix = "press ", Capability = "Invoke", Action = "structured-invoke" }
         };
 
-        foreach (var prefix in prefixes)
+        foreach (var intent in intents)
         {
             if (!value.StartsWith(
-                    prefix,
+                    intent.Prefix,
                     StringComparison.OrdinalIgnoreCase))
             {
                 continue;
             }
 
-            var remainder = value[prefix.Length..].Trim();
+            var remainder = value[intent.Prefix.Length..].Trim();
             remainder = StripStructuredTargetPrefix(remainder);
 
+            var cut = remainder.Length;
             foreach (var separator in NextStepSeparators)
             {
                 var index = remainder.IndexOf(
                     separator,
                     StringComparison.OrdinalIgnoreCase);
-                if (index >= 0)
-                    remainder = remainder[..index];
+
+                if (index >= 0 &&
+                    index < cut)
+                {
+                    cut = index;
+                }
             }
 
-            target = remainder
+            target = remainder[..cut]
                 .Trim()
                 .Trim('"', '\'', '“', '”', '.', ':');
+
+            capability = intent.Capability;
+            action = intent.Action;
 
             return target.Length is >= 1 and <= 120;
         }
 
         target = string.Empty;
+        capability = string.Empty;
+        action = string.Empty;
         return false;
     }
 

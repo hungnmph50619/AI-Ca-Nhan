@@ -116,7 +116,7 @@ public sealed class ChatAttachmentStore(
                 mimeType))
         {
             throw new ChatValidationException(
-                "Hiện tại chat hỗ trợ PNG, JPG, WEBP, PDF, TXT và Markdown.");
+                "Hiện tại chat hỗ trợ PNG, JPG, WEBP, PDF, DOCX, TXT và Markdown.");
         }
 
         var kind =

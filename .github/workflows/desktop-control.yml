@@ -13,6 +13,8 @@ on:
     paths:
       - 'src/PersonalAI.Web/Services/ComputerUse*'
       - 'src/PersonalAI.Web/Services/ComputerOperator*'
+      - 'src/PersonalAI.Web/Evaluation/Regression/ComputerOperatorRegressionLabModels.cs'
+      - 'src/PersonalAI.Web/Services/EvaluationEndpoints.cs'
       - 'src/PersonalAI.Web/Services/ComputerOperatorActionExecutor.cs'
       - 'src/PersonalAI.Web/Services/ComputerCoordinateTransformService.cs'
       - 'src/PersonalAI.Web/Models/ComputerCoordinateModels.cs'
@@ -104,6 +106,16 @@ jobs:
               throw "Computer Operator acceptance suite không chạy đủ 131 kiểm tra bắt buộc."
             }
             Write-Host "Đạt Computer Operator acceptance suite: $($acceptance.passedCount)/$($acceptance.totalCount)."
+
+            $regression = Invoke-RestMethod "$base/api/evaluation/computer-operator-regression/run" -Method Post
+            if ($regression.failedCases -ne 0 -or $regression.passedCases -ne $regression.totalCases -or $regression.passRate -lt 1.0) {
+              $failedRegression = @($regression.cases | Where-Object { $_.passed -ne $true } | ForEach-Object { "$($_.id): $($_.detail)" })
+              throw "Computer Operator regression lab thất bại: $($failedRegression -join '; ')"
+            }
+            if ($regression.totalCases -lt 6) {
+              throw "Computer Operator regression lab chưa chạy đủ 6 case nền tảng."
+            }
+            Write-Host "Đạt Computer Operator regression lab: $($regression.passedCases)/$($regression.totalCases), passRate=$($regression.passRate)."
 
             $appStatus = Invoke-RestMethod "$base/api/status"
             $releaseSource = Get-Content "src/PersonalAI.Web/Models/SystemModels.cs" -Raw

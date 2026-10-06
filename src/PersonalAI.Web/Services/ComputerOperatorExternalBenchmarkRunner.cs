@@ -97,9 +97,7 @@ public sealed class ComputerOperatorExternalBenchmarkRunner(
             recordedSteps <= scenario.MaximumSteps;
 
         return new(
-            result.Provider is null
-                ? plan.Version
-                : plan.Version,
+            plan.Version,
             workspace.CurrentWorkspaceId,
             scenario.CaseId,
             scenario.Title,

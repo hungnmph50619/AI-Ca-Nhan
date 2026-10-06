@@ -279,6 +279,11 @@ public sealed class ComputerOperatorAcceptanceService
 
         RunCheck(
             checks,
+            "v4.9.14 checkpoint resume re-observe state, join graph giữa chừng và không replay action cuối",
+            CheckGraphAwarePartialResume);
+
+        RunCheck(
+            checks,
             "OpenCV template sensor giữ multi-scale nhỏ và ngưỡng confidence an toàn",
             CheckOpenCvTemplateSensorPolicy);
 
@@ -3854,6 +3859,174 @@ public sealed class ComputerOperatorAcceptanceService
                 graph.CountNodes() == 5 &&
                 graph.CountEdges() == 4,
                 "Procedure graph phải giữ A->B và B->C sau failure ở C, đồng thời cho phép C có nhiều verified branch mới mà không ghi đè fragment cũ.");
+        }
+        finally
+        {
+            try
+            {
+                if (Directory.Exists(root))
+                    Directory.Delete(root, recursive: true);
+            }
+            catch
+            {
+                // Cleanup thư mục tạm không được làm acceptance fail.
+            }
+        }
+    }
+
+    private static void CheckGraphAwarePartialResume()
+    {
+        var root =
+            Path.Combine(
+                Path.GetTempPath(),
+                "personalai-partial-resume-acceptance",
+                Guid.NewGuid().ToString("N"));
+
+        Directory.CreateDirectory(root);
+
+        try
+        {
+            var configuration =
+                new ConfigurationBuilder()
+                    .AddInMemoryCollection(
+                        new Dictionary<string, string?>
+                        {
+                            ["Tasks:Root"] = root
+                        })
+                    .Build();
+
+            var workspace =
+                new AcceptanceWorkspaceContextAccessor(
+                    PersonalWorkspaceIds.PersonalAi);
+
+            var transitions =
+                new SqliteComputerOperatorVerifiedTransitionStore(
+                    configuration,
+                    workspace);
+
+            var graph =
+                new SqliteComputerOperatorProcedureGraphStore(
+                    configuration,
+                    workspace);
+
+            var stateA =
+                transitions.FingerprintSemanticState(
+                    "resume-state-a");
+            var stateB =
+                transitions.FingerprintSemanticState(
+                    "resume-state-b");
+            var stateC =
+                transitions.FingerprintSemanticState(
+                    "resume-state-c");
+            var stateX =
+                transitions.FingerprintSemanticState(
+                    "resume-state-x");
+
+            _ =
+                graph.ObserveNode(
+                    stateA);
+            _ =
+                graph.ObserveNode(
+                    stateB);
+            _ =
+                graph.ObserveNode(
+                    stateC);
+
+            _ =
+                graph.RecordVerifiedEdge(
+                    stateA,
+                    stateB,
+                    "strategy-a-b",
+                    transitions.FingerprintSemanticState(
+                        "effect-b"),
+                    0.97);
+
+            _ =
+                graph.RecordVerifiedEdge(
+                    stateB,
+                    stateC,
+                    "strategy-b-c",
+                    transitions.FingerprintSemanticState(
+                        "effect-c"),
+                    0.96);
+
+            var logger =
+                Microsoft.Extensions.Logging.Abstractions.NullLogger<
+                    SqliteComputerOperatorCheckpointStore>.Instance;
+
+            var checkpointStore =
+                new SqliteComputerOperatorCheckpointStore(
+                    configuration,
+                    workspace,
+                    logger);
+
+            var checkpoint =
+                checkpointStore.StartOrResume(
+                    "resume graph task");
+
+            checkpoint =
+                checkpointStore.SaveProgress(
+                    checkpoint,
+                    new[] { "A done", "B done" },
+                    "continue from current state",
+                    0.50,
+                    lastVerifiedAction: "strategy-a-b",
+                    lastVerifiedExpectedEffect: "state b",
+                    lastObservedStateFingerprint: stateB);
+
+            // Giả lập process mới: running checkpoint sẽ được phục hồi thành interrupted.
+            var afterRestartStore =
+                new SqliteComputerOperatorCheckpointStore(
+                    configuration,
+                    workspace,
+                    logger);
+
+            var resumable =
+                afterRestartStore.FindResumable(
+                    "resume graph task");
+
+            Require(
+                resumable is not null &&
+                resumable.Status ==
+                    ComputerOperatorCheckpointStatuses.Interrupted &&
+                resumable.LastObservedStateFingerprint == stateB,
+                "Checkpoint sau restart phải giữ state fingerprint đã quan sát và chuyển running thành interrupted.");
+
+            var resolver =
+                new ComputerOperatorPartialResumeResolver(
+                    graph);
+
+            var exact =
+                resolver.Assess(
+                    resumable,
+                    stateB);
+
+            var joinMiddle =
+                resolver.Assess(
+                    resumable,
+                    stateC);
+
+            var unknown =
+                resolver.Assess(
+                    resumable,
+                    stateX);
+
+            Require(
+                exact.Kind ==
+                    ComputerOperatorResumeKinds.ExactCheckpointState &&
+                exact.ExactCheckpointMatch &&
+                !exact.ReplayLastActionAllowed &&
+                joinMiddle.Kind ==
+                    ComputerOperatorResumeKinds.KnownGraphNode &&
+                !joinMiddle.ExactCheckpointMatch &&
+                joinMiddle.KnownProcedureNode &&
+                joinMiddle.IncomingEdges >= 1 &&
+                !joinMiddle.ReplayLastActionAllowed &&
+                unknown.Kind ==
+                    ComputerOperatorResumeKinds.UnknownObservedState &&
+                !unknown.KnownProcedureNode &&
+                !unknown.ReplayLastActionAllowed,
+                "Resume phải re-observe: exact state tiếp tục tại chỗ; state đã biết join graph giữa chừng; state mới replan; không trường hợp nào replay action cuối.");
         }
         finally
         {

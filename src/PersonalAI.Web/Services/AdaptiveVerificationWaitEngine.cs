@@ -81,7 +81,8 @@ public interface IAdaptiveVerificationWaitEngine
 
 public sealed class AdaptiveVerificationWaitEngine(
     IAdaptiveObservationWakeSource? wakeSource = null,
-    IComputerOperatorProgressIntelligence? progressIntelligence = null)
+    IComputerOperatorProgressIntelligence? progressIntelligence = null,
+    IComputerOperatorAdaptiveWaitPolicyResolver? policyResolver = null)
     : IAdaptiveVerificationWaitEngine
 {
     public Task<AdaptiveWaitResult> WaitWithProgressIntelligenceAsync(
@@ -99,6 +100,10 @@ public sealed class AdaptiveVerificationWaitEngine(
             new ComputerOperatorProgressIntelligence(
                 new ComputerOperatorRuntimeStateIntelligence());
 
+        var resolvedPolicy =
+            policy ??
+            policyResolver?.Resolve(action);
+
         return WaitAsync(
             async token =>
             {
@@ -109,7 +114,7 @@ public sealed class AdaptiveVerificationWaitEngine(
                     .Assess(observation)
                     .AdaptiveSample;
             },
-            policy,
+            resolvedPolicy,
             targetWindowId,
             action,
             expectedEffect,

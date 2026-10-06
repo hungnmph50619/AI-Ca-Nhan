@@ -2080,18 +2080,23 @@ public sealed class ComputerOperatorAcceptanceService(
                 signature,
                 signature,
                 currentStep: 11,
-                consumedUntilStep: 13) &&
+                consumedUntilStep: 14) &&
+            ComputerOperatorTaskService.ShouldDeferLoopAssessmentForConsumedActionForAcceptance(
+                signature,
+                signature,
+                currentStep: 12,
+                consumedUntilStep: 14) &&
             !ComputerOperatorTaskService.ShouldSuppressRecentlyConsumedActionForAcceptance(
                 signature,
                 signature,
-                currentStep: 14,
-                consumedUntilStep: 13) &&
-            !ComputerOperatorTaskService.ShouldSuppressRecentlyConsumedActionForAcceptance(
+                currentStep: 15,
+                consumedUntilStep: 14) &&
+            !ComputerOperatorTaskService.ShouldDeferLoopAssessmentForConsumedActionForAcceptance(
                 "click-left|label=phòng tập|effect=mở phòng tập",
                 signature,
-                currentStep: 11,
-                consumedUntilStep: 13),
-            "Post-transition suppression chưa chặn đúng replay hoặc chặn nhầm strategy mới.");
+                currentStep: 12,
+                consumedUntilStep: 14),
+            "Post-transition suppression phải chặn replay trước Loop Guard trong protection window nhưng không chặn strategy mới.");
     }
 
     private static void CheckDeterministicTargetGroundingLabels()

@@ -1151,6 +1151,51 @@ public sealed class ComputerOperatorTaskService(
                         ? string.Empty
                         : BuildSemanticActionSignature(decision);
 
+                if (!string.IsNullOrWhiteSpace(loopStrategy) &&
+                    ShouldDeferLoopAssessmentForConsumedAction(
+                        loopStrategy,
+                        recentlyConsumedActionSignature,
+                        index,
+                        recentlyConsumedUntilStep))
+                {
+                    taskHistory.Add(
+                        $"STEP {index}: POST-TRANSITION-EARLY-SUPPRESS {loopStrategy} — Action/target vừa tạo transition mạnh đã được consume; bỏ qua Loop Guard cho replay này.");
+
+                    taskHistory.Add(
+                        "CHỈ DẪN SAU TRANSITION: Không được chọn lại action + target + expectedEffect vừa tạo chuyển trạng thái. Hãy đọc scene hiện tại như một trạng thái mới và chọn bước kế tiếp khác. Target cũ chỉ được dùng lại nếu có bằng chứng scene mới thực sự yêu cầu nó.");
+
+                    progress.Add(
+                        "post-transition-suppression",
+                        "Action vừa tạo transition mạnh đã được consume; bỏ qua đánh giá loop cho replay và yêu cầu planner suy luận bước mới.",
+                        "replan",
+                        decision.Confidence);
+
+                    progress.AddDiagnostic(
+                        "recovery",
+                        $"cycle={index}; scene={sceneDiagnosticId}; strategy={strategyDiagnosticId}; decision=POST-TRANSITION-EARLY-SUPPRESS; consumedUntilStep={recentlyConsumedUntilStep}; loopGuardObserved=false; replaySideEffect=false.");
+
+                    _ = actionState.MoveTo(
+                        ComputerOperatorActionState.Replan,
+                        "Transition mạnh đã consume action cũ; phải chọn bước tiếp theo từ scene mới.");
+
+                    cycleTrace.RecoveryCode =
+                        "post-transition-consumed";
+                    cycleTrace.RecoveryDetail =
+                        "Replay bị chặn trước Loop Guard vì side-effect vừa tạo transition mạnh.";
+                    cycleTrace.Result =
+                        "waiting";
+                    cycleTrace.Next =
+                        "observe-new-scene";
+                    EmitCycleForensicSummary(
+                        progress,
+                        cycleTrace);
+
+                    await Task.Delay(
+                        250,
+                        linked.Token);
+                    continue;
+                }
+
                 var loopAssessment = loopGuard.Observe(
                     sceneFingerprint,
                     loopStrategy);
@@ -2595,10 +2640,10 @@ public sealed class ComputerOperatorTaskService(
                         recentlyConsumedActionSignature =
                             actionSignature;
                         recentlyConsumedUntilStep =
-                            index + 3;
+                            index + 6;
 
                         taskHistory.Add(
-                            $"POST-TRANSITION-CONSUMED: {actionSignature} — UI đã chuyển trạng thái rõ; không replay side-effect này trong các cycle kế tiếp.");
+                            $"POST-TRANSITION-CONSUMED: {actionSignature} — UI đã chuyển trạng thái rõ; target/action cũ được coi là đã consume. Không replay side-effect này cho tới khi planner chọn được bước khác từ scene mới.");
                     }
 
                     taskHistory.Add(
@@ -3648,6 +3693,28 @@ public sealed class ComputerOperatorTaskService(
     }
 
     internal static bool ShouldSuppressRecentlyConsumedActionForAcceptance(
+        string actionSignature,
+        string? consumedSignature,
+        int currentStep,
+        int consumedUntilStep) =>
+        ShouldSuppressRecentlyConsumedAction(
+            actionSignature,
+            consumedSignature,
+            currentStep,
+            consumedUntilStep);
+
+    internal static bool ShouldDeferLoopAssessmentForConsumedActionForAcceptance(
+        string actionSignature,
+        string? consumedSignature,
+        int currentStep,
+        int consumedUntilStep) =>
+        ShouldDeferLoopAssessmentForConsumedAction(
+            actionSignature,
+            consumedSignature,
+            currentStep,
+            consumedUntilStep);
+
+    private static bool ShouldDeferLoopAssessmentForConsumedAction(
         string actionSignature,
         string? consumedSignature,
         int currentStep,

@@ -48,6 +48,17 @@ public sealed class DesktopVerificationRouter
             IsLaunchTransitionExpected(
                 decision))
         {
+            if (IsBrowserProcess(
+                    observation.ActiveProcessName) &&
+                !LooksLikeBrowserTarget(
+                    decision))
+            {
+                return new(
+                    DesktopVerificationRoute.LocalFailed,
+                    0.99,
+                    $"Launch identity mismatch: foreground sau action là browser process '{observation.ActiveProcessName}' nhưng target/expected effect không phải browser hoặc web. Không được xác nhận native app launch chỉ dựa vào window title.");
+            }
+
             var launchTransition =
                 observation.ForegroundWindowChanged &&
                 (observation.WindowBoundsChanged ||
@@ -222,6 +233,65 @@ public sealed class DesktopVerificationRouter
             DesktopVerificationRoute.GeminiRequired,
             0.0,
             "Kết quả cần hiểu semantic; chuyển sang Gemini Vision.");
+    }
+
+    internal static bool IsBrowserLaunchMismatchForAcceptance(
+        DesktopOperatorDecision decision,
+        string? activeProcessName) =>
+        IsLaunchTransitionExpected(
+            decision) &&
+        IsBrowserProcess(
+            activeProcessName) &&
+        !LooksLikeBrowserTarget(
+            decision);
+
+    private static bool IsBrowserProcess(
+        string? processName)
+    {
+        var normalized =
+            (processName ?? string.Empty)
+                .Trim()
+                .ToLowerInvariant();
+
+        return normalized is
+            "msedge" or
+            "chrome" or
+            "firefox" or
+            "opera" or
+            "brave" or
+            "vivaldi" or
+            "chromium";
+    }
+
+    private static bool LooksLikeBrowserTarget(
+        DesktopOperatorDecision decision)
+    {
+        var text =
+            $"{decision.TargetLabel} {decision.Query} {decision.Url} {decision.CurrentSubgoal} {decision.ExpectedEffect} {decision.Reason}"
+                .ToLowerInvariant();
+
+        var markers =
+            new[]
+            {
+                "browser",
+                "trình duyệt",
+                "trinh duyet",
+                "website",
+                "web page",
+                "webpage",
+                "http://",
+                "https://",
+                "chrome",
+                "edge",
+                "firefox",
+                "opera",
+                "brave"
+            };
+
+        return markers.Any(marker =>
+            text.Contains(
+                marker,
+                StringComparison.OrdinalIgnoreCase));
     }
 
     internal static bool IsLaunchTransitionExpectedForAcceptance(

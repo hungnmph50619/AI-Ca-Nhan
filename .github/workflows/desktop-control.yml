@@ -15,6 +15,7 @@ on:
       - 'src/PersonalAI.Web/Services/ComputerOperator*'
       - 'src/PersonalAI.Web/Evaluation/Regression/ComputerOperatorRegressionLabModels.cs'
       - 'src/PersonalAI.Web/Services/EvaluationEndpoints.cs'
+      - 'tests/computer-use/v4.8.2-known-incidents.json'
       - 'src/PersonalAI.Web/Services/ComputerOperatorActionExecutor.cs'
       - 'src/PersonalAI.Web/Services/ComputerCoordinateTransformService.cs'
       - 'src/PersonalAI.Web/Models/ComputerCoordinateModels.cs'
@@ -116,6 +117,42 @@ jobs:
               throw "Computer Operator regression lab chưa chạy đủ 6 case nền tảng."
             }
             Write-Host "Đạt Computer Operator regression lab: $($regression.passedCases)/$($regression.totalCases), passRate=$($regression.passRate)."
+
+            $incidentDataset = Get-Content "tests/computer-use/v4.8.2-known-incidents.json" -Raw | ConvertFrom-Json
+            if ($incidentDataset.schemaVersion -ne 1) {
+              throw "Incident regression dataset có schemaVersion không được hỗ trợ."
+            }
+            if (@($incidentDataset.incidents).Count -lt 6) {
+              throw "Incident regression dataset chưa có đủ 6 lỗi nền tảng."
+            }
+
+            $regressionById = @{}
+            foreach ($case in @($regression.cases)) {
+              $regressionById[$case.id] = $case
+            }
+
+            $missingIncidentCoverage = @()
+            $failedIncidentCoverage = @()
+            foreach ($incident in @($incidentDataset.incidents)) {
+              $caseId = [string]$incident.regressionCaseId
+              if ([string]::IsNullOrWhiteSpace($caseId) -or -not $regressionById.ContainsKey($caseId)) {
+                $missingIncidentCoverage += "$($incident.id) -> $caseId"
+                continue
+              }
+
+              if ($regressionById[$caseId].passed -ne $true) {
+                $failedIncidentCoverage += "$($incident.id) -> $caseId"
+              }
+            }
+
+            if ($missingIncidentCoverage.Count -gt 0) {
+              throw "Incident dataset có lỗi chưa được Regression Lab bao phủ: $($missingIncidentCoverage -join '; ')"
+            }
+            if ($failedIncidentCoverage.Count -gt 0) {
+              throw "Incident dataset có regression case đang fail: $($failedIncidentCoverage -join '; ')"
+            }
+
+            Write-Host "Đạt Incident Regression Dataset: $(@($incidentDataset.incidents).Count)/$(@($incidentDataset.incidents).Count) incidents được bao phủ và pass."
 
             $appStatus = Invoke-RestMethod "$base/api/status"
             $releaseSource = Get-Content "src/PersonalAI.Web/Models/SystemModels.cs" -Raw

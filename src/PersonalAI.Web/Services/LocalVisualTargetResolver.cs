@@ -176,21 +176,31 @@ public sealed class LocalVisualTargetResolver
                         ocrEvidence,
                         templateEvidence);
 
+                var strongest =
+                    Math.Max(
+                        ocrEvidence.Confidence,
+                        templateEvidence.Confidence);
+
+                var blended =
+                    0.58 *
+                        strongest +
+                    0.32 *
+                        Math.Min(
+                            ocrEvidence.Confidence,
+                            templateEvidence.Confidence) +
+                    0.10 *
+                        Math.Clamp(
+                            iou,
+                            0,
+                            1);
+
+                // Hai nguồn độc lập đồng thuận không được làm confidence
+                // thấp hơn nguồn mạnh nhất. Agreement chỉ giữ nguyên hoặc tăng.
                 var confidence =
                     Math.Clamp(
-                        0.58 *
-                            Math.Max(
-                                ocrEvidence.Confidence,
-                                templateEvidence.Confidence) +
-                        0.32 *
-                            Math.Min(
-                                ocrEvidence.Confidence,
-                                templateEvidence.Confidence) +
-                        0.10 *
-                            Math.Clamp(
-                                iou,
-                                0,
-                                1),
+                        Math.Max(
+                            strongest,
+                            blended),
                         0,
                         0.99);
 

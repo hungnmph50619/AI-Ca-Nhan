@@ -172,6 +172,7 @@ public sealed class ComputerOperatorTaskService(
     IComputerOperatorExperienceLifecycleService experienceLifecycle,
     IComputerOperatorVerifiedTransitionStore verifiedTransitions,
     IComputerOperatorProcedureGraphStore procedureGraph,
+    IComputerOperatorPartialResumeResolver partialResumeResolver,
     IUniversalReliableOperatorCoordinator reliableOperator,
     IComputerOperatorRegressionCandidateStore regressionCandidates,
     ILogger<ComputerOperatorTaskService> logger)
@@ -322,6 +323,8 @@ public sealed class ComputerOperatorTaskService(
             null;
         var recentlyConsumedUntilStep =
             0;
+        var resumeAssessmentPending =
+            resumableCheckpoint is not null;
 
         try
         {
@@ -498,6 +501,52 @@ public sealed class ComputerOperatorTaskService(
                         "procedure-graph",
                         $"cycle={index}; knownOutgoing={outgoingProcedureEdges.Count}; bestStrategy={outgoingProcedureEdges[0].StrategyKey}; bestSuccessCount={outgoingProcedureEdges[0].SuccessCount}; bestConfidence={outgoingProcedureEdges[0].AverageConfidence:0.000}; fastPathEnabled=false.");
                 }
+
+                if (resumeAssessmentPending)
+                {
+                    var resumeAssessment =
+                        partialResumeResolver.Assess(
+                            resumableCheckpoint,
+                            sceneFingerprint);
+
+                    resumeAssessmentPending = false;
+
+                    taskHistory.Add(
+                        $"PARTIAL-RESUME: {resumeAssessment.Kind} — {resumeAssessment.Reason}");
+
+                    progress.Add(
+                        "partial-resume",
+                        resumeAssessment.Reason,
+                        resumeAssessment.Kind,
+                        resumeAssessment.ExactCheckpointMatch
+                            ? 1.0
+                            : resumeAssessment.KnownProcedureNode
+                                ? 0.90
+                                : 0.70);
+
+                    progress.AddDiagnostic(
+                        "partial-resume",
+                        $"cycle={index}; kind={resumeAssessment.Kind}; exactCheckpoint={resumeAssessment.ExactCheckpointMatch}; knownGraphNode={resumeAssessment.KnownProcedureNode}; outgoing={resumeAssessment.OutgoingEdges}; incoming={resumeAssessment.IncomingEdges}; replayLastAction=false.");
+
+                    if (resumeAssessment.KnownProcedureNode)
+                    {
+                        taskHistory.Add(
+                            "CHỈ DẪN-RESUME-GRAPH: State hiện tại đã tồn tại trong Procedure Graph. Dùng state hiện tại làm điểm bắt đầu mới; không quay lại các bước trước và không replay action cuối checkpoint.");
+                    }
+                    else
+                    {
+                        taskHistory.Add(
+                            "CHỈ DẪN-RESUME-REASON: State hiện tại chưa map được vào Procedure Graph. Giữ các mốc đã xác minh làm lịch sử nhưng lập phương án mới từ desktop hiện tại.");
+                    }
+                }
+
+                checkpoint = SaveCheckpointSafely(
+                    checkpoint,
+                    verifiedMilestones,
+                    currentSubgoal,
+                    latestGoalProgress,
+                    lastObservedStateFingerprint:
+                        sceneFingerprint);
 
                 var knownTransitions =
                     verifiedTransitions.FindExact(
@@ -3927,7 +3976,8 @@ public sealed class ComputerOperatorTaskService(
         string currentSubgoal,
         double goalProgress,
         string? lastVerifiedAction = null,
-        string? lastVerifiedExpectedEffect = null)
+        string? lastVerifiedExpectedEffect = null,
+        string? lastObservedStateFingerprint = null)
     {
         try
         {
@@ -3937,7 +3987,8 @@ public sealed class ComputerOperatorTaskService(
                 currentSubgoal,
                 goalProgress,
                 lastVerifiedAction,
-                lastVerifiedExpectedEffect);
+                lastVerifiedExpectedEffect,
+                lastObservedStateFingerprint);
         }
         catch (Exception exception)
         {

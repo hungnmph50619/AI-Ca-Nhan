@@ -334,6 +334,11 @@ public sealed class ComputerOperatorAcceptanceService
 
         RunCheck(
             checks,
+            "AI Operator Console chỉ coi BN_CLICKED thật là lệnh nút, không dừng vì focus notification",
+            CheckOperatorConsoleIgnoresNonClickButtonNotifications);
+
+        RunCheck(
+            checks,
             "OpenCV template sensor giữ multi-scale nhỏ và ngưỡng confidence an toàn",
             CheckOpenCvTemplateSensorPolicy);
 
@@ -4994,6 +4999,43 @@ public sealed class ComputerOperatorAcceptanceService
                     "không có quyền",
                     StringComparison.OrdinalIgnoreCase)),
             "Planner phải giữ ngữ cảnh user cần thiết nhưng loại assistant capability claims cũ trước khi chọn tool.");
+    }
+
+
+
+    private static void CheckOperatorConsoleIgnoresNonClickButtonNotifications()
+    {
+        var method =
+            typeof(WindowsAiOperatorConsoleService)
+                .GetMethod(
+                    "IsButtonClickCommand",
+                    System.Reflection.BindingFlags.NonPublic |
+                    System.Reflection.BindingFlags.Static);
+
+        Require(
+            method is not null,
+            "Operator Console phải có bộ lọc riêng cho Win32 button notification.");
+
+        var clicked =
+            (bool?)method.Invoke(
+                null,
+                new object[] { 0, new IntPtr(123) });
+
+        var focusNotification =
+            (bool?)method.Invoke(
+                null,
+                new object[] { 6, new IntPtr(123) });
+
+        var menuStyleCommand =
+            (bool?)method.Invoke(
+                null,
+                new object[] { 0, IntPtr.Zero });
+
+        Require(
+            clicked == true &&
+            focusNotification == false &&
+            menuStyleCommand == false,
+            "Chỉ BN_CLICKED từ control handle thật mới được phép Pause/Resume/Stop; focus/menu notification không được dừng Operator.");
     }
 
 

@@ -49,6 +49,7 @@ public sealed class WindowsAiOperatorConsoleService
     private const uint EmLineScroll = 0x00B6;
     private const uint EmGetFirstVisibleLine = 0x00CE;
     private const int EnVScroll = 0x0602;
+    private const int BnClicked = 0;
     private const uint WmClose = 0x0010;
     private const uint WmDestroy = 0x0002;
     private const int DefaultGuiFont = 17;
@@ -576,6 +577,9 @@ public sealed class WindowsAiOperatorConsoleService
                 return IntPtr.Zero;
             }
 
+            if (!IsButtonClickCommand(notification, lParam))
+                return DefWindowProc(handle, message, wParam, lParam);
+
             switch (id)
             {
                 case IdPause:
@@ -647,6 +651,12 @@ public sealed class WindowsAiOperatorConsoleService
 
         return DefWindowProc(handle, message, wParam, lParam);
     }
+
+    private static bool IsButtonClickCommand(
+        int notification,
+        IntPtr controlHandle) =>
+        notification == BnClicked &&
+        controlHandle != IntPtr.Zero;
 
     private static string BuildTestText() =>
         """

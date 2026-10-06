@@ -421,8 +421,31 @@ public sealed class ComputerOperatorTaskService(
                 }
 
                 var desktopState = BuildDesktopState(frame);
+
+                DesktopPerceptualHash? sceneVisualHash =
+                    null;
+                try
+                {
+                    sceneVisualHash =
+                        localVisualSensor.ComputeHash(
+                            frame);
+                }
+                catch (Exception exception) when (
+                    exception is
+                        PlatformNotSupportedException or
+                        ArgumentException or
+                        InvalidOperationException or
+                        ToolExecutionInputException)
+                {
+                    progress.AddDiagnostic(
+                        "scene-identity",
+                        $"Visual scene hash không khả dụng ({exception.GetType().Name}); fallback về structural scene fingerprint.");
+                }
+
                 var sceneFingerprint =
-                    BuildDesktopSceneFingerprint(desktopState);
+                    BuildDesktopSceneFingerprint(
+                        desktopState,
+                        sceneVisualHash);
                 var windowsContext = desktopState.ToPromptSummary();
                 var active = desktopState.ForegroundWindow;
 
@@ -2704,6 +2727,15 @@ public sealed class ComputerOperatorTaskService(
                 localVisualVerification.Evaluate(
                     localVisual);
 
+            var strongLocalVisualTransition =
+                visualVerdict.Status ==
+                    LocalVisualVerificationStatus.Changed &&
+                visualVerdict.Confidence >=
+                    0.85 &&
+                (frameDifference?.Comparable == true &&
+                 frameDifference.ChangedRatio >=
+                    0.015);
+
             progress.Add(
                 "local-visual-verification",
                 $"Local Visual Verification: {visualVerdict.Status} — {visualVerdict.Reason}",
@@ -2978,6 +3010,32 @@ public sealed class ComputerOperatorTaskService(
                         success: false,
                         route: "gemini");
                     throw;
+                }
+
+                if (!result.Satisfied &&
+                    strongLocalVisualTransition)
+                {
+                    progress.Add(
+                        "verification-conflict",
+                        $"Local visual evidence xác nhận UI đã thay đổi rõ ({frameDifference?.ChangedRatio * 100:0.00}%), nhưng Gemini semantic chưa xác nhận expected effect. Không được kết luận action-no-effect; chuyển sang Inconclusive và quan sát lại scene mới.",
+                        "inconclusive",
+                        Math.Max(
+                            visualVerdict.Confidence,
+                            result.Confidence));
+
+                    progress.AddDiagnostic(
+                        "verification-conflict",
+                        $"localChanged=true; localConfidence={visualVerdict.Confidence:0.000}; frameChangedRatio={frameDifference?.ChangedRatio ?? -1:0.000000}; semanticSatisfied=false; semanticConfidence={result.Confidence:0.000}; resolution=inconclusive-reobserve; replaySideEffect=false.");
+
+                    return new(
+                        Verified: false,
+                        Confidence:
+                            Math.Max(
+                                visualVerdict.Confidence,
+                                result.Confidence),
+                        Detail:
+                            $"Local visual evidence xác nhận giao diện đã chuyển trạng thái nhưng semantic verifier chưa xác nhận đúng expected effect. Kết quả chưa thể kết luận; phải quan sát lại scene hiện tại và không replay action vừa thực hiện.",
+                        Inconclusive: true);
                 }
 
                 var reliableVerification =
@@ -4077,7 +4135,8 @@ public sealed class ComputerOperatorTaskService(
     }
 
     private static string BuildDesktopSceneFingerprint(
-        ComputerOperatorDesktopState state)
+        ComputerOperatorDesktopState state,
+        DesktopPerceptualHash? visualHash = null)
     {
         var foreground = state.ForegroundWindow is null
             ? "foreground:none"
@@ -4117,9 +4176,19 @@ public sealed class ComputerOperatorTaskService(
                 foreground,
                 $"frame:{state.CaptureScope}:{Quantize(state.FrameLeft, 32)},{Quantize(state.FrameTop, 32)},{Quantize(state.FrameWidth, 32)},{Quantize(state.FrameHeight, 32)}",
                 $"windows:{string.Join(";", visible)}",
-                structured
+                structured,
+                visualHash is null
+                    ? "visual:none"
+                    : $"visual:{visualHash.Algorithm}:{visualHash.Hex}"
             });
     }
+
+    internal static string BuildDesktopSceneFingerprintForAcceptance(
+        ComputerOperatorDesktopState state,
+        DesktopPerceptualHash? visualHash = null) =>
+        BuildDesktopSceneFingerprint(
+            state,
+            visualHash);
 
     private static string NormalizeSceneToken(
         string? value)

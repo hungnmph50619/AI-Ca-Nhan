@@ -76,7 +76,14 @@ builder.Services.AddHttpClient<DesktopVisionService>(client =>
     client.BaseAddress = new Uri("https://generativelanguage.googleapis.com/v1beta/");
     client.Timeout = TimeSpan.FromSeconds(45);
 });
+builder.Services.AddHttpClient<OpenAiComputerOperatorVisionProvider>(client =>
+{
+    client.BaseAddress = new Uri("https://api.openai.com/v1/");
+    client.Timeout = TimeSpan.FromSeconds(45);
+});
 builder.Services.AddTransient<IComputerOperatorVisionProvider, GeminiComputerOperatorVisionProvider>();
+builder.Services.AddTransient<IComputerOperatorVisionProvider>(serviceProvider =>
+    serviceProvider.GetRequiredService<OpenAiComputerOperatorVisionProvider>());
 builder.Services.AddSingleton<IComputerOperatorVisionRouter, ComputerOperatorVisionRouter>();
 builder.Services.AddHttpClient<MinimapBoxVisionService>(client =>
 {

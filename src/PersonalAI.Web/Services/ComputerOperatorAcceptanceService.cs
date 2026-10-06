@@ -299,6 +299,11 @@ public sealed class ComputerOperatorAcceptanceService
 
         RunCheck(
             checks,
+            "v4.9.18 decay giảm trọng số knowledge cũ và supersession thay strategy yếu mà không xóa lịch sử",
+            CheckProcedureDecayAndSupersession);
+
+        RunCheck(
+            checks,
             "OpenCV template sensor giữ multi-scale nhỏ và ngưỡng confidence an toàn",
             CheckOpenCvTemplateSensorPolicy);
 
@@ -4258,11 +4263,18 @@ public sealed class ComputerOperatorAcceptanceService
                     configuration,
                     workspace);
 
+            var lifecycle =
+                new ComputerOperatorProcedureEdgeLifecycleService(
+                    configuration,
+                    workspace,
+                    graph);
+
             var ranker =
                 new ComputerOperatorStrategyRanker(
                     graph,
                     contextStore,
-                    contextService);
+                    contextService,
+                    lifecycle);
 
             var eligible =
                 ranker.AssessFastPath(
@@ -4475,6 +4487,183 @@ public sealed class ComputerOperatorAcceptanceService
                 oldCandidate.Fragment.Edges[0].ActionKind ==
                     "structured-invoke",
                 "UI version mới cùng family phải tìm lại được fragment cũ với confidence bị hạ; fragment version cũ không được coi là exact-state Fast Path.");
+        }
+        finally
+        {
+            try
+            {
+                if (Directory.Exists(root))
+                    Directory.Delete(root, recursive: true);
+            }
+            catch
+            {
+                // Cleanup thư mục tạm không được làm acceptance fail.
+            }
+        }
+    }
+
+    private static void CheckProcedureDecayAndSupersession()
+    {
+        var root =
+            Path.Combine(
+                Path.GetTempPath(),
+                "personalai-procedure-decay-supersession-acceptance",
+                Guid.NewGuid().ToString("N"));
+
+        Directory.CreateDirectory(root);
+
+        try
+        {
+            var configuration =
+                new ConfigurationBuilder()
+                    .AddInMemoryCollection(
+                        new Dictionary<string, string?>
+                        {
+                            ["Tasks:Root"] = root
+                        })
+                    .Build();
+
+            var workspace =
+                new AcceptanceWorkspaceContextAccessor(
+                    PersonalWorkspaceIds.PersonalAi);
+
+            var transitions =
+                new SqliteComputerOperatorVerifiedTransitionStore(
+                    configuration,
+                    workspace);
+
+            var graph =
+                new SqliteComputerOperatorProcedureGraphStore(
+                    configuration,
+                    workspace);
+
+            var lifecycle =
+                new ComputerOperatorProcedureEdgeLifecycleService(
+                    configuration,
+                    workspace,
+                    graph);
+
+            string State(string value) =>
+                transitions.FingerprintSemanticState(value);
+
+            var from =
+                State("supersession-from");
+            var to =
+                State("supersession-to");
+            var effect =
+                State("supersession-effect");
+
+            ComputerOperatorProcedureEdge oldEdge =
+                graph.RecordVerifiedEdge(
+                    from,
+                    to,
+                    "old-strategy",
+                    effect,
+                    0.90,
+                    "structured-invoke");
+
+            oldEdge =
+                graph.RecordVerifiedEdge(
+                    from,
+                    to,
+                    "old-strategy",
+                    effect,
+                    0.90,
+                    "structured-invoke");
+
+            oldEdge =
+                graph.RecordVerifiedEdge(
+                    from,
+                    to,
+                    "old-strategy",
+                    effect,
+                    0.90,
+                    "structured-invoke");
+
+            ComputerOperatorProcedureEdge newEdge =
+                graph.RecordVerifiedEdge(
+                    from,
+                    to,
+                    "new-strategy",
+                    effect,
+                    0.98,
+                    "structured-invoke");
+
+            for (var index = 0; index < 4; index++)
+            {
+                newEdge =
+                    graph.RecordVerifiedEdge(
+                        from,
+                        to,
+                        "new-strategy",
+                        effect,
+                        0.98,
+                        "structured-invoke");
+            }
+
+            var fresh =
+                lifecycle.Evaluate(
+                    newEdge,
+                    newEdge.LastVerifiedAt.AddDays(10));
+
+            var aging =
+                lifecycle.Evaluate(
+                    newEdge,
+                    newEdge.LastVerifiedAt.AddDays(120));
+
+            var stale =
+                lifecycle.Evaluate(
+                    newEdge,
+                    newEdge.LastVerifiedAt.AddDays(220));
+
+            var reconciliation =
+                lifecycle.Reconcile(
+                    from);
+
+            var oldLifecycle =
+                lifecycle.Evaluate(
+                    oldEdge);
+
+            var newLifecycle =
+                lifecycle.Evaluate(
+                    newEdge);
+
+            var allEdges =
+                graph.GetOutgoing(
+                    from,
+                    limit: 10);
+
+            var activeFragments =
+                new ComputerOperatorProcedureFragmentRetriever(
+                    graph,
+                    lifecycle)
+                    .Retrieve(
+                        from,
+                        maximumDepth: 3,
+                        maximumFragments: 6);
+
+            Require(
+                fresh.DecayMultiplier == 1.0 &&
+                aging.DecayMultiplier < fresh.DecayMultiplier &&
+                stale.DecayMultiplier < aging.DecayMultiplier &&
+                reconciliation.SupersededEdges >= 1 &&
+                oldLifecycle.Status ==
+                    ComputerOperatorProcedureEdgeStatuses.Superseded &&
+                oldLifecycle.EffectiveConfidence == 0 &&
+                oldLifecycle.SupersededByStrategyKey ==
+                    "new-strategy" &&
+                newLifecycle.Status ==
+                    ComputerOperatorProcedureEdgeStatuses.Active &&
+                allEdges.Count == 2 &&
+                allEdges.Any(edge =>
+                    edge.StrategyKey == "old-strategy") &&
+                allEdges.Any(edge =>
+                    edge.StrategyKey == "new-strategy") &&
+                activeFragments.Count > 0 &&
+                activeFragments.All(fragment =>
+                    fragment.Edges.All(edge =>
+                        edge.StrategyKey != "old-strategy")),
+                "Decay phải giảm effective confidence theo tuổi; strategy mới mạnh hơn phải supersede strategy cũ, nhưng edge cũ vẫn tồn tại trong graph để audit và bị loại khỏi active fragment retrieval.");
         }
         finally
         {

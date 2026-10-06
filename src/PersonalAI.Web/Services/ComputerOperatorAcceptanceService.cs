@@ -20,7 +20,8 @@ public interface IComputerOperatorAcceptanceService
     ComputerOperatorAcceptanceResponse Run();
 }
 
-public sealed class ComputerOperatorAcceptanceService
+public sealed class ComputerOperatorAcceptanceService(
+    IToolRegistry toolRegistry)
     : IComputerOperatorAcceptanceService
 {
     public ComputerOperatorAcceptanceResponse Run()
@@ -341,6 +342,11 @@ public sealed class ComputerOperatorAcceptanceService
             checks,
             "tool selection bind vào latest user intent, không bị lệnh cũ hoặc assistant history làm sai target",
             CheckFunctionPlannerIgnoresStaleAssistantCapabilityClaims);
+
+        RunCheck(
+            checks,
+            "Tool Registry không expose League app-specific route; tác vụ nhiều bước phải dùng Computer Operator tổng quát",
+            CheckToolRegistryUsesGeneralComputerOperator);
 
         RunCheck(
             checks,
@@ -5107,6 +5113,25 @@ public sealed class ComputerOperatorAcceptanceService
             "Function planner phải bind tool/arguments vào đúng yêu cầu user mới nhất; lệnh cũ như Notepad và assistant history không được rò sang proposal hiện tại.");
     }
 
+
+
+
+    private void CheckToolRegistryUsesGeneralComputerOperator()
+    {
+        var definitions =
+            toolRegistry.GetAll();
+
+        Require(
+            definitions.Any(definition =>
+                definition.Name.Equals(
+                    "computer.operator.run-task",
+                    StringComparison.OrdinalIgnoreCase)) &&
+            !definitions.Any(definition =>
+                definition.Name.Equals(
+                    "league.practice.open",
+                    StringComparison.OrdinalIgnoreCase)),
+            "Tool Registry phải expose Computer Operator tổng quát và không được expose league.practice.open cho provider-native function planning.");
+    }
 
 
     private static void CheckOperatorConsoleIgnoresNonClickButtonNotifications()

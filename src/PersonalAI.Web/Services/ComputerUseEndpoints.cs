@@ -104,7 +104,6 @@ public static class ComputerUseEndpoints
         services.AddSingleton<IPersonalAiTool, ComputerGenericAppLaunchTool>();
         services.AddSingleton<IPersonalAiTool, ComputerVisionLocateTool>();
         services.AddSingleton<IPersonalAiTool, ComputerVisionClickTargetTool>();
-        services.AddSingleton<IPersonalAiTool, LeaguePracticeOpenTool>();
         return services;
     }
 

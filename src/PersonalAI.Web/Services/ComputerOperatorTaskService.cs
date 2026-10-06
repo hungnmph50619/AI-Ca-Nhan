@@ -669,12 +669,17 @@ public sealed class ComputerOperatorTaskService(
 
                             minimalStopwatch.Stop();
 
-                            if (minimalIntent is not null &&
+                            var kernelRejection =
+                                string.Empty;
+                            var kernelCompiled =
+                                minimalIntent is not null &&
                                 DecisionKernel.TryCompile(
                                     minimalIntent,
                                     frame,
                                     out var kernelDecision,
-                                    out var kernelRejection))
+                                    out kernelRejection);
+
+                            if (kernelCompiled)
                             {
                                 decision =
                                     kernelDecision;

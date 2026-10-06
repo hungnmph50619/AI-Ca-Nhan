@@ -144,7 +144,7 @@ public sealed class ComputerOperatorTaskService(
     IComputerUseService computer,
     ComputerControlGate control,
     IDesktopScreenshotService screenshots,
-    DesktopVisionService vision,
+    IComputerOperatorVisionRouter vision,
     ComputerOperatorProgressStore progress,
     ComputerOperatorExecutionControl execution,
     IComputerCoordinateTransformService coordinates,
@@ -669,7 +669,7 @@ public sealed class ComputerOperatorTaskService(
                             Stopwatch.StartNew();
 
                         var minimalIntent =
-                            await vision.DecideComputerOperatorIntentAsync(
+                            await vision.DecideIntentAsync(
                                 frame,
                                 normalizedGoal,
                                 windowsContext,
@@ -735,7 +735,7 @@ public sealed class ComputerOperatorTaskService(
                                 $"provider=Gemini; purpose=minimal-intent-first; cycle={index}; latencyMs={minimalStopwatch.ElapsedMilliseconds}; result={(minimalIntent is null ? "invalid" : "rejected")}; kernelDetail={LimitDiagnostic(kernelRejection, 220)}; fallback=full-planner.");
 
                             decision =
-                                await vision.DecideComputerOperatorActionAsync(
+                                await vision.DecideActionAsync(
                                     frame,
                                     normalizedGoal,
                                     windowsContext,

@@ -2609,7 +2609,7 @@ public sealed class ComputerOperatorTaskService(
                 completed,
                 summary,
                 steps.ToArray(),
-                "Gemini",
+                vision.Name,
                 vision.Model);
     }
 

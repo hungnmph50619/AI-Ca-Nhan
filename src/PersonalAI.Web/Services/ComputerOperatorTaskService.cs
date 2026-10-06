@@ -619,98 +619,113 @@ public sealed class ComputerOperatorTaskService(
                     {
                         progress.Add(
                             "analyze",
-                            $"Structured/local planner chưa có action đủ chắc chắn; gửi ảnh desktop {frame.Width}x{frame.Height} cho Vision/Gemini fallback.");
+                            $"Structured/local/OCR chưa có action đủ chắc chắn; ưu tiên Gemini Minimal Intent cho frame {frame.Width}x{frame.Height} trước full planner.");
 
                         cycleTrace.PlannerRoute =
-                            "gemini";
+                            "gemini-minimal-intent";
                         cycleTrace.PlannerTrace.Add(
                             "Structured/Local=NotResolved");
                         cycleTrace.PlannerTrace.Add(
                             "OCR=NotResolved");
                         cycleTrace.PlannerTrace.Add(
-                            "Gemini=Called");
+                            "GeminiMinimalIntent=CalledFirst");
 
-                        decision = await vision.DecideComputerOperatorActionAsync(
-                            frame,
-                            normalizedGoal,
-                            windowsContext,
+                        var historyContext =
                             BuildHistoryContext(
                                 taskHistory,
                                 recovery,
                                 verifiedMilestones,
                                 currentSubgoal,
-                                latestGoalProgress),
-                            temporalSceneContext,
-                            linked.Token);
+                                latestGoalProgress);
 
-                        plannerStopwatch.Stop();
-                        planTelemetry.Complete(
-                            success: true,
-                            route: "gemini");
+                        var minimalStopwatch =
+                            Stopwatch.StartNew();
 
-                        if (IsProviderDegradedPlannerDecision(
-                                decision))
+                        var minimalIntent =
+                            await vision.DecideComputerOperatorIntentAsync(
+                                frame,
+                                normalizedGoal,
+                                windowsContext,
+                                historyContext,
+                                linked.Token);
+
+                        minimalStopwatch.Stop();
+
+                        var kernelRejection =
+                            string.Empty;
+                        var kernelDecision =
+                            decision = CreatePlannerCooldownWaitDecision(
+                                DateTimeOffset.UtcNow);
+                        var kernelCompiled =
+                            minimalIntent is not null &&
+                            DecisionKernel.TryCompile(
+                                minimalIntent,
+                                frame,
+                                out kernelDecision,
+                                out kernelRejection);
+
+                        if (kernelCompiled)
                         {
-                            var minimalStopwatch =
-                                Stopwatch.StartNew();
+                            decision =
+                                kernelDecision;
 
-                            var minimalIntent =
-                                await vision.DecideComputerOperatorIntentAsync(
+                            plannerDegradedScene =
+                                null;
+                            plannerDegradedCount =
+                                0;
+                            plannerBackoffUntil =
+                                DateTimeOffset.MinValue;
+
+                            plannerStopwatch.Stop();
+                            planTelemetry.Complete(
+                                success: true,
+                                route: "gemini-minimal-intent");
+
+                            cycleTrace.PlannerTrace.Add(
+                                "GeminiMinimalIntent=Compiled");
+
+                            progress.Add(
+                                "decision-kernel",
+                                $"Minimal Intent được Unified Decision Kernel biên dịch thành action {decision.Action}: {decision.Reason}",
+                                decision.Action,
+                                decision.Confidence);
+
+                            progress.AddDiagnostic(
+                                "provider",
+                                $"provider=Gemini; purpose=minimal-intent-first; cycle={index}; latencyMs={minimalStopwatch.ElapsedMilliseconds}; intent={minimalIntent!.Intent}; kernel=compiled; action={decision.Action}; confidence={decision.Confidence:0.000}; fullPlannerCalled=false; circuit=open:false.");
+                        }
+                        else
+                        {
+                            cycleTrace.PlannerTrace.Add(
+                                minimalIntent is null
+                                    ? "GeminiMinimalIntent=Unavailable"
+                                    : "GeminiMinimalIntent=Rejected");
+                            cycleTrace.PlannerTrace.Add(
+                                "GeminiFull=FallbackCalled");
+
+                            progress.AddDiagnostic(
+                                "provider",
+                                $"provider=Gemini; purpose=minimal-intent-first; cycle={index}; latencyMs={minimalStopwatch.ElapsedMilliseconds}; result={(minimalIntent is null ? "invalid" : "rejected")}; kernelDetail={LimitDiagnostic(kernelRejection, 220)}; fallback=full-planner.");
+
+                            decision =
+                                await vision.DecideComputerOperatorActionAsync(
                                     frame,
                                     normalizedGoal,
                                     windowsContext,
-                                    BuildHistoryContext(
-                                        taskHistory,
-                                        recovery,
-                                        verifiedMilestones,
-                                        currentSubgoal,
-                                        latestGoalProgress),
+                                    historyContext,
+                                    temporalSceneContext,
                                     linked.Token);
 
-                            minimalStopwatch.Stop();
+                            plannerStopwatch.Stop();
+                            planTelemetry.Complete(
+                                success: true,
+                                route: "gemini-full-fallback");
 
-                            var kernelRejection =
-                                string.Empty;
-                            var kernelDecision =
-                                decision;
-                            var kernelCompiled =
-                                minimalIntent is not null &&
-                                DecisionKernel.TryCompile(
-                                    minimalIntent,
-                                    frame,
-                                    out kernelDecision,
-                                    out kernelRejection);
+                            cycleTrace.PlannerRoute =
+                                "gemini-full-fallback";
 
-                            if (kernelCompiled)
-                            {
-                                decision =
-                                    kernelDecision;
-
-                                plannerDegradedScene =
-                                    null;
-                                plannerDegradedCount =
-                                    0;
-                                plannerBackoffUntil =
-                                    DateTimeOffset.MinValue;
-
-                                cycleTrace.PlannerRoute =
-                                    "gemini-minimal-intent";
-                                cycleTrace.PlannerTrace.Add(
-                                    "GeminiFull=Degraded");
-                                cycleTrace.PlannerTrace.Add(
-                                    "GeminiMinimalIntent=Compiled");
-
-                                progress.Add(
-                                    "decision-kernel",
-                                    $"Full Gemini decision lỗi; Minimal Intent đã được Unified Decision Kernel biên dịch thành action {decision.Action}: {decision.Reason}",
-                                    decision.Action,
-                                    decision.Confidence);
-
-                                progress.AddDiagnostic(
-                                    "provider",
-                                    $"provider=Gemini; purpose=minimal-intent; cycle={index}; latencyMs={minimalStopwatch.ElapsedMilliseconds}; intent={minimalIntent.Intent}; kernel=compiled; action={decision.Action}; confidence={decision.Confidence:0.000}; circuit=open:false.");
-                            }
-                            else
+                            if (IsProviderDegradedPlannerDecision(
+                                    decision))
                             {
                                 plannerDegradedScene =
                                     sceneFingerprint;
@@ -725,30 +740,23 @@ public sealed class ComputerOperatorTaskService(
                                     DateTimeOffset.UtcNow.AddSeconds(
                                         backoffSeconds);
 
-                                cycleTrace.PlannerTrace.Add(
-                                    minimalIntent is null
-                                        ? "GeminiMinimalIntent=Unavailable"
-                                        : "GeminiMinimalIntent=Rejected");
-
-                                var kernelDetail =
-                                    minimalIntent is null
-                                        ? "provider không trả minimal intent hợp lệ"
-                                        : kernelRejection;
+                                progress.AddDiagnostic(
+                                    "provider",
+                                    $"provider=Gemini; purpose=full-fallback; cycle={index}; latencyMs={plannerStopwatch.ElapsedMilliseconds}; result=degraded; scene={sceneDiagnosticId}; circuit=open; backoffSeconds={backoffSeconds}; action={decision.Action}; replaySideEffect=false.");
+                            }
+                            else
+                            {
+                                plannerDegradedScene =
+                                    null;
+                                plannerDegradedCount =
+                                    0;
+                                plannerBackoffUntil =
+                                    DateTimeOffset.MinValue;
 
                                 progress.AddDiagnostic(
                                     "provider",
-                                    $"provider=Gemini; purpose=plan; cycle={index}; fullDecision=degraded; minimalLatencyMs={minimalStopwatch.ElapsedMilliseconds}; minimalResult={(minimalIntent is null ? "invalid" : "rejected")}; kernelDetail={LimitDiagnostic(kernelDetail, 220)}; scene={sceneDiagnosticId}; circuit=open; backoffSeconds={backoffSeconds}; replaySideEffect=false.");
+                                    $"provider=Gemini; purpose=full-fallback; cycle={index}; latencyMs={plannerStopwatch.ElapsedMilliseconds}; action={decision.Action}; confidence={decision.Confidence:0.000}; payload=parsed; minimalIntentRejected=true.");
                             }
-                        }
-                        else
-                        {
-                            plannerDegradedScene = null;
-                            plannerDegradedCount = 0;
-                            plannerBackoffUntil = DateTimeOffset.MinValue;
-
-                            progress.AddDiagnostic(
-                                "provider",
-                                $"provider=Gemini; purpose=plan; cycle={index}; latencyMs={plannerStopwatch.ElapsedMilliseconds}; action={decision.Action}; confidence={decision.Confidence:0.000}; payload=parsed.");
                         }
                     }
 

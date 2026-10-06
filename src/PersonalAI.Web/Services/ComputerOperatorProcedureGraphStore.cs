@@ -368,65 +368,12 @@ public sealed class SqliteComputerOperatorProcedureGraphStore(
         }
     }
 
-    private static void UpsertNode(
-        SqliteConnection connection,
-        SqliteTransaction transaction,
-        string state,
-        DateTimeOffset now,
-        bool incrementObservation)
-    {
-        using var command =
-            connection.CreateCommand();
-
-        command.Transaction =
-            transaction;
-
-        command.CommandText =
-            incrementObservation
-                ? """
-                  INSERT INTO computer_operator_procedure_nodes (
-                      workspace_id,
-                      state_fingerprint,
-                      observation_count,
-                      first_observed_at,
-                      last_observed_at
-                  )
-                  VALUES ($workspaceId, $state, 1, $now, $now)
-                  ON CONFLICT(workspace_id, state_fingerprint)
-                  DO UPDATE SET
-                      observation_count = observation_count + 1,
-                      last_observed_at = excluded.last_observed_at;
-                  """
-                : """
-                  INSERT INTO computer_operator_procedure_nodes (
-                      workspace_id,
-                      state_fingerprint,
-                      observation_count,
-                      first_observed_at,
-                      last_observed_at
-                  )
-                  VALUES ($workspaceId, $state, 0, $now, $now)
-                  ON CONFLICT(workspace_id, state_fingerprint)
-                  DO NOTHING;
-                  """;
-
-        command.Parameters.AddWithValue(
-            "$workspaceId",
-            transaction.Connection is null
-                ? string.Empty
-                : string.Empty);
-
-        throw new InvalidOperationException(
-            "Internal node upsert must use workspace-aware overload.");
-    }
-
     private void UpsertNode(
         SqliteConnection connection,
         SqliteTransaction transaction,
         string state,
         DateTimeOffset now,
-        bool incrementObservation,
-        bool workspaceAware = true)
+        bool incrementObservation)
     {
         using var command =
             connection.CreateCommand();

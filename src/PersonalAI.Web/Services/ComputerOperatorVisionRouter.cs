@@ -1,3 +1,4 @@
+using System.Diagnostics;
 using System.Net;
 using PersonalAI.Web.Models;
 
@@ -6,6 +7,7 @@ namespace PersonalAI.Web.Services;
 public sealed class ComputerOperatorVisionRouter(
     IEnumerable<IComputerOperatorVisionProvider> providers,
     IAiSettingsStore settings,
+    ILocalVisualProviderHealthRegistry health,
     ILogger<ComputerOperatorVisionRouter> logger)
     : IComputerOperatorVisionRouter
 {
@@ -114,17 +116,42 @@ public sealed class ComputerOperatorVisionRouter(
             if (!provider.Ready)
                 continue;
 
+            if (health.ShouldSkip(
+                    provider.Name,
+                    DateTimeOffset.UtcNow,
+                    out var skipReason))
+            {
+                logger.LogInformation(
+                    "Computer Operator provider {Provider} skipped for {Purpose}: {Reason}",
+                    provider.Name,
+                    purpose,
+                    skipReason);
+                continue;
+            }
+
             attempted.Add(provider.Name);
+            var stopwatch = Stopwatch.StartNew();
 
             try
             {
-                return await action(provider);
+                var result = await action(provider);
+                stopwatch.Stop();
+                health.RecordSuccess(
+                    provider.Name,
+                    stopwatch.ElapsedMilliseconds,
+                    $"Computer Operator {purpose} thành công.");
+                return result;
             }
             catch (HttpRequestException exception)
                 when (IsFallbackEligible(exception.StatusCode) &&
                       !cancellationToken.IsCancellationRequested)
             {
+                stopwatch.Stop();
                 lastFailure = exception;
+                health.RecordFailure(
+                    provider.Name,
+                    stopwatch.ElapsedMilliseconds,
+                    $"Computer Operator {purpose} lỗi HTTP/network.");
                 logger.LogWarning(
                     exception,
                     "Computer Operator provider {Provider} failed transiently for {Purpose}; trying fallback.",
@@ -134,7 +161,12 @@ public sealed class ComputerOperatorVisionRouter(
             catch (TaskCanceledException exception)
                 when (!cancellationToken.IsCancellationRequested)
             {
+                stopwatch.Stop();
                 lastFailure = exception;
+                health.RecordFailure(
+                    provider.Name,
+                    stopwatch.ElapsedMilliseconds,
+                    $"Computer Operator {purpose} timeout.");
                 logger.LogWarning(
                     exception,
                     "Computer Operator provider {Provider} timed out for {Purpose}; trying fallback.",
@@ -143,7 +175,12 @@ public sealed class ComputerOperatorVisionRouter(
             }
             catch (InvalidOperationException exception)
             {
+                stopwatch.Stop();
                 lastFailure = exception;
+                health.RecordFailure(
+                    provider.Name,
+                    stopwatch.ElapsedMilliseconds,
+                    $"Computer Operator {purpose} không khả dụng hoặc trả dữ liệu không hợp lệ.");
                 logger.LogWarning(
                     exception,
                     "Computer Operator provider {Provider} unavailable for {Purpose}; trying fallback.",
@@ -179,12 +216,34 @@ public sealed class ComputerOperatorVisionRouter(
             if (!provider.Ready)
                 continue;
 
+            if (health.ShouldSkip(
+                    provider.Name,
+                    DateTimeOffset.UtcNow,
+                    out var skipReason))
+            {
+                logger.LogInformation(
+                    "Computer Operator provider {Provider} skipped for {Purpose}: {Reason}",
+                    provider.Name,
+                    purpose,
+                    skipReason);
+                continue;
+            }
+
             attempted.Add(provider.Name);
+            var stopwatch = Stopwatch.StartNew();
 
             try
             {
                 var result =
                     await action(provider);
+
+                stopwatch.Stop();
+                health.RecordSuccess(
+                    provider.Name,
+                    stopwatch.ElapsedMilliseconds,
+                    result is null
+                        ? $"Computer Operator {purpose} phản hồi hợp lệ nhưng không có kết quả."
+                        : $"Computer Operator {purpose} thành công.");
 
                 if (result is not null)
                     return result;
@@ -198,16 +257,31 @@ public sealed class ComputerOperatorVisionRouter(
                 when (IsFallbackEligible(exception.StatusCode) &&
                       !cancellationToken.IsCancellationRequested)
             {
+                stopwatch.Stop();
                 lastFailure = exception;
+                health.RecordFailure(
+                    provider.Name,
+                    stopwatch.ElapsedMilliseconds,
+                    $"Computer Operator {purpose} lỗi HTTP/network.");
             }
             catch (TaskCanceledException exception)
                 when (!cancellationToken.IsCancellationRequested)
             {
+                stopwatch.Stop();
                 lastFailure = exception;
+                health.RecordFailure(
+                    provider.Name,
+                    stopwatch.ElapsedMilliseconds,
+                    $"Computer Operator {purpose} timeout.");
             }
             catch (InvalidOperationException exception)
             {
+                stopwatch.Stop();
                 lastFailure = exception;
+                health.RecordFailure(
+                    provider.Name,
+                    stopwatch.ElapsedMilliseconds,
+                    $"Computer Operator {purpose} không khả dụng hoặc trả dữ liệu không hợp lệ.");
             }
         }
 

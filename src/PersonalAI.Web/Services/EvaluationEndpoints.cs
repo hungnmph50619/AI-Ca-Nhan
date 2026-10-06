@@ -21,6 +21,7 @@ public static class EvaluationEndpoints
         services.AddSingleton<IComputerOperatorRegressionMetricsService, ComputerOperatorRegressionMetricsService>();
         services.AddSingleton<IComputerOperatorRegressionReadinessGate, ComputerOperatorRegressionReadinessGate>();
         services.AddSingleton<IComputerOperatorExternalBenchmarkService, ComputerOperatorExternalBenchmarkService>();
+        services.AddScoped<IComputerOperatorExternalBenchmarkRunner, ComputerOperatorExternalBenchmarkRunner>();
         services.AddSingleton<IComputerOperatorBenchmarkScenarioPackService, ComputerOperatorBenchmarkScenarioPackService>();
         services.AddSingleton<IComputerOperatorRegressionLabService, ComputerOperatorRegressionLabService>();
         services.AddScoped<IAgentBenchmarkService, AgentBenchmarkService>();
@@ -116,6 +117,40 @@ public static class EvaluationEndpoints
             {
                 return Results.Ok(
                     benchmark.Prepare(request));
+            }
+            catch (ComputerOperatorExternalBenchmarkValidationException exception)
+            {
+                return Results.BadRequest(
+                    new ApiError(exception.Message));
+            }
+        });
+
+        endpoints.MapPost("/api/evaluation/computer-operator-benchmark/run-case", async (
+            RunComputerOperatorExternalBenchmarkCaseRequest request,
+            IComputerOperatorExternalBenchmarkRunner runner,
+            IAuditRecorder audit,
+            CancellationToken cancellationToken) =>
+        {
+            try
+            {
+                var result =
+                    await runner.RunCaseAsync(
+                        request,
+                        cancellationToken);
+
+                audit.Record(
+                    AuditAgents.User,
+                    "evaluation.computer-operator-benchmark.run-case",
+                    $"benchmark-case:{result.CaseId}",
+                    result.ReadyForIndependentEvaluation
+                        ? "execution-completed-awaiting-independent-evaluation"
+                        : "execution-incomplete",
+                    result.TaskCompleted
+                        ? AuditResults.Succeeded
+                        : AuditResults.Failed);
+
+                return Results.Ok(
+                    result);
             }
             catch (ComputerOperatorExternalBenchmarkValidationException exception)
             {

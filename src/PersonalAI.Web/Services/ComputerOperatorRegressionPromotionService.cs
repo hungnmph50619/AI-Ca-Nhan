@@ -35,9 +35,8 @@ public sealed class ComputerOperatorRegressionPromotionService(
         string candidateId,
         bool confirmedReview)
     {
-        if (!confirmedReview)
-            throw new ComputerOperatorRegressionPromotionException(
-                "Phải xác nhận đã review regression draft trước khi promote.");
+        EnsureConfirmedReview(
+            confirmedReview);
 
         var draft =
             candidates.CreateDraft(candidateId) ??
@@ -70,6 +69,19 @@ public sealed class ComputerOperatorRegressionPromotionService(
             Created: true,
             created,
             draft);
+    }
+
+    internal static void EnsureConfirmedReviewForAcceptance(
+        bool confirmedReview) =>
+        EnsureConfirmedReview(
+            confirmedReview);
+
+    private static void EnsureConfirmedReview(
+        bool confirmedReview)
+    {
+        if (!confirmedReview)
+            throw new ComputerOperatorRegressionPromotionException(
+                "Phải xác nhận đã review regression draft trước khi promote.");
     }
 
     internal static CreateRegressionDatasetItemRequest BuildCreateRequestForAcceptance(

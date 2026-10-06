@@ -2064,11 +2064,18 @@ public sealed class ComputerOperatorAcceptanceService
             DesktopOcrActionPlanner.BuildGroundingLabels(
                 "League of Legends application icon in search results");
 
+        var shortAppLabels =
+            DesktopOcrActionPlanner.BuildGroundingLabels(
+                "Sample Editor App");
+
         Require(
             labels.Contains(
                 "League of Legends",
+                StringComparer.OrdinalIgnoreCase) &&
+            shortAppLabels.Contains(
+                "Sample Editor",
                 StringComparer.OrdinalIgnoreCase),
-            "Semantic target label chưa rút gọn được app name cho local OCR grounding.");
+            "Semantic target label phải bỏ cả context mô tả dài lẫn hậu tố app/application chung trước local OCR grounding.");
     }
 
     private static void CheckWindowsSearchUsesDeterministicGrounding()

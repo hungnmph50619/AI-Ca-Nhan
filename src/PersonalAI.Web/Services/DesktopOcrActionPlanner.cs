@@ -453,12 +453,66 @@ public sealed class DesktopOcrActionPlanner(
                 simplified);
         }
 
+        foreach (var seed in candidates.ToArray())
+        {
+            var withoutGenericAppSuffix =
+                RemoveGenericAppSuffix(
+                    seed);
+
+            if (withoutGenericAppSuffix.Length > 0 &&
+                !withoutGenericAppSuffix.Equals(
+                    seed,
+                    StringComparison.OrdinalIgnoreCase))
+            {
+                candidates.Add(
+                    withoutGenericAppSuffix);
+            }
+        }
+
         return candidates
             .Where(value =>
                 value.Length is >= 1 and <= 160)
             .Distinct(
                 StringComparer.OrdinalIgnoreCase)
             .ToArray();
+    }
+
+    private static string RemoveGenericAppSuffix(
+        string value)
+    {
+        var normalized =
+            (value ?? string.Empty)
+                .Trim();
+
+        foreach (var suffix in new[]
+        {
+            " application",
+            " app",
+            " ứng dụng",
+            " ung dung"
+        })
+        {
+            if (!normalized.EndsWith(
+                    suffix,
+                    StringComparison.OrdinalIgnoreCase))
+            {
+                continue;
+            }
+
+            return normalized[..^suffix.Length]
+                .Trim(
+                    ' ',
+                    '-',
+                    ':',
+                    '.',
+                    ',',
+                    '"',
+                    '\'',
+                    '“',
+                    '”');
+        }
+
+        return normalized;
     }
 
     private static bool TryExtractTarget(

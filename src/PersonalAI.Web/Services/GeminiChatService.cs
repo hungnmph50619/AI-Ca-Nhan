@@ -112,6 +112,7 @@ Function calling is disabled in this continuation. Produce only the final user-f
                 using var response = await GeminiHttpResiliencePolicy.ExecuteAsync(
                     _httpClient,
                     request,
+                    GeminiResilienceLane.Reply,
                     cancellationToken);
                 var responseBody = await response.Content.ReadAsStringAsync(cancellationToken);
 
@@ -339,6 +340,7 @@ Function calling is disabled in this continuation. Produce only the final user-f
                 using var response = await GeminiHttpResiliencePolicy.ExecuteAsync(
                     _httpClient,
                     request,
+                    GeminiResilienceLane.FunctionPlanning,
                     cancellationToken);
                 var responseBody = await response.Content.ReadAsStringAsync(cancellationToken);
 
@@ -533,6 +535,7 @@ Function calling is disabled in this continuation. Produce only the final user-f
                 using var response = await GeminiHttpResiliencePolicy.ExecuteAsync(
                     _httpClient,
                     request,
+                    GeminiResilienceLane.FunctionContinuation,
                     cancellationToken);
                 var responseBody = await response.Content.ReadAsStringAsync(cancellationToken);
 

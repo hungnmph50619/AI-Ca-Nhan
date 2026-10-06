@@ -324,6 +324,11 @@ public sealed class ComputerOperatorAcceptanceService
 
         RunCheck(
             checks,
+            "Gemini tách circuit breaker chat, tool planning và continuation để lỗi một lane không khóa toàn hệ thống",
+            CheckGeminiResilienceLaneIsolation);
+
+        RunCheck(
+            checks,
             "v4.9.21 routing fix dùng provider-native Function Calling thay keyword/hard-code app để chọn Computer Operator",
             CheckNativeToolIntentArbitration);
 
@@ -4953,11 +4958,43 @@ public sealed class ComputerOperatorAcceptanceService
             GeminiHttpResiliencePolicy.BreakDuration >= TimeSpan.FromSeconds(10) &&
             GeminiHttpResiliencePolicy.MinimumThroughput >= 4 &&
             GeminiHttpResiliencePolicy.FailureRatio is >= 0.25d and <= 0.75d &&
+            GeminiHttpResiliencePolicy.IsolatedLaneCountForAcceptance == 3 &&
+            Enum.GetValues<GeminiResilienceLane>().Length == 3 &&
             GeminiHttpResiliencePolicy.IsTransientStatusCode(System.Net.HttpStatusCode.RequestTimeout) &&
             GeminiHttpResiliencePolicy.IsTransientStatusCode(System.Net.HttpStatusCode.TooManyRequests) &&
             GeminiHttpResiliencePolicy.IsTransientStatusCode(System.Net.HttpStatusCode.ServiceUnavailable) &&
             !GeminiHttpResiliencePolicy.IsTransientStatusCode(System.Net.HttpStatusCode.BadRequest),
-            "Gemini resilience phải có timeout hữu hạn, circuit breaker đủ bằng chứng và chỉ coi 408/429/5xx là lỗi tạm thời.");
+            "Gemini resilience phải có timeout hữu hạn, circuit breaker đủ bằng chứng, cô lập Reply/FunctionPlanning/FunctionContinuation thành ba lane và chỉ coi 408/429/5xx là lỗi tạm thời.");
+    }
+
+
+
+    private static void CheckGeminiResilienceLaneIsolation()
+    {
+        var source =
+            File.ReadAllText(
+                Path.Combine(
+                    AppContext.BaseDirectory,
+                    "..",
+                    "..",
+                    "..",
+                    "..",
+                    "src",
+                    "PersonalAI.Web",
+                    "Services",
+                    "GeminiChatService.cs"));
+
+        Require(
+            source.Contains(
+                "GeminiResilienceLane.Reply",
+                StringComparison.Ordinal) &&
+            source.Contains(
+                "GeminiResilienceLane.FunctionPlanning",
+                StringComparison.Ordinal) &&
+            source.Contains(
+                "GeminiResilienceLane.FunctionContinuation",
+                StringComparison.Ordinal),
+            "GeminiChatService phải đưa ba loại request vào ba resilience lane khác nhau; không dùng lại một circuit breaker tổng.");
     }
 
 

@@ -5,10 +5,17 @@ using Polly.Timeout;
 
 namespace PersonalAI.Web.Services;
 
+public enum GeminiResilienceLane
+{
+    Reply,
+    FunctionPlanning,
+    FunctionContinuation
+}
+
 /// <summary>
-/// Ranh giới resilience dùng chung cho mọi HTTP call tới Gemini.
+/// Ranh giới resilience dùng chung cho HTTP call tới Gemini, nhưng circuit breaker
+/// được cô lập theo lane để lỗi ở chat thường không khóa function planning/continuation.
 /// Retry vẫn do GeminiChatService điều khiển để giữ nguyên hành vi/API hiện tại.
-/// Polly chỉ bổ sung timeout cứng và circuit breaker để không treo hoặc đập dịch vụ ngoài khi đang lỗi.
 /// </summary>
 public static class GeminiHttpResiliencePolicy
 {
@@ -24,7 +31,83 @@ public static class GeminiHttpResiliencePolicy
     public const int MinimumThroughput = 4;
     public const double FailureRatio = 0.5d;
 
-    private static readonly ResiliencePipeline<HttpResponseMessage> Pipeline =
+    private static readonly ResiliencePipeline<HttpResponseMessage> ReplyPipeline =
+        BuildPipeline();
+
+    private static readonly ResiliencePipeline<HttpResponseMessage> FunctionPlanningPipeline =
+        BuildPipeline();
+
+    private static readonly ResiliencePipeline<HttpResponseMessage> FunctionContinuationPipeline =
+        BuildPipeline();
+
+    internal static int IsolatedLaneCountForAcceptance => 3;
+
+    public static async Task<HttpResponseMessage> ExecuteAsync(
+        HttpClient httpClient,
+        HttpRequestMessage request,
+        CancellationToken cancellationToken) =>
+        await ExecuteAsync(
+            httpClient,
+            request,
+            GeminiResilienceLane.Reply,
+            cancellationToken);
+
+    public static async Task<HttpResponseMessage> ExecuteAsync(
+        HttpClient httpClient,
+        HttpRequestMessage request,
+        GeminiResilienceLane lane,
+        CancellationToken cancellationToken)
+    {
+        ArgumentNullException.ThrowIfNull(httpClient);
+        ArgumentNullException.ThrowIfNull(request);
+
+        var pipeline =
+            lane switch
+            {
+                GeminiResilienceLane.FunctionPlanning =>
+                    FunctionPlanningPipeline,
+                GeminiResilienceLane.FunctionContinuation =>
+                    FunctionContinuationPipeline,
+                _ =>
+                    ReplyPipeline
+            };
+
+        try
+        {
+            return await pipeline.ExecuteAsync(
+                async resilienceToken =>
+                    await httpClient.SendAsync(
+                        request,
+                        resilienceToken),
+                cancellationToken);
+        }
+        catch (TimeoutRejectedException exception)
+            when (!cancellationToken.IsCancellationRequested)
+        {
+            throw new HttpRequestException(
+                $"Gemini không phản hồi trong giới hạn {RequestTimeout.TotalSeconds:0} giây.",
+                exception);
+        }
+        catch (BrokenCircuitException exception)
+        {
+            throw new HttpRequestException(
+                $"Gemini lane {lane} đang lỗi lặp lại nên circuit breaker tạm ngừng riêng lane này; các lane khác và Computer Operator local vẫn được phép tiếp tục.",
+                exception,
+                HttpStatusCode.ServiceUnavailable);
+        }
+    }
+
+    public static bool IsTransientStatusCode(
+        HttpStatusCode statusCode) =>
+        statusCode is
+            HttpStatusCode.RequestTimeout or
+            HttpStatusCode.TooManyRequests or
+            HttpStatusCode.InternalServerError or
+            HttpStatusCode.BadGateway or
+            HttpStatusCode.ServiceUnavailable or
+            HttpStatusCode.GatewayTimeout;
+
+    private static ResiliencePipeline<HttpResponseMessage> BuildPipeline() =>
         new ResiliencePipelineBuilder<HttpResponseMessage>()
             .AddTimeout(RequestTimeout)
             .AddCircuitBreaker(
@@ -43,47 +126,4 @@ public static class GeminiHttpResiliencePolicy
                     BreakDuration = BreakDuration
                 })
             .Build();
-
-    public static async Task<HttpResponseMessage> ExecuteAsync(
-        HttpClient httpClient,
-        HttpRequestMessage request,
-        CancellationToken cancellationToken)
-    {
-        ArgumentNullException.ThrowIfNull(httpClient);
-        ArgumentNullException.ThrowIfNull(request);
-
-        try
-        {
-            return await Pipeline.ExecuteAsync(
-                async resilienceToken =>
-                    await httpClient.SendAsync(
-                        request,
-                        resilienceToken),
-                cancellationToken);
-        }
-        catch (TimeoutRejectedException exception)
-            when (!cancellationToken.IsCancellationRequested)
-        {
-            throw new HttpRequestException(
-                $"Gemini không phản hồi trong giới hạn {RequestTimeout.TotalSeconds:0} giây.",
-                exception);
-        }
-        catch (BrokenCircuitException exception)
-        {
-            throw new HttpRequestException(
-                "Gemini đang lỗi lặp lại nên circuit breaker tạm ngừng gọi dịch vụ để Computer Operator có thể chờ/replan an toàn.",
-                exception,
-                HttpStatusCode.ServiceUnavailable);
-        }
-    }
-
-    public static bool IsTransientStatusCode(
-        HttpStatusCode statusCode) =>
-        statusCode is
-            HttpStatusCode.RequestTimeout or
-            HttpStatusCode.TooManyRequests or
-            HttpStatusCode.InternalServerError or
-            HttpStatusCode.BadGateway or
-            HttpStatusCode.ServiceUnavailable or
-            HttpStatusCode.GatewayTimeout;
 }

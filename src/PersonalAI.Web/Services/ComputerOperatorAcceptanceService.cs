@@ -209,6 +209,11 @@ public sealed class ComputerOperatorAcceptanceService
 
         RunCheck(
             checks,
+            "v4.9.0 external benchmark chỉ chuẩn bị khi readiness PASS và case hợp lệ",
+            CheckExternalBenchmarkPreparationContract);
+
+        RunCheck(
+            checks,
             "OpenCV template sensor giữ multi-scale nhỏ và ngưỡng confidence an toàn",
             CheckOpenCvTemplateSensorPolicy);
 
@@ -2338,6 +2343,101 @@ public sealed class ComputerOperatorAcceptanceService
                     "100%",
                     StringComparison.OrdinalIgnoreCase)),
             "Regression readiness gate chưa phân biệt PASS/BLOCKED đúng theo ngưỡng reliability.");
+    }
+
+    private static void CheckExternalBenchmarkPreparationContract()
+    {
+        var metrics =
+            new ComputerOperatorRegressionMetrics(
+                Version: "acceptance",
+                MeasuredAtUtc: DateTimeOffset.UtcNow,
+                LabTotalCases: 6,
+                LabPassedCases: 6,
+                LabFailedCases: 0,
+                LabPassRate: 1d,
+                RuntimeCandidateCount: 0,
+                RuntimePromotedCases: 0,
+                RuntimeUnreviewedCandidates: 0,
+                RuntimePromotionRate: 1d,
+                BaselineCoverageHealthy: true,
+                ReadyForExternalBenchmark: true,
+                UnreviewedCandidateIds: Array.Empty<string>());
+
+        var passingGate =
+            new ComputerOperatorRegressionReadinessGateResult(
+                Version: "acceptance",
+                EvaluatedAtUtc: DateTimeOffset.UtcNow,
+                Passed: true,
+                Status: "pass",
+                Reasons: Array.Empty<string>(),
+                Metrics: metrics);
+
+        ComputerOperatorExternalBenchmarkService
+            .EnsureReadinessForAcceptance(
+                passingGate);
+
+        var blockedRejected = false;
+        try
+        {
+            ComputerOperatorExternalBenchmarkService
+                .EnsureReadinessForAcceptance(
+                    passingGate with
+                    {
+                        Passed = false,
+                        Status = "blocked",
+                        Reasons = ["Regression chưa sạch."]
+                    });
+        }
+        catch (PersonalAI.Web.Evaluation.Benchmarks.ComputerOperatorExternalBenchmarkValidationException)
+        {
+            blockedRejected = true;
+        }
+
+        var input =
+            JsonSerializer.SerializeToElement(
+                new
+                {
+                    goal = "Mở Notepad và gõ một câu ngắn.",
+                    expectedEffect = "Notepad hiển thị đúng nội dung đã gõ.",
+                    maximumSteps = 12,
+                    requiresInteractiveDesktop = true
+                });
+
+        var expected =
+            JsonSerializer.SerializeToElement(
+                new
+                {
+                    completed = true
+                });
+
+        var item =
+            new PersonalAI.Web.Evaluation.Regression.RegressionDatasetItem(
+                Id: "external-notepad-basic",
+                Title: "Notepad basic interaction",
+                Category: ComputerOperatorExternalBenchmarkService.BenchmarkCategory,
+                Input: input,
+                Expected: expected,
+                Metadata: new Dictionary<string, string>(),
+                Enabled: true,
+                WorkspaceId: "personal",
+                CreatedAt: DateTimeOffset.UtcNow,
+                UpdatedAt: DateTimeOffset.UtcNow);
+
+        var plan =
+            ComputerOperatorExternalBenchmarkService
+                .ParseCaseForAcceptance(
+                    item);
+
+        Require(
+            blockedRejected &&
+            plan.CaseId == item.Id &&
+            plan.Goal.Contains(
+                "Notepad",
+                StringComparison.OrdinalIgnoreCase) &&
+            plan.ExpectedEffect.Length > 0 &&
+            plan.MaximumSteps == 12 &&
+            plan.RequiresInteractiveDesktop,
+            "External benchmark preparation contract chưa chặn readiness lỗi hoặc parse case chưa đúng.");
     }
 
     private static void CheckOcrProviderEmptyResultDoesNotTripHealth()

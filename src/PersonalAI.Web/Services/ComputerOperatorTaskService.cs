@@ -122,6 +122,18 @@ public sealed record ComputerOperatorDesktopState(
         {
             lines.Add(
                 $"Structured UIA scene: source={StructuredScene.Source}; nodes={StructuredScene.NodeCount}; root={StructuredScene.RootToken}.");
+
+            foreach (var node in StructuredScene.Nodes
+                         .Where(node =>
+                             !node.IsOffscreen &&
+                             (node.IsFocused ||
+                              node.Patterns.Count > 0 ||
+                              !string.IsNullOrWhiteSpace(node.Name)))
+                         .Take(40))
+            {
+                lines.Add(
+                    $"- node={node.Token}; parent={node.ParentToken}; depth={node.Depth}; role={node.Role}; name={node.Name}; automationId={node.AutomationId}; enabled={node.IsEnabled}; focused={node.IsFocused}; rect={node.Left},{node.Top},{node.Width},{node.Height}; patterns={string.Join(",", node.Patterns)}; toggle={node.ToggleState}; expandCollapse={node.ExpandCollapseState}; selected={node.IsSelected?.ToString() ?? "?"}");
+            }
         }
 
         return string.Join("\n", lines);

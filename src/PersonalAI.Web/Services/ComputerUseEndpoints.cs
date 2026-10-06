@@ -28,6 +28,7 @@ public static class ComputerUseEndpoints
         services.AddSingleton<IAdaptiveObservationWakeSource, WindowsDesktopEventWakeSource>();
         services.AddSingleton<IAdaptiveVerificationWaitEngine, AdaptiveVerificationWaitEngine>();
         services.AddSingleton<IComputerOperatorRuntimeStateIntelligence, ComputerOperatorRuntimeStateIntelligence>();
+        services.AddSingleton<IComputerOperatorProgressIntelligence, ComputerOperatorProgressIntelligence>();
         services.AddSingleton<IComputerDisplayTopologyService, WindowsComputerDisplayTopologyService>();
         services.AddSingleton<IComputerDpiCalibrationService, ComputerDpiCalibrationService>();
         services.AddSingleton<IComputerCoordinateTransformService, ComputerCoordinateTransformService>();
@@ -124,6 +125,38 @@ public static class ComputerUseEndpoints
                     quyetDinh = assessment.RecommendedDecision,
                     doTinCay = Math.Round(assessment.Confidence, 2),
                     ketThuc = assessment.Terminal,
+                    lyDo = assessment.Reason
+                });
+            }
+            catch (ArgumentOutOfRangeException exception)
+            {
+                return Results.BadRequest(
+                    new ApiError(exception.Message));
+            }
+        });
+
+        app.MapPost("/api/computer/operator-progress-intelligence/assess", (
+            HttpContext context,
+            ComputerOperatorProgressObservation observation,
+            IComputerOperatorProgressIntelligence progressIntelligence) =>
+        {
+            if (!IsLocalRequest(context))
+                return Results.StatusCode(StatusCodes.Status403Forbidden);
+
+            try
+            {
+                var assessment =
+                    progressIntelligence.Assess(observation);
+
+                return Results.Ok(new
+                {
+                    diemTienTrien = Math.Round(assessment.ProgressScore, 2),
+                    diemHoatDongTaiNguyen = Math.Round(assessment.ResourceActivityScore, 2),
+                    soTinHieuTienTrienManh = assessment.CorroboratingProgressSignals,
+                    coTienTrienYNgia = assessment.MeaningfulProgress,
+                    trangThai = assessment.RuntimeState.State,
+                    quyetDinh = assessment.RuntimeState.RecommendedDecision,
+                    adaptiveWait = assessment.AdaptiveSample.Status,
                     lyDo = assessment.Reason
                 });
             }

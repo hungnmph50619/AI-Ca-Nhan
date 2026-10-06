@@ -16,6 +16,7 @@ public static class EvaluationEndpoints
         services.AddSingleton<IEvaluator, MinimapBoxEvaluator>();
         services.AddSingleton<IEvaluationEngine, EvaluationEngine>();
         services.AddSingleton<IRegressionDatasetStore, SqliteRegressionDatasetStore>();
+        services.AddSingleton<IComputerOperatorRegressionCandidateStore, ComputerOperatorRegressionCandidateStore>();
         services.AddSingleton<IComputerOperatorRegressionLabService, ComputerOperatorRegressionLabService>();
         services.AddScoped<IAgentBenchmarkService, AgentBenchmarkService>();
         services.AddScoped<IModelComparisonService, ModelComparisonService>();
@@ -89,6 +90,10 @@ public static class EvaluationEndpoints
         endpoints.MapPost("/api/evaluation/computer-operator-regression/run", (
             IComputerOperatorRegressionLabService lab) =>
             Results.Ok(lab.Run()));
+
+        endpoints.MapGet("/api/evaluation/computer-operator-regression/candidates", (
+            IComputerOperatorRegressionCandidateStore candidates) =>
+            Results.Ok(candidates.Get()));
 
         endpoints.MapGet("/api/evaluation/regression", (IRegressionDatasetStore store) =>
             Results.Ok(store.GetAll()));

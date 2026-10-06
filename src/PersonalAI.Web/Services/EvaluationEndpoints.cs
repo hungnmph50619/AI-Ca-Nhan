@@ -21,6 +21,7 @@ public static class EvaluationEndpoints
         services.AddSingleton<IComputerOperatorRegressionMetricsService, ComputerOperatorRegressionMetricsService>();
         services.AddSingleton<IComputerOperatorRegressionReadinessGate, ComputerOperatorRegressionReadinessGate>();
         services.AddSingleton<IComputerOperatorExternalBenchmarkService, ComputerOperatorExternalBenchmarkService>();
+        services.AddSingleton<IComputerOperatorBenchmarkScenarioPackService, ComputerOperatorBenchmarkScenarioPackService>();
         services.AddSingleton<IComputerOperatorRegressionLabService, ComputerOperatorRegressionLabService>();
         services.AddScoped<IAgentBenchmarkService, AgentBenchmarkService>();
         services.AddScoped<IModelComparisonService, ModelComparisonService>();
@@ -117,6 +118,46 @@ public static class EvaluationEndpoints
                     benchmark.Prepare(request));
             }
             catch (ComputerOperatorExternalBenchmarkValidationException exception)
+            {
+                return Results.BadRequest(
+                    new ApiError(exception.Message));
+            }
+        });
+
+        endpoints.MapGet("/api/evaluation/computer-operator-benchmark/scenarios", (
+            IComputerOperatorBenchmarkScenarioPackService scenarios) =>
+            Results.Ok(
+                scenarios.GetPack()));
+
+        endpoints.MapPost("/api/evaluation/computer-operator-benchmark/scenarios/install", (
+            InstallComputerOperatorBenchmarkScenarioPackRequest request,
+            IComputerOperatorBenchmarkScenarioPackService scenarios,
+            IAuditRecorder audit) =>
+        {
+            try
+            {
+                var result =
+                    scenarios.Install(
+                        request.Confirmed);
+
+                audit.Record(
+                    AuditAgents.User,
+                    "evaluation.computer-operator-benchmark.scenarios.install",
+                    $"benchmark-pack:{result.Version}",
+                    result.CreatedCases > 0
+                        ? "explicit-install"
+                        : "idempotent-install",
+                    AuditResults.Succeeded);
+
+                return Results.Ok(
+                    result);
+            }
+            catch (ComputerOperatorBenchmarkScenarioPackException exception)
+            {
+                return Results.BadRequest(
+                    new ApiError(exception.Message));
+            }
+            catch (RegressionDatasetValidationException exception)
             {
                 return Results.BadRequest(
                     new ApiError(exception.Message));

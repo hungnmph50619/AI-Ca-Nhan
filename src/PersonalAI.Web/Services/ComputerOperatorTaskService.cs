@@ -174,6 +174,9 @@ public sealed class ComputerOperatorTaskService(
     IComputerOperatorProcedureGraphStore procedureGraph,
     IComputerOperatorPartialResumeResolver partialResumeResolver,
     IComputerOperatorProcedureFragmentRetriever fragmentRetriever,
+    IComputerOperatorProcedureContextService procedureContextService,
+    IComputerOperatorProcedureContextStore procedureContextStore,
+    IComputerOperatorVersionedFragmentRetriever versionedFragmentRetriever,
     IComputerOperatorStrategyRanker strategyRanker,
     IUniversalReliableOperatorCoordinator reliableOperator,
     IComputerOperatorRegressionCandidateStore regressionCandidates,
@@ -481,6 +484,19 @@ public sealed class ComputerOperatorTaskService(
                 var sceneDiagnosticId =
                     BuildDiagnosticId(sceneFingerprint);
 
+                var currentProcedureContext =
+                    procedureContextService.Describe(
+                        desktopState);
+
+                var currentContextObservation =
+                    procedureContextStore.Observe(
+                        sceneFingerprint,
+                        currentProcedureContext);
+
+                progress.AddDiagnostic(
+                    "procedure-context",
+                    $"cycle={index}; family={BuildDiagnosticId(currentProcedureContext.FamilyFingerprint)}; version={BuildDiagnosticId(currentProcedureContext.VersionFingerprint)}; observations={currentContextObservation.ObservationCount}; rawContextStored=false.");
+
                 var closedProcedureEdge =
                     procedureSession.ObserveState(
                         sceneFingerprint);
@@ -505,15 +521,19 @@ public sealed class ComputerOperatorTaskService(
                 }
 
                 var knownFragments =
-                    fragmentRetriever.Retrieve(
+                    versionedFragmentRetriever.Retrieve(
                         sceneFingerprint,
+                        currentProcedureContext,
                         maximumDepth: 6,
-                        maximumFragments: 5);
+                        maximumCandidates: 5);
 
                 if (knownFragments.Count > 0)
                 {
-                    var bestFragment =
+                    var bestCandidate =
                         knownFragments[0];
+
+                    var bestFragment =
+                        bestCandidate.Fragment;
 
                     var actionKinds =
                         string.Join(
@@ -522,11 +542,13 @@ public sealed class ComputerOperatorTaskService(
                                 edge.ActionKind));
 
                     taskHistory.Add(
-                        $"PROCEDURE-FRAGMENT: Đã có đoạn đã VERIFY PASS dài {bestFragment.Length} bước từ state hiện tại; action-kinds={actionKinds}; bottleneck-confidence={bestFragment.BottleneckConfidence:0.00}; minimum-success={bestFragment.MinimumSuccessCount}. Đây chỉ là kinh nghiệm tham khảo, không được replay mù; phải chọn từng action theo desktop hiện tại và VERIFY sau mỗi bước.");
+                        bestCandidate.ExactStartState
+                            ? $"PROCEDURE-FRAGMENT: Đã có đoạn exact-state VERIFY PASS dài {bestFragment.Length} bước; action-kinds={actionKinds}; confidence={bestCandidate.EffectiveConfidence:0.00}; minimum-success={bestFragment.MinimumSuccessCount}. Không replay mù; vẫn VERIFY từng bước."
+                            : $"PROCEDURE-FRAGMENT-VERSIONED: Tìm thấy đoạn từ UI/context version cũ cùng family, dài {bestFragment.Length} bước; action-kinds={actionKinds}; compatibility={bestCandidate.CompatibilityKind}; adjusted-confidence={bestCandidate.EffectiveConfidence:0.00}. Chỉ dùng làm gợi ý để revalidate trên UI hiện tại; KHÔNG Fast Path.");
 
                     progress.AddDiagnostic(
                         "procedure-fragment",
-                        $"cycle={index}; fragments={knownFragments.Count}; bestLength={bestFragment.Length}; bottleneckConfidence={bestFragment.BottleneckConfidence:0.000}; minimumSuccess={bestFragment.MinimumSuccessCount}; actions={LimitDiagnostic(actionKinds, 220)}; start={BuildDiagnosticId(bestFragment.StartStateFingerprint)}; end={BuildDiagnosticId(bestFragment.EndStateFingerprint)}; autoExecute=false.");
+                        $"cycle={index}; candidates={knownFragments.Count}; exactStart={bestCandidate.ExactStartState}; compatibility={bestCandidate.CompatibilityKind}; compatibilityMultiplier={bestCandidate.CompatibilityMultiplier:0.000}; effectiveConfidence={bestCandidate.EffectiveConfidence:0.000}; bestLength={bestFragment.Length}; minimumSuccess={bestFragment.MinimumSuccessCount}; actions={LimitDiagnostic(actionKinds, 220)}; source={BuildDiagnosticId(bestCandidate.SourceStateFingerprint)}; end={BuildDiagnosticId(bestFragment.EndStateFingerprint)}; autoExecute=false.");
                 }
 
                 if (resumeAssessmentPending)
@@ -661,7 +683,8 @@ public sealed class ComputerOperatorTaskService(
                             strategyRanker.AssessFastPath(
                                 sceneFingerprint,
                                 localStrategyKey,
-                                decision.Action);
+                                decision.Action,
+                                currentProcedureContext);
 
                         var localRoute =
                             fastPath.Eligible
@@ -720,7 +743,8 @@ public sealed class ComputerOperatorTaskService(
                             strategyRanker.AssessFastPath(
                                 sceneFingerprint,
                                 ocrStrategyKey,
-                                decision.Action);
+                                decision.Action,
+                                currentProcedureContext);
 
                         var ocrRoute =
                             fastPath.Eligible

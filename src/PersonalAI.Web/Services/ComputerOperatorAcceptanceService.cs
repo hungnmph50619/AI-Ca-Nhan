@@ -294,6 +294,11 @@ public sealed class ComputerOperatorAcceptanceService
 
         RunCheck(
             checks,
+            "v4.9.17 procedure versioning nhận cùng family khác UI version, tái dùng fragment có hạ confidence và không Fast Path",
+            CheckProcedureVersioningAndContextCompatibility);
+
+        RunCheck(
+            checks,
             "OpenCV template sensor giữ multi-scale nhỏ và ngưỡng confidence an toàn",
             CheckOpenCvTemplateSensorPolicy);
 
@@ -4245,9 +4250,19 @@ public sealed class ComputerOperatorAcceptanceService
                         "click-left");
             }
 
+            var contextService =
+                new ComputerOperatorProcedureContextService();
+
+            var contextStore =
+                new SqliteComputerOperatorProcedureContextStore(
+                    configuration,
+                    workspace);
+
             var ranker =
                 new ComputerOperatorStrategyRanker(
-                    graph);
+                    graph,
+                    contextStore,
+                    contextService);
 
             var eligible =
                 ranker.AssessFastPath(
@@ -4304,6 +4319,162 @@ public sealed class ComputerOperatorAcceptanceService
                 weak.Status ==
                     ComputerOperatorFastPathStatuses.NotEnoughEvidence,
                 "Fast Path chỉ được bật khi exact-state strategy/action có đủ verified successes và confidence; mismatch, action ngoài allowlist hoặc bằng chứng yếu phải quay về planner thường.");
+        }
+        finally
+        {
+            try
+            {
+                if (Directory.Exists(root))
+                    Directory.Delete(root, recursive: true);
+            }
+            catch
+            {
+                // Cleanup thư mục tạm không được làm acceptance fail.
+            }
+        }
+    }
+
+    private static void CheckProcedureVersioningAndContextCompatibility()
+    {
+        var root =
+            Path.Combine(
+                Path.GetTempPath(),
+                "personalai-procedure-versioning-acceptance",
+                Guid.NewGuid().ToString("N"));
+
+        Directory.CreateDirectory(root);
+
+        try
+        {
+            var configuration =
+                new ConfigurationBuilder()
+                    .AddInMemoryCollection(
+                        new Dictionary<string, string?>
+                        {
+                            ["Tasks:Root"] = root
+                        })
+                    .Build();
+
+            var workspace =
+                new AcceptanceWorkspaceContextAccessor(
+                    PersonalWorkspaceIds.PersonalAi);
+
+            var transitions =
+                new SqliteComputerOperatorVerifiedTransitionStore(
+                    configuration,
+                    workspace);
+
+            var graph =
+                new SqliteComputerOperatorProcedureGraphStore(
+                    configuration,
+                    workspace);
+
+            var contexts =
+                new SqliteComputerOperatorProcedureContextStore(
+                    configuration,
+                    workspace);
+
+            var compatibility =
+                new ComputerOperatorProcedureContextService();
+
+            var fragments =
+                new ComputerOperatorProcedureFragmentRetriever(
+                    graph);
+
+            var versioned =
+                new ComputerOperatorVersionedFragmentRetriever(
+                    fragments,
+                    contexts,
+                    compatibility);
+
+            string State(string value) =>
+                transitions.FingerprintSemanticState(value);
+
+            var oldState =
+                State("version-old-state");
+            var oldNext =
+                State("version-old-next");
+            var newState =
+                State("version-new-state");
+
+            var family =
+                State("same-app-family");
+            var version1 =
+                State("ui-version-1");
+            var version2 =
+                State("ui-version-2");
+
+            var oldContext =
+                new ComputerOperatorProcedureContextDescriptor(
+                    family,
+                    version1);
+
+            var currentContext =
+                new ComputerOperatorProcedureContextDescriptor(
+                    family,
+                    version2);
+
+            _ =
+                contexts.Observe(
+                    oldState,
+                    oldContext);
+
+            _ =
+                contexts.Observe(
+                    newState,
+                    currentContext);
+
+            for (var index = 0;
+                 index < 3;
+                 index++)
+            {
+                _ =
+                    graph.RecordVerifiedEdge(
+                        oldState,
+                        oldNext,
+                        "old-version-strategy",
+                        State("old-version-effect"),
+                        0.98,
+                        "structured-invoke");
+            }
+
+            var remembered =
+                contexts.Get(
+                    oldState)
+                ?? throw new InvalidOperationException(
+                    "Không đọc được old version context.");
+
+            var assessment =
+                compatibility.Assess(
+                    currentContext,
+                    remembered);
+
+            var candidates =
+                versioned.Retrieve(
+                    newState,
+                    currentContext,
+                    maximumDepth: 4,
+                    maximumCandidates: 6);
+
+            var oldCandidate =
+                candidates.FirstOrDefault(item =>
+                    item.SourceStateFingerprint == oldState);
+
+            Require(
+                assessment.Kind ==
+                    ComputerOperatorContextCompatibilityKinds.SameFamily &&
+                assessment.Compatible &&
+                !assessment.ExactVersion &&
+                assessment.ConfidenceMultiplier < 1.0 &&
+                oldCandidate is not null &&
+                !oldCandidate.ExactStartState &&
+                oldCandidate.CompatibilityKind ==
+                    ComputerOperatorContextCompatibilityKinds.SameFamily &&
+                oldCandidate.EffectiveConfidence <
+                    oldCandidate.Fragment.BottleneckConfidence &&
+                oldCandidate.Fragment.Edges[0].ActionKind ==
+                    "structured-invoke",
+                "UI version mới cùng family phải tìm lại được fragment cũ với confidence bị hạ; fragment version cũ không được coi là exact-state Fast Path.");
         }
         finally
         {

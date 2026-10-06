@@ -178,6 +178,7 @@ public sealed class ComputerOperatorTaskService(
     IComputerOperatorProcedureContextStore procedureContextStore,
     IComputerOperatorVersionedFragmentRetriever versionedFragmentRetriever,
     IComputerOperatorProcedureEdgeLifecycleService procedureEdgeLifecycle,
+    IComputerOperatorRecoveryCoordinator recoveryCoordinator,
     IComputerOperatorStrategyRanker strategyRanker,
     IUniversalReliableOperatorCoordinator reliableOperator,
     IComputerOperatorRegressionCandidateStore regressionCandidates,

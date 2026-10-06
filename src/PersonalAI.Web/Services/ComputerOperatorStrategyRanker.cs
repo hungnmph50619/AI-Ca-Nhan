@@ -36,7 +36,8 @@ public interface IComputerOperatorStrategyRanker
 public sealed class ComputerOperatorStrategyRanker(
     IComputerOperatorProcedureGraphStore graph,
     IComputerOperatorProcedureContextStore contexts,
-    IComputerOperatorProcedureContextService compatibility)
+    IComputerOperatorProcedureContextService compatibility,
+    IComputerOperatorProcedureEdgeLifecycleService lifecycle)
     : IComputerOperatorStrategyRanker
 {
     public const int MinimumFastPathSuccesses = 3;
@@ -158,13 +159,32 @@ public sealed class ComputerOperatorStrategyRanker(
                 "Local proposal hiện tại không trùng strategy/action đã được verify ở state này.");
         }
 
+        var lifecycleAssessment =
+            lifecycle.Evaluate(
+                match);
+
+        if (lifecycleAssessment.Status.Equals(
+                ComputerOperatorProcedureEdgeStatuses.Superseded,
+                StringComparison.OrdinalIgnoreCase))
+        {
+            return new(
+                ComputerOperatorFastPathStatuses.NotEnoughEvidence,
+                false,
+                strategy,
+                action,
+                match.SuccessCount,
+                0,
+                match.LastVerifiedAt,
+                $"Strategy đã bị supersede bởi {lifecycleAssessment.SupersededByStrategyKey ?? "strategy mới"}; không dùng Fast Path.");
+        }
+
         var age =
             DateTimeOffset.UtcNow -
             match.LastVerifiedAt;
 
         if (match.SuccessCount <
                 MinimumFastPathSuccesses ||
-            match.AverageConfidence <
+            lifecycleAssessment.EffectiveConfidence <
                 MinimumFastPathConfidence ||
             age >
                 MaximumEvidenceAge)
@@ -175,9 +195,9 @@ public sealed class ComputerOperatorStrategyRanker(
                 strategy,
                 action,
                 match.SuccessCount,
-                match.AverageConfidence,
+                lifecycleAssessment.EffectiveConfidence,
                 match.LastVerifiedAt,
-                $"Verified edge chưa đủ mạnh cho Fast Path: successes={match.SuccessCount}/{MinimumFastPathSuccesses}; confidence={match.AverageConfidence:0.000}/{MinimumFastPathConfidence:0.000}; ageDays={Math.Max(0, age.TotalDays):0.0}/{MaximumEvidenceAge.TotalDays:0}.");
+                $"Verified edge chưa đủ mạnh cho Fast Path: successes={match.SuccessCount}/{MinimumFastPathSuccesses}; effectiveConfidence={lifecycleAssessment.EffectiveConfidence:0.000}/{MinimumFastPathConfidence:0.000}; decay={lifecycleAssessment.DecayMultiplier:0.00}; ageDays={Math.Max(0, age.TotalDays):0.0}/{MaximumEvidenceAge.TotalDays:0}.");
         }
 
         return new(

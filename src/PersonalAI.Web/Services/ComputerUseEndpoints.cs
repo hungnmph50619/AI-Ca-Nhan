@@ -31,6 +31,7 @@ public static class ComputerUseEndpoints
         services.AddSingleton<IComputerOperatorProgressIntelligence, ComputerOperatorProgressIntelligence>();
         services.AddSingleton<IComputerOperatorLearnedTimingService, ComputerOperatorLearnedTimingService>();
         services.AddSingleton<IComputerOperatorAdaptiveWaitPolicyResolver, ComputerOperatorAdaptiveWaitPolicyResolver>();
+        services.AddSingleton<IComputerOperatorExperienceRepository, SqliteComputerOperatorExperienceRepository>();
         services.AddSingleton<IComputerDisplayTopologyService, WindowsComputerDisplayTopologyService>();
         services.AddSingleton<IComputerDpiCalibrationService, ComputerDpiCalibrationService>();
         services.AddSingleton<IComputerCoordinateTransformService, ComputerCoordinateTransformService>();
@@ -238,6 +239,36 @@ public static class ComputerUseEndpoints
                 daXoa = true,
                 message =
                     "Đã xóa capture health telemetry trong bộ nhớ."
+            });
+        });
+
+        app.MapGet("/api/computer/operator-experience-store", (
+            HttpContext context,
+            IComputerOperatorExperienceRepository experiences) =>
+        {
+            if (!IsLocalRequest(context))
+                return Results.StatusCode(StatusCodes.Status403Forbidden);
+
+            var diagnostics =
+                experiences.GetDiagnostics();
+
+            return Results.Ok(new
+            {
+                phienBan = PersonalAiRelease.Version,
+                provider = diagnostics.Provider,
+                schema = diagnostics.SchemaVersion,
+                wal = diagnostics.UsesWal,
+                tongSuKien = diagnostics.EventCount,
+                daXacMinh = diagnostics.VerifiedEventCount,
+                loi = diagnostics.FailureCount,
+                phucHoi = diagnostics.RecoveryCount,
+                chienLuoc = diagnostics.StrategyCount,
+                nguyenTac = new[]
+                {
+                    "Không lưu raw goal/text/screenshot trong Experience DB.",
+                    "Core chỉ phụ thuộc IComputerOperatorExperienceRepository.",
+                    "SQLite hiện tại có thể thay bằng SQL Server/PostgreSQL sau này mà không đổi core."
+                }
             });
         });
 

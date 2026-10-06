@@ -21,7 +21,9 @@ public static class EvaluationEndpoints
         services.AddSingleton<IComputerOperatorRegressionMetricsService, ComputerOperatorRegressionMetricsService>();
         services.AddSingleton<IComputerOperatorRegressionReadinessGate, ComputerOperatorRegressionReadinessGate>();
         services.AddSingleton<IComputerOperatorExternalBenchmarkService, ComputerOperatorExternalBenchmarkService>();
+        services.AddSingleton<IComputerOperatorExternalBenchmarkExecutionStore, ComputerOperatorExternalBenchmarkExecutionStore>();
         services.AddScoped<IComputerOperatorExternalBenchmarkRunner, ComputerOperatorExternalBenchmarkRunner>();
+        services.AddScoped<IComputerOperatorExternalBenchmarkEvaluationService, ComputerOperatorExternalBenchmarkEvaluationService>();
         services.AddSingleton<IComputerOperatorBenchmarkScenarioPackService, ComputerOperatorBenchmarkScenarioPackService>();
         services.AddSingleton<IComputerOperatorRegressionLabService, ComputerOperatorRegressionLabService>();
         services.AddScoped<IAgentBenchmarkService, AgentBenchmarkService>();
@@ -146,6 +148,36 @@ public static class EvaluationEndpoints
                         ? "execution-completed-awaiting-independent-evaluation"
                         : "execution-incomplete",
                     result.TaskCompleted
+                        ? AuditResults.Succeeded
+                        : AuditResults.Failed);
+
+                return Results.Ok(
+                    result);
+            }
+            catch (ComputerOperatorExternalBenchmarkValidationException exception)
+            {
+                return Results.BadRequest(
+                    new ApiError(exception.Message));
+            }
+        });
+
+        endpoints.MapPost("/api/evaluation/computer-operator-benchmark/evaluate-case", (
+            EvaluateComputerOperatorExternalBenchmarkCaseRequest request,
+            IComputerOperatorExternalBenchmarkEvaluationService evaluator,
+            IAuditRecorder audit) =>
+        {
+            try
+            {
+                var result =
+                    evaluator.Evaluate(
+                        request);
+
+                audit.Record(
+                    AuditAgents.User,
+                    "evaluation.computer-operator-benchmark.evaluate-case",
+                    $"benchmark-case:{result.CaseId}",
+                    result.EvaluationMode,
+                    result.Passed
                         ? AuditResults.Succeeded
                         : AuditResults.Failed);
 

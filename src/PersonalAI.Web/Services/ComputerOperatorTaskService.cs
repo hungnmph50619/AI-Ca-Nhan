@@ -170,6 +170,7 @@ public sealed class ComputerOperatorTaskService(
     IComputerOperatorExperienceValidator experienceValidator,
     IComputerOperatorExperienceConsolidator experienceConsolidator,
     IComputerOperatorExperienceLifecycleService experienceLifecycle,
+    IComputerOperatorVerifiedTransitionStore verifiedTransitions,
     IUniversalReliableOperatorCoordinator reliableOperator,
     IComputerOperatorRegressionCandidateStore regressionCandidates,
     ILogger<ComputerOperatorTaskService> logger)
@@ -470,6 +471,18 @@ public sealed class ComputerOperatorTaskService(
 
                 var sceneDiagnosticId =
                     BuildDiagnosticId(sceneFingerprint);
+
+                var knownTransitions =
+                    verifiedTransitions.FindExact(
+                        sceneFingerprint,
+                        limit: 5);
+
+                if (knownTransitions.Count > 0)
+                {
+                    progress.AddDiagnostic(
+                        "transition-memory",
+                        $"cycle={index}; exactState=true; knownTransitions={knownTransitions.Count}; bestSuccessCount={knownTransitions[0].SuccessCount}; bestConfidence={knownTransitions[0].AverageConfidence:0.000}; bestStrategy={knownTransitions[0].StrategyKey}; fastPathEnabled=false.");
+                }
 
                 var cycleTrace =
                     new ComputerOperatorCycleTrace(
@@ -2523,6 +2536,21 @@ public sealed class ComputerOperatorTaskService(
 
                 taskHistory.Add(
                     $"STEP {index}: VERIFIED {actionSignature} — {verification.Detail}; EXPECTED: {decision.ExpectedEffect}");
+
+                if (!string.IsNullOrWhiteSpace(
+                        decision.ExpectedEffect))
+                {
+                    var transition =
+                        verifiedTransitions.RecordVerified(
+                            sceneFingerprint,
+                            strategyDiagnosticId,
+                            decision.ExpectedEffect,
+                            verification.Confidence);
+
+                    progress.AddDiagnostic(
+                        "transition-memory",
+                        $"cycle={index}; recorded=true; fromState={sceneDiagnosticId}; strategy={transition.StrategyKey}; successCount={transition.SuccessCount}; confidence={transition.AverageConfidence:0.000}; expectedEffectStoredAsHash=true.");
+                }
 
                 var learningCandidate =
                     learning.TryRecordVerifiedRecovery(

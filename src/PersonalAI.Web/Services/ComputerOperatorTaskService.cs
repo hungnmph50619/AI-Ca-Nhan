@@ -173,6 +173,7 @@ public sealed class ComputerOperatorTaskService(
     IComputerOperatorVerifiedTransitionStore verifiedTransitions,
     IComputerOperatorProcedureGraphStore procedureGraph,
     IComputerOperatorPartialResumeResolver partialResumeResolver,
+    IComputerOperatorProcedureFragmentRetriever fragmentRetriever,
     IUniversalReliableOperatorCoordinator reliableOperator,
     IComputerOperatorRegressionCandidateStore regressionCandidates,
     ILogger<ComputerOperatorTaskService> logger)
@@ -500,6 +501,31 @@ public sealed class ComputerOperatorTaskService(
                     progress.AddDiagnostic(
                         "procedure-graph",
                         $"cycle={index}; knownOutgoing={outgoingProcedureEdges.Count}; bestStrategy={outgoingProcedureEdges[0].StrategyKey}; bestSuccessCount={outgoingProcedureEdges[0].SuccessCount}; bestConfidence={outgoingProcedureEdges[0].AverageConfidence:0.000}; fastPathEnabled=false.");
+                }
+
+                var knownFragments =
+                    fragmentRetriever.Retrieve(
+                        sceneFingerprint,
+                        maximumDepth: 6,
+                        maximumFragments: 5);
+
+                if (knownFragments.Count > 0)
+                {
+                    var bestFragment =
+                        knownFragments[0];
+
+                    var actionKinds =
+                        string.Join(
+                            " -> ",
+                            bestFragment.Edges.Select(edge =>
+                                edge.ActionKind));
+
+                    taskHistory.Add(
+                        $"PROCEDURE-FRAGMENT: Đã có đoạn đã VERIFY PASS dài {bestFragment.Length} bước từ state hiện tại; action-kinds={actionKinds}; bottleneck-confidence={bestFragment.BottleneckConfidence:0.00}; minimum-success={bestFragment.MinimumSuccessCount}. Đây chỉ là kinh nghiệm tham khảo, không được replay mù; phải chọn từng action theo desktop hiện tại và VERIFY sau mỗi bước.");
+
+                    progress.AddDiagnostic(
+                        "procedure-fragment",
+                        $"cycle={index}; fragments={knownFragments.Count}; bestLength={bestFragment.Length}; bottleneckConfidence={bestFragment.BottleneckConfidence:0.000}; minimumSuccess={bestFragment.MinimumSuccessCount}; actions={LimitDiagnostic(actionKinds, 220)}; start={BuildDiagnosticId(bestFragment.StartStateFingerprint)}; end={BuildDiagnosticId(bestFragment.EndStateFingerprint)}; autoExecute=false.");
                 }
 
                 if (resumeAssessmentPending)
@@ -2631,7 +2657,8 @@ public sealed class ComputerOperatorTaskService(
                         sceneFingerprint,
                         transition.StrategyKey,
                         transition.ExpectedEffectFingerprint,
-                        verification.Confidence);
+                        verification.Confidence,
+                        decision.Action);
                 }
 
                 var learningCandidate =

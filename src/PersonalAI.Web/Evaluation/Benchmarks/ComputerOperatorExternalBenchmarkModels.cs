@@ -36,6 +36,7 @@ public sealed record ComputerOperatorExternalBenchmarkExecutionResult(
     string WorkspaceId,
     string CaseId,
     string Title,
+    string ExpectedEffect,
     DateTimeOffset StartedAtUtc,
     DateTimeOffset CompletedAtUtc,
     bool TaskCompleted,
@@ -49,3 +50,25 @@ public sealed record ComputerOperatorExternalBenchmarkExecutionResult(
     string Provider,
     string Model,
     double DurationMilliseconds);
+
+
+public sealed record EvaluateComputerOperatorExternalBenchmarkCaseRequest(
+    string CaseId,
+    bool Confirmed,
+    bool ExpectedEffectObserved,
+    string EvidenceSummary);
+
+public sealed record ComputerOperatorExternalBenchmarkEvaluationResult(
+    string Version,
+    string WorkspaceId,
+    string CaseId,
+    string Title,
+    DateTimeOffset EvaluatedAtUtc,
+    string ExpectedEffect,
+    bool TaskCompleted,
+    bool WithinStepBudget,
+    bool ExpectedEffectObserved,
+    string EvidenceSummary,
+    bool Passed,
+    string Status,
+    string EvaluationMode);

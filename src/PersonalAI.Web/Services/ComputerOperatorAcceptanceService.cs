@@ -249,6 +249,11 @@ public sealed class ComputerOperatorAcceptanceService
 
         RunCheck(
             checks,
+            "v4.9.8 chỉ tạo learning candidate sau failure thật -> recovery -> VERIFY PASS",
+            CheckVerifiedRecoveryLearningCandidate);
+
+        RunCheck(
+            checks,
             "OpenCV template sensor giữ multi-scale nhỏ và ngưỡng confidence an toàn",
             CheckOpenCvTemplateSensorPolicy);
 
@@ -2989,6 +2994,113 @@ public sealed class ComputerOperatorAcceptanceService
             catch
             {
                 // File lock cleanup không được làm acceptance fail.
+            }
+        }
+    }
+
+    private static void CheckVerifiedRecoveryLearningCandidate()
+    {
+        var root =
+            Path.Combine(
+                Path.GetTempPath(),
+                "personalai-learning-acceptance",
+                Guid.NewGuid().ToString("N"));
+
+        Directory.CreateDirectory(root);
+
+        try
+        {
+            var configuration =
+                new ConfigurationBuilder()
+                    .AddInMemoryCollection(
+                        new Dictionary<string, string?>
+                        {
+                            ["Tasks:Root"] = root
+                        })
+                    .Build();
+
+            var workspace =
+                new AcceptanceWorkspaceContextAccessor(
+                    PersonalWorkspaceIds.PersonalAi);
+
+            var repository =
+                new SqliteComputerOperatorExperienceRepository(
+                    configuration,
+                    workspace);
+
+            var learning =
+                new ComputerOperatorLearningSession(
+                    repository);
+
+            var noFailure =
+                learning.TryRecordVerifiedRecovery(
+                    "strategy-before-failure",
+                    0.99);
+
+            learning.RecordFailure(
+                "scene=abc|state=no-effect",
+                "action-no-effect",
+                "strategy-a",
+                0.84);
+
+            var candidate =
+                learning.TryRecordVerifiedRecovery(
+                    "strategy-b",
+                    0.96);
+
+            var secondPass =
+                learning.TryRecordVerifiedRecovery(
+                    "strategy-c",
+                    0.99);
+
+            var recent =
+                repository.GetRecent(10);
+
+            var diagnostics =
+                repository.GetDiagnostics();
+
+            var failure =
+                recent.Single(item =>
+                    item.Kind ==
+                    ComputerOperatorExperienceKinds.Failure);
+
+            var recovery =
+                recent.Single(item =>
+                    item.Kind ==
+                    ComputerOperatorExperienceKinds.Recovery);
+
+            var pendingCandidate =
+                recent.Single(item =>
+                    item.Kind ==
+                    ComputerOperatorExperienceKinds.Candidate);
+
+            Require(
+                !noFailure.Created &&
+                candidate.Created &&
+                !secondPass.Created &&
+                recent.Count == 3 &&
+                failure.ContextFingerprint ==
+                    recovery.ContextFingerprint &&
+                recovery.ContextFingerprint ==
+                    pendingCandidate.ContextFingerprint &&
+                recovery.Verified &&
+                !pendingCandidate.Verified &&
+                pendingCandidate.Confidence <= 0.60 &&
+                diagnostics.FailureCount == 1 &&
+                diagnostics.RecoveryCount == 1 &&
+                diagnostics.CandidateCount == 1,
+                "Learning chỉ được tạo một candidate chưa trusted sau failure thật và recovery đã VERIFY PASS.");
+        }
+        finally
+        {
+            try
+            {
+                if (Directory.Exists(root))
+                    Directory.Delete(root, recursive: true);
+            }
+            catch
+            {
+                // Cleanup thư mục tạm không được làm acceptance fail.
             }
         }
     }

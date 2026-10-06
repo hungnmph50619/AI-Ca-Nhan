@@ -319,6 +319,11 @@ public sealed class ComputerOperatorAcceptanceService
 
         RunCheck(
             checks,
+            "v4.9.21 routing fix dùng provider-native Function Calling thay keyword/hard-code app để chọn Computer Operator",
+            CheckNativeToolIntentArbitration);
+
+        RunCheck(
+            checks,
             "OpenCV template sensor giữ multi-scale nhỏ và ngưỡng confidence an toàn",
             CheckOpenCvTemplateSensorPolicy);
 
@@ -4865,6 +4870,47 @@ public sealed class ComputerOperatorAcceptanceService
             GeminiHttpResiliencePolicy.IsTransientStatusCode(System.Net.HttpStatusCode.ServiceUnavailable) &&
             !GeminiHttpResiliencePolicy.IsTransientStatusCode(System.Net.HttpStatusCode.BadRequest),
             "Gemini resilience phải có timeout hữu hạn, circuit breaker đủ bằng chứng và chỉ coi 408/429/5xx là lỗi tạm thời.");
+    }
+
+
+    private static void CheckNativeToolIntentArbitration()
+    {
+        var chatConstructor =
+            typeof(ChatTurnService)
+                .GetConstructors()
+                .Single();
+
+        var chatDependencies =
+            chatConstructor
+                .GetParameters()
+                .Select(parameter => parameter.ParameterType)
+                .ToArray();
+
+        var directLeagueShortcut =
+            typeof(ChatTurnService)
+                .GetMethod(
+                    "IsDirectLeaguePracticeCommand",
+                    System.Reflection.BindingFlags.NonPublic |
+                    System.Reflection.BindingFlags.Static);
+
+        var keywordOperatorRouter =
+            typeof(ToolOrchestrationService)
+                .GetMethod(
+                    "TryGetComputerOperatorGoal",
+                    System.Reflection.BindingFlags.NonPublic |
+                    System.Reflection.BindingFlags.Static);
+
+        var nativePlanner =
+            typeof(IAiProvider)
+                .GetMethod(
+                    "ProposeFunctionCallAsync");
+
+        Require(
+            !chatDependencies.Contains(typeof(IToolExecutionService)) &&
+            directLeagueShortcut is null &&
+            keywordOperatorRouter is null &&
+            nativePlanner is not null,
+            "Chat không được tự execute app-specific tool hoặc route Computer Operator bằng keyword; tool selection phải đi qua provider-native Function Calling rồi mới qua proposal/safety gate.");
     }
 
 

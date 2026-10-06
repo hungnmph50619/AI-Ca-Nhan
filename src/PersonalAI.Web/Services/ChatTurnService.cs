@@ -84,7 +84,6 @@ public sealed class ChatTurnService(
     IAiProviderResolver providerResolver,
     IContextManagerService contextManager,
     IToolOrchestrationService toolOrchestration,
-    IToolExecutionService toolExecution,
     IChatAttachmentStore attachmentStore,
     IKnowledgeHybridSearchService hybridSearch,
     KnowledgeSourceReader sourceReader,
@@ -122,47 +121,6 @@ public sealed class ChatTurnService(
 
         var hasAttachments =
             (latestUserMessage?.Attachments?.Count ?? 0) > 0;
-
-        if (allowToolProposal
-            && request.UseTools
-            && !hasAttachments
-            && knowledgeMode == "normal"
-            && IsDirectLeaguePracticeCommand(
-                canonicalMessages.Last().Content))
-        {
-            using var argumentsDocument =
-                System.Text.Json.JsonDocument.Parse("{}");
-            var execution = await toolExecution.ExecuteAsync(
-                new ToolExecutionRequest(
-                    "league.practice.open",
-                    argumentsDocument.RootElement.Clone(),
-                    [
-                        ToolPermissions.Write,
-                        ToolPermissions.External,
-                        ToolPermissions.Computer
-                    ],
-                    Confirmed: true),
-                cancellationToken);
-
-            audit.Record(
-                auditAgent,
-                "tool.direct-execution",
-                "tool:league.practice.open",
-                "explicit-chat-command",
-                execution.Success
-                    ? AuditResults.Succeeded
-                    : AuditResults.Failed,
-                execution.Error ?? execution.Status);
-
-            var message = BuildLeaguePracticeChatMessage(execution);
-            return new ChatResponse(
-                message,
-                aiProvider.Model,
-                aiProvider.Name,
-                [],
-                null,
-                null);
-        }
 
         if (allowToolProposal
             && request.UseTools
@@ -528,60 +486,6 @@ public sealed class ChatTurnService(
                 };
             })
             .ToArray();
-    }
-
-    private static bool IsDirectLeaguePracticeCommand(
-        string value)
-    {
-        var normalized = string.Join(
-            " ",
-            (value ?? string.Empty)
-                .Trim()
-                .ToLowerInvariant()
-                .Split(
-                    [' ', '\t', '\r', '\n'],
-                    StringSplitOptions.RemoveEmptyEntries));
-
-        if (normalized.Length is < 8 or > 180)
-            return false;
-
-        var asksLeague =
-            normalized.Contains("mở liên minh", StringComparison.Ordinal) ||
-            normalized.Contains("mo lien minh", StringComparison.Ordinal) ||
-            normalized.Contains("mở league", StringComparison.Ordinal) ||
-            normalized.Contains("open league", StringComparison.Ordinal);
-
-        var asksPractice =
-            normalized.Contains("phòng tập", StringComparison.Ordinal) ||
-            normalized.Contains("phong tap", StringComparison.Ordinal) ||
-            normalized.Contains("practice tool", StringComparison.Ordinal);
-
-        return asksLeague && asksPractice;
-    }
-
-    private static string BuildLeaguePracticeChatMessage(
-        ToolExecutionResponse execution)
-    {
-        if (execution.Success &&
-            execution.Output is System.Text.Json.JsonElement output &&
-            output.ValueKind == System.Text.Json.JsonValueKind.Object)
-        {
-            var status = output.TryGetProperty("status", out var statusValue)
-                ? statusValue.GetString()
-                : null;
-            var phase = output.TryGetProperty("phase", out var phaseValue)
-                ? phaseValue.GetString()
-                : null;
-            var detail = output.TryGetProperty("detail", out var detailValue)
-                ? detailValue.GetString()
-                : null;
-
-            return status == "completed"
-                ? "Đã mở Liên Minh và hoàn tất chuỗi thao tác vào Practice Tool."
-                : $"Đã chạy tự động hóa Liên Minh nhưng dừng ở bước {phase ?? "không xác định"}: {detail ?? "không có chi tiết."}";
-        }
-
-        return $"Không chạy được lệnh mở Practice Tool: {execution.Error ?? execution.Status}.";
     }
 
 }

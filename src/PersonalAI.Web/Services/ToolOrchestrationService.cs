@@ -104,22 +104,6 @@ public sealed class ToolOrchestrationService : IToolOrchestrationService
                 planningModel: null);
         }
 
-        if (TryGetComputerOperatorGoal(messages, out var operatorGoal))
-        {
-            using var document = JsonDocument.Parse(
-                JsonSerializer.Serialize(new { goal = operatorGoal }));
-
-            return PrepareCore(
-                new ToolProposalDraft(
-                    "computer.operator.run-task",
-                    document.RootElement.Clone(),
-                    Reason: "Yêu cầu này là tác vụ desktop cần tự quan sát trạng thái, suy luận nhiều bước, thực hiện từng primitive và xác minh sau mỗi hành động.",
-                    AssistantMessage: "Tôi sẽ giao toàn bộ mục tiêu cho Computer Operator để tự quan sát màn hình, lập phương án, thực hiện từng bước và tự kiểm tra kết quả."),
-                planningMode: "server-computer-operator-route",
-                planningProvider: null,
-                planningModel: null);
-        }
-
         var mapped = definitions
             .Select(definition => new
             {
@@ -771,89 +755,6 @@ public sealed class ToolOrchestrationService : IToolOrchestrationService
             ? text
             : text[..500];
 
-        return true;
-    }
-
-    private static bool TryGetComputerOperatorGoal(
-        IReadOnlyList<ChatMessage> messages,
-        out string goal)
-    {
-        goal = string.Empty;
-
-        var latestUser = messages
-            .LastOrDefault(message =>
-                message.Role.Equals(
-                    "user",
-                    StringComparison.OrdinalIgnoreCase))
-            ?.Content
-            ?.Trim();
-
-        if (string.IsNullOrWhiteSpace(latestUser) ||
-            latestUser.Length > 1200)
-            return false;
-
-        var text = latestUser;
-
-        var actionTerms = new[]
-        {
-            "mở ", "đưa ", "chuyển ", "chuyển sang", "focus",
-            "foreground", "gõ", "nhập", "nhấn", "bấm", "click",
-            "cuộn", "scroll", "kéo", "drag", "thu nhỏ", "phóng to",
-            "khôi phục", "minimize", "maximize", "restore", "type",
-            "press", "double click", "right click", "left click"
-        };
-
-        var desktopContextTerms = new[]
-        {
-            "màn hình", "desktop", "screen", "cửa sổ", "window",
-            "taskbar", "thanh tác vụ", "foreground", "chuột", "mouse",
-            "bàn phím", "keyboard", "ứng dụng", "application", " app ",
-            "windows"
-        };
-
-        var observationTerms = new[]
-        {
-            "quan sát", "nhìn", "xem màn hình", "kiểm tra màn hình",
-            "tự tìm", "tự suy nghĩ", "tự suy luận"
-        };
-
-        var actionCount = actionTerms.Count(term =>
-            text.Contains(term, StringComparison.OrdinalIgnoreCase));
-
-        var hasDesktopContext = desktopContextTerms.Any(term =>
-            text.Contains(term, StringComparison.OrdinalIgnoreCase));
-
-        var hasObservationIntent = observationTerms.Any(term =>
-            text.Contains(term, StringComparison.OrdinalIgnoreCase));
-
-        var hasSequenceConnector =
-            text.Contains(" rồi ", StringComparison.OrdinalIgnoreCase)
-            || text.Contains(" sau đó ", StringComparison.OrdinalIgnoreCase)
-            || text.Contains(" then ", StringComparison.OrdinalIgnoreCase)
-            || text.Contains(" và ", StringComparison.OrdinalIgnoreCase)
-            || text.Contains(" nếu ", StringComparison.OrdinalIgnoreCase);
-
-        var looksLikeSingleAppLaunch =
-            text.StartsWith("mở ", StringComparison.OrdinalIgnoreCase)
-            && !text.Contains("http://", StringComparison.OrdinalIgnoreCase)
-            && !text.Contains("https://", StringComparison.OrdinalIgnoreCase)
-            && !text.Contains(" tệp", StringComparison.OrdinalIgnoreCase)
-            && !text.Contains(" file", StringComparison.OrdinalIgnoreCase)
-            && !text.Contains(" tài liệu", StringComparison.OrdinalIgnoreCase)
-            && !text.Contains(" đường dẫn", StringComparison.OrdinalIgnoreCase)
-            && !text.Contains(" link", StringComparison.OrdinalIgnoreCase)
-            && !text.Contains(" url", StringComparison.OrdinalIgnoreCase);
-
-        var shouldRoute =
-            (hasDesktopContext && actionCount >= 1)
-            || (hasObservationIntent && actionCount >= 1)
-            || (actionCount >= 2 && hasSequenceConnector)
-            || looksLikeSingleAppLaunch;
-
-        if (!shouldRoute)
-            return false;
-
-        goal = text;
         return true;
     }
 

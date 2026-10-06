@@ -262,6 +262,7 @@ public static class ComputerUseEndpoints
                 daXacMinh = diagnostics.VerifiedEventCount,
                 loi = diagnostics.FailureCount,
                 phucHoi = diagnostics.RecoveryCount,
+                candidate = diagnostics.CandidateCount,
                 chienLuoc = diagnostics.StrategyCount,
                 nguyenTac = new[]
                 {

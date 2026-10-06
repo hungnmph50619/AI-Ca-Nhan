@@ -160,6 +160,8 @@ public sealed class ComputerOperatorTaskService(
     IComputerOperatorActionExecutor actionExecutor,
     IGenericTextInteractionEngine textInteraction,
     IAdaptiveVerificationWaitEngine adaptiveWait,
+    IComputerOperatorProgressIntelligence progressIntelligence,
+    IComputerOperatorAdaptiveWaitPolicyResolver adaptiveWaitPolicyResolver,
     IStructuredDesktopSnapshotService structuredDesktop,
     IStructuredDesktopVerificationService structuredVerification,
     IComputerOperatorCheckpointStore checkpoints,
@@ -3382,7 +3384,7 @@ public sealed class ComputerOperatorTaskService(
         CancellationToken cancellationToken)
     {
         var policy =
-            ComputerOperatorAdaptiveWaitPolicy.ForAction(
+            adaptiveWaitPolicyResolver.Resolve(
                 decision.Action);
 
         progress.Add(
@@ -3479,12 +3481,64 @@ public sealed class ComputerOperatorTaskService(
                             observation,
                             difference);
 
+                    var visualProgress =
+                        difference?.Comparable == true
+                            ? difference.ChangedRatio >= 0.03
+                                ? 0.60
+                                : difference.ChangedRatio >= 0.01
+                                    ? 0.55
+                                    : Math.Clamp(
+                                        difference.ChangedRatio * 10,
+                                        0,
+                                        0.40)
+                            : 0;
+
+                    var windowProgress =
+                        observation.ForegroundWindowChanged
+                            ? 0.95
+                            : observation.WindowBoundsChanged
+                                ? 0.88
+                                : contextChanged
+                                    ? 0.80
+                                    : 0;
+
+                    var progressAssessment =
+                        progressIntelligence.Assess(
+                            new(
+                                ExpectedEffectObserved:
+                                    route.Route ==
+                                    DesktopVerificationRoute.LocalVerified,
+                                ExpectedEffectConfidence:
+                                    route.Confidence,
+                                ExplicitFailureObserved: false,
+                                FailureConfidence: 0,
+                                BlockingConditionObserved:
+                                    observation.TargetLikelyOccluded,
+                                BlockingConfidence:
+                                    observation.TargetLikelyOccluded
+                                        ? 0.72
+                                        : 0,
+                                ExternalWaitObserved: false,
+                                ExternalWaitConfidence: 0,
+                                ProcessAlive:
+                                    !string.IsNullOrWhiteSpace(
+                                        observation.ActiveProcessName),
+                                ProcessResponding: null,
+                                CpuActivityScore: 0,
+                                DiskActivityScore: 0,
+                                NetworkActivityScore: 0,
+                                WindowTransitionScore:
+                                    windowProgress,
+                                StructuredUiChangeScore: 0,
+                                VisualChangeScore:
+                                    visualProgress,
+                                RelevantSystemEventScore: 0,
+                                Elapsed: TimeSpan.Zero,
+                                TimeSinceMeaningfulProgress:
+                                    TimeSpan.Zero));
+
                     var sample =
-                        ComputerOperatorAdaptiveWaitPolicy
-                            .FromDesktopObservation(
-                                observation,
-                                difference,
-                                route);
+                        progressAssessment.AdaptiveSample;
 
                     var trangThai = sample.Status switch
                     {

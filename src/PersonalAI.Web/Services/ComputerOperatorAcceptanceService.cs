@@ -184,6 +184,11 @@ public sealed class ComputerOperatorAcceptanceService
 
         RunCheck(
             checks,
+            "v4.8 runtime regression candidate chỉ lưu fingerprint và failure signal",
+            CheckRuntimeRegressionCandidatePrivacy);
+
+        RunCheck(
+            checks,
             "OpenCV template sensor giữ multi-scale nhỏ và ngưỡng confidence an toàn",
             CheckOpenCvTemplateSensorPolicy);
 
@@ -2002,6 +2007,61 @@ public sealed class ComputerOperatorAcceptanceService
             snapshot.ConsecutiveFailures == 0 &&
             snapshot.LastLatencyMilliseconds == 40,
             "Local visual provider health chưa reset sau success.");
+    }
+
+    private static void CheckRuntimeRegressionCandidatePrivacy()
+    {
+        var store =
+            new ComputerOperatorRegressionCandidateStore();
+
+        var now = DateTimeOffset.UtcNow;
+        var progress =
+            new ComputerOperatorProgressSnapshot(
+                Active: false,
+                Paused: false,
+                Status: "blocked",
+                StartedAtUtc: now.AddSeconds(-5),
+                UpdatedAtUtc: now,
+                ObservationCount: 4,
+                ActionCount: 1,
+                CurrentStage: "blocked",
+                Stale: false,
+                StaleSeconds: 0,
+                Entries:
+                [
+                    new ComputerOperatorProgressEntry(
+                        now,
+                        "verification-failed",
+                        "Regression acceptance failure signal.")
+                ]);
+
+        const string rawGoal =
+            "Mở ứng dụng thử nghiệm riêng tư";
+
+        store.Capture(
+            rawGoal,
+            "blocked",
+            "Không xác minh được expected effect.",
+            progress,
+            "Gemini",
+            "acceptance-model");
+
+        var snapshot = store.Get();
+        var candidate = snapshot.Candidates.Single();
+
+        Require(
+            snapshot.Count == 1 &&
+            candidate.GoalHash.Length == 64 &&
+            candidate.GoalHash ==
+                ComputerOperatorRegressionCandidateStore.HashGoalForAcceptance(
+                    rawGoal) &&
+            !candidate.Summary.Contains(
+                rawGoal,
+                StringComparison.OrdinalIgnoreCase) &&
+            candidate.FailureSignals.Contains(
+                "verification-failed",
+                StringComparer.OrdinalIgnoreCase),
+            "Runtime regression candidate chưa giữ đúng privacy fingerprint hoặc failure signal.");
     }
 
     private static void CheckOcrProviderEmptyResultDoesNotTripHealth()

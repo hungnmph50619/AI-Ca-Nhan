@@ -731,9 +731,39 @@ Các field không dùng để chuỗi rỗng hoặc [].
             };
             request.Headers.Add("x-goog-api-key", key);
 
-            planningResponse = await httpClient.SendAsync(
-                request,
-                cancellationToken);
+            try
+            {
+                planningResponse = await httpClient.SendAsync(
+                    request,
+                    cancellationToken);
+            }
+            catch (HttpRequestException)
+            {
+                if (attempt == 1)
+                {
+                    await Task.Delay(
+                        900,
+                        cancellationToken);
+                    continue;
+                }
+
+                return CreateSafeWaitDecision(
+                    "Gemini planning gặp lỗi mạng tạm thời sau lần thử lại. Không thực thi action mới; sẽ quan sát lại trạng thái desktop hiện tại.");
+            }
+            catch (TaskCanceledException)
+                when (!cancellationToken.IsCancellationRequested)
+            {
+                if (attempt == 1)
+                {
+                    await Task.Delay(
+                        900,
+                        cancellationToken);
+                    continue;
+                }
+
+                return CreateSafeWaitDecision(
+                    "Gemini planning bị timeout tạm thời sau lần thử lại. Không thực thi action mới; sẽ quan sát lại trạng thái desktop hiện tại.");
+            }
 
             if (planningResponse.IsSuccessStatusCode)
                 break;
@@ -1599,12 +1629,27 @@ Trả đúng JSON theo schema.
         };
         request.Headers.Add("x-goog-api-key", key);
 
-        using var response = await httpClient.SendAsync(
-            request,
-            cancellationToken);
-
-        if (!response.IsSuccessStatusCode)
+        HttpResponseMessage response;
+        try
+        {
+            response = await httpClient.SendAsync(
+                request,
+                cancellationToken);
+        }
+        catch (HttpRequestException)
+        {
             return null;
+        }
+        catch (TaskCanceledException)
+            when (!cancellationToken.IsCancellationRequested)
+        {
+            return null;
+        }
+
+        using (response)
+        {
+            if (!response.IsSuccessStatusCode)
+                return null;
 
         string text;
         using (var document = JsonDocument.Parse(
@@ -1662,6 +1707,7 @@ Trả đúng JSON theo schema.
             FormatException)
         {
             return null;
+        }
         }
     }
 

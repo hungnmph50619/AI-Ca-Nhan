@@ -8,6 +8,12 @@ public interface IDesktopOcrActionPlanner
         string goal,
         ComputerOperatorDesktopState state,
         out DesktopOperatorDecision decision);
+
+    bool TryGroundTarget(
+        DesktopOperatorDecision proposed,
+        ComputerOperatorDesktopState state,
+        out DesktopOperatorDecision grounded,
+        out string reason);
 }
 
 public sealed class DesktopOcrActionPlanner(
@@ -204,6 +210,157 @@ public sealed class DesktopOcrActionPlanner(
                 TargetElementId:
                     string.Empty);
 
+        return true;
+    }
+
+    public bool TryGroundTarget(
+        DesktopOperatorDecision proposed,
+        ComputerOperatorDesktopState state,
+        out DesktopOperatorDecision grounded,
+        out string reason)
+    {
+        ArgumentNullException.ThrowIfNull(proposed);
+        ArgumentNullException.ThrowIfNull(state);
+
+        grounded = proposed;
+        reason = string.Empty;
+
+        if (state.ForegroundWindow is null ||
+            string.IsNullOrWhiteSpace(proposed.TargetLabel) ||
+            proposed.TargetLabel.Length > 160 ||
+            proposed.Action is not
+                ("click-left" or
+                 "double-click-left" or
+                 "click-right"))
+        {
+            reason =
+                "OCR grounding không áp dụng cho decision hiện tại.";
+            return false;
+        }
+
+        var window =
+            state.ForegroundWindow;
+
+        var budget =
+            budgetPolicy.ForPlanning(
+                state,
+                structuredTargetResolved: false,
+                explicitTextIntent: true);
+
+        var observation =
+            ocrSensor.ReadWindow(
+                window.WindowId,
+                budget);
+
+        if (!observation.Available ||
+            observation.CaptureWidth <= 0 ||
+            observation.CaptureHeight <= 0)
+        {
+            reason =
+                $"OCR grounding không khả dụng: {observation.Reason}";
+            return false;
+        }
+
+        var resolution =
+            Resolver.Resolve(
+                observation,
+                proposed.TargetLabel);
+
+        var fused =
+            visualResolver.Resolve(
+                resolution,
+                template: null,
+                visualObservation: null);
+
+        if (!fused.Resolved)
+        {
+            reason =
+                $"OCR grounding không xác định được target duy nhất '{proposed.TargetLabel}': {fused.Reason}";
+            return false;
+        }
+
+        var scaleX =
+            window.Width /
+            (double)observation.CaptureWidth;
+        var scaleY =
+            window.Height /
+            (double)observation.CaptureHeight;
+
+        var desktopLeft =
+            window.Left +
+            (int)Math.Round(
+                fused.Left * scaleX);
+        var desktopTop =
+            window.Top +
+            (int)Math.Round(
+                fused.Top * scaleY);
+        var width =
+            Math.Max(
+                4,
+                (int)Math.Round(
+                    fused.Width * scaleX));
+        var height =
+            Math.Max(
+                4,
+                (int)Math.Round(
+                    fused.Height * scaleY));
+
+        var frameLeft =
+            desktopLeft -
+            state.FrameLeft;
+        var frameTop =
+            desktopTop -
+            state.FrameTop;
+
+        if (frameLeft < 0 ||
+            frameTop < 0 ||
+            frameLeft + width >
+                state.FrameWidth ||
+            frameTop + height >
+                state.FrameHeight)
+        {
+            reason =
+                "OCR grounding tìm thấy target nhưng bbox nằm ngoài planning frame.";
+            return false;
+        }
+
+        var confidence =
+            Math.Clamp(
+                fused.Confidence,
+                0,
+                0.99);
+
+        grounded =
+            proposed with
+            {
+                CoordinateSpace =
+                    ComputerCoordinateSpaces.ImagePixel,
+                CoordinateWindowId =
+                    window.WindowId,
+                ImageX =
+                    frameLeft +
+                    width / 2,
+                ImageY =
+                    frameTop +
+                    height / 2,
+                BoxLeft =
+                    frameLeft,
+                BoxTop =
+                    frameTop,
+                BoxWidth =
+                    width,
+                BoxHeight =
+                    height,
+                Confidence =
+                    Math.Min(
+                        proposed.Confidence,
+                        confidence),
+                Reason =
+                    $"Deterministic OCR Target Grounding xác nhận local target '{proposed.TargetLabel}'. {fused.Reason}"
+            };
+
+        reason =
+            $"OCR grounding đã ghi đè bbox/toạ độ Gemini bằng target local duy nhất '{proposed.TargetLabel}', confidence={confidence:0.000}.";
         return true;
     }
 

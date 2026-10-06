@@ -187,6 +187,8 @@ public sealed class ComputerOperatorTaskService(
         new ComputerOperatorFailureRecoveryEngine();
     private static readonly IDesktopLocalActionPlanner LocalPlanner =
         new DesktopLocalActionPlanner();
+    private static readonly UnifiedDecisionKernel DecisionKernel =
+        new();
     private static readonly StructuredTargetRevalidator StructuredTargetRevalidator =
         new();
 
@@ -649,22 +651,87 @@ public sealed class ComputerOperatorTaskService(
                         if (IsProviderDegradedPlannerDecision(
                                 decision))
                         {
-                            plannerDegradedScene =
-                                sceneFingerprint;
-                            plannerDegradedCount++;
+                            var minimalStopwatch =
+                                Stopwatch.StartNew();
 
-                            var backoffSeconds =
-                                Math.Min(
-                                    20,
-                                    5 * plannerDegradedCount);
+                            var minimalIntent =
+                                await vision.DecideComputerOperatorIntentAsync(
+                                    frame,
+                                    normalizedGoal,
+                                    windowsContext,
+                                    BuildHistoryContext(
+                                        taskHistory,
+                                        recovery,
+                                        verifiedMilestones,
+                                        currentSubgoal,
+                                        latestGoalProgress),
+                                    linked.Token);
 
-                            plannerBackoffUntil =
-                                DateTimeOffset.UtcNow.AddSeconds(
-                                    backoffSeconds);
+                            minimalStopwatch.Stop();
 
-                            progress.AddDiagnostic(
-                                "provider",
-                                $"provider=Gemini; purpose=plan; cycle={index}; latencyMs={plannerStopwatch.ElapsedMilliseconds}; result=degraded; scene={sceneDiagnosticId}; circuit=open; backoffSeconds={backoffSeconds}; action={decision.Action}; replaySideEffect=false.");
+                            if (minimalIntent is not null &&
+                                DecisionKernel.TryCompile(
+                                    minimalIntent,
+                                    frame,
+                                    out var kernelDecision,
+                                    out var kernelRejection))
+                            {
+                                decision =
+                                    kernelDecision;
+
+                                plannerDegradedScene =
+                                    null;
+                                plannerDegradedCount =
+                                    0;
+                                plannerBackoffUntil =
+                                    DateTimeOffset.MinValue;
+
+                                cycleTrace.PlannerRoute =
+                                    "gemini-minimal-intent";
+                                cycleTrace.PlannerTrace.Add(
+                                    "GeminiFull=Degraded");
+                                cycleTrace.PlannerTrace.Add(
+                                    "GeminiMinimalIntent=Compiled");
+
+                                progress.Add(
+                                    "decision-kernel",
+                                    $"Full Gemini decision lỗi; Minimal Intent đã được Unified Decision Kernel biên dịch thành action {decision.Action}: {decision.Reason}",
+                                    decision.Action,
+                                    decision.Confidence);
+
+                                progress.AddDiagnostic(
+                                    "provider",
+                                    $"provider=Gemini; purpose=minimal-intent; cycle={index}; latencyMs={minimalStopwatch.ElapsedMilliseconds}; intent={minimalIntent.Intent}; kernel=compiled; action={decision.Action}; confidence={decision.Confidence:0.000}; circuit=open:false.");
+                            }
+                            else
+                            {
+                                plannerDegradedScene =
+                                    sceneFingerprint;
+                                plannerDegradedCount++;
+
+                                var backoffSeconds =
+                                    Math.Min(
+                                        20,
+                                        5 * plannerDegradedCount);
+
+                                plannerBackoffUntil =
+                                    DateTimeOffset.UtcNow.AddSeconds(
+                                        backoffSeconds);
+
+                                cycleTrace.PlannerTrace.Add(
+                                    minimalIntent is null
+                                        ? "GeminiMinimalIntent=Unavailable"
+                                        : "GeminiMinimalIntent=Rejected");
+
+                                var kernelDetail =
+                                    minimalIntent is null
+                                        ? "provider không trả minimal intent hợp lệ"
+                                        : kernelRejection;
+
+                                progress.AddDiagnostic(
+                                    "provider",
+                                    $"provider=Gemini; purpose=plan; cycle={index}; fullDecision=degraded; minimalLatencyMs={minimalStopwatch.ElapsedMilliseconds}; minimalResult={(minimalIntent is null ? "invalid" : "rejected")}; kernelDetail={LimitDiagnostic(kernelDetail, 220)}; scene={sceneDiagnosticId}; circuit=open; backoffSeconds={backoffSeconds}; replaySideEffect=false.");
+                            }
                         }
                         else
                         {

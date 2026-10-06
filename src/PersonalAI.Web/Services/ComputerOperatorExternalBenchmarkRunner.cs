@@ -96,6 +96,12 @@ public sealed class ComputerOperatorExternalBenchmarkRunner(
         var withinStepBudget =
             recordedSteps <= scenario.MaximumSteps;
 
+        var readyForIndependentEvaluation =
+            IsReadyForIndependentEvaluation(
+                result.Completed,
+                recordedSteps,
+                scenario.MaximumSteps);
+
         return new(
             plan.Version,
             workspace.CurrentWorkspaceId,
@@ -105,7 +111,7 @@ public sealed class ComputerOperatorExternalBenchmarkRunner(
             DateTimeOffset.UtcNow,
             result.Completed,
             withinStepBudget,
-            result.Completed && withinStepBudget,
+            readyForIndependentEvaluation,
             scenario.MaximumSteps,
             recordedSteps,
             snapshot.ObservationCount,
@@ -115,6 +121,24 @@ public sealed class ComputerOperatorExternalBenchmarkRunner(
             result.Model,
             stopwatch.Elapsed.TotalMilliseconds);
     }
+
+    internal static bool IsReadyForIndependentEvaluationForAcceptance(
+        bool taskCompleted,
+        int recordedSteps,
+        int maximumSteps) =>
+        IsReadyForIndependentEvaluation(
+            taskCompleted,
+            recordedSteps,
+            maximumSteps);
+
+    private static bool IsReadyForIndependentEvaluation(
+        bool taskCompleted,
+        int recordedSteps,
+        int maximumSteps) =>
+        taskCompleted &&
+        maximumSteps > 0 &&
+        recordedSteps >= 0 &&
+        recordedSteps <= maximumSteps;
 
     internal static void EnsureConfirmedForAcceptance(
         bool confirmed) =>

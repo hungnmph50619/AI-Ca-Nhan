@@ -219,6 +219,11 @@ public sealed class ComputerOperatorAcceptanceService
 
         RunCheck(
             checks,
+            "v4.9.2 benchmark runner chỉ chạy khi xác nhận + interactive desktop và chưa tự chấm PASS",
+            CheckExternalBenchmarkRunnerContract);
+
+        RunCheck(
+            checks,
             "OpenCV template sensor giữ multi-scale nhỏ và ngưỡng confidence an toàn",
             CheckOpenCvTemplateSensorPolicy);
 
@@ -2506,6 +2511,69 @@ public sealed class ComputerOperatorAcceptanceService
                 scenario.Goal.Length >= 2 &&
                 scenario.ExpectedEffect.Length >= 2),
             "External benchmark Scenario Pack chưa đảm bảo đủ 6 case an toàn, duy nhất hoặc confirmation gate.");
+    }
+
+    private static void CheckExternalBenchmarkRunnerContract()
+    {
+        var rejectedWithoutConfirmation = false;
+        try
+        {
+            ComputerOperatorExternalBenchmarkRunner
+                .EnsureConfirmedForAcceptance(
+                    confirmed: false);
+        }
+        catch (PersonalAI.Web.Evaluation.Benchmarks.ComputerOperatorExternalBenchmarkValidationException)
+        {
+            rejectedWithoutConfirmation = true;
+        }
+
+        var rejectedWithoutInteractiveDesktop = false;
+        try
+        {
+            ComputerOperatorExternalBenchmarkRunner
+                .EnsureInteractiveDesktopForAcceptance(
+                    supported: true,
+                    interactiveSession: false);
+        }
+        catch (PersonalAI.Web.Evaluation.Benchmarks.ComputerOperatorExternalBenchmarkValidationException)
+        {
+            rejectedWithoutInteractiveDesktop = true;
+        }
+
+        ComputerOperatorExternalBenchmarkRunner
+            .EnsureInteractiveDesktopForAcceptance(
+                supported: true,
+                interactiveSession: true);
+
+        var ready =
+            ComputerOperatorExternalBenchmarkRunner
+                .IsReadyForIndependentEvaluationForAcceptance(
+                    taskCompleted: true,
+                    recordedSteps: 10,
+                    maximumSteps: 24);
+
+        var notReadyWhenIncomplete =
+            !ComputerOperatorExternalBenchmarkRunner
+                .IsReadyForIndependentEvaluationForAcceptance(
+                    taskCompleted: false,
+                    recordedSteps: 10,
+                    maximumSteps: 24);
+
+        var notReadyWhenOverBudget =
+            !ComputerOperatorExternalBenchmarkRunner
+                .IsReadyForIndependentEvaluationForAcceptance(
+                    taskCompleted: true,
+                    recordedSteps: 25,
+                    maximumSteps: 24);
+
+        Require(
+            rejectedWithoutConfirmation &&
+            rejectedWithoutInteractiveDesktop &&
+            ready &&
+            notReadyWhenIncomplete &&
+            notReadyWhenOverBudget &&
+            ComputerOperatorExternalBenchmarkRunner.HardTimeoutSeconds >= 120,
+            "External benchmark runner chưa khóa confirmation/interactive desktop hoặc readiness semantics chưa đúng.");
     }
 
     private static void CheckOcrProviderEmptyResultDoesNotTripHealth()

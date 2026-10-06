@@ -224,6 +224,11 @@ public sealed class ComputerOperatorAcceptanceService
 
         RunCheck(
             checks,
+            "v4.9.3 independent benchmark evaluation không dùng task completed làm PASS một mình",
+            CheckExternalBenchmarkIndependentEvaluationContract);
+
+        RunCheck(
+            checks,
             "OpenCV template sensor giữ multi-scale nhỏ và ngưỡng confidence an toàn",
             CheckOpenCvTemplateSensorPolicy);
 
@@ -2574,6 +2579,36 @@ public sealed class ComputerOperatorAcceptanceService
             notReadyWhenOverBudget &&
             ComputerOperatorExternalBenchmarkRunner.HardTimeoutSeconds >= 120,
             "External benchmark runner chưa khóa confirmation/interactive desktop hoặc readiness semantics chưa đúng.");
+    }
+
+    private static void CheckExternalBenchmarkIndependentEvaluationContract()
+    {
+        var onlyTaskCompleted =
+            ComputerOperatorExternalBenchmarkEvaluationService
+                .DeterminePassedForAcceptance(
+                    taskCompleted: true,
+                    withinStepBudget: true,
+                    expectedEffectObserved: false);
+
+        var observedButExecutionInvalid =
+            ComputerOperatorExternalBenchmarkEvaluationService
+                .DeterminePassedForAcceptance(
+                    taskCompleted: false,
+                    withinStepBudget: true,
+                    expectedEffectObserved: true);
+
+        var passed =
+            ComputerOperatorExternalBenchmarkEvaluationService
+                .DeterminePassedForAcceptance(
+                    taskCompleted: true,
+                    withinStepBudget: true,
+                    expectedEffectObserved: true);
+
+        Require(
+            !onlyTaskCompleted &&
+            !observedButExecutionInvalid &&
+            passed,
+            "Independent benchmark evaluation phải cần cả execution hợp lệ và evidence xác nhận expected effect.");
     }
 
     private static void CheckOcrProviderEmptyResultDoesNotTripHealth()

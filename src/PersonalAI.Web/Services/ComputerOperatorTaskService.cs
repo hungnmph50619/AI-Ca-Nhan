@@ -179,6 +179,7 @@ public sealed class ComputerOperatorTaskService(
     IComputerOperatorVersionedFragmentRetriever versionedFragmentRetriever,
     IComputerOperatorProcedureEdgeLifecycleService procedureEdgeLifecycle,
     IComputerOperatorRecoveryCoordinator recoveryCoordinator,
+    IComputerOperatorDecisionAuthority decisionAuthority,
     IComputerOperatorStrategyRanker strategyRanker,
     IUniversalReliableOperatorCoordinator reliableOperator,
     IComputerOperatorRegressionCandidateStore regressionCandidates,
@@ -1151,60 +1152,28 @@ public sealed class ComputerOperatorTaskService(
                         ? string.Empty
                         : BuildSemanticActionSignature(decision);
 
-                if (!string.IsNullOrWhiteSpace(loopStrategy) &&
+                var consumedReplay =
+                    !string.IsNullOrWhiteSpace(loopStrategy) &&
                     ShouldDeferLoopAssessmentForConsumedAction(
                         loopStrategy,
                         recentlyConsumedActionSignature,
                         index,
-                        recentlyConsumedUntilStep))
-                {
-                    taskHistory.Add(
-                        $"STEP {index}: POST-TRANSITION-EARLY-SUPPRESS {loopStrategy} — Action/target vừa tạo transition mạnh đã được consume; bỏ qua Loop Guard cho replay này.");
+                        recentlyConsumedUntilStep);
 
-                    taskHistory.Add(
-                        "CHỈ DẪN SAU TRANSITION: Không được chọn lại action + target + expectedEffect vừa tạo chuyển trạng thái. Hãy đọc scene hiện tại như một trạng thái mới và chọn bước kế tiếp khác. Target cũ chỉ được dùng lại nếu có bằng chứng scene mới thực sự yêu cầu nó.");
+                var loopAssessment =
+                    consumedReplay
+                        ? new ComputerOperatorLoopAssessment(
+                            Detected: false,
+                            RequiresStrategyChange: false,
+                            Kind: string.Empty,
+                            Detail: string.Empty,
+                            Occurrences: 0)
+                        : loopGuard.Observe(
+                            sceneFingerprint,
+                            loopStrategy);
 
-                    progress.Add(
-                        "post-transition-suppression",
-                        "Action vừa tạo transition mạnh đã được consume; bỏ qua đánh giá loop cho replay và yêu cầu planner suy luận bước mới.",
-                        "replan",
-                        decision.Confidence);
-
-                    progress.AddDiagnostic(
-                        "recovery",
-                        $"cycle={index}; scene={sceneDiagnosticId}; strategy={LimitDiagnostic(loopStrategy, 180)}; decision=POST-TRANSITION-EARLY-SUPPRESS; consumedUntilStep={recentlyConsumedUntilStep}; loopGuardObserved=false; replaySideEffect=false.");
-
-                    _ = actionState.MoveTo(
-                        ComputerOperatorActionState.Replan,
-                        "Transition mạnh đã consume action cũ; phải chọn bước tiếp theo từ scene mới.");
-
-                    cycleTrace.RecoveryCode =
-                        "post-transition-consumed";
-                    cycleTrace.RecoveryDetail =
-                        "Replay bị chặn trước Loop Guard vì side-effect vừa tạo transition mạnh.";
-                    cycleTrace.Result =
-                        "waiting";
-                    cycleTrace.Next =
-                        "observe-new-scene";
-                    EmitCycleForensicSummary(
-                        progress,
-                        cycleTrace);
-
-                    await Task.Delay(
-                        250,
-                        linked.Token);
-                    continue;
-                }
-
-                var loopAssessment = loopGuard.Observe(
-                    sceneFingerprint,
-                    loopStrategy);
-
-                progress.Add(
-                    "state",
-                    string.IsNullOrWhiteSpace(decision.State)
-                        ? "AI đã cập nhật trạng thái màn hình."
-                        : $"Trạng thái: {decision.State}");
+                ComputerOperatorRecoveryCoordinatorDecision? recoveryRecommendation =
+                    null;
 
                 if (loopAssessment.Detected)
                 {
@@ -1213,13 +1182,13 @@ public sealed class ComputerOperatorTaskService(
 
                     progress.Add(
                         "loop-detected",
-                        $"Phát hiện nguy cơ vòng lặp: {loopAssessment.Detail} Cảnh báo tích lũy: {loopAssessment.Occurrences}.",
-                        "replan",
+                        $"Loop Guard chỉ phát tín hiệu: {loopAssessment.Detail} Cảnh báo tích lũy: {loopAssessment.Occurrences}.",
+                        "signal",
                         decision.Confidence);
 
                     if (loopAssessment.RequiresStrategyChange)
                     {
-                        var coordinatedRecovery =
+                        recoveryRecommendation =
                             recoveryCoordinator.Decide(
                                 new ComputerOperatorRecoveryCoordinatorInput(
                                     LoopAssessment: loopAssessment,
@@ -1230,45 +1199,87 @@ public sealed class ComputerOperatorTaskService(
                                             item.ExactStartState)));
 
                         taskHistory.Add(
-                            $"RECOVERY-COORDINATOR: decision={coordinatedRecovery.Decision}; {coordinatedRecovery.Reason}");
+                            $"RECOVERY-RECOMMENDATION: decision={recoveryRecommendation.Decision}; {recoveryRecommendation.Reason}");
+                    }
+                }
 
-                        if (coordinatedRecovery.PreferKnownFragment &&
+                var authorityDecision =
+                    decisionAuthority.Evaluate(
+                        new ComputerOperatorDecisionAuthorityInput(
+                            PlannerAction: decision.Action,
+                            StrategySignature: loopStrategy,
+                            RecentlyConsumedReplay: consumedReplay,
+                            LoopAssessment: loopAssessment,
+                            RecoveryRecommendation: recoveryRecommendation));
+
+                progress.AddDiagnostic(
+                    "decision-authority",
+                    $"cycle={index}; action={decision.Action}; directive={authorityDecision.Directive}; consumedReplay={consumedReplay}; loopDetected={loopAssessment.Detected}; loopRequiresChange={loopAssessment.RequiresStrategyChange}; preferFragment={authorityDecision.PreferKnownFragment}; reason={LimitDiagnostic(authorityDecision.Reason, 260)}.");
+
+                progress.Add(
+                    "state",
+                    string.IsNullOrWhiteSpace(decision.State)
+                        ? "AI đã cập nhật trạng thái màn hình."
+                        : $"Trạng thái: {decision.State}");
+
+                if (!authorityDecision.AllowExecution)
+                {
+                    if (consumedReplay)
+                    {
+                        taskHistory.Add(
+                            $"STEP {index}: POST-TRANSITION-AUTHORITY-REPLAN {loopStrategy} — {authorityDecision.Reason}");
+
+                        taskHistory.Add(
+                            "CHỈ DẪN SAU TRANSITION: Action cũ đã consume. Planner phải đọc scene hiện tại như trạng thái mới và chọn bước kế tiếp khác.");
+                    }
+                    else
+                    {
+                        taskHistory.Add(
+                            $"DECISION-AUTHORITY-REPLAN: {authorityDecision.Reason}");
+
+                        if (authorityDecision.PreferKnownFragment &&
                             knownFragments.Count > 0)
                         {
                             taskHistory.Add(
-                                "CHỈ DẪN THOÁT VÒNG LẶP: Ưu tiên fragment đã VERIFY PASS phù hợp với state hiện tại, nhưng vẫn re-observe và chọn từng action; không replay cả chuỗi.");
+                                "GỢI Ý RECOVERY: Có fragment đã VERIFY PASS tương thích. Đây chỉ là gợi ý cho planner; vẫn phải re-observe và chọn từng action.");
                         }
                         else
                         {
                             taskHistory.Add(
-                                "CHỈ DẪN THOÁT VÒNG LẶP: BẮT BUỘC đổi chiến lược. Không lặp lại cùng action/target. Nếu không còn phương án an toàn hợp lý, trả blocked và giải thích.");
+                                "GỢI Ý RECOVERY: Đổi chiến lược từ scene mới. Loop Guard/Recovery không được tự execute action.");
                         }
-
-                        progress.Add(
-                            "recovery-coordinator",
-                            $"Coordinator chọn {coordinatedRecovery.Decision}: {coordinatedRecovery.Reason}",
-                            coordinatedRecovery.Decision,
-                            decision.Confidence);
-
-                        _ = actionState.MoveTo(
-                            ComputerOperatorActionState.Replan,
-                            "Recovery Coordinator yêu cầu đổi hướng sau Loop Guard.");
-
-                        cycleTrace.RecoveryCode =
-                            "strategy-repeated";
-                        cycleTrace.RecoveryDetail =
-                            coordinatedRecovery.Reason;
-                        cycleTrace.Result =
-                            "replan";
-                        cycleTrace.Next =
-                            coordinatedRecovery.Decision;
-                        EmitCycleForensicSummary(
-                            progress,
-                            cycleTrace);
-
-                        await Task.Delay(250, linked.Token);
-                        continue;
                     }
+
+                    progress.Add(
+                        "decision-authority",
+                        $"Decision Authority yêu cầu REPLAN: {authorityDecision.Reason}",
+                        "replan",
+                        decision.Confidence);
+
+                    _ = actionState.MoveTo(
+                        ComputerOperatorActionState.Replan,
+                        authorityDecision.Reason);
+
+                    cycleTrace.RecoveryCode =
+                        consumedReplay
+                            ? "post-transition-consumed"
+                            : "decision-authority-replan";
+                    cycleTrace.RecoveryDetail =
+                        authorityDecision.Reason;
+                    cycleTrace.Result =
+                        "replan";
+                    cycleTrace.Next =
+                        authorityDecision.PreferKnownFragment
+                            ? "observe-with-fragment-hint"
+                            : "observe-alternate-strategy";
+                    EmitCycleForensicSummary(
+                        progress,
+                        cycleTrace);
+
+                    await Task.Delay(
+                        250,
+                        linked.Token);
+                    continue;
                 }
 
                 progress.Add(

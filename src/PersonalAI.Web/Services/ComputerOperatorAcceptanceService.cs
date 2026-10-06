@@ -145,6 +145,11 @@ public sealed class ComputerOperatorAcceptanceService(
 
         RunCheck(
             checks,
+            "v4.4.8 Decision Authority là nơi duy nhất quyết định execute/replan từ loop/recovery signals",
+            CheckSingleDecisionAuthority);
+
+        RunCheck(
+            checks,
             "v4.6 semantic target label rút gọn cho local grounding",
             CheckDeterministicTargetGroundingLabels);
 
@@ -2127,6 +2132,76 @@ public sealed class ComputerOperatorAcceptanceService(
                 currentStep: 12,
                 consumedUntilStep: 14),
             "Post-transition suppression phải chặn replay trước Loop Guard trong protection window nhưng không chặn strategy mới.");
+    }
+
+    private static void CheckSingleDecisionAuthority()
+    {
+        var authority =
+            new ComputerOperatorDecisionAuthority();
+
+        var noLoop =
+            new ComputerOperatorLoopAssessment(
+                false,
+                false,
+                string.Empty,
+                string.Empty,
+                0);
+
+        var execute =
+            authority.Evaluate(
+                new ComputerOperatorDecisionAuthorityInput(
+                    "click-left",
+                    "click-left|label=sample",
+                    RecentlyConsumedReplay: false,
+                    noLoop,
+                    RecoveryRecommendation: null));
+
+        var consumed =
+            authority.Evaluate(
+                new ComputerOperatorDecisionAuthorityInput(
+                    "click-left",
+                    "click-left|label=sample",
+                    RecentlyConsumedReplay: true,
+                    noLoop,
+                    RecoveryRecommendation: null));
+
+        var loop =
+            new ComputerOperatorLoopAssessment(
+                true,
+                true,
+                "repeated-strategy",
+                "strategy lặp",
+                3);
+
+        var recommendation =
+            new ComputerOperatorRecoveryCoordinatorDecision(
+                ComputerOperatorRecoveryCoordinatorDecisions.ResumeFragment,
+                AllowSameStrategyRetry: false,
+                RequiresFreshObservation: true,
+                PreferKnownFragment: true,
+                "Ưu tiên fragment đã verify.");
+
+        var replan =
+            authority.Evaluate(
+                new ComputerOperatorDecisionAuthorityInput(
+                    "click-left",
+                    "click-left|label=sample",
+                    RecentlyConsumedReplay: false,
+                    loop,
+                    recommendation));
+
+        Require(
+            execute.AllowExecution &&
+            execute.Directive ==
+                ComputerOperatorDecisionAuthorityDirectives.Execute &&
+            !consumed.AllowExecution &&
+            consumed.Directive ==
+                ComputerOperatorDecisionAuthorityDirectives.Replan &&
+            !replan.AllowExecution &&
+            replan.PreferKnownFragment &&
+            replan.Directive ==
+                ComputerOperatorDecisionAuthorityDirectives.Replan,
+            "Decision Authority chưa gom đúng quyền execute/replan từ planner, consumed transition và loop/recovery signals.");
     }
 
     private static void CheckDeterministicTargetGroundingLabels()

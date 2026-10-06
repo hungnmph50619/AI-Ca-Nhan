@@ -15,7 +15,8 @@ public sealed class ComputerOperatorExternalBenchmarkRunner(
     IComputerOperatorTaskService computerOperator,
     IComputerUseService computer,
     ComputerOperatorProgressStore progress,
-    IWorkspaceContextAccessor workspace)
+    IWorkspaceContextAccessor workspace,
+    IComputerOperatorExternalBenchmarkExecutionStore executions)
     : IComputerOperatorExternalBenchmarkRunner
 {
     public const int HardTimeoutSeconds = 180;
@@ -102,12 +103,14 @@ public sealed class ComputerOperatorExternalBenchmarkRunner(
                 recordedSteps,
                 scenario.MaximumSteps);
 
-        return new(
-            plan.Version,
-            workspace.CurrentWorkspaceId,
-            scenario.CaseId,
-            scenario.Title,
-            startedAt,
+        var execution =
+            new ComputerOperatorExternalBenchmarkExecutionResult(
+                plan.Version,
+                workspace.CurrentWorkspaceId,
+                scenario.CaseId,
+                scenario.Title,
+                scenario.ExpectedEffect,
+                startedAt,
             DateTimeOffset.UtcNow,
             result.Completed,
             withinStepBudget,
@@ -120,6 +123,11 @@ public sealed class ComputerOperatorExternalBenchmarkRunner(
             result.Provider,
             result.Model,
             stopwatch.Elapsed.TotalMilliseconds);
+
+        executions.Record(
+            execution);
+
+        return execution;
     }
 
     internal static bool IsReadyForIndependentEvaluationForAcceptance(

@@ -168,6 +168,7 @@ public sealed class ComputerOperatorTaskService(
     IComputerOperatorTelemetry telemetry,
     IComputerOperatorExperienceRepository experienceRepository,
     IComputerOperatorExperienceValidator experienceValidator,
+    IComputerOperatorExperienceConsolidator experienceConsolidator,
     IUniversalReliableOperatorCoordinator reliableOperator,
     IComputerOperatorRegressionCandidateStore regressionCandidates,
     ILogger<ComputerOperatorTaskService> logger)
@@ -2552,6 +2553,21 @@ public sealed class ComputerOperatorTaskService(
                             validation.Reason,
                             validation.Status,
                             validation.Confidence);
+
+                        if (validation.Promoted)
+                        {
+                            var consolidation =
+                                experienceConsolidator.Consolidate();
+
+                            taskHistory.Add(
+                                $"EXPERIENCE-CONSOLIDATION: patterns={consolidation.PatternsWritten}; scanned={consolidation.TrustedExperiencesScanned}; {consolidation.Reason}");
+
+                            progress.Add(
+                                "experience-consolidation",
+                                consolidation.Reason,
+                                "consolidated",
+                                validation.Confidence);
+                        }
                     }
                 }
 

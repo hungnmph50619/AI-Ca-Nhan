@@ -2218,6 +2218,39 @@ public sealed class ComputerOperatorTaskService(
                             exception.Message,
                             RepeatedFailures: failures));
 
+                    var currentKnownEdge =
+                        outgoingProcedureEdges.FirstOrDefault(edge =>
+                            edge.StrategyKey.Equals(
+                                strategyDiagnosticId,
+                                StringComparison.OrdinalIgnoreCase) &&
+                            edge.ActionKind.Equals(
+                                decision.Action,
+                                StringComparison.OrdinalIgnoreCase));
+
+                    var coordinatedRecovery =
+                        recoveryCoordinator.Decide(
+                            new ComputerOperatorRecoveryCoordinatorInput(
+                                RecoveryPlan: recoveryPlan,
+                                RepeatedFailures: failures,
+                                CurrentStrategySuperseded:
+                                    currentKnownEdge is not null &&
+                                    procedureEdgeLifecycle.IsSuperseded(
+                                        currentKnownEdge),
+                                CompatibleFragmentAvailable:
+                                    knownFragments.Count > 0,
+                                ExactFragmentAvailable:
+                                    knownFragments.Any(item =>
+                                        item.ExactStartState)));
+
+                    taskHistory.Add(
+                        $"RECOVERY-COORDINATOR: decision={coordinatedRecovery.Decision}; retrySame={coordinatedRecovery.AllowSameStrategyRetry}; preferFragment={coordinatedRecovery.PreferKnownFragment}; {coordinatedRecovery.Reason}");
+
+                    progress.Add(
+                        "recovery-coordinator",
+                        $"Coordinator chọn {coordinatedRecovery.Decision}: {coordinatedRecovery.Reason}",
+                        coordinatedRecovery.Decision,
+                        decision.Confidence);
+
                     progress.Add(
                         "recovery-plan",
                         $"Recovery Engine: {recoveryPlan.PrimaryAction}; fallback={string.Join(",", recoveryPlan.Fallbacks)}; retrySame={recoveryPlan.AllowSameStrategyRetry}. {recoveryPlan.Reason}",
@@ -2252,11 +2285,11 @@ public sealed class ComputerOperatorTaskService(
                             verificationFailed: false)
                             .ToString();
                     cycleTrace.RecoveryDetail =
-                        recoveryPlan.Reason;
+                        coordinatedRecovery.Reason;
                     cycleTrace.Result =
                         "replan";
                     cycleTrace.Next =
-                        "observe";
+                        coordinatedRecovery.Decision;
                     EmitCycleForensicSummary(
                         progress,
                         cycleTrace);
@@ -2327,6 +2360,39 @@ public sealed class ComputerOperatorTaskService(
                             action.Detail,
                             RepeatedFailures: failures));
 
+                    var currentKnownEdge =
+                        outgoingProcedureEdges.FirstOrDefault(edge =>
+                            edge.StrategyKey.Equals(
+                                strategyDiagnosticId,
+                                StringComparison.OrdinalIgnoreCase) &&
+                            edge.ActionKind.Equals(
+                                decision.Action,
+                                StringComparison.OrdinalIgnoreCase));
+
+                    var coordinatedRecovery =
+                        recoveryCoordinator.Decide(
+                            new ComputerOperatorRecoveryCoordinatorInput(
+                                RecoveryPlan: recoveryPlan,
+                                RepeatedFailures: failures,
+                                CurrentStrategySuperseded:
+                                    currentKnownEdge is not null &&
+                                    procedureEdgeLifecycle.IsSuperseded(
+                                        currentKnownEdge),
+                                CompatibleFragmentAvailable:
+                                    knownFragments.Count > 0,
+                                ExactFragmentAvailable:
+                                    knownFragments.Any(item =>
+                                        item.ExactStartState)));
+
+                    taskHistory.Add(
+                        $"RECOVERY-COORDINATOR: decision={coordinatedRecovery.Decision}; retrySame={coordinatedRecovery.AllowSameStrategyRetry}; preferFragment={coordinatedRecovery.PreferKnownFragment}; {coordinatedRecovery.Reason}");
+
+                    progress.Add(
+                        "recovery-coordinator",
+                        $"Coordinator chọn {coordinatedRecovery.Decision}: {coordinatedRecovery.Reason}",
+                        coordinatedRecovery.Decision,
+                        decision.Confidence);
+
                     progress.Add(
                         "recovery-plan",
                         $"Recovery Engine: {recoveryPlan.PrimaryAction}; fallback={string.Join(",", recoveryPlan.Fallbacks)}; retrySame={recoveryPlan.AllowSameStrategyRetry}. {recoveryPlan.Reason}",
@@ -2363,11 +2429,11 @@ public sealed class ComputerOperatorTaskService(
                             verificationFailed: false)
                             .ToString();
                     cycleTrace.RecoveryDetail =
-                        recoveryPlan.Reason;
+                        coordinatedRecovery.Reason;
                     cycleTrace.Result =
                         "not-applied";
                     cycleTrace.Next =
-                        "observe";
+                        coordinatedRecovery.Decision;
                     EmitCycleForensicSummary(
                         progress,
                         cycleTrace);
@@ -2654,6 +2720,39 @@ public sealed class ComputerOperatorTaskService(
                             verification.Detail,
                             RepeatedFailures: failures));
 
+                    var currentKnownEdge =
+                        outgoingProcedureEdges.FirstOrDefault(edge =>
+                            edge.StrategyKey.Equals(
+                                strategyDiagnosticId,
+                                StringComparison.OrdinalIgnoreCase) &&
+                            edge.ActionKind.Equals(
+                                decision.Action,
+                                StringComparison.OrdinalIgnoreCase));
+
+                    var coordinatedRecovery =
+                        recoveryCoordinator.Decide(
+                            new ComputerOperatorRecoveryCoordinatorInput(
+                                RecoveryPlan: recoveryPlan,
+                                RepeatedFailures: failures,
+                                CurrentStrategySuperseded:
+                                    currentKnownEdge is not null &&
+                                    procedureEdgeLifecycle.IsSuperseded(
+                                        currentKnownEdge),
+                                CompatibleFragmentAvailable:
+                                    knownFragments.Count > 0,
+                                ExactFragmentAvailable:
+                                    knownFragments.Any(item =>
+                                        item.ExactStartState)));
+
+                    taskHistory.Add(
+                        $"RECOVERY-COORDINATOR: decision={coordinatedRecovery.Decision}; retrySame={coordinatedRecovery.AllowSameStrategyRetry}; preferFragment={coordinatedRecovery.PreferKnownFragment}; {coordinatedRecovery.Reason}");
+
+                    progress.Add(
+                        "recovery-coordinator",
+                        $"Coordinator chọn {coordinatedRecovery.Decision}: {coordinatedRecovery.Reason}",
+                        coordinatedRecovery.Decision,
+                        verification.Confidence);
+
                     progress.Add(
                         "recovery-plan",
                         $"Recovery Engine: {recoveryPlan.PrimaryAction}; fallback={string.Join(",", recoveryPlan.Fallbacks)}; retrySame={recoveryPlan.AllowSameStrategyRetry}. {recoveryPlan.Reason}",
@@ -2694,11 +2793,11 @@ public sealed class ComputerOperatorTaskService(
                             verificationFailed: true)
                             .ToString();
                     cycleTrace.RecoveryDetail =
-                        recoveryPlan.Reason;
+                        coordinatedRecovery.Reason;
                     cycleTrace.Result =
                         "verification-failed";
                     cycleTrace.Next =
-                        recoveryPlan.PrimaryAction.ToString();
+                        coordinatedRecovery.Decision;
                     EmitCycleForensicSummary(
                         progress,
                         cycleTrace);

@@ -13,8 +13,8 @@ jobs:
       - uses: actions/setup-dotnet@v4
         with:
           dotnet-version: '8.0.x'
-      - name: Build full AI Cá Nhân
-        run: dotnet build PersonalAI.sln --configuration Release
+      - name: Build web app on Linux
+        run: dotnet build src/PersonalAI.Web/PersonalAI.Web.csproj --configuration Release
       - name: Check Vietnamese vision-lab script syntax
         run: node --check src/PersonalAI.Web/wwwroot/vision.js
       - name: Smoke-test opt-in and localhost boundary

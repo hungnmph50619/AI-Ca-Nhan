@@ -555,6 +555,21 @@ public sealed class ComputerOperatorAcceptanceService(
             "local planner chờ launch có giới hạn sau Search Enter đã xác minh",
             CheckLocalPlannerWaitsAfterVerifiedSearchLaunch);
 
+        RunCheck(
+            checks,
+            "local planner không mở lại Search khi foreground mới xuất hiện sau launch đã xác minh",
+            CheckLocalPlannerYieldsOnTransitionalForegroundAfterLaunch);
+
+        RunCheck(
+            checks,
+            "Search text marker chỉ hợp lệ trong đúng phiên Search hiện tại",
+            CheckLocalPlannerScopesTypedMarkerToCurrentSearchSession);
+
+        RunCheck(
+            checks,
+            "Computer Operator vision fallback cho HTTP 400 sang provider khác thay vì làm chết task ngay",
+            CheckComputerOperatorVisionFallbackIncludesBadRequest);
+
 
         RunCheck(
             checks,
@@ -6902,7 +6917,10 @@ public sealed class ComputerOperatorAcceptanceService(
                 false);
 
         var history =
-            "LOCAL-SHELL-TYPED:Sample Editor";
+            """
+STEP 1: VERIFIED press-hotkey|keys=WIN+S|effect=windows search xuất hiện và nhận focus — transition rõ; EXPECTED: Windows Search xuất hiện và nhận focus.
+LOCAL-SHELL-TYPED:Sample Editor
+""";
 
         var planned =
             planner.TryPlan(
@@ -7118,6 +7136,123 @@ STEP 5: WAIT — LOCAL-LAUNCH-GRACE: chờ 3
             !exhaustedPlanned,
             "Local planner chưa chờ launch có giới hạn hoặc vẫn quay lại Search sau khi grace đã cạn.");
     }
+
+    private static void CheckLocalPlannerYieldsOnTransitionalForegroundAfterLaunch()
+    {
+        var planner =
+            new DesktopLocalActionPlanner();
+
+        var launcher =
+            new ComputerWindowInfo(
+                "0x450",
+                "Generic Launcher",
+                "launcher-shell",
+                450,
+                true,
+                0,
+                0,
+                1280,
+                720);
+
+        var state =
+            new ComputerOperatorDesktopState(
+                DateTimeOffset.UtcNow,
+                launcher,
+                [launcher],
+                0,
+                0,
+                1920,
+                1080,
+                DesktopCaptureScopes.VirtualDesktop,
+                null,
+                false);
+
+        var history =
+            """
+STEP 1: VERIFIED press-hotkey|keys=WIN+S|effect=windows search xuất hiện và nhận focus — transition rõ.
+LOCAL-SHELL-TYPED:Demo App
+STEP 2: VERIFIED press-key|key=ENTER|effect=windows search khởi chạy ứng dụng phù hợp với từ khóa demo app — transition rõ; EXPECTED: Windows Search khởi chạy ứng dụng phù hợp với từ khóa Demo App.
+""";
+
+        var planned =
+            planner.TryPlan(
+                "Mở Demo App. Sau khi ứng dụng khởi động hoàn toàn, tiếp tục vào màn hình tiếp theo.",
+                state,
+                history,
+                out _);
+
+        Require(
+            !planned,
+            "Sau launch đã xác minh và foreground mới xuất hiện, Local Planner không được mở lại Windows Search chỉ vì tên cửa sổ trung gian không khớp literal target.");
+    }
+
+    private static void CheckLocalPlannerScopesTypedMarkerToCurrentSearchSession()
+    {
+        var planner =
+            new DesktopLocalActionPlanner();
+
+        var search =
+            new ComputerWindowInfo(
+                "0x451",
+                "Search",
+                "SearchHost",
+                451,
+                true,
+                0,
+                0,
+                1200,
+                900);
+
+        var state =
+            new ComputerOperatorDesktopState(
+                DateTimeOffset.UtcNow,
+                search,
+                [search],
+                0,
+                0,
+                1920,
+                1080,
+                DesktopCaptureScopes.VirtualDesktop,
+                null,
+                false);
+
+        var history =
+            """
+STEP 1: VERIFIED press-hotkey|keys=WIN+S|effect=windows search xuất hiện và nhận focus — transition rõ.
+LOCAL-SHELL-TYPED:Demo App
+STEP 2: VERIFIED press-key|key=ENTER|effect=windows search khởi chạy ứng dụng phù hợp với từ khóa demo app — transition rõ.
+STEP 3: VERIFIED press-hotkey|keys=WIN+S|effect=windows search xuất hiện và nhận focus — transition rõ.
+""";
+
+        var planned =
+            planner.TryPlan(
+                "Mở Demo App. Vào màn hình tiếp theo.",
+                state,
+                history,
+                out var decision);
+
+        Require(
+            planned &&
+            decision.Action == "type-text" &&
+            string.Equals(
+                decision.Text,
+                "Demo App",
+                StringComparison.OrdinalIgnoreCase),
+            "Marker LOCAL-SHELL-TYPED từ Search session cũ không được phép làm planner bấm Enter trong Search session mới.");
+    }
+
+    private static void CheckComputerOperatorVisionFallbackIncludesBadRequest()
+    {
+        Require(
+            ComputerOperatorVisionRouter.IsFallbackEligibleForAcceptance(
+                System.Net.HttpStatusCode.BadRequest) &&
+            ComputerOperatorVisionRouter.IsFallbackEligibleForAcceptance(
+                System.Net.HttpStatusCode.ServiceUnavailable) &&
+            !ComputerOperatorVisionRouter.IsFallbackEligibleForAcceptance(
+                System.Net.HttpStatusCode.Unauthorized),
+            "HTTP 400/503 của một vision provider phải cho phép thử provider khác, còn lỗi auth 401 không được coi là fallback transient.");
+    }
+
 
     private static void CheckStructuredVerifierToggleState()
     {

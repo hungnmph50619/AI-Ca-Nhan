@@ -349,10 +349,16 @@ public sealed class ComputerOperatorVisionRouter(
     private static bool IsFallbackEligible(
         HttpStatusCode? statusCode) =>
         statusCode is null or
+            HttpStatusCode.BadRequest or
             HttpStatusCode.RequestTimeout or
             HttpStatusCode.TooManyRequests or
             HttpStatusCode.InternalServerError or
             HttpStatusCode.BadGateway or
             HttpStatusCode.ServiceUnavailable or
             HttpStatusCode.GatewayTimeout;
+
+    internal static bool IsFallbackEligibleForAcceptance(
+        HttpStatusCode? statusCode) =>
+        IsFallbackEligible(
+            statusCode);
 }

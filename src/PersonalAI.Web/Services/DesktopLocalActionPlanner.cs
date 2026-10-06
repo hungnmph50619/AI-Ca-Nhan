@@ -140,9 +140,25 @@ public sealed class DesktopLocalActionPlanner
             IsWindowsSearchSurface(
                 state.ForegroundWindow);
 
-        if (state.ForegroundWindow is null &&
+        var hasVerifiedSearchLaunch =
             HasVerifiedSearchLaunchAttempt(
-                taskHistory) &&
+                taskHistory);
+
+        if (hasVerifiedSearchLaunch &&
+            state.ForegroundWindow is not null &&
+            !shellSearchActive)
+        {
+            // A verified Search -> Enter launch already happened and another
+            // foreground surface is now present. This is generic transition
+            // evidence (launcher/updater/app shell/etc.), even when the window
+            // title/process does not literally match the requested app name.
+            // Do not reopen Search; let higher-level planning interpret the
+            // newly observed application state.
+            return false;
+        }
+
+        if (state.ForegroundWindow is null &&
+            hasVerifiedSearchLaunch &&
             CountLaunchGraceWaits(
                 taskHistory) < 3)
         {
@@ -157,8 +173,7 @@ public sealed class DesktopLocalActionPlanner
         }
 
         if (state.ForegroundWindow is null &&
-            HasVerifiedSearchLaunchAttempt(
-                taskHistory) &&
+            hasVerifiedSearchLaunch &&
             CountLaunchGraceWaits(
                 taskHistory) >= 3)
         {
@@ -167,13 +182,10 @@ public sealed class DesktopLocalActionPlanner
             return false;
         }
 
-        var typedMarker =
-            $"LOCAL-SHELL-TYPED:{target}";
-
         if (shellSearchActive &&
-            taskHistory.Contains(
-                typedMarker,
-                StringComparison.OrdinalIgnoreCase))
+            HasTypedTargetInCurrentSearchSession(
+                taskHistory,
+                target))
         {
             decision = Build(
                 action: "press-key",
@@ -714,6 +726,45 @@ public sealed class DesktopLocalActionPlanner
                 StringComparison.OrdinalIgnoreCase) ||
             HasFailedSearchLaunchAttempt(
                 taskHistory);
+    }
+
+    private static bool HasTypedTargetInCurrentSearchSession(
+        string taskHistory,
+        string target)
+    {
+        if (string.IsNullOrWhiteSpace(
+                taskHistory) ||
+            string.IsNullOrWhiteSpace(
+                target))
+        {
+            return false;
+        }
+
+        var normalized =
+            taskHistory.ToLowerInvariant();
+
+        var searchSessionStart =
+            normalized.LastIndexOf(
+                "verified press-hotkey|keys=win+s",
+                StringComparison.Ordinal);
+
+        if (searchSessionStart < 0)
+        {
+            // Without a verified Search-open boundary, old task memory must
+            // never authorize Enter in the currently visible Search surface.
+            return false;
+        }
+
+        var typedMarker =
+            $"local-shell-typed:{target}".ToLowerInvariant();
+
+        var typedAt =
+            normalized.LastIndexOf(
+                typedMarker,
+                StringComparison.Ordinal);
+
+        return
+            typedAt > searchSessionStart;
     }
 
     private static bool HasVerifiedSearchLaunchAttempt(

@@ -29,7 +29,11 @@ public sealed class DesktopLocalActionPlanner
         "open ",
         "launch ",
         "khởi động ",
-        "khoi dong "
+        "khoi dong ",
+        "thực hiện quy trình mở ",
+        "thuc hien quy trinh mo ",
+        "perform the workflow to open ",
+        "follow the process to open "
     ];
 
     private static readonly string[] OpenApplicationWrapperPrefixes =
@@ -732,39 +736,41 @@ public sealed class DesktopLocalActionPlanner
         string taskHistory,
         string target)
     {
-        if (string.IsNullOrWhiteSpace(
-                taskHistory) ||
-            string.IsNullOrWhiteSpace(
-                target))
+        if (string.IsNullOrWhiteSpace(taskHistory) ||
+            string.IsNullOrWhiteSpace(target))
         {
             return false;
         }
 
-        var normalized =
-            taskHistory.ToLowerInvariant();
-
-        var searchSessionStart =
-            normalized.LastIndexOf(
-                "verified press-hotkey|keys=win+s",
-                StringComparison.Ordinal);
+        var normalized = taskHistory.ToLowerInvariant();
+        var searchSessionStart = normalized.LastIndexOf(
+            "verified press-hotkey|keys=win+s",
+            StringComparison.Ordinal);
 
         if (searchSessionStart < 0)
-        {
-            // Without a verified Search-open boundary, old task memory must
-            // never authorize Enter in the currently visible Search surface.
             return false;
+
+        var currentSearchHistory = normalized[searchSessionStart..];
+        var typedMarker = $"local-shell-typed:{target}".ToLowerInvariant();
+
+        if (currentSearchHistory.Contains(
+                typedMarker,
+                StringComparison.Ordinal))
+        {
+            return true;
         }
 
-        var typedMarker =
-            $"local-shell-typed:{target}".ToLowerInvariant();
+        var verifiedTypeText = currentSearchHistory.LastIndexOf(
+            "verified type-text|",
+            StringComparison.Ordinal);
 
-        var typedAt =
-            normalized.LastIndexOf(
-                typedMarker,
-                StringComparison.Ordinal);
+        if (verifiedTypeText < 0)
+            return false;
 
-        return
-            typedAt > searchSessionStart;
+        return currentSearchHistory.IndexOf(
+            target.ToLowerInvariant(),
+            verifiedTypeText,
+            StringComparison.Ordinal) >= 0;
     }
 
     private static bool HasVerifiedSearchLaunchAttempt(

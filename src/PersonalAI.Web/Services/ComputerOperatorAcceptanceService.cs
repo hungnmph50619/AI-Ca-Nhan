@@ -537,6 +537,16 @@ public sealed class ComputerOperatorAcceptanceService(
 
         RunCheck(
             checks,
+            "local planner hiểu goal nhiều bước dạng thực hiện quy trình mở app",
+            CheckLocalPlannerUnderstandsWorkflowOpenGoal);
+
+        RunCheck(
+            checks,
+            "local planner dùng Enter khi Text Engine đã verify text trong Search session hiện tại",
+            CheckLocalPlannerUsesEnterAfterVerifiedTextEngineSearch);
+
+        RunCheck(
+            checks,
             "local planner cắt intent mở app tại ranh giới câu",
             CheckLocalPlannerStopsOpenTargetAtSentenceBoundary);
 
@@ -6944,6 +6954,58 @@ LOCAL-SHELL-TYPED:Sample Editor
                 "generic",
                 StringComparison.OrdinalIgnoreCase),
             "Sau khi Search đã được nhập bằng Text Engine, wrapper app-launch phải ưu tiên Enter deterministic trước OCR/Gemini.");
+    }
+
+
+    private static void CheckLocalPlannerUnderstandsWorkflowOpenGoal()
+    {
+        var planner = new DesktopLocalActionPlanner();
+        var foreground = new ComputerWindowInfo(
+            "0x121", "Browser", "msedge", 121, true, 0, 0, 1280, 720);
+        var state = new ComputerOperatorDesktopState(
+            DateTimeOffset.UtcNow, foreground, [foreground], 0, 0, 1920, 1080,
+            DesktopCaptureScopes.VirtualDesktop, null, false);
+
+        var planned = planner.TryPlan(
+            "Thực hiện quy trình mở Sample Editor, sau đó vào màn hình tiếp theo.",
+            state,
+            string.Empty,
+            out var decision);
+
+        Require(
+            planned &&
+            decision.Action == "press-hotkey" &&
+            decision.Keys.SequenceEqual(["WIN", "S"]) &&
+            decision.CurrentSubgoal.Contains("Sample Editor", StringComparison.OrdinalIgnoreCase),
+            "Goal nhiều bước 'thực hiện quy trình mở <app>' phải được hiểu là open-app intent generic.");
+    }
+
+    private static void CheckLocalPlannerUsesEnterAfterVerifiedTextEngineSearch()
+    {
+        var planner = new DesktopLocalActionPlanner();
+        var search = new ComputerWindowInfo(
+            "0x122", "Search", "SearchHost", 122, true, 0, 0, 1200, 900);
+        var state = new ComputerOperatorDesktopState(
+            DateTimeOffset.UtcNow, search, [search], 0, 0, 1920, 1080,
+            DesktopCaptureScopes.VirtualDesktop, null, false);
+
+        var history =
+            """
+STEP 1: VERIFIED press-hotkey|keys=WIN+S|effect=windows search xuất hiện và nhận focus — transition rõ.
+STEP 2: VERIFIED type-text|coarse=desktop|effect=the search results for 'sample editor' appear in the search window — Local text verifier xác nhận nội dung đúng; EXPECTED: The search results for 'Sample Editor' appear in the search window.
+""";
+
+        var planned = planner.TryPlan(
+            "Thực hiện quy trình mở Sample Editor, sau đó vào màn hình tiếp theo.",
+            state,
+            history,
+            out var decision);
+
+        Require(
+            planned &&
+            decision.Action == "press-key" &&
+            decision.Key.Equals("ENTER", StringComparison.OrdinalIgnoreCase),
+            "Verified type-text trong Search session hiện tại phải chuyển sang Enter deterministic, không phụ thuộc Vision click.");
     }
 
 

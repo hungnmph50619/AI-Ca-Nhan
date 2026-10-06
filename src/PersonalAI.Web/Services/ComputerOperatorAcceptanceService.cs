@@ -229,6 +229,11 @@ public sealed class ComputerOperatorAcceptanceService
 
         RunCheck(
             checks,
+            "v4.9.4 runtime state intelligence phân biệt tiến triển, chờ, treo và lỗi bằng bằng chứng",
+            CheckRuntimeStateIntelligenceContract);
+
+        RunCheck(
+            checks,
             "OpenCV template sensor giữ multi-scale nhỏ và ngưỡng confidence an toàn",
             CheckOpenCvTemplateSensorPolicy);
 
@@ -2609,6 +2614,103 @@ public sealed class ComputerOperatorAcceptanceService
             !observedButExecutionInvalid &&
             passed,
             "Independent benchmark evaluation phải cần cả execution hợp lệ và evidence xác nhận expected effect.");
+    }
+
+    private static void CheckRuntimeStateIntelligenceContract()
+    {
+        var intelligence =
+            new ComputerOperatorRuntimeStateIntelligence();
+
+        var progressing =
+            intelligence.Classify(
+                new(
+                    ExpectedEffectObserved: false,
+                    ExpectedEffectConfidence: 0,
+                    ExplicitFailureObserved: false,
+                    FailureConfidence: 0,
+                    BlockingConditionObserved: false,
+                    BlockingConfidence: 0,
+                    MeaningfulProgressObserved: true,
+                    ProgressConfidence: 0.92,
+                    ExternalWaitObserved: false,
+                    ExternalWaitConfidence: 0,
+                    ProcessAlive: true,
+                    ProcessResponding: true,
+                    ResourceActivityScore: 0.45,
+                    Elapsed: TimeSpan.FromSeconds(45),
+                    TimeSinceMeaningfulProgress: TimeSpan.FromSeconds(1)));
+
+        var slowButAlive =
+            intelligence.Classify(
+                new(
+                    ExpectedEffectObserved: false,
+                    ExpectedEffectConfidence: 0,
+                    ExplicitFailureObserved: false,
+                    FailureConfidence: 0,
+                    BlockingConditionObserved: false,
+                    BlockingConfidence: 0,
+                    MeaningfulProgressObserved: false,
+                    ProgressConfidence: 0,
+                    ExternalWaitObserved: false,
+                    ExternalWaitConfidence: 0,
+                    ProcessAlive: true,
+                    ProcessResponding: true,
+                    ResourceActivityScore: 0.35,
+                    Elapsed: TimeSpan.FromSeconds(70),
+                    TimeSinceMeaningfulProgress: TimeSpan.FromSeconds(20)));
+
+        var hung =
+            intelligence.Classify(
+                new(
+                    ExpectedEffectObserved: false,
+                    ExpectedEffectConfidence: 0,
+                    ExplicitFailureObserved: false,
+                    FailureConfidence: 0,
+                    BlockingConditionObserved: false,
+                    BlockingConfidence: 0,
+                    MeaningfulProgressObserved: false,
+                    ProgressConfidence: 0,
+                    ExternalWaitObserved: false,
+                    ExternalWaitConfidence: 0,
+                    ProcessAlive: true,
+                    ProcessResponding: false,
+                    ResourceActivityScore: 0.01,
+                    Elapsed: TimeSpan.FromSeconds(90),
+                    TimeSinceMeaningfulProgress: TimeSpan.FromSeconds(45)));
+
+        var failed =
+            intelligence.Classify(
+                new(
+                    ExpectedEffectObserved: false,
+                    ExpectedEffectConfidence: 0,
+                    ExplicitFailureObserved: true,
+                    FailureConfidence: 0.95,
+                    BlockingConditionObserved: false,
+                    BlockingConfidence: 0,
+                    MeaningfulProgressObserved: false,
+                    ProgressConfidence: 0,
+                    ExternalWaitObserved: false,
+                    ExternalWaitConfidence: 0,
+                    ProcessAlive: false,
+                    ProcessResponding: null,
+                    ResourceActivityScore: 0,
+                    Elapsed: TimeSpan.FromSeconds(5),
+                    TimeSinceMeaningfulProgress: TimeSpan.FromSeconds(5)));
+
+        Require(
+            progressing.State ==
+                ComputerOperatorRuntimeStates.Progressing &&
+            progressing.RecommendedDecision ==
+                ComputerOperatorRuntimeDecisions.Wait &&
+            slowButAlive.State ==
+                ComputerOperatorRuntimeStates.WaitingExpected &&
+            hung.State ==
+                ComputerOperatorRuntimeStates.Hung &&
+            hung.RecommendedDecision ==
+                ComputerOperatorRuntimeDecisions.Recover &&
+            failed.State ==
+                ComputerOperatorRuntimeStates.Failed,
+            "Runtime State Intelligence phải ưu tiên evidence: tiến triển thì chờ, app chậm còn hoạt động thì không fail, treo thật mới recover.");
     }
 
     private static void CheckOcrProviderEmptyResultDoesNotTripHealth()

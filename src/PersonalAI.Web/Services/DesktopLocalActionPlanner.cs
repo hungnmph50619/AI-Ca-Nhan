@@ -440,6 +440,39 @@ public sealed class DesktopLocalActionPlanner
         var actionCapability = requestedCapability;
         var structuredAction = requestedAction;
 
+        if (!CanSafelyApplyRequestedStructuredState(
+                node,
+                actionCapability,
+                desiredState,
+                out var alreadySatisfied))
+        {
+            // Structured state không đủ chắc chắn để đảo trạng thái.
+            // Nhường quyền cho tầng planner khác thay vì toggle mù.
+            return false;
+        }
+
+        if (alreadySatisfied)
+        {
+            if (HasAdditionalGoalSteps(goal))
+                return false;
+
+            decision = Build(
+                action: "complete",
+                currentSubgoal:
+                    $"Trạng thái của '{DisplayNode(node)}' đã đúng yêu cầu.",
+                expectedEffect: string.Empty,
+                reason:
+                    $"Structured state readback xác nhận '{DisplayNode(node)}' đã ở trạng thái {desiredState}; không thực hiện thao tác dư thừa có thể đảo ngược trạng thái.",
+                plan:
+                    "Không gửi action vì trạng thái structured hiện tại đã thỏa yêu cầu.",
+                targetLabel: DisplayNode(node),
+                targetElementId: node.Id,
+                coordinateWindowId: graph.WindowId,
+                confidence: 0.99);
+
+            return true;
+        }
+
         decision = Build(
             action: structuredAction,
             currentSubgoal:

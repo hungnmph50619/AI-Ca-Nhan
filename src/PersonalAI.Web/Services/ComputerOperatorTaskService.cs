@@ -1174,27 +1174,49 @@ public sealed class ComputerOperatorTaskService(
 
                     if (loopAssessment.RequiresStrategyChange)
                     {
+                        var coordinatedRecovery =
+                            recoveryCoordinator.Decide(
+                                new ComputerOperatorRecoveryCoordinatorInput(
+                                    LoopAssessment: loopAssessment,
+                                    CompatibleFragmentAvailable:
+                                        knownFragments.Count > 0,
+                                    ExactFragmentAvailable:
+                                        knownFragments.Any(item =>
+                                            item.ExactStartState)));
+
                         taskHistory.Add(
-                            "CHỈ DẪN THOÁT VÒNG LẶP: BẮT BUỘC đổi chiến lược. Không lặp lại cùng action/target. Nếu không còn phương án an toàn hợp lý, trả blocked và giải thích.");
+                            $"RECOVERY-COORDINATOR: decision={coordinatedRecovery.Decision}; {coordinatedRecovery.Reason}");
+
+                        if (coordinatedRecovery.PreferKnownFragment &&
+                            knownFragments.Count > 0)
+                        {
+                            taskHistory.Add(
+                                "CHỈ DẪN THOÁT VÒNG LẶP: Ưu tiên fragment đã VERIFY PASS phù hợp với state hiện tại, nhưng vẫn re-observe và chọn từng action; không replay cả chuỗi.");
+                        }
+                        else
+                        {
+                            taskHistory.Add(
+                                "CHỈ DẪN THOÁT VÒNG LẶP: BẮT BUỘC đổi chiến lược. Không lặp lại cùng action/target. Nếu không còn phương án an toàn hợp lý, trả blocked và giải thích.");
+                        }
 
                         progress.Add(
-                            "replan",
-                            "Chiến lược hiện tại đã nằm trong vòng lặp; không thực hiện lại. AI phải quan sát trạng thái hiện tại và chọn chiến lược khác.",
-                            "replan",
+                            "recovery-coordinator",
+                            $"Coordinator chọn {coordinatedRecovery.Decision}: {coordinatedRecovery.Reason}",
+                            coordinatedRecovery.Decision,
                             decision.Confidence);
 
                         _ = actionState.MoveTo(
                             ComputerOperatorActionState.Replan,
-                            "Loop guard yêu cầu đổi chiến lược.");
+                            "Recovery Coordinator yêu cầu đổi hướng sau Loop Guard.");
 
                         cycleTrace.RecoveryCode =
                             "strategy-repeated";
                         cycleTrace.RecoveryDetail =
-                            loopAssessment.Detail;
+                            coordinatedRecovery.Reason;
                         cycleTrace.Result =
                             "replan";
                         cycleTrace.Next =
-                            "change-strategy";
+                            coordinatedRecovery.Decision;
                         EmitCycleForensicSummary(
                             progress,
                             cycleTrace);

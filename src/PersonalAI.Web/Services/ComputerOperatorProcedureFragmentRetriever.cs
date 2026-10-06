@@ -26,7 +26,8 @@ public interface IComputerOperatorProcedureFragmentRetriever
 /// Duyệt có giới hạn, không đi qua cùng state hai lần để tránh cycle.
 /// </summary>
 public sealed class ComputerOperatorProcedureFragmentRetriever(
-    IComputerOperatorProcedureGraphStore graph)
+    IComputerOperatorProcedureGraphStore graph,
+    IComputerOperatorProcedureEdgeLifecycleService? lifecycle = null)
     : IComputerOperatorProcedureFragmentRetriever
 {
     public const int MaximumDepthLimit = 8;
@@ -89,7 +90,8 @@ public sealed class ComputerOperatorProcedureFragmentRetriever(
                         MaximumBranchingPerNode)
                     .Where(edge =>
                         edge.SuccessCount > 0 &&
-                        edge.AverageConfidence > 0)
+                        edge.AverageConfidence > 0 &&
+                        !(lifecycle?.IsSuperseded(edge) ?? false))
                     .ToArray();
 
             var expanded =
@@ -158,7 +160,7 @@ public sealed class ComputerOperatorProcedureFragmentRetriever(
             .ToArray();
     }
 
-    private static void AddCandidate(
+    private void AddCandidate(
         ICollection<ComputerOperatorProcedureFragment> candidates,
         string startStateFingerprint,
         PathState state)
@@ -172,6 +174,7 @@ public sealed class ComputerOperatorProcedureFragmentRetriever(
                 state.StateFingerprint,
                 state.Edges,
                 state.Edges.Min(edge =>
+                    lifecycle?.Evaluate(edge).EffectiveConfidence ??
                     edge.AverageConfidence),
                 state.Edges.Min(edge =>
                     edge.SuccessCount),

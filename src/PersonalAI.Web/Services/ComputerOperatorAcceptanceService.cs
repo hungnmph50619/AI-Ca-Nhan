@@ -254,6 +254,11 @@ public sealed class ComputerOperatorAcceptanceService
 
         RunCheck(
             checks,
+            "v4.9.9 experience validator không promote sau một lần và chỉ trust khi recovery lặp lại đủ mạnh",
+            CheckExperienceValidatorPromotion);
+
+        RunCheck(
+            checks,
             "OpenCV template sensor giữ multi-scale nhỏ và ngưỡng confidence an toàn",
             CheckOpenCvTemplateSensorPolicy);
 
@@ -3090,6 +3095,118 @@ public sealed class ComputerOperatorAcceptanceService
                 diagnostics.RecoveryCount == 1 &&
                 diagnostics.CandidateCount == 1,
                 "Learning chỉ được tạo một candidate chưa trusted sau failure thật và recovery đã VERIFY PASS.");
+        }
+        finally
+        {
+            try
+            {
+                if (Directory.Exists(root))
+                    Directory.Delete(root, recursive: true);
+            }
+            catch
+            {
+                // Cleanup thư mục tạm không được làm acceptance fail.
+            }
+        }
+    }
+
+    private static void CheckExperienceValidatorPromotion()
+    {
+        var root =
+            Path.Combine(
+                Path.GetTempPath(),
+                "personalai-validator-acceptance",
+                Guid.NewGuid().ToString("N"));
+
+        Directory.CreateDirectory(root);
+
+        try
+        {
+            var configuration =
+                new ConfigurationBuilder()
+                    .AddInMemoryCollection(
+                        new Dictionary<string, string?>
+                        {
+                            ["Tasks:Root"] = root
+                        })
+                    .Build();
+
+            var workspace =
+                new AcceptanceWorkspaceContextAccessor(
+                    PersonalWorkspaceIds.PersonalAi);
+
+            var repository =
+                new SqliteComputerOperatorExperienceRepository(
+                    configuration,
+                    workspace);
+
+            var validator =
+                new ComputerOperatorExperienceValidator(
+                    repository);
+
+            var firstLearning =
+                new ComputerOperatorLearningSession(
+                    repository);
+
+            firstLearning.RecordFailure(
+                "scene=stable-context|state=no-effect",
+                "action-no-effect",
+                "strategy-a",
+                0.86);
+
+            var firstCandidate =
+                firstLearning.TryRecordVerifiedRecovery(
+                    "strategy-b",
+                    0.94);
+
+            Require(
+                firstCandidate.CandidateId is Guid,
+                "Lần recovery đầu phải tạo candidate để validator kiểm tra.");
+
+            var firstValidation =
+                validator.Validate(
+                    firstCandidate.CandidateId!.Value);
+
+            var secondLearning =
+                new ComputerOperatorLearningSession(
+                    repository);
+
+            secondLearning.RecordFailure(
+                "scene=stable-context|state=no-effect",
+                "action-no-effect",
+                "strategy-a",
+                0.88);
+
+            var secondCandidate =
+                secondLearning.TryRecordVerifiedRecovery(
+                    "strategy-b",
+                    0.96);
+
+            Require(
+                secondCandidate.CandidateId is Guid,
+                "Lần recovery thứ hai phải tạo candidate.");
+
+            var secondValidation =
+                validator.Validate(
+                    secondCandidate.CandidateId!.Value);
+
+            var diagnostics =
+                repository.GetDiagnostics();
+
+            Require(
+                firstValidation.Status ==
+                    ComputerOperatorExperienceValidationStatuses.Pending &&
+                !firstValidation.Promoted &&
+                firstValidation.VerifiedRecoveryCount == 1 &&
+                secondValidation.Status ==
+                    ComputerOperatorExperienceValidationStatuses.Promoted &&
+                secondValidation.Promoted &&
+                secondValidation.VerifiedRecoveryCount >=
+                    ComputerOperatorExperienceValidator.MinimumVerifiedRecoveries &&
+                secondValidation.Confidence >=
+                    ComputerOperatorExperienceValidator.MinimumAverageRecoveryConfidence &&
+                diagnostics.ExperienceCount == 1,
+                "Validator phải giữ candidate đầu ở pending và chỉ promote trusted experience sau recovery lặp lại đủ confidence.");
         }
         finally
         {

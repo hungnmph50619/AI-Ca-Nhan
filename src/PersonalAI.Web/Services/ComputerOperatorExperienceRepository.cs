@@ -9,6 +9,7 @@ public static class ComputerOperatorExperienceKinds
     public const string Failure = "failure";
     public const string Recovery = "recovery";
     public const string Experience = "experience";
+    public const string Candidate = "candidate";
     public const string Strategy = "strategy";
 }
 
@@ -33,6 +34,7 @@ public sealed record ComputerOperatorExperienceStoreDiagnostics(
     int VerifiedEventCount,
     int FailureCount,
     int RecoveryCount,
+    int CandidateCount,
     int StrategyCount);
 
 public interface IComputerOperatorExperienceRepository
@@ -308,6 +310,7 @@ public sealed class SqliteComputerOperatorExperienceRepository(
                     SUM(CASE WHEN verified = 1 THEN 1 ELSE 0 END),
                     SUM(CASE WHEN kind = $failure THEN 1 ELSE 0 END),
                     SUM(CASE WHEN kind = $recovery THEN 1 ELSE 0 END),
+                    SUM(CASE WHEN kind = $candidate THEN 1 ELSE 0 END),
                     SUM(CASE WHEN kind = $strategy THEN 1 ELSE 0 END)
                 FROM computer_operator_experience_events
                 WHERE workspace_id = $workspaceId;
@@ -322,6 +325,9 @@ public sealed class SqliteComputerOperatorExperienceRepository(
             command.Parameters.AddWithValue(
                 "$recovery",
                 ComputerOperatorExperienceKinds.Recovery);
+            command.Parameters.AddWithValue(
+                "$candidate",
+                ComputerOperatorExperienceKinds.Candidate);
             command.Parameters.AddWithValue(
                 "$strategy",
                 ComputerOperatorExperienceKinds.Strategy);
@@ -339,6 +345,7 @@ public sealed class SqliteComputerOperatorExperienceRepository(
                     0,
                     0,
                     0,
+                    0,
                     0);
             }
 
@@ -350,7 +357,8 @@ public sealed class SqliteComputerOperatorExperienceRepository(
                 ReadCount(reader, 1),
                 ReadCount(reader, 2),
                 ReadCount(reader, 3),
-                ReadCount(reader, 4));
+                ReadCount(reader, 4),
+                ReadCount(reader, 5));
         }
     }
 
@@ -537,6 +545,8 @@ public sealed class SqliteComputerOperatorExperienceRepository(
                 ComputerOperatorExperienceKinds.Recovery,
             ComputerOperatorExperienceKinds.Experience =>
                 ComputerOperatorExperienceKinds.Experience,
+            ComputerOperatorExperienceKinds.Candidate =>
+                ComputerOperatorExperienceKinds.Candidate,
             ComputerOperatorExperienceKinds.Strategy =>
                 ComputerOperatorExperienceKinds.Strategy,
             _ => throw new ArgumentOutOfRangeException(

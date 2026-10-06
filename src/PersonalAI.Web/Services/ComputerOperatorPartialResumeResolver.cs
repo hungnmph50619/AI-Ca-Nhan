@@ -13,6 +13,7 @@ public sealed record ComputerOperatorPartialResumeAssessment(
     bool Resumable,
     bool ExactCheckpointMatch,
     bool KnownProcedureNode,
+    bool ReplayLastActionAllowed,
     int OutgoingEdges,
     int IncomingEdges,
     string Reason);
@@ -48,6 +49,7 @@ public sealed class ComputerOperatorPartialResumeResolver(
                 Resumable: false,
                 ExactCheckpointMatch: false,
                 KnownProcedureNode: false,
+                ReplayLastActionAllowed: false,
                 OutgoingEdges: 0,
                 IncomingEdges: 0,
                 "Không có checkpoint cần resume.");
@@ -82,6 +84,7 @@ public sealed class ComputerOperatorPartialResumeResolver(
                 Resumable: true,
                 ExactCheckpointMatch: true,
                 KnownProcedureNode: knownNode,
+                ReplayLastActionAllowed: false,
                 OutgoingEdges: outgoing.Count,
                 IncomingEdges: incoming.Count,
                 "Desktop hiện tại khớp state đã lưu trong checkpoint; tiếp tục từ state này, không replay action cuối.");
@@ -94,6 +97,7 @@ public sealed class ComputerOperatorPartialResumeResolver(
                 Resumable: true,
                 ExactCheckpointMatch: false,
                 KnownProcedureNode: true,
+                ReplayLastActionAllowed: false,
                 OutgoingEdges: outgoing.Count,
                 IncomingEdges: incoming.Count,
                 "Desktop hiện tại khác checkpoint nhưng là node đã biết trong Procedure Graph; join vào graph tại state hiện tại thay vì quay lại đầu.");
@@ -104,6 +108,7 @@ public sealed class ComputerOperatorPartialResumeResolver(
             Resumable: true,
             ExactCheckpointMatch: false,
             KnownProcedureNode: false,
+            ReplayLastActionAllowed: false,
             OutgoingEdges: 0,
             IncomingEdges: 0,
             "Desktop hiện tại khác checkpoint và chưa có trong Procedure Graph; giữ các mốc cũ nhưng bắt buộc planner suy luận lại từ state mới.");

@@ -339,7 +339,7 @@ public sealed class ComputerOperatorAcceptanceService
 
         RunCheck(
             checks,
-            "v4.9.21 tool selection không bị assistant history cũ làm sai capability",
+            "tool selection bind vào latest user intent, không bị lệnh cũ hoặc assistant history làm sai target",
             CheckFunctionPlannerIgnoresStaleAssistantCapabilityClaims);
 
         RunCheck(
@@ -5079,7 +5079,9 @@ public sealed class ComputerOperatorAcceptanceService
         {
             new ChatMessage("user", "Mở Notepad."),
             new ChatMessage("assistant", "Tôi không có quyền điều khiển máy tính."),
-            new ChatMessage("user", "Mở Notepad.")
+            new ChatMessage(
+                "user",
+                "Mở League of Legends. Chờ ứng dụng khởi động hoàn toàn, sau đó vào Practice Tool.")
         };
 
         var planned =
@@ -5089,16 +5091,20 @@ public sealed class ComputerOperatorAcceptanceService
 
         Require(
             planned is not null &&
-            planned.Count == 2 &&
-            planned.All(message =>
-                message.Role.Equals(
-                    "user",
-                    StringComparison.OrdinalIgnoreCase)) &&
-            planned.All(message =>
-                !message.Content.Contains(
-                    "không có quyền",
-                    StringComparison.OrdinalIgnoreCase)),
-            "Planner phải giữ ngữ cảnh user cần thiết nhưng loại assistant capability claims cũ trước khi chọn tool.");
+            planned.Count == 1 &&
+            planned[0].Role.Equals(
+                "user",
+                StringComparison.OrdinalIgnoreCase) &&
+            planned[0].Content.Contains(
+                "League of Legends",
+                StringComparison.OrdinalIgnoreCase) &&
+            !planned[0].Content.Contains(
+                "Notepad",
+                StringComparison.OrdinalIgnoreCase) &&
+            !planned[0].Content.Contains(
+                "không có quyền",
+                StringComparison.OrdinalIgnoreCase),
+            "Function planner phải bind tool/arguments vào đúng yêu cầu user mới nhất; lệnh cũ như Notepad và assistant history không được rò sang proposal hiện tại.");
     }
 
 

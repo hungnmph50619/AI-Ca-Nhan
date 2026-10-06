@@ -774,48 +774,38 @@ public sealed class ToolOrchestrationService : IToolOrchestrationService
     private static IReadOnlyList<ChatMessage> BuildFunctionPlanningConversation(
         IReadOnlyList<ChatMessage> messages)
     {
-        var selected = new List<ChatMessage>();
-        var characters = 0;
+        // Function/tool selection is an execution boundary: tool name and arguments
+        // must be grounded only in the CURRENT user request. Older user commands are
+        // useful for conversational context, but including them here can leak stale
+        // action targets into a new proposal (for example Notepad -> League of Legends).
+        // Broader history is still available to the normal chat/context pipeline.
+        var latestUser =
+            messages
+                .LastOrDefault(message =>
+                    message.Role.Equals(
+                        "user",
+                        StringComparison.OrdinalIgnoreCase));
 
-        // Tool selection must be grounded in current user intent and current Tool Registry.
-        // Older assistant prose may contain stale capability claims (for example,
-        // "I cannot control your computer") and must not override capabilities that
-        // are actually exposed to the provider in this request.
-        foreach (var message in messages
-                     .Where(message =>
-                         message.Role.Equals(
-                             "user",
-                             StringComparison.OrdinalIgnoreCase))
-                     .Reverse()
-                     .Take(6))
+        if (latestUser is null)
         {
-            var content = message.Content ?? string.Empty;
-            if (content.Length > 8_000)
-            {
-                content = content[..8_000];
-            }
-
-            if (characters + content.Length > MaximumPlannerConversationCharacters)
-            {
-                var remaining = MaximumPlannerConversationCharacters - characters;
-                if (remaining <= 0)
-                {
-                    break;
-                }
-
-                content = content[..Math.Min(content.Length, remaining)];
-            }
-
-            selected.Add(new ChatMessage("user", content));
-            characters += content.Length;
-            if (characters >= MaximumPlannerConversationCharacters)
-            {
-                break;
-            }
+            return Array.Empty<ChatMessage>();
         }
 
-        selected.Reverse();
-        return selected;
+        var content =
+            latestUser.Content ?? string.Empty;
+
+        if (content.Length > MaximumPlannerConversationCharacters)
+        {
+            content =
+                content[..MaximumPlannerConversationCharacters];
+        }
+
+        return
+        [
+            new ChatMessage(
+                "user",
+                content)
+        ];
     }
 
     private void CleanupExpired()

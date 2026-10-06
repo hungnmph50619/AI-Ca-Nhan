@@ -17,6 +17,7 @@ public static class EvaluationEndpoints
         services.AddSingleton<IEvaluationEngine, EvaluationEngine>();
         services.AddSingleton<IRegressionDatasetStore, SqliteRegressionDatasetStore>();
         services.AddSingleton<IComputerOperatorRegressionCandidateStore, ComputerOperatorRegressionCandidateStore>();
+        services.AddSingleton<IComputerOperatorRegressionPromotionService, ComputerOperatorRegressionPromotionService>();
         services.AddSingleton<IComputerOperatorRegressionLabService, ComputerOperatorRegressionLabService>();
         services.AddScoped<IAgentBenchmarkService, AgentBenchmarkService>();
         services.AddScoped<IModelComparisonService, ModelComparisonService>();
@@ -103,6 +104,45 @@ public static class EvaluationEndpoints
             return draft is null
                 ? Results.NotFound()
                 : Results.Ok(draft);
+        });
+
+        endpoints.MapPost("/api/evaluation/computer-operator-regression/candidates/{candidateId}/promote", (
+            string candidateId,
+            PromoteComputerOperatorRegressionRequest request,
+            IComputerOperatorRegressionPromotionService promotion,
+            IAuditRecorder audit) =>
+        {
+            try
+            {
+                var result = promotion.Promote(
+                    candidateId,
+                    request.ConfirmedReview);
+
+                audit.Record(
+                    AuditAgents.User,
+                    "evaluation.computer-operator-regression.promote",
+                    $"regression:{result.RegressionCase.Id}",
+                    result.Created
+                        ? "explicit-reviewed-promotion"
+                        : "idempotent-reviewed-promotion",
+                    AuditResults.Succeeded);
+
+                return result.Created
+                    ? Results.Created(
+                        $"/api/evaluation/regression/{Uri.EscapeDataString(result.RegressionCase.Id)}",
+                        result)
+                    : Results.Ok(result);
+            }
+            catch (ComputerOperatorRegressionPromotionException exception)
+            {
+                return Results.BadRequest(
+                    new ApiError(exception.Message));
+            }
+            catch (RegressionDatasetValidationException exception)
+            {
+                return Results.BadRequest(
+                    new ApiError(exception.Message));
+            }
         });
 
         endpoints.MapGet("/api/evaluation/regression", (IRegressionDatasetStore store) =>

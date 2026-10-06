@@ -440,7 +440,7 @@ public sealed class DesktopOcrActionPlanner(
                 '.',
                 ',',
                 '"',
-                ''',
+                '\'',
                 '“',
                 '”');
 

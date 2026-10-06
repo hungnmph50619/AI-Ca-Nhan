@@ -25,3 +25,27 @@ public sealed record ComputerOperatorExternalBenchmarkPlan(
 public sealed class ComputerOperatorExternalBenchmarkValidationException(
     string message)
     : Exception(message);
+
+
+public sealed record RunComputerOperatorExternalBenchmarkCaseRequest(
+    string CaseId,
+    bool Confirmed);
+
+public sealed record ComputerOperatorExternalBenchmarkExecutionResult(
+    string Version,
+    string WorkspaceId,
+    string CaseId,
+    string Title,
+    DateTimeOffset StartedAtUtc,
+    DateTimeOffset CompletedAtUtc,
+    bool TaskCompleted,
+    bool WithinStepBudget,
+    bool ReadyForIndependentEvaluation,
+    int MaximumSteps,
+    int RecordedSteps,
+    int ObservationCount,
+    int ActionCount,
+    string Summary,
+    string Provider,
+    string Model,
+    double DurationMilliseconds);

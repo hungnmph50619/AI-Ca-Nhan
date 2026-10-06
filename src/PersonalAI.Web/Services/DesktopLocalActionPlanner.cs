@@ -667,10 +667,13 @@ public sealed class DesktopLocalActionPlanner
                 "Selected",
                 StringComparison.OrdinalIgnoreCase))
         {
-            if (!node.IsSelected.HasValue)
-                return false;
+            // SelectionItem.Select là thao tác đặt trạng thái chọn,
+            // không phải toggle. Nếu có readback thì dùng nó để tránh
+            // thao tác dư thừa; nếu UIA không công bố IsSelected thì
+            // vẫn có thể Select an toàn trên target/capability rõ ràng.
+            alreadySatisfied =
+                node.IsSelected == true;
 
-            alreadySatisfied = node.IsSelected.Value;
             return true;
         }
 

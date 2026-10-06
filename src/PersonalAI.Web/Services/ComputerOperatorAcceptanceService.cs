@@ -339,6 +339,11 @@ public sealed class ComputerOperatorAcceptanceService
 
         RunCheck(
             checks,
+            "primitive con tham gia Operator session hiện tại và không hủy token task cha",
+            CheckNestedToolJoinsExistingOperatorSession);
+
+        RunCheck(
+            checks,
             "OpenCV template sensor giữ multi-scale nhỏ và ngưỡng confidence an toàn",
             CheckOpenCvTemplateSensorPolicy);
 
@@ -5036,6 +5041,37 @@ public sealed class ComputerOperatorAcceptanceService
             focusNotification == false &&
             menuStyleCommand == false,
             "Chỉ BN_CLICKED từ control handle thật mới được phép Pause/Resume/Stop; focus/menu notification không được dừng Operator.");
+    }
+
+
+
+    private static void CheckNestedToolJoinsExistingOperatorSession()
+    {
+        using var execution = new ComputerOperatorExecutionControl();
+
+        var parentToken =
+            execution.Begin(
+                "parent-operator-task",
+                pausable: true);
+
+        var joined =
+            execution.TryJoinRunning(
+                out var childToken);
+
+        Require(
+            joined &&
+            !parentToken.IsCancellationRequested &&
+            !childToken.IsCancellationRequested &&
+            parentToken == childToken &&
+            execution.Running,
+            "Primitive con phải dùng cùng token/session với task cha; không được Begin() mới làm hủy parent token.");
+
+        execution.Complete();
+
+        Require(
+            !execution.Running &&
+            !parentToken.IsCancellationRequested,
+            "Complete session không được biến một task đã hoàn tất bình thường thành cancellation.");
     }
 
 

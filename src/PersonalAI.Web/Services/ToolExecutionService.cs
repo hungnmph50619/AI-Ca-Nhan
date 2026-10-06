@@ -176,17 +176,28 @@ public sealed class ToolExecutionService(
         }
 
         var trackInConsole = ShouldTrackInOperatorConsole(definition.Name);
+        var ownsOperatorSession = false;
         CancellationToken operatorToken = default;
         if (trackInConsole)
         {
-            operatorToken = operatorExecution.Begin(
-                $"Tool: {definition.Name}",
-                pausable: false);
-            operatorProgress.Start(
-                $"Tool đang chạy: {definition.Name}");
-            operatorProgress.Add(
-                "running",
-                $"Đang thực thi tool {definition.Name}. Timeout: {definition.TimeoutMs} ms.");
+            if (!operatorExecution.TryJoinRunning(out operatorToken))
+            {
+                operatorToken = operatorExecution.Begin(
+                    $"Tool: {definition.Name}",
+                    pausable: false);
+                ownsOperatorSession = true;
+                operatorProgress.Start(
+                    $"Tool đang chạy: {definition.Name}");
+                operatorProgress.Add(
+                    "running",
+                    $"Đang thực thi tool {definition.Name}. Timeout: {definition.TimeoutMs} ms.");
+            }
+            else
+            {
+                logger.LogDebug(
+                    "Tool {ToolName} tham gia Computer Operator session hiện tại thay vì tạo session mới.",
+                    definition.Name);
+            }
         }
 
         var emergencyToken = emergencyStop.CurrentToken;
@@ -224,7 +235,7 @@ public sealed class ToolExecutionService(
             var undoId = undo.Complete(
                 undoPreparation,
                 response);
-            if (trackInConsole)
+            if (trackInConsole && ownsOperatorSession)
             {
                 operatorProgress.Complete(
                     $"Tool {definition.Name} hoàn tất sau {response.DurationMs} ms.");
@@ -234,7 +245,7 @@ public sealed class ToolExecutionService(
         catch (ToolExecutionInputException exception)
         {
             undo.Abandon(undoPreparation);
-            if (trackInConsole)
+            if (trackInConsole && ownsOperatorSession)
                 operatorProgress.Block($"Tool bị từ chối: {exception.Message}");
             return Complete(
                 invocationId,
@@ -251,7 +262,7 @@ public sealed class ToolExecutionService(
         catch (ToolExecutionStoppedByUserException exception)
         {
             undo.Abandon(undoPreparation);
-            if (trackInConsole)
+            if (trackInConsole && ownsOperatorSession)
                 operatorProgress.StopByUser(exception.Message);
             return Complete(
                 invocationId,
@@ -268,7 +279,7 @@ public sealed class ToolExecutionService(
         catch (ToolExecutionFailedException exception)
         {
             undo.Abandon(undoPreparation);
-            if (trackInConsole)
+            if (trackInConsole && ownsOperatorSession)
                 operatorProgress.Block($"Tool thất bại: {exception.Message}");
             return Complete(
                 invocationId,
@@ -288,8 +299,11 @@ public sealed class ToolExecutionService(
             trackInConsole && operatorToken.IsCancellationRequested)
         {
             undo.Abandon(undoPreparation);
-            operatorProgress.StopByUser(
-                $"Người dùng đã dừng tool {definition.Name} từ AI Operator Console.");
+            if (ownsOperatorSession)
+            {
+                operatorProgress.StopByUser(
+                    $"Người dùng đã dừng tool {definition.Name} từ AI Operator Console.");
+            }
             return Complete(
                 invocationId,
                 definition.Name,
@@ -323,7 +337,7 @@ public sealed class ToolExecutionService(
             && !cancellationToken.IsCancellationRequested)
         {
             undo.Abandon(undoPreparation);
-            if (trackInConsole)
+            if (trackInConsole && ownsOperatorSession)
                 operatorProgress.Block(
                     $"Tool {definition.Name} bị timeout sau {definition.TimeoutMs} ms.");
             logger.LogWarning(
@@ -351,7 +365,7 @@ public sealed class ToolExecutionService(
         catch (Exception exception)
         {
             undo.Abandon(undoPreparation);
-            if (trackInConsole)
+            if (trackInConsole && ownsOperatorSession)
                 operatorProgress.Block(
                     $"Tool {definition.Name} gặp lỗi. Xem log máy chủ để biết chi tiết.");
             logger.LogError(
@@ -373,7 +387,7 @@ public sealed class ToolExecutionService(
         }
         finally
         {
-            if (trackInConsole)
+            if (trackInConsole && ownsOperatorSession)
                 operatorExecution.Complete();
         }
     }

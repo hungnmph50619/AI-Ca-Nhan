@@ -2509,7 +2509,8 @@ public sealed class ComputerOperatorTaskService(
         bool Verified,
         double Confidence,
         string Detail,
-        bool Inconclusive = false);
+        bool Inconclusive = false,
+        bool VisualTransitionObserved = false);
 
     private async Task<ActionVerificationResult> VerifyAppliedActionAsync(
         DesktopOperatorDecision decision,
@@ -3036,7 +3037,8 @@ public sealed class ComputerOperatorTaskService(
                                 result.Confidence),
                         Detail:
                             $"Local visual evidence xác nhận giao diện đã chuyển trạng thái nhưng semantic verifier chưa xác nhận đúng expected effect. Kết quả chưa thể kết luận; phải quan sát lại scene hiện tại và không replay action vừa thực hiện.",
-                        Inconclusive: true);
+                        Inconclusive: true,
+                        VisualTransitionObserved: true);
                 }
 
                 var reliableVerification =

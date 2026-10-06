@@ -303,6 +303,10 @@ public sealed class ComputerOperatorTaskService(
         var temporalSceneContext = string.Empty;
         ComputerOperatorCycleTrace? pendingCycleTrace =
             null;
+        string? recentlyConsumedActionSignature =
+            null;
+        var recentlyConsumedUntilStep =
+            0;
 
         try
         {
@@ -1506,6 +1510,38 @@ public sealed class ComputerOperatorTaskService(
                     }
                 }
 
+                if (ShouldSuppressRecentlyConsumedAction(
+                        actionSignature,
+                        recentlyConsumedActionSignature,
+                        index,
+                        recentlyConsumedUntilStep))
+                {
+                    taskHistory.Add(
+                        $"STEP {index}: POST-TRANSITION-SUPPRESS {actionSignature} — Side-effect tương đương vừa tạo transition/đã được xác minh; không replay ngay.");
+
+                    taskHistory.Add(
+                        "CHỈ DẪN: Bước vừa rồi đã làm giao diện chuyển trạng thái. Không được chọn lại cùng action + target + expectedEffect ngay; phải quan sát scene hiện tại và chọn bước kế tiếp khác.");
+
+                    progress.Add(
+                        "post-transition-suppression",
+                        "Không replay side-effect vừa tạo transition. Planner phải chọn bước kế tiếp từ trạng thái hiện tại.",
+                        "replan",
+                        decision.Confidence);
+
+                    progress.AddDiagnostic(
+                        "recovery",
+                        $"cycle={index}; scene={sceneDiagnosticId}; strategy={strategyDiagnosticId}; decision=POST-TRANSITION-SUPPRESS; consumedUntilStep={recentlyConsumedUntilStep}; replaySideEffect=false.");
+
+                    _ = actionState.MoveTo(
+                        ComputerOperatorActionState.Replan,
+                        "Side-effect vừa tạo transition; yêu cầu bước kế tiếp khác.");
+
+                    await Task.Delay(
+                        250,
+                        linked.Token);
+                    continue;
+                }
+
                 if (recovery.ShouldAvoidRepeatedStrategy(
                         actionSignature,
                         sceneFingerprint,
@@ -2176,6 +2212,17 @@ public sealed class ComputerOperatorTaskService(
                 if (!verification.Verified &&
                     verification.Inconclusive)
                 {
+                    if (verification.VisualTransitionObserved)
+                    {
+                        recentlyConsumedActionSignature =
+                            actionSignature;
+                        recentlyConsumedUntilStep =
+                            index + 3;
+
+                        taskHistory.Add(
+                            $"POST-TRANSITION-CONSUMED: {actionSignature} — UI đã chuyển trạng thái rõ; không replay side-effect này trong các cycle kế tiếp.");
+                    }
+
                     taskHistory.Add(
                         $"STEP {index}: VERIFY-INCONCLUSIVE {actionSignature} — {verification.Detail}");
 
@@ -2369,6 +2416,11 @@ public sealed class ComputerOperatorTaskService(
                 {
                     keyboardRepairFailures = 0;
                 }
+
+                recentlyConsumedActionSignature =
+                    actionSignature;
+                recentlyConsumedUntilStep =
+                    index + 2;
 
                 taskHistory.Add(
                     $"STEP {index}: VERIFIED {actionSignature} — {verification.Detail}; EXPECTED: {decision.ExpectedEffect}");
@@ -3072,6 +3124,28 @@ public sealed class ComputerOperatorTaskService(
             after.Clear();
         }
     }
+
+    internal static bool ShouldSuppressRecentlyConsumedActionForAcceptance(
+        string actionSignature,
+        string? consumedSignature,
+        int currentStep,
+        int consumedUntilStep) =>
+        ShouldSuppressRecentlyConsumedAction(
+            actionSignature,
+            consumedSignature,
+            currentStep,
+            consumedUntilStep);
+
+    private static bool ShouldSuppressRecentlyConsumedAction(
+        string actionSignature,
+        string? consumedSignature,
+        int currentStep,
+        int consumedUntilStep) =>
+        currentStep <= consumedUntilStep &&
+        !string.IsNullOrWhiteSpace(consumedSignature) &&
+        actionSignature.Equals(
+            consumedSignature,
+            StringComparison.OrdinalIgnoreCase);
 
     internal static bool ShouldReobserveOnVerificationConflictForAcceptance(
         bool semanticSatisfied,

@@ -3012,8 +3012,9 @@ public sealed class ComputerOperatorTaskService(
                     throw;
                 }
 
-                if (!result.Satisfied &&
-                    strongLocalVisualTransition)
+                if (ShouldReobserveOnVerificationConflict(
+                        result.Satisfied,
+                        strongLocalVisualTransition))
                 {
                     progress.Add(
                         "verification-conflict",
@@ -3069,6 +3070,19 @@ public sealed class ComputerOperatorTaskService(
             after.Clear();
         }
     }
+
+    internal static bool ShouldReobserveOnVerificationConflictForAcceptance(
+        bool semanticSatisfied,
+        bool strongLocalVisualTransition) =>
+        ShouldReobserveOnVerificationConflict(
+            semanticSatisfied,
+            strongLocalVisualTransition);
+
+    private static bool ShouldReobserveOnVerificationConflict(
+        bool semanticSatisfied,
+        bool strongLocalVisualTransition) =>
+        !semanticSatisfied &&
+        strongLocalVisualTransition;
 
     internal static int CalculateProviderCooldownDelayMillisecondsForAcceptance(
         DateTimeOffset backoffUntil,

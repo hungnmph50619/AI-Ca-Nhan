@@ -135,6 +135,11 @@ public sealed class ComputerOperatorAcceptanceService(
 
         RunCheck(
             checks,
+            "verification provider exhaustion không được làm chết task khi có thể reobserve",
+            CheckVisionProviderExhaustionIsRecoverable);
+
+        RunCheck(
+            checks,
             "v4.5.3 chặn replay side-effect ngay sau transition",
             CheckPostTransitionSuppression);
 
@@ -2078,6 +2083,21 @@ public sealed class ComputerOperatorAcceptanceService(
                 semanticSatisfied: false,
                 strongLocalVisualTransition: false),
             "Verification conflict policy chưa phân biệt đúng local transition mạnh và semantic false.");
+    }
+
+    private static void CheckVisionProviderExhaustionIsRecoverable()
+    {
+        Require(
+            ComputerOperatorTaskService.IsVisionProviderExhaustedForAcceptance(
+                new InvalidOperationException(
+                    "Tất cả Computer Operator vision provider đều thất bại cho 'verify'. Đã thử: Gemini, OpenAI.")) &&
+            ComputerOperatorTaskService.IsVisionProviderExhaustedForAcceptance(
+                new InvalidOperationException(
+                    "Chưa có Computer Operator vision provider nào được cấu hình.")) &&
+            !ComputerOperatorTaskService.IsVisionProviderExhaustedForAcceptance(
+                new InvalidOperationException(
+                    "Lỗi state machine không liên quan provider.")),
+            "Provider exhaustion phải được nhận diện riêng để verification chuyển sang inconclusive/reobserve thay vì làm chết toàn bộ task.");
     }
 
     private static void CheckPostTransitionSuppression()

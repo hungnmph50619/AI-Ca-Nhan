@@ -3618,11 +3618,50 @@ public sealed class ComputerOperatorTaskService(
 
                         return new(
                             Verified: false,
-                            Confidence: 0,
+                            Confidence: strongLocalVisualTransition
+                                ? visualVerdict.Confidence
+                                : 0,
                             Detail:
                                 $"Gemini Vision tạm thời không khả dụng sau lần thử lại (HTTP {(int?)retryException.StatusCode ?? 0}). Kết quả hành động chưa thể kết luận; phải quan sát lại trạng thái hiện tại và tuyệt đối không replay side effect.",
-                            Inconclusive: true);
+                            Inconclusive: true,
+                            VisualTransitionObserved:
+                                strongLocalVisualTransition);
                     }
+                }
+                catch (InvalidOperationException exception)
+                    when (IsVisionProviderExhausted(exception))
+                {
+                    verifierStopwatch.Stop();
+                    geminiVerifyTelemetry.Complete(
+                        success: false,
+                        route: "vision-provider-exhausted");
+
+                    progress.AddDiagnostic(
+                        "provider",
+                        $"provider=router; purpose=verify; latencyMs={verifierStopwatch.ElapsedMilliseconds}; result=all-providers-failed; localTransition={strongLocalVisualTransition}; replaySideEffect=false; error={LimitDiagnostic(exception.Message, 220)}.");
+
+                    progress.Add(
+                        "vision-unavailable",
+                        strongLocalVisualTransition
+                            ? "Các vision provider đều không khả dụng, nhưng local visual đã xác nhận UI chuyển trạng thái mạnh. Không chặn task; chuyển sang quan sát scene mới và không replay action."
+                            : "Các vision provider đều không khả dụng. Không chặn task ngay; coi verification là chưa thể kết luận và quan sát lại trạng thái hiện tại.",
+                        "inconclusive",
+                        strongLocalVisualTransition
+                            ? visualVerdict.Confidence
+                            : 0.25);
+
+                    return new(
+                        Verified: false,
+                        Confidence: strongLocalVisualTransition
+                            ? visualVerdict.Confidence
+                            : 0.25,
+                        Detail:
+                            strongLocalVisualTransition
+                                ? "Vision provider đều thất bại nhưng local visual xác nhận giao diện đã chuyển trạng thái rõ. Kết quả semantic chưa thể kết luận; phải quan sát scene mới và không replay side effect."
+                                : "Vision provider đều thất bại nên chưa thể kết luận kết quả semantic. Phải quan sát lại trạng thái hiện tại và không replay side effect.",
+                        Inconclusive: true,
+                        VisualTransitionObserved:
+                            strongLocalVisualTransition);
                 }
                 catch
                 {
@@ -3691,6 +3730,24 @@ public sealed class ComputerOperatorTaskService(
             after.Clear();
         }
     }
+
+    internal static bool IsVisionProviderExhaustedForAcceptance(
+        Exception exception) =>
+        IsVisionProviderExhausted(
+            exception);
+
+    private static bool IsVisionProviderExhausted(
+        Exception exception) =>
+        exception is InvalidOperationException &&
+        exception.Message.Contains(
+            "Computer Operator vision provider",
+            StringComparison.OrdinalIgnoreCase) &&
+        (exception.Message.Contains(
+             "đều thất bại",
+             StringComparison.OrdinalIgnoreCase) ||
+         exception.Message.Contains(
+             "nào được cấu hình",
+             StringComparison.OrdinalIgnoreCase));
 
     internal static bool ShouldSuppressRecentlyConsumedActionForAcceptance(
         string actionSignature,

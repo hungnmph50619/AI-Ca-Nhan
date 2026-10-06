@@ -314,6 +314,11 @@ public sealed class ComputerOperatorAcceptanceService
 
         RunCheck(
             checks,
+            "v4.9.21 Gemini dùng Polly timeout + circuit breaker nhưng giữ retry hiện tại và không bypass Operator recovery",
+            CheckGeminiPollyResilienceBoundary);
+
+        RunCheck(
+            checks,
             "OpenCV template sensor giữ multi-scale nhỏ và ngưỡng confidence an toàn",
             CheckOpenCvTemplateSensorPolicy);
 
@@ -4846,6 +4851,22 @@ public sealed class ComputerOperatorAcceptanceService
                 rebinding),
             "MCP boundary phải chỉ phụ thuộc CapabilityToolRouter + ExecutionGateway, không gọi ComputerUse/Operator executor trực tiếp; HTTP MCP phải chặn remote IP và Host không phải loopback.");
     }
+
+    private static void CheckGeminiPollyResilienceBoundary()
+    {
+        Require(
+            GeminiHttpResiliencePolicy.RequestTimeout >= TimeSpan.FromSeconds(20) &&
+            GeminiHttpResiliencePolicy.RequestTimeout <= TimeSpan.FromSeconds(90) &&
+            GeminiHttpResiliencePolicy.BreakDuration >= TimeSpan.FromSeconds(10) &&
+            GeminiHttpResiliencePolicy.MinimumThroughput >= 4 &&
+            GeminiHttpResiliencePolicy.FailureRatio is >= 0.25d and <= 0.75d &&
+            GeminiHttpResiliencePolicy.IsTransientStatusCode(System.Net.HttpStatusCode.RequestTimeout) &&
+            GeminiHttpResiliencePolicy.IsTransientStatusCode(System.Net.HttpStatusCode.TooManyRequests) &&
+            GeminiHttpResiliencePolicy.IsTransientStatusCode(System.Net.HttpStatusCode.ServiceUnavailable) &&
+            !GeminiHttpResiliencePolicy.IsTransientStatusCode(System.Net.HttpStatusCode.BadRequest),
+            "Gemini resilience phải có timeout hữu hạn, circuit breaker đủ bằng chứng và chỉ coi 408/429/5xx là lỗi tạm thời.");
+    }
+
 
     private static void CheckOcrProviderEmptyResultDoesNotTripHealth()
     {

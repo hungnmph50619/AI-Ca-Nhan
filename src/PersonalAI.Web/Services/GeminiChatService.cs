@@ -105,7 +105,10 @@ Function calling is disabled in this continuation. Produce only the final user-f
                 };
                 request.Headers.Add("x-goog-api-key", apiKey);
 
-                using var response = await _httpClient.SendAsync(request, cancellationToken);
+                using var response = await GeminiHttpResiliencePolicy.ExecuteAsync(
+                    _httpClient,
+                    request,
+                    cancellationToken);
                 var responseBody = await response.Content.ReadAsStringAsync(cancellationToken);
 
                 if (!response.IsSuccessStatusCode)
@@ -329,7 +332,10 @@ Function calling is disabled in this continuation. Produce only the final user-f
                 };
                 request.Headers.Add("x-goog-api-key", apiKey);
 
-                using var response = await _httpClient.SendAsync(request, cancellationToken);
+                using var response = await GeminiHttpResiliencePolicy.ExecuteAsync(
+                    _httpClient,
+                    request,
+                    cancellationToken);
                 var responseBody = await response.Content.ReadAsStringAsync(cancellationToken);
 
                 if (!response.IsSuccessStatusCode)
@@ -520,7 +526,10 @@ Function calling is disabled in this continuation. Produce only the final user-f
                 };
                 request.Headers.Add("x-goog-api-key", apiKey);
 
-                using var response = await _httpClient.SendAsync(request, cancellationToken);
+                using var response = await GeminiHttpResiliencePolicy.ExecuteAsync(
+                    _httpClient,
+                    request,
+                    cancellationToken);
                 var responseBody = await response.Content.ReadAsStringAsync(cancellationToken);
 
                 if (!response.IsSuccessStatusCode)

@@ -4971,30 +4971,20 @@ public sealed class ComputerOperatorAcceptanceService
 
     private static void CheckGeminiResilienceLaneIsolation()
     {
-        var source =
-            File.ReadAllText(
-                Path.Combine(
-                    AppContext.BaseDirectory,
-                    "..",
-                    "..",
-                    "..",
-                    "..",
-                    "src",
-                    "PersonalAI.Web",
-                    "Services",
-                    "GeminiChatService.cs"));
-
         Require(
-            source.Contains(
-                "GeminiResilienceLane.Reply",
-                StringComparison.Ordinal) &&
-            source.Contains(
-                "GeminiResilienceLane.FunctionPlanning",
-                StringComparison.Ordinal) &&
-            source.Contains(
-                "GeminiResilienceLane.FunctionContinuation",
-                StringComparison.Ordinal),
-            "GeminiChatService phải đưa ba loại request vào ba resilience lane khác nhau; không dùng lại một circuit breaker tổng.");
+            GeminiChatService.ReplyResilienceLane ==
+                GeminiResilienceLane.Reply &&
+            GeminiChatService.FunctionPlanningResilienceLane ==
+                GeminiResilienceLane.FunctionPlanning &&
+            GeminiChatService.FunctionContinuationResilienceLane ==
+                GeminiResilienceLane.FunctionContinuation &&
+            GeminiChatService.ReplyResilienceLane !=
+                GeminiChatService.FunctionPlanningResilienceLane &&
+            GeminiChatService.FunctionPlanningResilienceLane !=
+                GeminiChatService.FunctionContinuationResilienceLane &&
+            GeminiChatService.ReplyResilienceLane !=
+                GeminiChatService.FunctionContinuationResilienceLane,
+            "GeminiChatService phải đưa reply, function planning và continuation vào ba resilience lane độc lập; acceptance không được phụ thuộc đường dẫn source trên runner.");
     }
 
 

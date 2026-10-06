@@ -57,6 +57,15 @@ Function calling is disabled in this continuation. Produce only the final user-f
 
     public string Name => "Gemini";
 
+    internal static GeminiResilienceLane ReplyResilienceLane =>
+        GeminiResilienceLane.Reply;
+
+    internal static GeminiResilienceLane FunctionPlanningResilienceLane =>
+        GeminiResilienceLane.FunctionPlanning;
+
+    internal static GeminiResilienceLane FunctionContinuationResilienceLane =>
+        GeminiResilienceLane.FunctionContinuation;
+
     public string Model => _settingsStore.GetModel(Name);
 
     public bool IsConfigured => !string.IsNullOrWhiteSpace(GetApiKey());
@@ -112,7 +121,7 @@ Function calling is disabled in this continuation. Produce only the final user-f
                 using var response = await GeminiHttpResiliencePolicy.ExecuteAsync(
                     _httpClient,
                     request,
-                    GeminiResilienceLane.Reply,
+                    ReplyResilienceLane,
                     cancellationToken);
                 var responseBody = await response.Content.ReadAsStringAsync(cancellationToken);
 
@@ -340,7 +349,7 @@ Function calling is disabled in this continuation. Produce only the final user-f
                 using var response = await GeminiHttpResiliencePolicy.ExecuteAsync(
                     _httpClient,
                     request,
-                    GeminiResilienceLane.FunctionPlanning,
+                    FunctionPlanningResilienceLane,
                     cancellationToken);
                 var responseBody = await response.Content.ReadAsStringAsync(cancellationToken);
 
@@ -535,7 +544,7 @@ Function calling is disabled in this continuation. Produce only the final user-f
                 using var response = await GeminiHttpResiliencePolicy.ExecuteAsync(
                     _httpClient,
                     request,
-                    GeminiResilienceLane.FunctionContinuation,
+                    FunctionContinuationResilienceLane,
                     cancellationToken);
                 var responseBody = await response.Content.ReadAsStringAsync(cancellationToken);
 

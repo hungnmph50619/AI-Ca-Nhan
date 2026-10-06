@@ -27,6 +27,7 @@ public static class ComputerUseEndpoints
         services.AddSingleton<IGenericTextInteractionEngine, GenericTextInteractionEngine>();
         services.AddSingleton<IAdaptiveObservationWakeSource, WindowsDesktopEventWakeSource>();
         services.AddSingleton<IAdaptiveVerificationWaitEngine, AdaptiveVerificationWaitEngine>();
+        services.AddSingleton<IComputerOperatorRuntimeStateIntelligence, ComputerOperatorRuntimeStateIntelligence>();
         services.AddSingleton<IComputerDisplayTopologyService, WindowsComputerDisplayTopologyService>();
         services.AddSingleton<IComputerDpiCalibrationService, ComputerDpiCalibrationService>();
         services.AddSingleton<IComputerCoordinateTransformService, ComputerCoordinateTransformService>();
@@ -103,6 +104,35 @@ public static class ComputerUseEndpoints
         app.MapGet("/api/computer/operator-progress", (
             ComputerOperatorProgressStore progress) =>
             Results.Ok(progress.Get()));
+
+        app.MapPost("/api/computer/operator-runtime-state/classify", (
+            HttpContext context,
+            ComputerOperatorRuntimeEvidence evidence,
+            IComputerOperatorRuntimeStateIntelligence runtimeState) =>
+        {
+            if (!IsLocalRequest(context))
+                return Results.StatusCode(StatusCodes.Status403Forbidden);
+
+            try
+            {
+                var assessment =
+                    runtimeState.Classify(evidence);
+
+                return Results.Ok(new
+                {
+                    trangThai = assessment.State,
+                    quyetDinh = assessment.RecommendedDecision,
+                    doTinCay = Math.Round(assessment.Confidence, 2),
+                    ketThuc = assessment.Terminal,
+                    lyDo = assessment.Reason
+                });
+            }
+            catch (ArgumentOutOfRangeException exception)
+            {
+                return Results.BadRequest(
+                    new ApiError(exception.Message));
+            }
+        });
 
         app.MapGet("/api/computer/capture-backends", (
             HttpContext context,

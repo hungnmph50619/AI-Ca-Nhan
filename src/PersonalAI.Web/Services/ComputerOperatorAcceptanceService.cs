@@ -204,6 +204,11 @@ public sealed class ComputerOperatorAcceptanceService
 
         RunCheck(
             checks,
+            "v4.8.7 readiness gate chỉ PASS khi regression sạch tuyệt đối",
+            CheckRegressionReadinessGate);
+
+        RunCheck(
+            checks,
             "OpenCV template sensor giữ multi-scale nhỏ và ngưỡng confidence an toàn",
             CheckOpenCvTemplateSensorPolicy);
 
@@ -2266,6 +2271,73 @@ public sealed class ComputerOperatorAcceptanceService
             withPromotion.RuntimeUnreviewedCandidates == 0 &&
             withPromotion.RuntimePromotionRate == 1d,
             "Regression reliability metrics chưa chặn/cho phép external benchmark đúng theo coverage và review state.");
+    }
+
+    private static void CheckRegressionReadinessGate()
+    {
+        var clean =
+            new ComputerOperatorRegressionMetrics(
+                Version: "acceptance",
+                MeasuredAtUtc: DateTimeOffset.UtcNow,
+                LabTotalCases: 6,
+                LabPassedCases: 6,
+                LabFailedCases: 0,
+                LabPassRate: 1d,
+                RuntimeCandidateCount: 1,
+                RuntimePromotedCases: 1,
+                RuntimeUnreviewedCandidates: 0,
+                RuntimePromotionRate: 1d,
+                BaselineCoverageHealthy: true,
+                ReadyForExternalBenchmark: true,
+                UnreviewedCandidateIds: Array.Empty<string>());
+
+        var pass =
+            ComputerOperatorRegressionReadinessGate
+                .EvaluateForAcceptance(
+                    clean);
+
+        var dirty =
+            clean with
+            {
+                RuntimeUnreviewedCandidates = 1,
+                RuntimePromotionRate = 0d,
+                ReadyForExternalBenchmark = false,
+                UnreviewedCandidateIds = ["runtime-pending"]
+            };
+
+        var blocked =
+            ComputerOperatorRegressionReadinessGate
+                .EvaluateForAcceptance(
+                    dirty);
+
+        var partial =
+            clean with
+            {
+                LabPassedCases = 5,
+                LabFailedCases = 1,
+                LabPassRate = 5d / 6d,
+                BaselineCoverageHealthy = false,
+                ReadyForExternalBenchmark = false
+            };
+
+        var partialBlocked =
+            ComputerOperatorRegressionReadinessGate
+                .EvaluateForAcceptance(
+                    partial);
+
+        Require(
+            pass.Passed &&
+            pass.Status == "pass" &&
+            pass.Reasons.Count == 0 &&
+            !blocked.Passed &&
+            blocked.Status == "blocked" &&
+            blocked.Reasons.Count >= 2 &&
+            !partialBlocked.Passed &&
+            partialBlocked.Reasons.Any(reason =>
+                reason.Contains(
+                    "100%",
+                    StringComparison.OrdinalIgnoreCase)),
+            "Regression readiness gate chưa phân biệt PASS/BLOCKED đúng theo ngưỡng reliability.");
     }
 
     private static void CheckOcrProviderEmptyResultDoesNotTripHealth()

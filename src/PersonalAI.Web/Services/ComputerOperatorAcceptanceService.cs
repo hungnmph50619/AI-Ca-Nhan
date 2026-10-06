@@ -129,6 +129,11 @@ public sealed class ComputerOperatorAcceptanceService
 
         RunCheck(
             checks,
+            "v4.5.3 chặn replay side-effect ngay sau transition",
+            CheckPostTransitionSuppression);
+
+        RunCheck(
+            checks,
             "local visual provider health cooldown sau failure lặp",
             CheckLocalVisualProviderHealthCooldown);
 
@@ -1801,6 +1806,30 @@ public sealed class ComputerOperatorAcceptanceService
                 semanticSatisfied: false,
                 strongLocalVisualTransition: false),
             "Verification conflict policy chưa phân biệt đúng local transition mạnh và semantic false.");
+    }
+
+    private static void CheckPostTransitionSuppression()
+    {
+        const string signature =
+            "click-left|label=nút chơi|effect=menu chọn chế độ chơi xuất hiện";
+
+        Require(
+            ComputerOperatorTaskService.ShouldSuppressRecentlyConsumedActionForAcceptance(
+                signature,
+                signature,
+                currentStep: 11,
+                consumedUntilStep: 13) &&
+            !ComputerOperatorTaskService.ShouldSuppressRecentlyConsumedActionForAcceptance(
+                signature,
+                signature,
+                currentStep: 14,
+                consumedUntilStep: 13) &&
+            !ComputerOperatorTaskService.ShouldSuppressRecentlyConsumedActionForAcceptance(
+                "click-left|label=phòng tập|effect=mở phòng tập",
+                signature,
+                currentStep: 11,
+                consumedUntilStep: 13),
+            "Post-transition suppression chưa chặn đúng replay hoặc chặn nhầm strategy mới.");
     }
 
     private static void CheckLocalVisualProviderHealthCooldown()

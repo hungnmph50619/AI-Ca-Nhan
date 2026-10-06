@@ -11,10 +11,9 @@ public sealed class DesktopVisionService(
     private const int MaximumResponseCharacters = 1600;
 
     public bool Ready =>
-        settings.ActiveProvider.Equals(
-            "Gemini",
-            StringComparison.OrdinalIgnoreCase) &&
-        !string.IsNullOrWhiteSpace(settings.GetApiKey("Gemini"));
+        !string.IsNullOrWhiteSpace(
+            settings.GetApiKey(
+                "Gemini"));
 
     public string Model => settings.GetModel("Gemini");
 

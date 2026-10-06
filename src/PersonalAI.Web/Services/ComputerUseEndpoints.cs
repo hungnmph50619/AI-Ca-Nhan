@@ -36,6 +36,7 @@ public static class ComputerUseEndpoints
         services.AddSingleton<IComputerOperatorExperienceValidator, ComputerOperatorExperienceValidator>();
         services.AddSingleton<IComputerOperatorExperienceConsolidator, ComputerOperatorExperienceConsolidator>();
         services.AddSingleton<IComputerOperatorExperienceLifecycleService, ComputerOperatorExperienceLifecycleService>();
+        services.AddSingleton<IComputerOperatorVerifiedTransitionStore, SqliteComputerOperatorVerifiedTransitionStore>();
         services.AddSingleton<IComputerDisplayTopologyService, WindowsComputerDisplayTopologyService>();
         services.AddSingleton<IComputerDpiCalibrationService, ComputerDpiCalibrationService>();
         services.AddSingleton<IComputerCoordinateTransformService, ComputerCoordinateTransformService>();

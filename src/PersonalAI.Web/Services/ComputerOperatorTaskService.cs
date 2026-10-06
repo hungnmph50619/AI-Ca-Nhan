@@ -171,6 +171,7 @@ public sealed class ComputerOperatorTaskService(
     IComputerOperatorExperienceConsolidator experienceConsolidator,
     IComputerOperatorExperienceLifecycleService experienceLifecycle,
     IComputerOperatorVerifiedTransitionStore verifiedTransitions,
+    IComputerOperatorProcedureGraphStore procedureGraph,
     IUniversalReliableOperatorCoordinator reliableOperator,
     IComputerOperatorRegressionCandidateStore regressionCandidates,
     ILogger<ComputerOperatorTaskService> logger)
@@ -275,6 +276,9 @@ public sealed class ComputerOperatorTaskService(
         var learning =
             new ComputerOperatorLearningSession(
                 experienceRepository);
+        var procedureSession =
+            new ComputerOperatorProcedureGraphSession(
+                procedureGraph);
         var loopGuard = new ComputerOperatorLoopGuardSession();
         var actionState = new ComputerOperatorActionStateMachine();
         var verifiedMilestones = new HashSet<string>(
@@ -471,6 +475,29 @@ public sealed class ComputerOperatorTaskService(
 
                 var sceneDiagnosticId =
                     BuildDiagnosticId(sceneFingerprint);
+
+                var closedProcedureEdge =
+                    procedureSession.ObserveState(
+                        sceneFingerprint);
+
+                if (closedProcedureEdge is not null)
+                {
+                    progress.AddDiagnostic(
+                        "procedure-graph",
+                        $"cycle={index}; edgeClosed=true; from={BuildDiagnosticId(closedProcedureEdge.FromStateFingerprint)}; to={BuildDiagnosticId(closedProcedureEdge.ToStateFingerprint)}; strategy={closedProcedureEdge.StrategyKey}; successCount={closedProcedureEdge.SuccessCount}; confidence={closedProcedureEdge.AverageConfidence:0.000}; actualObservedTarget=true.");
+                }
+
+                var outgoingProcedureEdges =
+                    procedureGraph.GetOutgoing(
+                        sceneFingerprint,
+                        limit: 5);
+
+                if (outgoingProcedureEdges.Count > 0)
+                {
+                    progress.AddDiagnostic(
+                        "procedure-graph",
+                        $"cycle={index}; knownOutgoing={outgoingProcedureEdges.Count}; bestStrategy={outgoingProcedureEdges[0].StrategyKey}; bestSuccessCount={outgoingProcedureEdges[0].SuccessCount}; bestConfidence={outgoingProcedureEdges[0].AverageConfidence:0.000}; fastPathEnabled=false.");
+                }
 
                 var knownTransitions =
                     verifiedTransitions.FindExact(
@@ -2550,6 +2577,12 @@ public sealed class ComputerOperatorTaskService(
                     progress.AddDiagnostic(
                         "transition-memory",
                         $"cycle={index}; recorded=true; fromState={sceneDiagnosticId}; strategy={transition.StrategyKey}; successCount={transition.SuccessCount}; confidence={transition.AverageConfidence:0.000}; expectedEffectStoredAsHash=true.");
+
+                    procedureSession.RecordVerifiedAction(
+                        sceneFingerprint,
+                        transition.StrategyKey,
+                        transition.ExpectedEffectFingerprint,
+                        verification.Confidence);
                 }
 
                 var learningCandidate =

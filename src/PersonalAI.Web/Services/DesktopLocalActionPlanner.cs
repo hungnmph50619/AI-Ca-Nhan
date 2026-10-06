@@ -32,6 +32,22 @@ public sealed class DesktopLocalActionPlanner
         "khoi dong "
     ];
 
+    private static readonly string[] OpenApplicationWrapperPrefixes =
+    [
+        "đưa ứng dụng ",
+        "dua ung dung ",
+        "ensure application ",
+        "bring application "
+    ];
+
+    private static readonly string[] OpenApplicationWrapperStateMarkers =
+    [
+        " vào trạng thái đang mở",
+        " vao trang thai dang mo",
+        " is open",
+        " into an open state"
+    ];
+
     private static readonly string[] NextStepSeparators =
     [
         ". ",
@@ -873,7 +889,117 @@ public sealed class DesktopLocalActionPlanner
             break;
         }
 
+        if (TryExtractOpenApplicationWrapperTarget(
+                value,
+                out target))
+        {
+            return true;
+        }
+
         target = string.Empty;
+        return false;
+    }
+
+    private static bool TryExtractOpenApplicationWrapperTarget(
+        string value,
+        out string target)
+    {
+        foreach (var prefix in OpenApplicationWrapperPrefixes)
+        {
+            if (!value.StartsWith(
+                    prefix,
+                    StringComparison.OrdinalIgnoreCase))
+            {
+                continue;
+            }
+
+            var remainder =
+                value[prefix.Length..]
+                    .Trim();
+
+            if (remainder.Length == 0)
+                break;
+
+            var openingQuote =
+                remainder[0];
+
+            var closingQuote =
+                openingQuote switch
+                {
+                    '“' => '”',
+                    '"' => '"',
+                    '\'' => '\'',
+                    _ => '\0'
+                };
+
+            if (closingQuote != '\0')
+            {
+                var endQuote =
+                    remainder.IndexOf(
+                        closingQuote,
+                        1);
+
+                if (endQuote > 1)
+                {
+                    target =
+                        remainder[1..endQuote]
+                            .Trim();
+
+                    return target.Length is
+                        >= 2 and <= 96;
+                }
+            }
+
+            var cut =
+                remainder.Length;
+
+            foreach (var marker in OpenApplicationWrapperStateMarkers)
+            {
+                var markerIndex =
+                    remainder.IndexOf(
+                        marker,
+                        StringComparison.OrdinalIgnoreCase);
+
+                if (markerIndex >= 0 &&
+                    markerIndex < cut)
+                {
+                    cut =
+                        markerIndex;
+                }
+            }
+
+            foreach (var separator in NextStepSeparators)
+            {
+                var separatorIndex =
+                    remainder.IndexOf(
+                        separator,
+                        StringComparison.OrdinalIgnoreCase);
+
+                if (separatorIndex >= 0 &&
+                    separatorIndex < cut)
+                {
+                    cut =
+                        separatorIndex;
+                }
+            }
+
+            target =
+                remainder[..cut]
+                    .Trim()
+                    .Trim(
+                        '"',
+                        '\'',
+                        '“',
+                        '”',
+                        '.',
+                        ':');
+
+            return target.Length is
+                >= 2 and <= 96;
+        }
+
+        target =
+            string.Empty;
         return false;
     }
 

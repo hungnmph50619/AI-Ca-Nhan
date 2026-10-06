@@ -516,6 +516,16 @@ public sealed class ComputerOperatorAcceptanceService
 
         RunCheck(
             checks,
+            "local planner hiểu goal wrapper computer.app.launch như intent mở ứng dụng",
+            CheckLocalPlannerUnderstandsAppLaunchWrapperGoal);
+
+        RunCheck(
+            checks,
+            "local planner dùng Enter deterministic sau khi wrapper app-launch đã nhập Search",
+            CheckLocalPlannerUsesEnterForAppLaunchWrapperAfterTyping);
+
+        RunCheck(
+            checks,
             "local planner cắt intent mở app tại ranh giới câu",
             CheckLocalPlannerStopsOpenTargetAtSentenceBoundary);
 
@@ -6754,6 +6764,107 @@ public sealed class ComputerOperatorAcceptanceService
                 StringComparison.OrdinalIgnoreCase),
             "Local planner không chọn Windows Search generic cho intent mở ứng dụng.");
     }
+
+
+    private static void CheckLocalPlannerUnderstandsAppLaunchWrapperGoal()
+    {
+        var planner =
+            new DesktopLocalActionPlanner();
+
+        var foreground =
+            new ComputerWindowInfo(
+                "0x110",
+                "Trình duyệt",
+                "msedge",
+                110,
+                true,
+                0,
+                0,
+                1280,
+                720);
+
+        var state =
+            new ComputerOperatorDesktopState(
+                DateTimeOffset.UtcNow,
+                foreground,
+                [foreground],
+                0,
+                0,
+                1920,
+                1080,
+                DesktopCaptureScopes.VirtualDesktop,
+                null,
+                false);
+
+        var planned =
+            planner.TryPlan(
+                "Đưa ứng dụng “Sample Editor” vào trạng thái đang mở và hiển thị ở foreground. Hãy tự quan sát màn hình hiện tại.",
+                state,
+                string.Empty,
+                out var decision);
+
+        Require(
+            planned &&
+            decision.Action == "press-hotkey" &&
+            decision.Keys.SequenceEqual(["WIN", "S"]) &&
+            decision.CurrentSubgoal.Contains(
+                "Sample Editor",
+                StringComparison.OrdinalIgnoreCase),
+            "Local planner phải hiểu semantic wrapper của computer.app.launch thay vì đẩy thẳng sang Gemini/Vision.");
+    }
+
+    private static void CheckLocalPlannerUsesEnterForAppLaunchWrapperAfterTyping()
+    {
+        var planner =
+            new DesktopLocalActionPlanner();
+
+        var search =
+            new ComputerWindowInfo(
+                "0x120",
+                "Search",
+                "SearchHost",
+                120,
+                true,
+                0,
+                0,
+                1200,
+                900);
+
+        var state =
+            new ComputerOperatorDesktopState(
+                DateTimeOffset.UtcNow,
+                search,
+                [search],
+                0,
+                0,
+                1920,
+                1080,
+                DesktopCaptureScopes.VirtualDesktop,
+                null,
+                false);
+
+        var history =
+            "LOCAL-SHELL-TYPED:Sample Editor";
+
+        var planned =
+            planner.TryPlan(
+                "Đưa ứng dụng “Sample Editor” vào trạng thái đang mở và hiển thị ở foreground. Hãy tự quan sát màn hình hiện tại.",
+                state,
+                history,
+                out var decision);
+
+        Require(
+            planned &&
+            decision.Action == "press-key" &&
+            decision.Key.Equals(
+                "ENTER",
+                StringComparison.OrdinalIgnoreCase) &&
+            decision.Reason.Contains(
+                "generic",
+                StringComparison.OrdinalIgnoreCase),
+            "Sau khi Search đã được nhập bằng Text Engine, wrapper app-launch phải ưu tiên Enter deterministic trước OCR/Gemini.");
+    }
+
 
     private static void CheckLocalPlannerStopsOpenTargetAtSentenceBoundary()
     {

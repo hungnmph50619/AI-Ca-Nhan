@@ -671,12 +671,14 @@ public sealed class ComputerOperatorTaskService(
 
                             var kernelRejection =
                                 string.Empty;
+                            var kernelDecision =
+                                decision;
                             var kernelCompiled =
                                 minimalIntent is not null &&
                                 DecisionKernel.TryCompile(
                                     minimalIntent,
                                     frame,
-                                    out var kernelDecision,
+                                    out kernelDecision,
                                     out kernelRejection);
 
                             if (kernelCompiled)

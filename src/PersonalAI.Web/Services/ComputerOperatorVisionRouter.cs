@@ -19,11 +19,16 @@ public sealed class ComputerOperatorVisionRouter(
             .Select(group => group.First())
             .ToArray();
 
+    private readonly AsyncLocal<ProviderSelection?> _lastSelection =
+        new();
+
     public string Name =>
+        _lastSelection.Value?.Name ??
         ResolvePrimary()?.Name ??
         "Unavailable";
 
     public string Model =>
+        _lastSelection.Value?.Model ??
         ResolvePrimary()?.Model ??
         string.Empty;
 
@@ -140,6 +145,10 @@ public sealed class ComputerOperatorVisionRouter(
                     provider.Name,
                     stopwatch.ElapsedMilliseconds,
                     $"Computer Operator {purpose} thành công.");
+                _lastSelection.Value =
+                    new ProviderSelection(
+                        provider.Name,
+                        provider.Model);
                 return result;
             }
             catch (HttpRequestException exception)
@@ -246,7 +255,13 @@ public sealed class ComputerOperatorVisionRouter(
                         : $"Computer Operator {purpose} thành công.");
 
                 if (result is not null)
+                {
+                    _lastSelection.Value =
+                        new ProviderSelection(
+                            provider.Name,
+                            provider.Model);
                     return result;
+                }
 
                 logger.LogInformation(
                     "Computer Operator provider {Provider} returned no result for {Purpose}; trying fallback.",
@@ -299,6 +314,10 @@ public sealed class ComputerOperatorVisionRouter(
 
         return null;
     }
+
+    private sealed record ProviderSelection(
+        string Name,
+        string Model);
 
     private IReadOnlyList<IComputerOperatorVisionProvider> BuildOrder()
     {

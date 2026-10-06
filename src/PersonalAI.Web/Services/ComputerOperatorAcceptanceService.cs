@@ -304,6 +304,11 @@ public sealed class ComputerOperatorAcceptanceService
 
         RunCheck(
             checks,
+            "v4.9.19 recovery coordinator hợp nhất runtime, loop, recovery và fragment thành một quyết định ưu tiên",
+            CheckRecoveryCoordinatorPriority);
+
+        RunCheck(
+            checks,
             "OpenCV template sensor giữ multi-scale nhỏ và ngưỡng confidence an toàn",
             CheckOpenCvTemplateSensorPolicy);
 
@@ -4677,6 +4682,95 @@ public sealed class ComputerOperatorAcceptanceService
                 // Cleanup thư mục tạm không được làm acceptance fail.
             }
         }
+    }
+
+    private static void CheckRecoveryCoordinatorPriority()
+    {
+        var coordinator =
+            new ComputerOperatorRecoveryCoordinator();
+
+        var runtimeProgressing =
+            coordinator.Decide(
+                new ComputerOperatorRecoveryCoordinatorInput(
+                    RuntimeState:
+                        new ComputerOperatorRuntimeStateAssessment(
+                            ComputerOperatorRuntimeStates.Progressing,
+                            ComputerOperatorRuntimeDecisions.Wait,
+                            0.92,
+                            Terminal: false,
+                            "Đang tiến triển."),
+                    RecoveryPlan:
+                        new ComputerOperatorRecoveryPlan(
+                            ComputerOperatorRecoveryAction.Replan,
+                            Array.Empty<ComputerOperatorRecoveryAction>(),
+                            AllowSameStrategyRetry: false,
+                            DelayMs: 0,
+                            "Recovery muốn replan.")));
+
+        var loopWithFragment =
+            coordinator.Decide(
+                new ComputerOperatorRecoveryCoordinatorInput(
+                    LoopAssessment:
+                        new ComputerOperatorLoopAssessment(
+                            Detected: true,
+                            RequiresStrategyChange: true,
+                            Kind: "repeated-strategy",
+                            Detail: "Lặp strategy.",
+                            Occurrences: 3),
+                    CompatibleFragmentAvailable: true,
+                    ExactFragmentAvailable: true));
+
+        var superseded =
+            coordinator.Decide(
+                new ComputerOperatorRecoveryCoordinatorInput(
+                    CurrentStrategySuperseded: true,
+                    CompatibleFragmentAvailable: false,
+                    ExactFragmentAvailable: false));
+
+        var repeatedFailureWithFragment =
+            coordinator.Decide(
+                new ComputerOperatorRecoveryCoordinatorInput(
+                    RecoveryPlan:
+                        new ComputerOperatorRecoveryPlan(
+                            ComputerOperatorRecoveryAction.Reobserve,
+                            Array.Empty<ComputerOperatorRecoveryAction>(),
+                            AllowSameStrategyRetry: false,
+                            DelayMs: 0,
+                            "Quan sát lại."),
+                    RepeatedFailures: 3,
+                    CompatibleFragmentAvailable: true));
+
+        var loadingWait =
+            coordinator.Decide(
+                new ComputerOperatorRecoveryCoordinatorInput(
+                    RecoveryPlan:
+                        new ComputerOperatorRecoveryPlan(
+                            ComputerOperatorRecoveryAction.WaitForStableUi,
+                            new[]
+                            {
+                                ComputerOperatorRecoveryAction.Reobserve
+                            },
+                            AllowSameStrategyRetry: true,
+                            DelayMs: 700,
+                            "UI vẫn có thể đang tải.")));
+
+        Require(
+            runtimeProgressing.Decision ==
+                ComputerOperatorRecoveryCoordinatorDecisions.Wait &&
+            !runtimeProgressing.AllowSameStrategyRetry &&
+            loopWithFragment.Decision ==
+                ComputerOperatorRecoveryCoordinatorDecisions.ResumeFragment &&
+            loopWithFragment.PreferKnownFragment &&
+            loopWithFragment.RequiresFreshObservation &&
+            superseded.Decision ==
+                ComputerOperatorRecoveryCoordinatorDecisions.ChangeStrategy &&
+            !superseded.AllowSameStrategyRetry &&
+            repeatedFailureWithFragment.Decision ==
+                ComputerOperatorRecoveryCoordinatorDecisions.ResumeFragment &&
+            loadingWait.Decision ==
+                ComputerOperatorRecoveryCoordinatorDecisions.Wait &&
+            loadingWait.AllowSameStrategyRetry,
+            "Recovery Coordinator phải ưu tiên runtime progress -> wait, loop/repeated failure + fragment -> resume-fragment, superseded -> change-strategy và loading -> wait.");
     }
 
     private static void CheckOcrProviderEmptyResultDoesNotTripHealth()

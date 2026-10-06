@@ -284,6 +284,11 @@ public sealed class ComputerOperatorAcceptanceService
 
         RunCheck(
             checks,
+            "v4.9.15 fragment retrieval tìm lại đoạn workflow từ state giữa và không đi vòng graph",
+            CheckProcedureFragmentRetrieval);
+
+        RunCheck(
+            checks,
             "OpenCV template sensor giữ multi-scale nhỏ và ngưỡng confidence an toàn",
             CheckOpenCvTemplateSensorPolicy);
 
@@ -4027,6 +4032,137 @@ public sealed class ComputerOperatorAcceptanceService
                 !unknown.KnownProcedureNode &&
                 !unknown.ReplayLastActionAllowed,
                 "Resume phải re-observe: exact state tiếp tục tại chỗ; state đã biết join graph giữa chừng; state mới replan; không trường hợp nào replay action cuối.");
+        }
+        finally
+        {
+            try
+            {
+                if (Directory.Exists(root))
+                    Directory.Delete(root, recursive: true);
+            }
+            catch
+            {
+                // Cleanup thư mục tạm không được làm acceptance fail.
+            }
+        }
+    }
+
+    private static void CheckProcedureFragmentRetrieval()
+    {
+        var root =
+            Path.Combine(
+                Path.GetTempPath(),
+                "personalai-fragment-retrieval-acceptance",
+                Guid.NewGuid().ToString("N"));
+
+        Directory.CreateDirectory(root);
+
+        try
+        {
+            var configuration =
+                new ConfigurationBuilder()
+                    .AddInMemoryCollection(
+                        new Dictionary<string, string?>
+                        {
+                            ["Tasks:Root"] = root
+                        })
+                    .Build();
+
+            var workspace =
+                new AcceptanceWorkspaceContextAccessor(
+                    PersonalWorkspaceIds.PersonalAi);
+
+            var transitions =
+                new SqliteComputerOperatorVerifiedTransitionStore(
+                    configuration,
+                    workspace);
+
+            var graph =
+                new SqliteComputerOperatorProcedureGraphStore(
+                    configuration,
+                    workspace);
+
+            string State(string value) =>
+                transitions.FingerprintSemanticState(value);
+
+            var stateA = State("fragment-a");
+            var stateB = State("fragment-b");
+            var stateC = State("fragment-c");
+            var stateD = State("fragment-d");
+            var stateX = State("fragment-x");
+
+            _ = graph.RecordVerifiedEdge(
+                stateA,
+                stateB,
+                "strategy-a-b",
+                State("effect-b"),
+                0.98,
+                "click-left");
+
+            _ = graph.RecordVerifiedEdge(
+                stateB,
+                stateC,
+                "strategy-b-c",
+                State("effect-c"),
+                0.97,
+                "press-key");
+
+            _ = graph.RecordVerifiedEdge(
+                stateC,
+                stateD,
+                "strategy-c-d",
+                State("effect-d"),
+                0.96,
+                "click-left");
+
+            // Nhánh phụ kém tin cậy hơn.
+            _ = graph.RecordVerifiedEdge(
+                stateB,
+                stateX,
+                "strategy-b-x",
+                State("effect-x"),
+                0.82,
+                "scroll");
+
+            // Tạo cycle để chắc chắn retriever không quay vô hạn.
+            _ = graph.RecordVerifiedEdge(
+                stateD,
+                stateB,
+                "strategy-d-b",
+                State("effect-b-again"),
+                0.90,
+                "press-hotkey");
+
+            var retriever =
+                new ComputerOperatorProcedureFragmentRetriever(
+                    graph);
+
+            var fragments =
+                retriever.Retrieve(
+                    stateB,
+                    maximumDepth: 6,
+                    maximumFragments: 8);
+
+            Require(
+                fragments.Count > 0 &&
+                fragments.Count <= 8 &&
+                fragments.All(fragment =>
+                    fragment.Length <=
+                        ComputerOperatorProcedureFragmentRetriever.MaximumDepthLimit) &&
+                fragments.All(fragment =>
+                    fragment.Edges
+                        .Select(edge => edge.FromStateFingerprint)
+                        .Append(fragment.EndStateFingerprint)
+                        .Distinct(StringComparer.OrdinalIgnoreCase)
+                        .Count() ==
+                    fragment.Length + 1) &&
+                fragments.Any(fragment =>
+                    fragment.EndStateFingerprint == stateD &&
+                    fragment.Edges.Count == 2 &&
+                    fragment.Edges[0].ActionKind == "press-key" &&
+                    fragment.Edges[1].ActionKind == "click-left") &&
+                fragments[0].BottleneckConfidence >= 0.96,
+                "Fragment Retrieval phải tìm được B->C->D đã VERIFY PASS, ưu tiên reliability và không lặp state khi graph có cycle D->B.");
         }
         finally
         {

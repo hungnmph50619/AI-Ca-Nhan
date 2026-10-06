@@ -4354,10 +4354,22 @@ public sealed class ComputerOperatorTaskService(
             (window.Title ?? string.Empty)
                 .Trim();
 
-        return process.Equals(
-                   "SearchHost",
-                   StringComparison.OrdinalIgnoreCase) ||
-               title.Equals(
+        if (process.Equals(
+                "SearchHost",
+                StringComparison.OrdinalIgnoreCase) ||
+            process.Equals(
+                "SearchApp",
+                StringComparison.OrdinalIgnoreCase))
+        {
+            return true;
+        }
+
+        // Chỉ dùng title làm fallback khi process metadata thật sự thiếu.
+        // Browser/tab có title "Search" không được coi là Windows Search.
+        if (process.Length > 0)
+            return false;
+
+        return title.Equals(
                    "Search",
                    StringComparison.OrdinalIgnoreCase) ||
                title.Equals(

@@ -12,6 +12,7 @@ public sealed record ComputerOperatorProcedureEdge(
     string FromStateFingerprint,
     string ToStateFingerprint,
     string StrategyKey,
+    string ActionKind,
     string ExpectedEffectFingerprint,
     int SuccessCount,
     double AverageConfidence,
@@ -28,7 +29,8 @@ public interface IComputerOperatorProcedureGraphStore
         string toStateFingerprint,
         string strategyKey,
         string expectedEffectFingerprint,
-        double confidence);
+        double confidence,
+        string actionKind = "unknown");
 
     IReadOnlyList<ComputerOperatorProcedureEdge> GetOutgoing(
         string fromStateFingerprint,
@@ -127,7 +129,8 @@ public sealed class SqliteComputerOperatorProcedureGraphStore(
         string toStateFingerprint,
         string strategyKey,
         string expectedEffectFingerprint,
-        double confidence)
+        double confidence,
+        string actionKind = "unknown")
     {
         var from =
             NormalizeFingerprint(fromStateFingerprint);
@@ -137,6 +140,8 @@ public sealed class SqliteComputerOperatorProcedureGraphStore(
             NormalizeFingerprint(expectedEffectFingerprint);
         var strategy =
             NormalizeDimension(strategyKey, 120);
+        var action =
+            NormalizeActionKind(actionKind);
 
         if (strategy.Length == 0)
         {
@@ -185,6 +190,7 @@ public sealed class SqliteComputerOperatorProcedureGraphStore(
                     from_state_fingerprint,
                     to_state_fingerprint,
                     strategy_key,
+                    action_kind,
                     expected_effect_fingerprint,
                     success_count,
                     confidence_total,
@@ -196,6 +202,7 @@ public sealed class SqliteComputerOperatorProcedureGraphStore(
                     $from,
                     $to,
                     $strategy,
+                    $action,
                     $effect,
                     1,
                     $confidence,
@@ -212,6 +219,7 @@ public sealed class SqliteComputerOperatorProcedureGraphStore(
                 DO UPDATE SET
                     success_count = success_count + 1,
                     confidence_total = confidence_total + excluded.confidence_total,
+                    action_kind = excluded.action_kind,
                     last_verified_at = excluded.last_verified_at;
                 """;
 
@@ -221,6 +229,7 @@ public sealed class SqliteComputerOperatorProcedureGraphStore(
             command.Parameters.AddWithValue("$from", from);
             command.Parameters.AddWithValue("$to", to);
             command.Parameters.AddWithValue("$strategy", strategy);
+            command.Parameters.AddWithValue("$action", action);
             command.Parameters.AddWithValue("$effect", effect);
             command.Parameters.AddWithValue(
                 "$confidence",
@@ -294,6 +303,7 @@ public sealed class SqliteComputerOperatorProcedureGraphStore(
                     from_state_fingerprint,
                     to_state_fingerprint,
                     strategy_key,
+                    action_kind,
                     expected_effect_fingerprint,
                     success_count,
                     confidence_total,
@@ -483,6 +493,7 @@ public sealed class SqliteComputerOperatorProcedureGraphStore(
                 from_state_fingerprint,
                 to_state_fingerprint,
                 strategy_key,
+                action_kind,
                 expected_effect_fingerprint,
                 success_count,
                 confidence_total,
@@ -517,10 +528,10 @@ public sealed class SqliteComputerOperatorProcedureGraphStore(
         SqliteDataReader reader)
     {
         if (!DateTimeOffset.TryParse(
-                reader.GetString(6),
+                reader.GetString(7),
                 out var first) ||
             !DateTimeOffset.TryParse(
-                reader.GetString(7),
+                reader.GetString(8),
                 out var last))
         {
             return null;
@@ -529,15 +540,16 @@ public sealed class SqliteComputerOperatorProcedureGraphStore(
         var count =
             Math.Max(
                 1,
-                reader.GetInt32(4));
+                reader.GetInt32(5));
 
         return new(
             reader.GetString(0),
             reader.GetString(1),
             reader.GetString(2),
             reader.GetString(3),
+            reader.GetString(4),
             count,
-            reader.GetDouble(5) / count,
+            reader.GetDouble(6) / count,
             first,
             last);
     }
@@ -576,6 +588,7 @@ public sealed class SqliteComputerOperatorProcedureGraphStore(
                 from_state_fingerprint TEXT NOT NULL,
                 to_state_fingerprint TEXT NOT NULL,
                 strategy_key TEXT NOT NULL,
+                action_kind TEXT NOT NULL DEFAULT 'unknown',
                 expected_effect_fingerprint TEXT NOT NULL,
                 success_count INTEGER NOT NULL,
                 confidence_total REAL NOT NULL,
@@ -608,7 +621,78 @@ public sealed class SqliteComputerOperatorProcedureGraphStore(
 
         command.ExecuteNonQuery();
 
+        EnsureActionKindColumn(
+            connection);
+
         initialized = true;
+    }
+
+    private static void EnsureActionKindColumn(
+        SqliteConnection connection)
+    {
+        using var inspect =
+            connection.CreateCommand();
+
+        inspect.CommandText =
+            "PRAGMA table_info(computer_operator_procedure_edges);";
+
+        var hasColumn =
+            false;
+
+        using (var reader =
+            inspect.ExecuteReader())
+        {
+            while (reader.Read())
+            {
+                if (reader.GetString(1).Equals(
+                        "action_kind",
+                        StringComparison.OrdinalIgnoreCase))
+                {
+                    hasColumn =
+                        true;
+                    break;
+                }
+            }
+        }
+
+        if (hasColumn)
+            return;
+
+        using var alter =
+            connection.CreateCommand();
+
+        alter.CommandText =
+            """
+            ALTER TABLE computer_operator_procedure_edges
+            ADD COLUMN action_kind TEXT NOT NULL DEFAULT 'unknown';
+            """;
+
+        alter.ExecuteNonQuery();
+    }
+
+    private static string NormalizeActionKind(
+        string? value)
+    {
+        var normalized =
+            (value ?? string.Empty)
+                .Trim()
+                .ToLowerInvariant();
+
+        if (normalized.Length == 0)
+            return "unknown";
+
+        var safe =
+            new string(
+                normalized
+                    .Where(character =>
+                        char.IsLetterOrDigit(character) ||
+                        character is '-' or '_')
+                    .Take(48)
+                    .ToArray());
+
+        return safe.Length == 0
+            ? "unknown"
+            : safe;
     }
 
     private SqliteConnection OpenConnection()
@@ -697,6 +781,7 @@ public sealed class ComputerOperatorProcedureGraphSession(
     private sealed record PendingVerifiedAction(
         string FromStateFingerprint,
         string StrategyKey,
+        string ActionKind,
         string ExpectedEffectFingerprint,
         double Confidence);
 
@@ -721,19 +806,22 @@ public sealed class ComputerOperatorProcedureGraphSession(
             stateFingerprint,
             verified.StrategyKey,
             verified.ExpectedEffectFingerprint,
-            verified.Confidence);
+            verified.Confidence,
+            verified.ActionKind);
     }
 
     public void RecordVerifiedAction(
         string fromStateFingerprint,
         string strategyKey,
         string expectedEffectFingerprint,
-        double confidence)
+        double confidence,
+        string actionKind = "unknown")
     {
         pending =
             new(
                 fromStateFingerprint,
                 strategyKey,
+                NormalizeSessionActionKind(actionKind),
                 expectedEffectFingerprint,
                 confidence);
     }
@@ -741,5 +829,20 @@ public sealed class ComputerOperatorProcedureGraphSession(
     public void CancelPending()
     {
         pending = null;
+    }
+
+    private static string NormalizeSessionActionKind(
+        string? value)
+    {
+        var normalized =
+            (value ?? string.Empty)
+                .Trim()
+                .ToLowerInvariant();
+
+        return normalized.Length == 0
+            ? "unknown"
+            : normalized.Length <= 48
+                ? normalized
+                : normalized[..48];
     }
 }

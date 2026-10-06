@@ -35,6 +35,7 @@ public static class ComputerUseEndpoints
         services.AddSingleton<IComputerOperatorExperienceAggregateStore, SqliteComputerOperatorExperienceAggregateStore>();
         services.AddSingleton<IComputerOperatorExperienceValidator, ComputerOperatorExperienceValidator>();
         services.AddSingleton<IComputerOperatorExperienceConsolidator, ComputerOperatorExperienceConsolidator>();
+        services.AddSingleton<IComputerOperatorExperienceLifecycleService, ComputerOperatorExperienceLifecycleService>();
         services.AddSingleton<IComputerDisplayTopologyService, WindowsComputerDisplayTopologyService>();
         services.AddSingleton<IComputerDpiCalibrationService, ComputerDpiCalibrationService>();
         services.AddSingleton<IComputerCoordinateTransformService, ComputerCoordinateTransformService>();
@@ -274,6 +275,30 @@ public static class ComputerUseEndpoints
                     "Core chỉ phụ thuộc IComputerOperatorExperienceRepository.",
                     "SQLite hiện tại có thể thay bằng SQL Server/PostgreSQL sau này mà không đổi core."
                 }
+            });
+        });
+
+        app.MapPost("/api/computer/operator-experience-maintenance", (
+            HttpContext context,
+            IComputerOperatorExperienceLifecycleService lifecycle) =>
+        {
+            if (!IsLocalRequest(context))
+                return Results.StatusCode(StatusCodes.Status403Forbidden);
+
+            var result =
+                lifecycle.RunMaintenance();
+
+            return Results.Ok(new
+            {
+                phienBan = PersonalAiRelease.Version,
+                daXoaCandidate = result.DeletedCandidates,
+                daLuuTruFailure = result.ArchivedFailures,
+                daLuuTruRecovery = result.ArchivedRecoveries,
+                daLuuTruExperience = result.ArchivedExperiences,
+                daLuuTruStrategy = result.ArchivedStrategies,
+                suKienHotConLai = result.RemainingHotEvents,
+                khoLuuTru = result.ArchiveProvider,
+                lyDo = result.Reason
             });
         });
 

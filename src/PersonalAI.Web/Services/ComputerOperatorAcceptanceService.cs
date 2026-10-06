@@ -114,6 +114,11 @@ public sealed class ComputerOperatorAcceptanceService
 
         RunCheck(
             checks,
+            "v4.5 kernel từ chối side-effect thiếu expected effect",
+            CheckUnifiedDecisionKernelRejectsUnsafeSideEffect);
+
+        RunCheck(
+            checks,
             "local visual provider health cooldown sau failure lặp",
             CheckLocalVisualProviderHealthCooldown);
 
@@ -1675,6 +1680,54 @@ public sealed class ComputerOperatorAcceptanceService
                 StringComparison.OrdinalIgnoreCase) &&
             !unsafeCompiled,
             "Unified Decision Kernel chưa compile/reject intent pointer đúng policy an toàn.");
+    }
+
+    private static void CheckUnifiedDecisionKernelRejectsUnsafeSideEffect()
+    {
+        var kernel =
+            new UnifiedDecisionKernel();
+
+        var frame =
+            new DesktopScreenshotFrame(
+                Jpeg: Array.Empty<byte>(),
+                Left: 0,
+                Top: 0,
+                Width: 1280,
+                Height: 720,
+                CapturedAtUtc: DateTimeOffset.UtcNow);
+
+        var intent =
+            new DesktopOperatorIntent(
+                Intent: "press_key",
+                Target: "Xác nhận",
+                Query: string.Empty,
+                Text: string.Empty,
+                Key: "ENTER",
+                Keys: Array.Empty<string>(),
+                ImageX: 0,
+                ImageY: 0,
+                BoxLeft: 0,
+                BoxTop: 0,
+                BoxWidth: 0,
+                BoxHeight: 0,
+                ScrollDelta: 0,
+                ExpectedEffect: string.Empty,
+                Confidence: 0.91,
+                Reason: "Cần xác nhận bước hiện tại.");
+
+        var compiled =
+            kernel.TryCompile(
+                intent,
+                frame,
+                out _,
+                out var rejection);
+
+        Require(
+            !compiled &&
+            rejection.Contains(
+                "expectedEffect",
+                StringComparison.OrdinalIgnoreCase),
+            "Unified Decision Kernel chưa chặn side-effect thiếu expectedEffect.");
     }
 
     private static void CheckLocalVisualProviderHealthCooldown()

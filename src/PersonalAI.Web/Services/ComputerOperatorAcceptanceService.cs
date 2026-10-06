@@ -264,6 +264,11 @@ public sealed class ComputerOperatorAcceptanceService
 
         RunCheck(
             checks,
+            "v4.9.11 retention xóa candidate rác, archive raw history và chỉ archive trusted experience đã consolidate",
+            CheckExperienceRetentionArchiveCleanup);
+
+        RunCheck(
+            checks,
             "OpenCV template sensor giữ multi-scale nhỏ và ngưỡng confidence an toàn",
             CheckOpenCvTemplateSensorPolicy);
 
@@ -3336,6 +3341,235 @@ public sealed class ComputerOperatorAcceptanceService
                 Math.Abs(
                     persistent.P95Milliseconds - 68000) < 0.001,
                 "Consolidation phải gom experience cùng context/failure/strategy thành một pattern và timing aggregate phải đọc lại được khi telemetry memory trống.");
+        }
+        finally
+        {
+            try
+            {
+                if (Directory.Exists(root))
+                    Directory.Delete(root, recursive: true);
+            }
+            catch
+            {
+                // Cleanup thư mục tạm không được làm acceptance fail.
+            }
+        }
+    }
+
+    private static void CheckExperienceRetentionArchiveCleanup()
+    {
+        var root =
+            Path.Combine(
+                Path.GetTempPath(),
+                "personalai-lifecycle-acceptance",
+                Guid.NewGuid().ToString("N"));
+
+        Directory.CreateDirectory(root);
+
+        try
+        {
+            var configuration =
+                new ConfigurationBuilder()
+                    .AddInMemoryCollection(
+                        new Dictionary<string, string?>
+                        {
+                            ["Tasks:Root"] = root
+                        })
+                    .Build();
+
+            var workspace =
+                new AcceptanceWorkspaceContextAccessor(
+                    PersonalWorkspaceIds.PersonalAi);
+
+            var repository =
+                new SqliteComputerOperatorExperienceRepository(
+                    configuration,
+                    workspace);
+
+            var aggregates =
+                new SqliteComputerOperatorExperienceAggregateStore(
+                    configuration,
+                    workspace);
+
+            var fingerprint =
+                repository.FingerprintContext(
+                    "scene=lifecycle|failure=no-effect");
+
+            var candidate =
+                repository.Append(
+                    ComputerOperatorExperienceKinds.Candidate,
+                    fingerprint,
+                    failureCode: "action-no-effect",
+                    strategyKey: "strategy-b",
+                    outcome: "awaiting-validation",
+                    confidence: 0.50,
+                    verified: false);
+
+            var failure =
+                repository.Append(
+                    ComputerOperatorExperienceKinds.Failure,
+                    fingerprint,
+                    failureCode: "action-no-effect",
+                    strategyKey: "strategy-a",
+                    outcome: "observed-failure",
+                    confidence: 0.80,
+                    verified: false);
+
+            var recovery =
+                repository.Append(
+                    ComputerOperatorExperienceKinds.Recovery,
+                    fingerprint,
+                    failureCode: "action-no-effect",
+                    strategyKey: "strategy-b",
+                    outcome: "verified-pass",
+                    confidence: 0.94,
+                    verified: true);
+
+            var experience =
+                repository.Append(
+                    ComputerOperatorExperienceKinds.Experience,
+                    fingerprint,
+                    failureCode: "action-no-effect",
+                    strategyKey: "strategy-b",
+                    outcome: "trusted-verified",
+                    confidence: 0.93,
+                    verified: true);
+
+            var strategy =
+                repository.Append(
+                    ComputerOperatorExperienceKinds.Strategy,
+                    fingerprint,
+                    failureCode: "action-no-effect",
+                    strategyKey: "strategy-b",
+                    outcome: "historical-strategy",
+                    confidence: 0.90,
+                    verified: true);
+
+            aggregates.UpsertPattern(
+                new(
+                    fingerprint,
+                    "action-no-effect",
+                    "strategy-b",
+                    2,
+                    0.93,
+                    45000,
+                    DateTimeOffset.UtcNow));
+
+            var hotPath =
+                Path.Combine(
+                    root,
+                    "computer-operator-experience.db");
+
+            using (var connection =
+                new Microsoft.Data.Sqlite.SqliteConnection(
+                    $"Data Source={hotPath};Mode=ReadWriteCreate;Cache=Shared"))
+            {
+                connection.Open();
+
+                static void Age(
+                    Microsoft.Data.Sqlite.SqliteConnection connection,
+                    Guid id,
+                    DateTimeOffset createdAt)
+                {
+                    using var command =
+                        connection.CreateCommand();
+
+                    command.CommandText =
+                        """
+                        UPDATE computer_operator_experience_events
+                        SET created_at = $createdAt
+                        WHERE event_id = $id;
+                        """;
+
+                    command.Parameters.AddWithValue(
+                        "$createdAt",
+                        createdAt.ToString("O"));
+                    command.Parameters.AddWithValue(
+                        "$id",
+                        id.ToString("D"));
+                    command.ExecuteNonQuery();
+                }
+
+                var now =
+                    DateTimeOffset.UtcNow;
+
+                Age(connection, candidate.Id, now.AddDays(-15));
+                Age(connection, failure.Id, now.AddDays(-31));
+                Age(connection, recovery.Id, now.AddDays(-91));
+                Age(connection, experience.Id, now.AddDays(-181));
+                Age(connection, strategy.Id, now.AddDays(-181));
+            }
+
+            var lifecycle =
+                new ComputerOperatorExperienceLifecycleService(
+                    configuration,
+                    workspace);
+
+            var result =
+                lifecycle.RunMaintenance(
+                    DateTimeOffset.UtcNow);
+
+            var diagnostics =
+                repository.GetDiagnostics();
+
+            var archivePath =
+                Path.Combine(
+                    root,
+                    "computer-operator-experience-archive.db");
+
+            var archivedCount = 0;
+            var archivedCandidates = 0;
+
+            using (var archive =
+                new Microsoft.Data.Sqlite.SqliteConnection(
+                    $"Data Source={archivePath};Mode=ReadOnly;Cache=Shared"))
+            {
+                archive.Open();
+
+                using var command =
+                    archive.CreateCommand();
+
+                command.CommandText =
+                    """
+                    SELECT
+                        COUNT(*),
+                        SUM(CASE WHEN kind = 'candidate' THEN 1 ELSE 0 END)
+                    FROM computer_operator_experience_archive
+                    WHERE workspace_id = $workspaceId;
+                    """;
+
+                command.Parameters.AddWithValue(
+                    "$workspaceId",
+                    PersonalWorkspaceIds.PersonalAi);
+
+                using var reader =
+                    command.ExecuteReader();
+
+                if (reader.Read())
+                {
+                    archivedCount =
+                        reader.IsDBNull(0)
+                            ? 0
+                            : reader.GetInt32(0);
+
+                    archivedCandidates =
+                        reader.IsDBNull(1)
+                            ? 0
+                            : reader.GetInt32(1);
+                }
+            }
+
+            Require(
+                result.DeletedCandidates == 1 &&
+                result.ArchivedFailures == 1 &&
+                result.ArchivedRecoveries == 1 &&
+                result.ArchivedExperiences == 1 &&
+                result.ArchivedStrategies == 1 &&
+                result.RemainingHotEvents == 0 &&
+                diagnostics.EventCount == 0 &&
+                archivedCount == 4 &&
+                archivedCandidates == 0,
+                "Lifecycle phải xóa candidate chưa trusted, archive raw history cũ, giữ candidate ngoài archive và chỉ archive trusted experience khi pattern đã tồn tại.");
         }
         finally
         {

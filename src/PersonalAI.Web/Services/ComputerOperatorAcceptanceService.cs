@@ -309,6 +309,11 @@ public sealed class ComputerOperatorAcceptanceService
 
         RunCheck(
             checks,
+            "v4.9.20 MCP chỉ là boundary local qua capability router + execution gateway, không bypass Computer Operator core",
+            CheckMcpCapabilityBoundary);
+
+        RunCheck(
+            checks,
             "OpenCV template sensor giữ multi-scale nhỏ và ngưỡng confidence an toàn",
             CheckOpenCvTemplateSensorPolicy);
 
@@ -4771,6 +4776,75 @@ public sealed class ComputerOperatorAcceptanceService
                 ComputerOperatorRecoveryCoordinatorDecisions.Wait &&
             loadingWait.AllowSameStrategyRetry,
             "Recovery Coordinator phải ưu tiên runtime progress -> wait, loop/repeated failure + fragment -> resume-fragment, superseded -> change-strategy và loading -> wait.");
+    }
+
+    private static void CheckMcpCapabilityBoundary()
+    {
+        var constructor =
+            typeof(PersonalAiMcpCapabilityBridge)
+                .GetConstructors()
+                .Single();
+
+        var dependencies =
+            constructor
+                .GetParameters()
+                .Select(parameter =>
+                    parameter.ParameterType)
+                .ToArray();
+
+        var local =
+            new DefaultHttpContext();
+
+        local.Connection.RemoteIpAddress =
+            System.Net.IPAddress.Loopback;
+
+        local.Request.Host =
+            new HostString(
+                "localhost",
+                5000);
+
+        var remote =
+            new DefaultHttpContext();
+
+        remote.Connection.RemoteIpAddress =
+            System.Net.IPAddress.Parse(
+                "10.20.30.40");
+
+        remote.Request.Host =
+            new HostString(
+                "localhost",
+                5000);
+
+        var rebinding =
+            new DefaultHttpContext();
+
+        rebinding.Connection.RemoteIpAddress =
+            System.Net.IPAddress.Loopback;
+
+        rebinding.Request.Host =
+            new HostString(
+                "attacker.example",
+                5000);
+
+        Require(
+            dependencies.Length == 2 &&
+            dependencies.Contains(
+                typeof(ICapabilityToolRouter)) &&
+            dependencies.Contains(
+                typeof(IExecutionGateway)) &&
+            !dependencies.Contains(
+                typeof(IComputerUseService)) &&
+            !dependencies.Contains(
+                typeof(IComputerOperatorTaskService)) &&
+            !dependencies.Contains(
+                typeof(IComputerOperatorActionExecutor)) &&
+            McpIntegrationEndpoints.IsLoopbackRequest(
+                local) &&
+            !McpIntegrationEndpoints.IsLoopbackRequest(
+                remote) &&
+            !McpIntegrationEndpoints.IsLoopbackRequest(
+                rebinding),
+            "MCP boundary phải chỉ phụ thuộc CapabilityToolRouter + ExecutionGateway, không gọi ComputerUse/Operator executor trực tiếp; HTTP MCP phải chặn remote IP và Host không phải loopback.");
     }
 
     private static void CheckOcrProviderEmptyResultDoesNotTripHealth()

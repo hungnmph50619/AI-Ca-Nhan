@@ -648,26 +648,47 @@ public sealed class ComputerOperatorTaskService(
                             localHistory,
                             out decision))
                     {
-                        plannerStopwatch.Stop();
-                        planTelemetry.Complete(
-                            success: true,
-                            route: desktopState.StructuredScene is not null &&
-                                   !string.IsNullOrWhiteSpace(decision.TargetElementId)
-                                ? "structured-first"
-                                : "local-planner");
-
                         var structuredRoute =
                             desktopState.StructuredScene is not null &&
                             !string.IsNullOrWhiteSpace(decision.TargetElementId);
 
+                        var localStrategyKey =
+                            BuildDiagnosticId(
+                                BuildSemanticActionSignature(
+                                    decision));
+
+                        var fastPath =
+                            strategyRanker.AssessFastPath(
+                                sceneFingerprint,
+                                localStrategyKey,
+                                decision.Action);
+
+                        var localRoute =
+                            fastPath.Eligible
+                                ? structuredRoute
+                                    ? "memory-fast-path-structured"
+                                    : "memory-fast-path-local"
+                                : structuredRoute
+                                    ? "structured-first"
+                                    : "local-planner";
+
+                        plannerStopwatch.Stop();
+                        planTelemetry.Complete(
+                            success: true,
+                            route: localRoute);
+
                         cycleTrace.PlannerRoute =
-                            structuredRoute
-                                ? "structured-first"
-                                : "local-planner";
+                            localRoute;
                         cycleTrace.PlannerTrace.Add(
-                            structuredRoute
-                                ? "Structured=Resolved"
-                                : "Structured/Local=Resolved");
+                            fastPath.Eligible
+                                ? "MemoryFastPath=Eligible"
+                                : structuredRoute
+                                    ? "Structured=Resolved"
+                                    : "Structured/Local=Resolved");
+
+                        progress.AddDiagnostic(
+                            "fast-path",
+                            $"cycle={index}; eligible={fastPath.Eligible}; status={fastPath.Status}; strategy={localStrategyKey}; action={decision.Action}; successes={fastPath.SuccessCount}; confidence={fastPath.Confidence:0.000}; geminiCalled=false; directReplay=false; safetyAndVerifyRequired=true; reason={LimitDiagnostic(fastPath.Reason, 240)}.");
 
                         progress.Add(
                             structuredRoute
@@ -690,17 +711,39 @@ public sealed class ComputerOperatorTaskService(
                                  desktopState,
                                  out decision))
                     {
+                        var ocrStrategyKey =
+                            BuildDiagnosticId(
+                                BuildSemanticActionSignature(
+                                    decision));
+
+                        var fastPath =
+                            strategyRanker.AssessFastPath(
+                                sceneFingerprint,
+                                ocrStrategyKey,
+                                decision.Action);
+
+                        var ocrRoute =
+                            fastPath.Eligible
+                                ? "memory-fast-path-ocr"
+                                : "ocr-local";
+
                         plannerStopwatch.Stop();
                         planTelemetry.Complete(
                             success: true,
-                            route: "ocr-local");
+                            route: ocrRoute);
 
                         cycleTrace.PlannerRoute =
-                            "ocr-local";
+                            ocrRoute;
                         cycleTrace.PlannerTrace.Add(
                             "Structured/Local=NotResolved");
                         cycleTrace.PlannerTrace.Add(
-                            "OCR=Resolved");
+                            fastPath.Eligible
+                                ? "MemoryFastPath=Eligible(OCR)"
+                                : "OCR=Resolved");
+
+                        progress.AddDiagnostic(
+                            "fast-path",
+                            $"cycle={index}; eligible={fastPath.Eligible}; status={fastPath.Status}; strategy={ocrStrategyKey}; action={decision.Action}; successes={fastPath.SuccessCount}; confidence={fastPath.Confidence:0.000}; geminiCalled=false; directReplay=false; safetyAndVerifyRequired=true; reason={LimitDiagnostic(fastPath.Reason, 240)}.");
 
                         progress.Add(
                             "ocr-local",

@@ -95,6 +95,16 @@ public static class EvaluationEndpoints
             IComputerOperatorRegressionCandidateStore candidates) =>
             Results.Ok(candidates.Get()));
 
+        endpoints.MapPost("/api/evaluation/computer-operator-regression/candidates/{candidateId}/draft", (
+            string candidateId,
+            IComputerOperatorRegressionCandidateStore candidates) =>
+        {
+            var draft = candidates.CreateDraft(candidateId);
+            return draft is null
+                ? Results.NotFound()
+                : Results.Ok(draft);
+        });
+
         endpoints.MapGet("/api/evaluation/regression", (IRegressionDatasetStore store) =>
             Results.Ok(store.GetAll()));
 

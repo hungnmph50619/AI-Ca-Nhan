@@ -119,6 +119,16 @@ public sealed class ComputerOperatorAcceptanceService
 
         RunCheck(
             checks,
+            "v4.5.2 visual scene identity đổi khi perceptual hash đổi",
+            CheckVisualSceneIdentityIncludesPerceptualHash);
+
+        RunCheck(
+            checks,
+            "v4.5.2 verification conflict chuyển sang reobserve",
+            CheckVerificationConflictRequiresReobserve);
+
+        RunCheck(
+            checks,
             "local visual provider health cooldown sau failure lặp",
             CheckLocalVisualProviderHealthCooldown);
 
@@ -1728,6 +1738,69 @@ public sealed class ComputerOperatorAcceptanceService
                 "expectedEffect",
                 StringComparison.OrdinalIgnoreCase),
             "Unified Decision Kernel chưa chặn side-effect thiếu expectedEffect.");
+    }
+
+    private static void CheckVisualSceneIdentityIncludesPerceptualHash()
+    {
+        var foreground =
+            new ComputerWindowInfo(
+                "0x1234",
+                "Acceptance App",
+                "acceptance",
+                10,
+                true,
+                0,
+                0,
+                1280,
+                720);
+
+        var state =
+            new ComputerOperatorDesktopState(
+                DateTimeOffset.UtcNow,
+                foreground,
+                [foreground],
+                FrameLeft: 0,
+                FrameTop: 0,
+                FrameWidth: 1280,
+                FrameHeight: 720,
+                CaptureScope: DesktopCaptureScopes.VirtualDesktop,
+                CaptureWindowId: null,
+                CaptureWindowWasForeground: false);
+
+        var first =
+            ComputerOperatorTaskService.BuildDesktopSceneFingerprintForAcceptance(
+                state,
+                new DesktopPerceptualHash(
+                    0x0000000000000000UL,
+                    "dhash-9x8"));
+
+        var second =
+            ComputerOperatorTaskService.BuildDesktopSceneFingerprintForAcceptance(
+                state,
+                new DesktopPerceptualHash(
+                    0xFFFFFFFFFFFFFFFFUL,
+                    "dhash-9x8"));
+
+        Require(
+            !first.Equals(
+                second,
+                StringComparison.Ordinal),
+            "Visual scene identity chưa đổi khi perceptual hash thay đổi mạnh.");
+    }
+
+    private static void CheckVerificationConflictRequiresReobserve()
+    {
+        Require(
+            ComputerOperatorTaskService.ShouldReobserveOnVerificationConflictForAcceptance(
+                semanticSatisfied: false,
+                strongLocalVisualTransition: true) &&
+            !ComputerOperatorTaskService.ShouldReobserveOnVerificationConflictForAcceptance(
+                semanticSatisfied: true,
+                strongLocalVisualTransition: true) &&
+            !ComputerOperatorTaskService.ShouldReobserveOnVerificationConflictForAcceptance(
+                semanticSatisfied: false,
+                strongLocalVisualTransition: false),
+            "Verification conflict policy chưa phân biệt đúng local transition mạnh và semantic false.");
     }
 
     private static void CheckLocalVisualProviderHealthCooldown()

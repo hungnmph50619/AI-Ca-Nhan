@@ -269,6 +269,11 @@ public sealed class ComputerOperatorAcceptanceService
 
         RunCheck(
             checks,
+            "v4.9.12 verified transition memory giữ các bước A-B đã đúng dù bước C về sau thất bại",
+            CheckVerifiedTransitionMemoryKeepsPartialSuccess);
+
+        RunCheck(
+            checks,
             "OpenCV template sensor giữ multi-scale nhỏ và ngưỡng confidence an toàn",
             CheckOpenCvTemplateSensorPolicy);
 
@@ -3570,6 +3575,122 @@ public sealed class ComputerOperatorAcceptanceService
                 archivedCount == 4 &&
                 archivedCandidates == 0,
                 "Lifecycle phải xóa candidate chưa trusted, archive raw history cũ, giữ candidate ngoài archive và chỉ archive trusted experience khi pattern đã tồn tại.");
+        }
+        finally
+        {
+            try
+            {
+                if (Directory.Exists(root))
+                    Directory.Delete(root, recursive: true);
+            }
+            catch
+            {
+                // Cleanup thư mục tạm không được làm acceptance fail.
+            }
+        }
+    }
+
+    private static void CheckVerifiedTransitionMemoryKeepsPartialSuccess()
+    {
+        var root =
+            Path.Combine(
+                Path.GetTempPath(),
+                "personalai-transition-memory-acceptance",
+                Guid.NewGuid().ToString("N"));
+
+        Directory.CreateDirectory(root);
+
+        try
+        {
+            var configuration =
+                new ConfigurationBuilder()
+                    .AddInMemoryCollection(
+                        new Dictionary<string, string?>
+                        {
+                            ["Tasks:Root"] = root
+                        })
+                    .Build();
+
+            var workspace =
+                new AcceptanceWorkspaceContextAccessor(
+                    PersonalWorkspaceIds.PersonalAi);
+
+            var repository =
+                new SqliteComputerOperatorExperienceRepository(
+                    configuration,
+                    workspace);
+
+            var transitions =
+                new SqliteComputerOperatorVerifiedTransitionStore(
+                    configuration,
+                    workspace);
+
+            var stateA =
+                repository.FingerprintContext(
+                    "state=a");
+
+            var stateB =
+                repository.FingerprintContext(
+                    "state=b");
+
+            var stepA =
+                transitions.RecordVerified(
+                    stateA,
+                    "strategy-a-to-b",
+                    "state b reached",
+                    0.96,
+                    120);
+
+            var stepB =
+                transitions.RecordVerified(
+                    stateB,
+                    "strategy-b-to-c",
+                    "state c reached",
+                    0.94,
+                    180);
+
+            _ =
+                repository.Append(
+                    ComputerOperatorExperienceKinds.Failure,
+                    repository.FingerprintContext(
+                        "state=c"),
+                    failureCode: "verification-failed",
+                    strategyKey: "strategy-c-to-d",
+                    outcome: "observed-failure",
+                    confidence: 0.77,
+                    verified: false);
+
+            var stateATransitions =
+                transitions.FindExact(
+                    stateA);
+
+            var stateBTransitions =
+                transitions.FindExact(
+                    stateB);
+
+            var repeatedA =
+                transitions.RecordVerified(
+                    stateA,
+                    "strategy-a-to-b",
+                    "state b reached",
+                    0.98,
+                    100);
+
+            var all =
+                transitions.GetRecent();
+
+            Require(
+                stepA.SuccessCount == 1 &&
+                stepB.SuccessCount == 1 &&
+                stateATransitions.Count == 1 &&
+                stateBTransitions.Count == 1 &&
+                repeatedA.SuccessCount == 2 &&
+                repeatedA.AverageConfidence > 0.96 &&
+                all.Count == 2 &&
+                all.All(item =>
+                    item.FromStateFingerprint.Length == 64 &&
+                    item.ExpectedEffectFingerprint.Length == 64),
+                "Failure ở bước C không được xóa transition A-B/B-C đã VERIFY PASS; transition lặp lại phải tăng success count thay vì tạo bản ghi rác.");
         }
         finally
         {

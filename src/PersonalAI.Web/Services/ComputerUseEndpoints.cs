@@ -29,6 +29,8 @@ public static class ComputerUseEndpoints
         services.AddSingleton<IAdaptiveVerificationWaitEngine, AdaptiveVerificationWaitEngine>();
         services.AddSingleton<IComputerOperatorRuntimeStateIntelligence, ComputerOperatorRuntimeStateIntelligence>();
         services.AddSingleton<IComputerOperatorProgressIntelligence, ComputerOperatorProgressIntelligence>();
+        services.AddSingleton<IComputerOperatorLearnedTimingService, ComputerOperatorLearnedTimingService>();
+        services.AddSingleton<IComputerOperatorAdaptiveWaitPolicyResolver, ComputerOperatorAdaptiveWaitPolicyResolver>();
         services.AddSingleton<IComputerDisplayTopologyService, WindowsComputerDisplayTopologyService>();
         services.AddSingleton<IComputerDpiCalibrationService, ComputerDpiCalibrationService>();
         services.AddSingleton<IComputerCoordinateTransformService, ComputerCoordinateTransformService>();
@@ -236,6 +238,33 @@ public static class ComputerUseEndpoints
                 daXoa = true,
                 message =
                     "Đã xóa capture health telemetry trong bộ nhớ."
+            });
+        });
+
+        app.MapGet("/api/computer/operator-learned-timing", (
+            HttpContext context,
+            IComputerOperatorLearnedTimingService timing) =>
+        {
+            if (!IsLocalRequest(context))
+                return Results.StatusCode(StatusCodes.Status403Forbidden);
+
+            return Results.Ok(new
+            {
+                phienBan = PersonalAiRelease.Version,
+                toiThieuMauSanSang =
+                    ComputerOperatorLearnedTimingService.MinimumReadySamples,
+                hoSo = timing.GetProfiles().Select(item => new
+                {
+                    giaiDoan = item.Stage,
+                    hanhDong = item.Action,
+                    soMau = item.SampleCount,
+                    trungViMs = Math.Round(item.MedianMilliseconds, 1),
+                    p90Ms = Math.Round(item.P90Milliseconds, 1),
+                    p95Ms = Math.Round(item.P95Milliseconds, 1),
+                    toiDaMs = Math.Round(item.MaximumMilliseconds, 1),
+                    doTinCay = Math.Round(item.Confidence, 2),
+                    sanSang = item.Ready
+                })
             });
         });
 

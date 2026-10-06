@@ -134,6 +134,21 @@ public sealed class ComputerOperatorAcceptanceService
 
         RunCheck(
             checks,
+            "v4.6 semantic target label rút gọn cho local grounding",
+            CheckDeterministicTargetGroundingLabels);
+
+        RunCheck(
+            checks,
+            "v4.6 Windows Search bắt buộc deterministic text grounding",
+            CheckWindowsSearchUsesDeterministicGrounding);
+
+        RunCheck(
+            checks,
+            "v4.6 native app launch không chấp nhận browser identity",
+            CheckNativeAppLaunchRejectsBrowserIdentity);
+
+        RunCheck(
+            checks,
             "local visual provider health cooldown sau failure lặp",
             CheckLocalVisualProviderHealthCooldown);
 
@@ -1830,6 +1845,104 @@ public sealed class ComputerOperatorAcceptanceService
                 currentStep: 11,
                 consumedUntilStep: 13),
             "Post-transition suppression chưa chặn đúng replay hoặc chặn nhầm strategy mới.");
+    }
+
+    private static void CheckDeterministicTargetGroundingLabels()
+    {
+        var labels =
+            DesktopOcrActionPlanner.BuildGroundingLabels(
+                "League of Legends application icon in search results");
+
+        Require(
+            labels.Contains(
+                "League of Legends",
+                StringComparer.OrdinalIgnoreCase),
+            "Semantic target label chưa rút gọn được app name cho local OCR grounding.");
+    }
+
+    private static void CheckWindowsSearchUsesDeterministicGrounding()
+    {
+        var search =
+            new ComputerWindowInfo(
+                "0x100",
+                "Search",
+                "SearchHost",
+                10,
+                true,
+                0,
+                0,
+                1200,
+                900);
+
+        var browser =
+            new ComputerWindowInfo(
+                "0x200",
+                "Search",
+                "msedge",
+                11,
+                true,
+                0,
+                0,
+                1200,
+                900);
+
+        Require(
+            ComputerOperatorTaskService.IsDeterministicTextSurfaceForAcceptance(
+                search) &&
+            !ComputerOperatorTaskService.IsDeterministicTextSurfaceForAcceptance(
+                browser),
+            "Deterministic text surface policy chưa phân biệt đúng Windows Search và browser.");
+    }
+
+    private static void CheckNativeAppLaunchRejectsBrowserIdentity()
+    {
+        var decision =
+            new DesktopOperatorDecision(
+                State: string.Empty,
+                Plan: string.Empty,
+                CurrentSubgoal: "Mở ứng dụng League of Legends.",
+                GoalProgress: 0,
+                VerifiedMilestones: Array.Empty<string>(),
+                Action: "click-left",
+                Query: string.Empty,
+                Text: string.Empty,
+                Key: string.Empty,
+                Keys: Array.Empty<string>(),
+                Url: string.Empty,
+                TargetLabel: "League of Legends",
+                CoordinateSpace: ComputerCoordinateSpaces.ImagePixel,
+                CoordinateWindowId: string.Empty,
+                ImageX: 100,
+                ImageY: 100,
+                EndImageX: 0,
+                EndImageY: 0,
+                NormalizedX: 0,
+                NormalizedY: 0,
+                EndNormalizedX: 0,
+                EndNormalizedY: 0,
+                BoxLeft: 50,
+                BoxTop: 50,
+                BoxWidth: 100,
+                BoxHeight: 50,
+                BoxNormalizedLeft: 0,
+                BoxNormalizedTop: 0,
+                BoxNormalizedWidth: 0,
+                BoxNormalizedHeight: 0,
+                ScrollDelta: 0,
+                ExpectedEffect: "Ứng dụng League of Legends được khởi chạy.",
+                Confidence: 0.95,
+                Reason: "Khởi chạy native application.",
+                SceneElements: Array.Empty<DesktopSceneElement>(),
+                TargetElementId: string.Empty);
+
+        Require(
+            DesktopVerificationRouter.IsBrowserLaunchMismatchForAcceptance(
+                decision,
+                "msedge") &&
+            !DesktopVerificationRouter.IsBrowserLaunchMismatchForAcceptance(
+                decision,
+                "RiotClientServices"),
+            "Process-aware app launch verifier chưa chặn browser mismatch đúng cách.");
     }
 
     private static void CheckLocalVisualProviderHealthCooldown()

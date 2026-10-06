@@ -44,6 +44,7 @@ public static class ComputerUseEndpoints
         services.AddSingleton<IComputerOperatorProcedureContextStore, SqliteComputerOperatorProcedureContextStore>();
         services.AddSingleton<IComputerOperatorVersionedFragmentRetriever, ComputerOperatorVersionedFragmentRetriever>();
         services.AddSingleton<IComputerOperatorProcedureEdgeLifecycleService, ComputerOperatorProcedureEdgeLifecycleService>();
+        services.AddSingleton<IComputerOperatorRecoveryCoordinator, ComputerOperatorRecoveryCoordinator>();
         services.AddSingleton<IComputerOperatorStrategyRanker, ComputerOperatorStrategyRanker>();
         services.AddSingleton<IComputerDisplayTopologyService, WindowsComputerDisplayTopologyService>();
         services.AddSingleton<IComputerDpiCalibrationService, ComputerDpiCalibrationService>();

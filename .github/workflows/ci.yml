@@ -3133,7 +3133,11 @@ jobs:
           grep -Fq 'stagnation' src/PersonalAI.Web/Services/ComputerOperatorLoopGuardSession.cs
           grep -Fq 'oscillation' src/PersonalAI.Web/Services/ComputerOperatorLoopGuardSession.cs
           grep -Fq 'RequiresStrategyChange' src/PersonalAI.Web/Services/ComputerOperatorLoopGuardSession.cs
-          grep -Fq 'CHỈ DẪN THOÁT VÒNG LẶP: BẮT BUỘC đổi chiến lược' src/PersonalAI.Web/Services/ComputerOperatorTaskService.cs
+          grep -Fq 'IComputerOperatorDecisionAuthority' src/PersonalAI.Web/Services/ComputerOperatorDecisionAuthority.cs
+          grep -Fq 'Decision Authority yêu cầu REPLAN' src/PersonalAI.Web/Services/ComputerOperatorTaskService.cs
+          grep -Fq 'Loop Guard chỉ phát tín hiệu' src/PersonalAI.Web/Services/ComputerOperatorTaskService.cs
+          grep -Fq 'RECOVERY-RECOMMENDATION:' src/PersonalAI.Web/Services/ComputerOperatorTaskService.cs
+          ! grep -Fq 'CHỈ DẪN THOÁT VÒNG LẶP: BẮT BUỘC đổi chiến lược' src/PersonalAI.Web/Services/ComputerOperatorTaskService.cs
           ! grep -Fq 'loopAssessment.Occurrences >= 3' src/PersonalAI.Web/Services/ComputerOperatorTaskService.cs
           ! grep -Eiq 'notepad|calculator|mspaint|paint|explorer\.exe|notepad\.exe|calc\.exe' src/PersonalAI.Web/Services/ComputerOperatorLoopGuardSession.cs
           grep -Fq 'ComputerGenericAppLaunchTool' src/PersonalAI.Web/Services/ComputerGenericAppLaunchTool.cs

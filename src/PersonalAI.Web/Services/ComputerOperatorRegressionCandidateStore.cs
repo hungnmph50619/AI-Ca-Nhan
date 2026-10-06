@@ -21,6 +21,29 @@ public sealed record ComputerOperatorRegressionCandidateSnapshot(
     int MaximumEntries,
     IReadOnlyList<ComputerOperatorRegressionCandidate> Candidates);
 
+public sealed record ComputerOperatorRegressionIncidentDraft(
+    string Id,
+    string Title,
+    string Severity,
+    string Origin,
+    string RegressionCaseId,
+    string ExpectedInvariant);
+
+public sealed record ComputerOperatorRegressionTestDraft(
+    string Id,
+    string Category,
+    string Outcome,
+    string CurrentStage,
+    IReadOnlyList<string> FailureSignals,
+    string ExpectedBehavior);
+
+public sealed record ComputerOperatorRegressionPromotionDraft(
+    string CandidateId,
+    DateTimeOffset CreatedAtUtc,
+    bool RequiresReview,
+    ComputerOperatorRegressionIncidentDraft Incident,
+    ComputerOperatorRegressionTestDraft Test);
+
 public interface IComputerOperatorRegressionCandidateStore
 {
     void Capture(
@@ -32,6 +55,9 @@ public interface IComputerOperatorRegressionCandidateStore
         string model);
 
     ComputerOperatorRegressionCandidateSnapshot Get();
+
+    ComputerOperatorRegressionPromotionDraft? CreateDraft(
+        string candidateId);
 }
 
 public sealed class ComputerOperatorRegressionCandidateStore
@@ -119,6 +145,71 @@ public sealed class ComputerOperatorRegressionCandidateStore
         }
     }
 
+    public ComputerOperatorRegressionPromotionDraft? CreateDraft(
+        string candidateId)
+    {
+        var id = (candidateId ?? string.Empty).Trim();
+        if (id.Length == 0)
+            return null;
+
+        ComputerOperatorRegressionCandidate? candidate;
+        lock (_gate)
+        {
+            candidate =
+                _candidates.FirstOrDefault(item =>
+                    item.Id.Equals(
+                        id,
+                        StringComparison.Ordinal));
+        }
+
+        if (candidate is null)
+            return null;
+
+        var primarySignal =
+            candidate.FailureSignals.FirstOrDefault() ??
+            candidate.CurrentStage ??
+            "runtime-failure";
+
+        var slug =
+            Slug(primarySignal);
+
+        var caseId =
+            $"runtime-{slug}-{candidate.GoalHash[..12]}";
+
+        var severity =
+            candidate.Outcome.Equals(
+                "blocked",
+                StringComparison.OrdinalIgnoreCase) ||
+            candidate.FailureSignals.Any(signal =>
+                signal.Contains(
+                    "verification-failed",
+                    StringComparison.OrdinalIgnoreCase))
+                ? "high"
+                : "medium";
+
+        var title =
+            $"Runtime {candidate.Outcome}: {primarySignal}";
+
+        return new(
+            candidate.Id,
+            DateTimeOffset.UtcNow,
+            RequiresReview: true,
+            new(
+                $"incident-{caseId}",
+                title,
+                severity,
+                "runtime Computer Operator regression candidate",
+                caseId,
+                $"Computer Operator không được tái diễn failure signature '{primarySignal}' trong điều kiện tương đương."),
+            new(
+                caseId,
+                "computer-operator.runtime-regression",
+                candidate.Outcome,
+                candidate.CurrentStage,
+                candidate.FailureSignals,
+                $"Luồng tương đương phải hoàn thành hoặc chuyển sang recovery an toàn mà không lặp failure signature '{primarySignal}'."));
+    }
+
     internal static string HashGoalForAcceptance(string goal) =>
         HashGoal(goal);
 
@@ -136,6 +227,37 @@ public sealed class ComputerOperatorRegressionCandidateStore
         (value ?? string.Empty)
             .Trim()
             .ToLowerInvariant();
+
+    private static string Slug(string value)
+    {
+        var normalized =
+            new string(
+                NormalizeSignal(value)
+                    .Select(character =>
+                        char.IsLetterOrDigit(character)
+                            ? character
+                            : '-')
+                    .ToArray());
+
+        while (normalized.Contains(
+                   "--",
+                   StringComparison.Ordinal))
+            normalized =
+                normalized.Replace(
+                    "--",
+                    "-",
+                    StringComparison.Ordinal);
+
+        normalized =
+            normalized.Trim('-');
+
+        if (normalized.Length == 0)
+            normalized = "runtime-failure";
+
+        return normalized.Length <= 48
+            ? normalized
+            : normalized[..48].TrimEnd('-');
+    }
 
     private static string Limit(
         string? value,

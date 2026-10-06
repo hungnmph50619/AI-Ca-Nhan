@@ -324,6 +324,11 @@ public sealed class ComputerOperatorAcceptanceService
 
         RunCheck(
             checks,
+            "v4.9.21 function planner ưu tiên tool cho yêu cầu hành động nhưng vẫn giữ confirmation/safety",
+            CheckFunctionPlannerActionPreference);
+
+        RunCheck(
+            checks,
             "OpenCV template sensor giữ multi-scale nhỏ và ngưỡng confidence an toàn",
             CheckOpenCvTemplateSensorPolicy);
 
@@ -4911,6 +4916,38 @@ public sealed class ComputerOperatorAcceptanceService
             keywordOperatorRouter is null &&
             nativePlanner is not null,
             "Chat không được tự execute app-specific tool hoặc route Computer Operator bằng keyword; tool selection phải đi qua provider-native Function Calling rồi mới qua proposal/safety gate.");
+    }
+
+
+
+    private static void CheckFunctionPlannerActionPreference()
+    {
+        static string ReadPlanningInstructions(Type providerType)
+        {
+            var field =
+                providerType.GetField(
+                    "FunctionPlanningInstructions",
+                    System.Reflection.BindingFlags.NonPublic |
+                    System.Reflection.BindingFlags.Static);
+
+            return field?.GetRawConstantValue() as string ?? string.Empty;
+        }
+
+        var gemini = ReadPlanningInstructions(typeof(GeminiChatService));
+        var openAi = ReadPlanningInstructions(typeof(OpenAiChatService));
+
+        var expectedActionPreference =
+            "If the latest user message explicitly asks the application to perform an action";
+
+        var expectedSafetyBoundary =
+            "confirmation and execution are handled separately by the application safety layer";
+
+        Require(
+            gemini.Contains(expectedActionPreference, StringComparison.Ordinal) &&
+            openAi.Contains(expectedActionPreference, StringComparison.Ordinal) &&
+            gemini.Contains(expectedSafetyBoundary, StringComparison.Ordinal) &&
+            openAi.Contains(expectedSafetyBoundary, StringComparison.Ordinal),
+            "Function planner phải ưu tiên đề xuất capability cho yêu cầu hành động rõ ràng, nhưng model không được tự coi proposal là execution hoặc bypass safety/confirmation.");
     }
 
 

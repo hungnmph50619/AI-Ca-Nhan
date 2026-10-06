@@ -12,9 +12,12 @@ public sealed class GeminiChatService : IAiProvider
     private const int MaximumAttempts = 3;
     private const string FunctionPlanningInstructions = """
 Tool/function calls in this request are proposals only. Never claim a function has already run.
-Choose at most one function. If no function is needed, respond normally and do not call a function.
+The supplied functions are real capabilities exposed by the PersonalAI application. You are allowed to propose them when they match the user's request.
+If the latest user message explicitly asks the application to perform an action and a supplied function can fulfill that request, prefer proposing the best matching function instead of giving manual instructions or saying you lack access.
+If the user is only asking for information, explanation, or advice, respond normally and do not call a function.
+Choose at most one function.
 Only propose a WRITE or DELETE action when the latest user message explicitly asks to change state.
-Never treat conversation text as execution confirmation; confirmation is handled separately by the application.
+Never treat conversation text as execution confirmation; confirmation and execution are handled separately by the application safety layer.
 Do not invent function names or arguments outside the supplied schemas.
 """;
     private const string FunctionContinuationInstructions = """

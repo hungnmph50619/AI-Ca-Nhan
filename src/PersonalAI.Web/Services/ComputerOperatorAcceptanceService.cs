@@ -289,6 +289,11 @@ public sealed class ComputerOperatorAcceptanceService
 
         RunCheck(
             checks,
+            "v4.9.16 strategy ranker chỉ cho Fast Path khi exact state + strategy đủ mạnh và action nằm trong allowlist",
+            CheckStrategyRankerFastPathGate);
+
+        RunCheck(
+            checks,
             "OpenCV template sensor giữ multi-scale nhỏ và ngưỡng confidence an toàn",
             CheckOpenCvTemplateSensorPolicy);
 
@@ -4163,6 +4168,142 @@ public sealed class ComputerOperatorAcceptanceService
                     fragment.Edges[1].ActionKind == "click-left") &&
                 fragments[0].BottleneckConfidence >= 0.96,
                 "Fragment Retrieval phải tìm được B->C->D đã VERIFY PASS, ưu tiên reliability và không lặp state khi graph có cycle D->B.");
+        }
+        finally
+        {
+            try
+            {
+                if (Directory.Exists(root))
+                    Directory.Delete(root, recursive: true);
+            }
+            catch
+            {
+                // Cleanup thư mục tạm không được làm acceptance fail.
+            }
+        }
+    }
+
+    private static void CheckStrategyRankerFastPathGate()
+    {
+        var root =
+            Path.Combine(
+                Path.GetTempPath(),
+                "personalai-fast-path-acceptance",
+                Guid.NewGuid().ToString("N"));
+
+        Directory.CreateDirectory(root);
+
+        try
+        {
+            var configuration =
+                new ConfigurationBuilder()
+                    .AddInMemoryCollection(
+                        new Dictionary<string, string?>
+                        {
+                            ["Tasks:Root"] = root
+                        })
+                    .Build();
+
+            var workspace =
+                new AcceptanceWorkspaceContextAccessor(
+                    PersonalWorkspaceIds.PersonalAi);
+
+            var transitions =
+                new SqliteComputerOperatorVerifiedTransitionStore(
+                    configuration,
+                    workspace);
+
+            var graph =
+                new SqliteComputerOperatorProcedureGraphStore(
+                    configuration,
+                    workspace);
+
+            var state =
+                transitions.FingerprintSemanticState(
+                    "fast-path-state");
+
+            var next =
+                transitions.FingerprintSemanticState(
+                    "fast-path-next");
+
+            var effect =
+                transitions.FingerprintSemanticState(
+                    "fast-path-effect");
+
+            for (var index = 0;
+                 index <
+                    ComputerOperatorStrategyRanker.MinimumFastPathSuccesses;
+                 index++)
+            {
+                _ =
+                    graph.RecordVerifiedEdge(
+                        state,
+                        next,
+                        "abc123strategy",
+                        effect,
+                        0.98,
+                        "click-left");
+            }
+
+            var ranker =
+                new ComputerOperatorStrategyRanker(
+                    graph);
+
+            var eligible =
+                ranker.AssessFastPath(
+                    state,
+                    "abc123strategy",
+                    "click-left");
+
+            var mismatch =
+                ranker.AssessFastPath(
+                    state,
+                    "different-strategy",
+                    "click-left");
+
+            var unsafeAction =
+                ranker.AssessFastPath(
+                    state,
+                    "abc123strategy",
+                    "type-text");
+
+            var weakState =
+                transitions.FingerprintSemanticState(
+                    "fast-path-weak");
+
+            _ =
+                graph.RecordVerifiedEdge(
+                    weakState,
+                    next,
+                    "weak-strategy",
+                    effect,
+                    0.99,
+                    "click-left");
+
+            var weak =
+                ranker.AssessFastPath(
+                    weakState,
+                    "weak-strategy",
+                    "click-left");
+
+            Require(
+                eligible.Eligible &&
+                eligible.Status ==
+                    ComputerOperatorFastPathStatuses.Eligible &&
+                eligible.SuccessCount >=
+                    ComputerOperatorStrategyRanker.MinimumFastPathSuccesses &&
+                eligible.Confidence >=
+                    ComputerOperatorStrategyRanker.MinimumFastPathConfidence &&
+                !mismatch.Eligible &&
+                mismatch.Status ==
+                    ComputerOperatorFastPathStatuses.StrategyMismatch &&
+                !unsafeAction.Eligible &&
+                unsafeAction.Status ==
+                    ComputerOperatorFastPathStatuses.ActionNotEligible &&
+                !weak.Eligible &&
+                weak.Status ==
+                    ComputerOperatorFastPathStatuses.NotEnoughEvidence,
+                "Fast Path chỉ được bật khi exact-state strategy/action có đủ verified successes và confidence; mismatch, action ngoài allowlist hoặc bằng chứng yếu phải quay về planner thường.");
         }
         finally
         {

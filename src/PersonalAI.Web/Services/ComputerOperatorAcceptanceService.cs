@@ -239,6 +239,11 @@ public sealed class ComputerOperatorAcceptanceService
 
         RunCheck(
             checks,
+            "v4.9.6 learned timing dùng percentile an toàn và chỉ thay policy khi đủ mẫu",
+            CheckLearnedTimingContract);
+
+        RunCheck(
+            checks,
             "OpenCV template sensor giữ multi-scale nhỏ và ngưỡng confidence an toàn",
             CheckOpenCvTemplateSensorPolicy);
 
@@ -2811,6 +2816,84 @@ public sealed class ComputerOperatorAcceptanceService
             hung.AdaptiveSample.Status ==
                 AdaptiveWaitStatuses.Stalled,
             "Progress Intelligence phải dùng corroboration cho progress, không dùng CPU/Disk làm PASS, và treo thật phải chuyển sang stalled.");
+    }
+
+    private static void CheckLearnedTimingContract()
+    {
+        var sorted =
+            new double[]
+            {
+                1000,
+                1200,
+                1500,
+                2000,
+                4000
+            };
+
+        var median =
+            ComputerOperatorLearnedTimingService
+                .Percentile(
+                    sorted,
+                    0.50);
+
+        var p95 =
+            ComputerOperatorLearnedTimingService
+                .Percentile(
+                    sorted,
+                    0.95);
+
+        var fallback =
+            ComputerOperatorAdaptiveWaitPolicy
+                .ForAction("click-left");
+
+        var resolverNotReady =
+            new ComputerOperatorAdaptiveWaitPolicyResolver(
+                new AcceptanceLearnedTimingService(
+                    new(
+                        ComputerOperatorTelemetryStages.AdaptiveWait,
+                        "click-left",
+                        4,
+                        45000,
+                        60000,
+                        70000,
+                        70000,
+                        0.20,
+                        Ready: false)));
+
+        var notReadyPolicy =
+            resolverNotReady.Resolve(
+                "click-left");
+
+        var resolverReady =
+            new ComputerOperatorAdaptiveWaitPolicyResolver(
+                new AcceptanceLearnedTimingService(
+                    new(
+                        ComputerOperatorTelemetryStages.AdaptiveWait,
+                        "click-left",
+                        20,
+                        90000,
+                        120000,
+                        140000,
+                        150000,
+                        1.0,
+                        Ready: true)));
+
+        var readyPolicy =
+            resolverReady.Resolve(
+                "click-left");
+
+        Require(
+            Math.Abs(median - 1500) < 0.01 &&
+            p95 > median &&
+            notReadyPolicy.AbsoluteTimeout ==
+                fallback.AbsoluteTimeout &&
+            readyPolicy.AbsoluteTimeout >
+                fallback.AbsoluteTimeout &&
+            readyPolicy.AbsoluteTimeout <=
+                TimeSpan.FromMinutes(5) &&
+            readyPolicy.StallTimeout <
+                readyPolicy.AbsoluteTimeout,
+            "Learned Timing phải fallback khi chưa đủ mẫu, ưu tiên P95 khi đủ mẫu và luôn giữ timeout hữu hạn.");
     }
 
     private static void CheckOcrProviderEmptyResultDoesNotTripHealth()
@@ -11561,4 +11644,17 @@ STEP 5: WAIT — LOCAL-LAUNCH-GRACE: chờ 3
         private static NotSupportedException Unsupported() =>
             new("Không dùng hành động Windows thật trong acceptance suite.");
     }
+    private sealed class AcceptanceLearnedTimingService(
+        ComputerOperatorTimingProfile profile)
+        : IComputerOperatorLearnedTimingService
+    {
+        public ComputerOperatorTimingProfile GetProfile(
+            string stage,
+            string action) =>
+            profile;
+
+        public IReadOnlyList<ComputerOperatorTimingProfile> GetProfiles() =>
+            [profile];
+    }
+
 }

@@ -329,6 +329,11 @@ public sealed class ComputerOperatorAcceptanceService
 
         RunCheck(
             checks,
+            "v4.9.21 tool selection không bị assistant history cũ làm sai capability",
+            CheckFunctionPlannerIgnoresStaleAssistantCapabilityClaims);
+
+        RunCheck(
+            checks,
             "OpenCV template sensor giữ multi-scale nhỏ và ngưỡng confidence an toàn",
             CheckOpenCvTemplateSensorPolicy);
 
@@ -4948,6 +4953,47 @@ public sealed class ComputerOperatorAcceptanceService
             gemini.Contains(expectedSafetyBoundary, StringComparison.Ordinal) &&
             openAi.Contains(expectedSafetyBoundary, StringComparison.Ordinal),
             "Function planner phải ưu tiên đề xuất capability cho yêu cầu hành động rõ ràng, nhưng model không được tự coi proposal là execution hoặc bypass safety/confirmation.");
+    }
+
+
+
+    private static void CheckFunctionPlannerIgnoresStaleAssistantCapabilityClaims()
+    {
+        var method =
+            typeof(ToolOrchestrationService)
+                .GetMethod(
+                    "BuildFunctionPlanningConversation",
+                    System.Reflection.BindingFlags.NonPublic |
+                    System.Reflection.BindingFlags.Static);
+
+        Require(
+            method is not null,
+            "Tool selection phải có conversation builder riêng để không dùng nguyên assistant history cũ.");
+
+        var messages = new[]
+        {
+            new ChatMessage("user", "Mở Notepad."),
+            new ChatMessage("assistant", "Tôi không có quyền điều khiển máy tính."),
+            new ChatMessage("user", "Mở Notepad.")
+        };
+
+        var planned =
+            (IReadOnlyList<ChatMessage>?)method.Invoke(
+                null,
+                new object[] { messages });
+
+        Require(
+            planned is not null &&
+            planned.Count == 2 &&
+            planned.All(message =>
+                message.Role.Equals(
+                    "user",
+                    StringComparison.OrdinalIgnoreCase)) &&
+            planned.All(message =>
+                !message.Content.Contains(
+                    "không có quyền",
+                    StringComparison.OrdinalIgnoreCase)),
+            "Planner phải giữ ngữ cảnh user cần thiết nhưng loại assistant capability claims cũ trước khi chọn tool.");
     }
 
 

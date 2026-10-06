@@ -134,7 +134,7 @@ public sealed class ToolOrchestrationService : IToolOrchestrationService
             .ToArray();
 
         var decision = await provider.ProposeFunctionCallAsync(
-            LimitConversation(messages),
+            BuildFunctionPlanningConversation(messages),
             providerFunctions,
             cancellationToken);
 
@@ -771,13 +771,23 @@ public sealed class ToolOrchestrationService : IToolOrchestrationService
                 : "Đây chỉ là đề xuất; ứng dụng sẽ chỉ thực thi sau thao tác riêng của người dùng.");
     }
 
-    private static IReadOnlyList<ChatMessage> LimitConversation(
+    private static IReadOnlyList<ChatMessage> BuildFunctionPlanningConversation(
         IReadOnlyList<ChatMessage> messages)
     {
         var selected = new List<ChatMessage>();
         var characters = 0;
 
-        foreach (var message in messages.Reverse().Take(12))
+        // Tool selection must be grounded in current user intent and current Tool Registry.
+        // Older assistant prose may contain stale capability claims (for example,
+        // "I cannot control your computer") and must not override capabilities that
+        // are actually exposed to the provider in this request.
+        foreach (var message in messages
+                     .Where(message =>
+                         message.Role.Equals(
+                             "user",
+                             StringComparison.OrdinalIgnoreCase))
+                     .Reverse()
+                     .Take(6))
         {
             var content = message.Content ?? string.Empty;
             if (content.Length > 8_000)
@@ -796,7 +806,7 @@ public sealed class ToolOrchestrationService : IToolOrchestrationService
                 content = content[..Math.Min(content.Length, remaining)];
             }
 
-            selected.Add(new ChatMessage(message.Role, content));
+            selected.Add(new ChatMessage("user", content));
             characters += content.Length;
             if (characters >= MaximumPlannerConversationCharacters)
             {

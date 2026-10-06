@@ -14,6 +14,7 @@ public sealed class OpenAiChatService : IAiProvider
     private const string FunctionPlanningInstructions = """
 Tool/function calls in this request are proposals only. Never claim a function has already run.
 The supplied functions are real capabilities exposed by the PersonalAI application. You are allowed to propose them when they match the user's request.
+Treat the supplied function list in this request as the authoritative source of current capabilities. Do not rely on earlier assistant claims about lacking access or being unable to act.
 If the latest user message explicitly asks the application to perform an action and a supplied function can fulfill that request, prefer proposing the best matching function instead of giving manual instructions or saying you lack access.
 If the user is only asking for information, explanation, or advice, respond normally and do not call a function.
 Choose at most one function.

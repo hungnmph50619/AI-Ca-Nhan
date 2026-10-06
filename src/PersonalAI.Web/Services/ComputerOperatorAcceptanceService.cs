@@ -160,6 +160,11 @@ public sealed class ComputerOperatorAcceptanceService(
 
         RunCheck(
             checks,
+            "v4.4.9 unified grounding cho phép planner visual fallback khi OCR unavailable",
+            CheckUnifiedGroundingPlannerFallback);
+
+        RunCheck(
+            checks,
             "v4.6 native app launch không chấp nhận browser identity",
             CheckNativeAppLaunchRejectsBrowserIdentity);
 
@@ -2256,6 +2261,60 @@ public sealed class ComputerOperatorAcceptanceService(
             !ComputerOperatorTaskService.IsDeterministicTextSurfaceForAcceptance(
                 browser),
             "Deterministic text surface policy chưa phân biệt đúng Windows Search và browser.");
+    }
+
+    private static void CheckUnifiedGroundingPlannerFallback()
+    {
+        var decision =
+            new DesktopOperatorDecision(
+                State: "sample",
+                Plan: "sample",
+                CurrentSubgoal: "sample",
+                GoalProgress: 0,
+                VerifiedMilestones: Array.Empty<string>(),
+                Action: "click-left",
+                Query: string.Empty,
+                Text: string.Empty,
+                Key: string.Empty,
+                Keys: Array.Empty<string>(),
+                Url: string.Empty,
+                TargetLabel: "Sample target",
+                CoordinateSpace: ComputerCoordinateSpaces.ImagePixel,
+                CoordinateWindowId: "0x1",
+                ImageX: 150,
+                ImageY: 120,
+                EndImageX: 0,
+                EndImageY: 0,
+                NormalizedX: 0,
+                NormalizedY: 0,
+                EndNormalizedX: 0,
+                EndNormalizedY: 0,
+                BoxLeft: 100,
+                BoxTop: 90,
+                BoxWidth: 100,
+                BoxHeight: 60,
+                BoxNormalizedLeft: 0,
+                BoxNormalizedTop: 0,
+                BoxNormalizedWidth: 0,
+                BoxNormalizedHeight: 0,
+                ScrollDelta: 0,
+                ExpectedEffect: "sample effect",
+                Confidence: 0.92,
+                Reason: "planner visual",
+                SceneElements: Array.Empty<DesktopSceneElement>(),
+                TargetElementId: string.Empty);
+
+        Require(
+            ComputerOperatorGroundingService.CanUsePlannerVisualFallbackForAcceptance(
+                decision,
+                deterministicTextSurface: false) &&
+            !ComputerOperatorGroundingService.CanUsePlannerVisualFallbackForAcceptance(
+                decision,
+                deterministicTextSurface: true) &&
+            !ComputerOperatorGroundingService.CanUsePlannerVisualFallbackForAcceptance(
+                decision with { Confidence = 0.60 },
+                deterministicTextSurface: false),
+            "Unified Grounding Contract phải cho phép nguồn planner visual độc lập khi đủ mạnh nhưng vẫn fail-closed trên deterministic text surface hoặc confidence thấp.");
     }
 
     private static void CheckNativeAppLaunchRejectsBrowserIdentity()

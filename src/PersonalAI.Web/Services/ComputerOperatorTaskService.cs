@@ -155,6 +155,7 @@ public sealed class ComputerOperatorTaskService(
     ILocalVisualVerificationService localVisualVerification,
     IDesktopVisualTargetPersistenceService visualTargetPersistence,
     IDesktopOcrActionPlanner ocrActionPlanner,
+    IComputerOperatorGroundingService groundingService,
     IDesktopLocalFastObserver fastObserver,
     IDesktopTemporalSceneService temporalScenes,
     IComputerOperatorActionExecutor actionExecutor,
@@ -1469,61 +1470,41 @@ public sealed class ComputerOperatorTaskService(
 
                 if (IsClickAction(decision.Action))
                 {
-                    if (!string.IsNullOrWhiteSpace(
-                            decision.TargetLabel))
+                    var grounding =
+                        groundingService.GroundClickTarget(
+                            decision,
+                            desktopState,
+                            IsDeterministicTextSurface(
+                                active));
+
+                    progress.Add(
+                        "target-grounding",
+                        grounding.Reason,
+                        grounding.Status,
+                        grounding.Confidence,
+                        observation: true);
+
+                    progress.AddDiagnostic(
+                        "target-grounding",
+                        $"cycle={index}; status={grounding.Status}; semanticTarget={LimitDiagnostic(decision.TargetLabel, 120)}; confidence={grounding.Confidence:0.000}; evidence={LimitDiagnostic(string.Join(" | ", grounding.Evidence.Select(item => $"{item.Source}:{item.SupportsTarget}:{item.Confidence:0.00}")), 220)}; reason={LimitDiagnostic(grounding.Reason, 240)}.");
+
+                    if (!grounding.Resolved)
                     {
-                        if (ocrActionPlanner.TryGroundTarget(
-                                decision,
-                                desktopState,
-                                out var groundedDecision,
-                                out var groundingReason))
-                        {
-                            decision =
-                                groundedDecision;
+                        taskHistory.Add(
+                            $"TARGET-GROUNDING-REPLAN: status={grounding.Status}; target='{decision.TargetLabel}'; {grounding.Reason}");
 
-                            progress.Add(
-                                "target-grounding",
-                                groundingReason,
-                                "local-grounded",
-                                decision.Confidence,
-                                observation: true);
+                        _ = actionState.MoveTo(
+                            ComputerOperatorActionState.Replan,
+                            grounding.Reason);
 
-                            progress.AddDiagnostic(
-                                "target-grounding",
-                                $"cycle={index}; source=ocr-local; semanticTarget={LimitDiagnostic(decision.TargetLabel, 120)}; bbox=({decision.BoxLeft},{decision.BoxTop},{decision.BoxWidth},{decision.BoxHeight}); point=({decision.ImageX},{decision.ImageY}); confidence={decision.Confidence:0.000}; geminiCoordinatesAccepted=false.");
-                        }
-                        else if (IsDeterministicTextSurface(
-                                     active))
-                        {
-                            taskHistory.Add(
-                                $"TARGET-GROUNDING-REPLAN: Không xác minh được local target duy nhất cho '{decision.TargetLabel}' trên system text surface. {groundingReason}");
-
-                            progress.Add(
-                                "target-grounding",
-                                $"Từ chối dùng tọa độ Gemini trên Windows Search vì local OCR chưa xác minh được target duy nhất. {groundingReason}",
-                                "replan",
-                                decision.Confidence);
-
-                            progress.AddDiagnostic(
-                                "target-grounding",
-                                $"cycle={index}; source=ocr-local; semanticTarget={LimitDiagnostic(decision.TargetLabel, 120)}; result=not-grounded; deterministicTextSurface=true; geminiCoordinatesAccepted=false; reason={LimitDiagnostic(groundingReason, 220)}.");
-
-                            _ = actionState.MoveTo(
-                                ComputerOperatorActionState.Replan,
-                                "Deterministic Target Resolver chưa xác minh được target local; không dùng tọa độ Gemini.");
-
-                            await Task.Delay(
-                                250,
-                                linked.Token);
-                            continue;
-                        }
-                        else
-                        {
-                            progress.AddDiagnostic(
-                                "target-grounding",
-                                $"cycle={index}; source=ocr-local; semanticTarget={LimitDiagnostic(decision.TargetLabel, 120)}; result=unavailable; deterministicTextSurface=false; fallback=planner-coordinate; reason={LimitDiagnostic(groundingReason, 220)}.");
-                        }
+                        await Task.Delay(
+                            250,
+                            linked.Token);
+                        continue;
                     }
+
+                    decision =
+                        grounding.Decision;
 
                     var plannedWindow = ResolveTrackingWindow(
                         decision,

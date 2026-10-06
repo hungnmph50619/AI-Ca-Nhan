@@ -261,21 +261,43 @@ public sealed class DesktopOcrActionPlanner(
             return false;
         }
 
-        var resolution =
-            Resolver.Resolve(
-                observation,
+        var candidateLabels =
+            BuildGroundingLabels(
                 proposed.TargetLabel);
 
-        var fused =
-            visualResolver.Resolve(
-                resolution,
-                template: null,
-                visualObservation: null);
+        DesktopOcrResolution? resolution =
+            null;
+        LocalVisualTargetResolution? fused =
+            null;
+        string? resolvedLabel =
+            null;
 
-        if (!fused.Resolved)
+        foreach (var candidateLabel in candidateLabels)
+        {
+            resolution =
+                Resolver.Resolve(
+                    observation,
+                    candidateLabel);
+
+            fused =
+                visualResolver.Resolve(
+                    resolution,
+                    template: null,
+                    visualObservation: null);
+
+            if (!fused.Resolved)
+                continue;
+
+            resolvedLabel =
+                candidateLabel;
+            break;
+        }
+
+        if (fused?.Resolved != true ||
+            string.IsNullOrWhiteSpace(resolvedLabel))
         {
             reason =
-                $"OCR grounding không xác định được target duy nhất '{proposed.TargetLabel}': {fused.Reason}";
+                $"OCR grounding không xác định được target local duy nhất từ label '{proposed.TargetLabel}'.";
             return false;
         }
 
@@ -356,12 +378,87 @@ public sealed class DesktopOcrActionPlanner(
                         proposed.Confidence,
                         confidence),
                 Reason =
-                    $"Deterministic OCR Target Grounding xác nhận local target '{proposed.TargetLabel}'. {fused.Reason}"
+                    $"Deterministic OCR Target Grounding xác nhận local target '{resolvedLabel}' cho semantic target '{proposed.TargetLabel}'. {fused.Reason}"
             };
 
         reason =
-            $"OCR grounding đã ghi đè bbox/toạ độ Gemini bằng target local duy nhất '{proposed.TargetLabel}', confidence={confidence:0.000}.";
+            $"OCR grounding đã ghi đè bbox/toạ độ Gemini bằng target local duy nhất '{resolvedLabel}' (semantic='{proposed.TargetLabel}'), confidence={confidence:0.000}.";
         return true;
+    }
+
+    internal static IReadOnlyList<string> BuildGroundingLabels(
+        string? targetLabel)
+    {
+        var original =
+            (targetLabel ?? string.Empty)
+                .Trim();
+
+        if (original.Length == 0)
+            return Array.Empty<string>();
+
+        var candidates =
+            new List<string>
+            {
+                original
+            };
+
+        var simplified =
+            original;
+
+        foreach (var phrase in new[]
+        {
+            " application icon in search results",
+            " app icon in search results",
+            " application in search results",
+            " app in search results",
+            " search result",
+            " search results",
+            " application icon",
+            " app icon",
+            " button",
+            " icon",
+            " ứng dụng trong kết quả tìm kiếm",
+            " kết quả tìm kiếm",
+            " biểu tượng ứng dụng",
+            " biểu tượng",
+            " nút"
+        })
+        {
+            simplified =
+                simplified.Replace(
+                    phrase,
+                    string.Empty,
+                    StringComparison.OrdinalIgnoreCase)
+                .Trim();
+        }
+
+        simplified =
+            simplified.Trim(
+                ' ',
+                '-',
+                ':',
+                '.',
+                ',',
+                '"',
+                ''',
+                '“',
+                '”');
+
+        if (simplified.Length > 0 &&
+            !simplified.Equals(
+                original,
+                StringComparison.OrdinalIgnoreCase))
+        {
+            candidates.Add(
+                simplified);
+        }
+
+        return candidates
+            .Where(value =>
+                value.Length is >= 1 and <= 160)
+            .Distinct(
+                StringComparer.OrdinalIgnoreCase)
+            .ToArray();
     }
 
     private static bool TryExtractTarget(

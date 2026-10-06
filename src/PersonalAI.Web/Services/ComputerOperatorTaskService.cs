@@ -165,6 +165,7 @@ public sealed class ComputerOperatorTaskService(
     IComputerOperatorCheckpointStore checkpoints,
     IComputerOperatorTelemetry telemetry,
     IUniversalReliableOperatorCoordinator reliableOperator,
+    IComputerOperatorRegressionCandidateStore regressionCandidates,
     ILogger<ComputerOperatorTaskService> logger)
     : IComputerOperatorTaskService
 {
@@ -2603,14 +2604,35 @@ public sealed class ComputerOperatorTaskService(
 
         ComputerOperatorTaskResult Finish(
             bool completed,
-            string summary) =>
-            new(
+            string summary)
+        {
+            if (!completed)
+            {
+                var snapshot = progress.Get();
+                var outcome =
+                    snapshot.Status.Equals(
+                        "blocked",
+                        StringComparison.OrdinalIgnoreCase)
+                        ? "blocked"
+                        : "failed";
+
+                regressionCandidates.Capture(
+                    normalizedGoal,
+                    outcome,
+                    summary,
+                    snapshot,
+                    vision.Name,
+                    vision.Model);
+            }
+
+            return new(
                 normalizedGoal,
                 completed,
                 summary,
                 steps.ToArray(),
                 vision.Name,
                 vision.Model);
+        }
     }
 
     private sealed record ActionVerificationResult(

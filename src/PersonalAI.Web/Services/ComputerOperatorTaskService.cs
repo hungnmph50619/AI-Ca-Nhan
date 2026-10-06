@@ -174,6 +174,7 @@ public sealed class ComputerOperatorTaskService(
     IComputerOperatorProcedureGraphStore procedureGraph,
     IComputerOperatorPartialResumeResolver partialResumeResolver,
     IComputerOperatorProcedureFragmentRetriever fragmentRetriever,
+    IComputerOperatorStrategyRanker strategyRanker,
     IUniversalReliableOperatorCoordinator reliableOperator,
     IComputerOperatorRegressionCandidateStore regressionCandidates,
     ILogger<ComputerOperatorTaskService> logger)

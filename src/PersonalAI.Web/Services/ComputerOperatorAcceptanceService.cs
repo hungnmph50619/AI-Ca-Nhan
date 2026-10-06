@@ -259,6 +259,11 @@ public sealed class ComputerOperatorAcceptanceService
 
         RunCheck(
             checks,
+            "v4.9.10 consolidation gom trusted experience và timing profile vẫn tồn tại sau restart",
+            CheckExperienceConsolidationAndPersistentTiming);
+
+        RunCheck(
+            checks,
             "OpenCV template sensor giữ multi-scale nhỏ và ngưỡng confidence an toàn",
             CheckOpenCvTemplateSensorPolicy);
 
@@ -3207,6 +3212,130 @@ public sealed class ComputerOperatorAcceptanceService
                     ComputerOperatorExperienceValidator.MinimumAverageRecoveryConfidence &&
                 diagnostics.ExperienceCount == 1,
                 "Validator phải giữ candidate đầu ở pending và chỉ promote trusted experience sau recovery lặp lại đủ confidence.");
+        }
+        finally
+        {
+            try
+            {
+                if (Directory.Exists(root))
+                    Directory.Delete(root, recursive: true);
+            }
+            catch
+            {
+                // Cleanup thư mục tạm không được làm acceptance fail.
+            }
+        }
+    }
+
+    private static void CheckExperienceConsolidationAndPersistentTiming()
+    {
+        var root =
+            Path.Combine(
+                Path.GetTempPath(),
+                "personalai-consolidation-acceptance",
+                Guid.NewGuid().ToString("N"));
+
+        Directory.CreateDirectory(root);
+
+        try
+        {
+            var configuration =
+                new ConfigurationBuilder()
+                    .AddInMemoryCollection(
+                        new Dictionary<string, string?>
+                        {
+                            ["Tasks:Root"] = root
+                        })
+                    .Build();
+
+            var workspace =
+                new AcceptanceWorkspaceContextAccessor(
+                    PersonalWorkspaceIds.PersonalAi);
+
+            var repository =
+                new SqliteComputerOperatorExperienceRepository(
+                    configuration,
+                    workspace);
+
+            var aggregates =
+                new SqliteComputerOperatorExperienceAggregateStore(
+                    configuration,
+                    workspace);
+
+            var fingerprint =
+                repository.FingerprintContext(
+                    "scene=stable|failure=no-effect");
+
+            _ =
+                repository.Append(
+                    ComputerOperatorExperienceKinds.Experience,
+                    fingerprint,
+                    failureCode: "action-no-effect",
+                    strategyKey: "wait-and-reobserve",
+                    outcome: "trusted-verified",
+                    durationMilliseconds: 40000,
+                    confidence: 0.90,
+                    verified: true);
+
+            _ =
+                repository.Append(
+                    ComputerOperatorExperienceKinds.Experience,
+                    fingerprint,
+                    failureCode: "action-no-effect",
+                    strategyKey: "wait-and-reobserve",
+                    outcome: "trusted-verified",
+                    durationMilliseconds: 50000,
+                    confidence: 0.94,
+                    verified: true);
+
+            var consolidator =
+                new ComputerOperatorExperienceConsolidator(
+                    repository,
+                    aggregates);
+
+            var consolidation =
+                consolidator.Consolidate();
+
+            var patterns =
+                aggregates.GetPatterns();
+
+            aggregates.UpsertTimingProfile(
+                new(
+                    ComputerOperatorTelemetryStages.AdaptiveWait,
+                    "click-left",
+                    12,
+                    42000,
+                    61000,
+                    68000,
+                    72000,
+                    0.90,
+                    DateTimeOffset.UtcNow));
+
+            var afterRestart =
+                new ComputerOperatorLearnedTimingService(
+                    new ComputerOperatorTelemetry(),
+                    new SqliteComputerOperatorExperienceAggregateStore(
+                        configuration,
+                        workspace));
+
+            var persistent =
+                afterRestart.GetProfile(
+                    ComputerOperatorTelemetryStages.AdaptiveWait,
+                    "click-left");
+
+            Require(
+                consolidation.TrustedExperiencesScanned == 2 &&
+                consolidation.PatternsWritten == 1 &&
+                patterns.Count == 1 &&
+                patterns[0].SampleCount == 2 &&
+                Math.Abs(
+                    patterns[0].AverageConfidence - 0.92) < 0.001 &&
+                patterns[0].AverageDurationMilliseconds == 45000 &&
+                persistent.SampleCount == 12 &&
+                persistent.Ready &&
+                Math.Abs(
+                    persistent.P95Milliseconds - 68000) < 0.001,
+                "Consolidation phải gom experience cùng context/failure/strategy thành một pattern và timing aggregate phải đọc lại được khi telemetry memory trống.");
         }
         finally
         {

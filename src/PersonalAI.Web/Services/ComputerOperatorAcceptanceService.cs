@@ -244,6 +244,11 @@ public sealed class ComputerOperatorAcceptanceService
 
         RunCheck(
             checks,
+            "v4.9.7 experience database dùng SQLite WAL, workspace isolation và chỉ lưu fingerprint kỹ thuật",
+            CheckExperienceDatabaseFoundation);
+
+        RunCheck(
+            checks,
             "OpenCV template sensor giữ multi-scale nhỏ và ngưỡng confidence an toàn",
             CheckOpenCvTemplateSensorPolicy);
 
@@ -2894,6 +2899,98 @@ public sealed class ComputerOperatorAcceptanceService
             readyPolicy.StallTimeout <
                 readyPolicy.AbsoluteTimeout,
             "Learned Timing phải fallback khi chưa đủ mẫu, ưu tiên P95 khi đủ mẫu và luôn giữ timeout hữu hạn.");
+    }
+
+    private static void CheckExperienceDatabaseFoundation()
+    {
+        var root =
+            Path.Combine(
+                Path.GetTempPath(),
+                "personalai-experience-acceptance",
+                Guid.NewGuid().ToString("N"));
+
+        Directory.CreateDirectory(root);
+
+        try
+        {
+            var configuration =
+                new ConfigurationBuilder()
+                    .AddInMemoryCollection(
+                        new Dictionary<string, string?>
+                        {
+                            ["Tasks:Root"] = root
+                        })
+                    .Build();
+
+            var workspace =
+                new AcceptanceWorkspaceContextAccessor(
+                    PersonalWorkspaceIds.PersonalAi);
+
+            var repository =
+                new SqliteComputerOperatorExperienceRepository(
+                    configuration,
+                    workspace);
+
+            var fingerprint =
+                repository.FingerprintContext(
+                    "native-app-startup|waiting|process-alive");
+
+            var failure =
+                repository.Append(
+                    ComputerOperatorExperienceKinds.Failure,
+                    fingerprint,
+                    failureCode: "no-progress",
+                    strategyKey: "observe-first",
+                    outcome: "recoverable",
+                    durationMilliseconds: 42000,
+                    confidence: 0.82,
+                    verified: false);
+
+            var recovery =
+                repository.Append(
+                    ComputerOperatorExperienceKinds.Recovery,
+                    fingerprint,
+                    failureCode: "no-progress",
+                    strategyKey: "wait-with-runtime-evidence",
+                    outcome: "verified-pass",
+                    durationMilliseconds: 51000,
+                    confidence: 0.93,
+                    verified: true);
+
+            var recent =
+                repository.GetRecent(10);
+
+            var diagnostics =
+                repository.GetDiagnostics();
+
+            Require(
+                fingerprint.Length == 64 &&
+                failure.WorkspaceId ==
+                    PersonalWorkspaceIds.PersonalAi &&
+                recovery.Verified &&
+                recent.Count == 2 &&
+                diagnostics.Provider == "sqlite" &&
+                diagnostics.SchemaVersion ==
+                    SqliteComputerOperatorExperienceRepository.SchemaVersion &&
+                diagnostics.UsesWal &&
+                diagnostics.EventCount == 2 &&
+                diagnostics.VerifiedEventCount == 1 &&
+                diagnostics.FailureCount == 1 &&
+                diagnostics.RecoveryCount == 1,
+                "Experience DB phải ghi/đọc được bằng SQLite WAL, cô lập theo workspace và chỉ dùng context fingerprint.");
+        }
+        finally
+        {
+            try
+            {
+                if (Directory.Exists(root))
+                    Directory.Delete(root, recursive: true);
+            }
+            catch
+            {
+                // File lock cleanup không được làm acceptance fail.
+            }
+        }
     }
 
     private static void CheckOcrProviderEmptyResultDoesNotTripHealth()
@@ -11655,6 +11752,25 @@ STEP 5: WAIT — LOCAL-LAUNCH-GRACE: chờ 3
 
         public IReadOnlyList<ComputerOperatorTimingProfile> GetProfiles() =>
             [profile];
+    }
+
+    private sealed class AcceptanceWorkspaceContextAccessor(
+        string workspaceId)
+        : IWorkspaceContextAccessor
+    {
+        public string CurrentWorkspaceId { get; } =
+            workspaceId;
+
+        public PersonalWorkspace CurrentWorkspace { get; } =
+            new(
+                workspaceId,
+                "Acceptance",
+                "Acceptance workspace",
+                false,
+                DateTimeOffset.UtcNow,
+                DateTimeOffset.UtcNow,
+                Array.Empty<string>(),
+                Array.Empty<string>());
     }
 
 }

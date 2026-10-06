@@ -167,6 +167,7 @@ public sealed class ComputerOperatorTaskService(
     IComputerOperatorCheckpointStore checkpoints,
     IComputerOperatorTelemetry telemetry,
     IComputerOperatorExperienceRepository experienceRepository,
+    IComputerOperatorExperienceValidator experienceValidator,
     IUniversalReliableOperatorCoordinator reliableOperator,
     IComputerOperatorRegressionCandidateStore regressionCandidates,
     ILogger<ComputerOperatorTaskService> logger)
@@ -2536,6 +2537,22 @@ public sealed class ComputerOperatorTaskService(
                         learningCandidate.Reason,
                         "candidate",
                         verification.Confidence);
+
+                    if (learningCandidate.CandidateId is Guid candidateId)
+                    {
+                        var validation =
+                            experienceValidator.Validate(
+                                candidateId);
+
+                        taskHistory.Add(
+                            $"EXPERIENCE-VALIDATION: status={validation.Status}; recoveries={validation.VerifiedRecoveryCount}; conflicts={validation.ConflictingFailureCount}; confidence={validation.Confidence:0.00}; {validation.Reason}");
+
+                        progress.Add(
+                            "experience-validation",
+                            validation.Reason,
+                            validation.Status,
+                            validation.Confidence);
+                    }
                 }
 
                 checkpoint = SaveCheckpointSafely(

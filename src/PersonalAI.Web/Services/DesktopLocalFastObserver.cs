@@ -31,7 +31,9 @@ public sealed record DesktopFastObservation(
     bool TargetMoved,
     bool TargetMissing,
     bool TargetLikelyOccluded,
-    string Summary);
+    string Summary,
+    string? ActiveProcessName = null,
+    string? ActiveWindowTitle = null);
 
 public interface IDesktopLocalFastObserver
 {
@@ -203,6 +205,8 @@ public sealed class DesktopLocalFastObserver(
             targetMoved,
             targetMissing,
             targetLikelyOccluded,
-            summary);
+            summary,
+            after.ActiveProcessName,
+            after.ActiveWindowTitle);
     }
 }

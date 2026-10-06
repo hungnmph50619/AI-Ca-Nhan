@@ -169,6 +169,7 @@ public sealed class ComputerOperatorTaskService(
     IComputerOperatorExperienceRepository experienceRepository,
     IComputerOperatorExperienceValidator experienceValidator,
     IComputerOperatorExperienceConsolidator experienceConsolidator,
+    IComputerOperatorExperienceLifecycleService experienceLifecycle,
     IUniversalReliableOperatorCoordinator reliableOperator,
     IComputerOperatorRegressionCandidateStore regressionCandidates,
     ILogger<ComputerOperatorTaskService> logger)
@@ -2566,6 +2567,15 @@ public sealed class ComputerOperatorTaskService(
                                 "experience-consolidation",
                                 consolidation.Reason,
                                 "consolidated",
+                                validation.Confidence);
+
+                            var maintenance =
+                                experienceLifecycle.RunMaintenanceIfDue();
+
+                            progress.AddDiagnostic(
+                                "experience-maintenance",
+                                $"deletedCandidates={maintenance.DeletedCandidates}; archivedFailures={maintenance.ArchivedFailures}; archivedRecoveries={maintenance.ArchivedRecoveries}; archivedExperiences={maintenance.ArchivedExperiences}; archivedStrategies={maintenance.ArchivedStrategies}; remainingHot={maintenance.RemainingHotEvents}.",
+                                "lifecycle",
                                 validation.Confidence);
                         }
                     }

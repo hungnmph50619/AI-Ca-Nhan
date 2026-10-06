@@ -189,6 +189,11 @@ public sealed class ComputerOperatorAcceptanceService
 
         RunCheck(
             checks,
+            "v4.8.4 regression draft bắt buộc review và không lộ raw goal",
+            CheckRuntimeRegressionPromotionDraft);
+
+        RunCheck(
+            checks,
             "OpenCV template sensor giữ multi-scale nhỏ và ngưỡng confidence an toàn",
             CheckOpenCvTemplateSensorPolicy);
 
@@ -2062,6 +2067,69 @@ public sealed class ComputerOperatorAcceptanceService
                 "verification-failed",
                 StringComparer.OrdinalIgnoreCase),
             "Runtime regression candidate chưa giữ đúng privacy fingerprint hoặc failure signal.");
+    }
+
+    private static void CheckRuntimeRegressionPromotionDraft()
+    {
+        var store =
+            new ComputerOperatorRegressionCandidateStore();
+
+        var now = DateTimeOffset.UtcNow;
+        var progress =
+            new ComputerOperatorProgressSnapshot(
+                Active: false,
+                Paused: false,
+                Status: "blocked",
+                StartedAtUtc: now.AddSeconds(-3),
+                UpdatedAtUtc: now,
+                ObservationCount: 3,
+                ActionCount: 1,
+                CurrentStage: "blocked",
+                Stale: false,
+                StaleSeconds: 0,
+                Entries:
+                [
+                    new ComputerOperatorProgressEntry(
+                        now,
+                        "verification-failed",
+                        "Acceptance signal.")
+                ]);
+
+        const string rawGoal =
+            "Mở dữ liệu riêng tư cực kỳ nhạy cảm";
+
+        store.Capture(
+            rawGoal,
+            "blocked",
+            "Không xác minh được kết quả.",
+            progress,
+            "OpenAI",
+            "acceptance-model");
+
+        var candidate =
+            store.Get().Candidates.Single();
+
+        var draft =
+            store.CreateDraft(candidate.Id);
+
+        Require(
+            draft is not null &&
+            draft.RequiresReview &&
+            draft.CandidateId == candidate.Id &&
+            draft.Incident.RegressionCaseId == draft.Test.Id &&
+            draft.Incident.Id.StartsWith(
+                "incident-runtime-",
+                StringComparison.Ordinal) &&
+            !draft.Incident.Title.Contains(
+                rawGoal,
+                StringComparison.OrdinalIgnoreCase) &&
+            !draft.Incident.ExpectedInvariant.Contains(
+                rawGoal,
+                StringComparison.OrdinalIgnoreCase) &&
+            !draft.Test.ExpectedBehavior.Contains(
+                rawGoal,
+                StringComparison.OrdinalIgnoreCase),
+            "Regression promotion draft chưa giữ review gate hoặc còn lộ raw goal.");
     }
 
     private static void CheckOcrProviderEmptyResultDoesNotTripHealth()

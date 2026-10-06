@@ -24,7 +24,8 @@ public interface IComputerOperatorStrategyRanker
     ComputerOperatorFastPathAssessment AssessFastPath(
         string currentStateFingerprint,
         string proposedStrategyKey,
-        string proposedActionKind);
+        string proposedActionKind,
+        ComputerOperatorProcedureContextDescriptor? currentContext = null);
 }
 
 /// <summary>
@@ -33,7 +34,9 @@ public interface IComputerOperatorStrategyRanker
 /// planner hiện tại tạo ra và vẫn đi qua safety + execute + VERIFY như bình thường.
 /// </summary>
 public sealed class ComputerOperatorStrategyRanker(
-    IComputerOperatorProcedureGraphStore graph)
+    IComputerOperatorProcedureGraphStore graph,
+    IComputerOperatorProcedureContextStore contexts,
+    IComputerOperatorProcedureContextService compatibility)
     : IComputerOperatorStrategyRanker
 {
     public const int MinimumFastPathSuccesses = 3;
@@ -63,7 +66,8 @@ public sealed class ComputerOperatorStrategyRanker(
     public ComputerOperatorFastPathAssessment AssessFastPath(
         string currentStateFingerprint,
         string proposedStrategyKey,
-        string proposedActionKind)
+        string proposedActionKind,
+        ComputerOperatorProcedureContextDescriptor? currentContext = null)
     {
         var strategy =
             Normalize(
@@ -84,6 +88,34 @@ public sealed class ComputerOperatorStrategyRanker(
                 0,
                 null,
                 "Action hiện tại không nằm trong allowlist Fast Path; giữ planner/verification đầy đủ.");
+        }
+
+        if (currentContext is not null)
+        {
+            var rememberedContext =
+                contexts.Get(
+                    currentStateFingerprint);
+
+            if (rememberedContext is not null)
+            {
+                var contextAssessment =
+                    compatibility.Assess(
+                        currentContext,
+                        rememberedContext);
+
+                if (!contextAssessment.ExactVersion)
+                {
+                    return new(
+                        ComputerOperatorFastPathStatuses.NotEnoughEvidence,
+                        false,
+                        strategy,
+                        action,
+                        0,
+                        0,
+                        null,
+                        $"Context version không khớp exact version đã học ({contextAssessment.Kind}); không bật Fast Path. Fragment cùng family chỉ dùng làm tham khảo.");
+                }
+            }
         }
 
         var outgoing =

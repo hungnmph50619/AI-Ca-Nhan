@@ -194,6 +194,11 @@ public sealed class ComputerOperatorAcceptanceService
 
         RunCheck(
             checks,
+            "v4.8.5 promote regression bắt buộc review và tạo case đã đánh dấu reviewed",
+            CheckRuntimeRegressionReviewedPromotion);
+
+        RunCheck(
+            checks,
             "OpenCV template sensor giữ multi-scale nhỏ và ngưỡng confidence an toàn",
             CheckOpenCvTemplateSensorPolicy);
 
@@ -2130,6 +2135,66 @@ public sealed class ComputerOperatorAcceptanceService
                 rawGoal,
                 StringComparison.OrdinalIgnoreCase),
             "Regression promotion draft chưa giữ review gate hoặc còn lộ raw goal.");
+    }
+
+    private static void CheckRuntimeRegressionReviewedPromotion()
+    {
+        var rejectedWithoutReview = false;
+
+        try
+        {
+            ComputerOperatorRegressionPromotionService
+                .EnsureConfirmedReviewForAcceptance(
+                    confirmedReview: false);
+        }
+        catch (ComputerOperatorRegressionPromotionException)
+        {
+            rejectedWithoutReview = true;
+        }
+
+        var draft =
+            new ComputerOperatorRegressionPromotionDraft(
+                CandidateId: "runtime-acceptance-candidate",
+                CreatedAtUtc: DateTimeOffset.UtcNow,
+                RequiresReview: true,
+                Incident:
+                    new ComputerOperatorRegressionIncidentDraft(
+                        Id: "incident-runtime-verification-failed-abcdef123456",
+                        Title: "Runtime blocked: verification-failed",
+                        Severity: "high",
+                        Origin: "runtime Computer Operator regression candidate",
+                        RegressionCaseId: "runtime-verification-failed-abcdef123456",
+                        ExpectedInvariant: "Không tái diễn verification-failed."),
+                Test:
+                    new ComputerOperatorRegressionTestDraft(
+                        Id: "runtime-verification-failed-abcdef123456",
+                        Category: "computer-operator.runtime-regression",
+                        Outcome: "blocked",
+                        CurrentStage: "blocked",
+                        FailureSignals: ["verification-failed"],
+                        ExpectedBehavior: "Phải recovery an toàn thay vì lặp verification-failed."));
+
+        var request =
+            ComputerOperatorRegressionPromotionService
+                .BuildCreateRequestForAcceptance(
+                    draft);
+
+        Require(
+            rejectedWithoutReview &&
+            request.Enabled &&
+            request.Id == draft.Test.Id &&
+            request.Category ==
+                ComputerOperatorRegressionPromotionService.RuntimeRegressionCategory &&
+            request.Metadata is not null &&
+            request.Metadata.TryGetValue(
+                "reviewed",
+                out var reviewed) &&
+            reviewed == "true" &&
+            request.Metadata.TryGetValue(
+                "incidentId",
+                out var incidentId) &&
+            incidentId == draft.Incident.Id,
+            "Reviewed regression promotion chưa chặn thiếu xác nhận hoặc chưa đánh dấu metadata review đúng.");
     }
 
     private static void CheckOcrProviderEmptyResultDoesNotTripHealth()

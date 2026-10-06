@@ -19,6 +19,7 @@ public static class EvaluationEndpoints
         services.AddSingleton<IComputerOperatorRegressionCandidateStore, ComputerOperatorRegressionCandidateStore>();
         services.AddSingleton<IComputerOperatorRegressionPromotionService, ComputerOperatorRegressionPromotionService>();
         services.AddSingleton<IComputerOperatorRegressionMetricsService, ComputerOperatorRegressionMetricsService>();
+        services.AddSingleton<IComputerOperatorRegressionReadinessGate, ComputerOperatorRegressionReadinessGate>();
         services.AddSingleton<IComputerOperatorRegressionLabService, ComputerOperatorRegressionLabService>();
         services.AddScoped<IAgentBenchmarkService, AgentBenchmarkService>();
         services.AddScoped<IModelComparisonService, ModelComparisonService>();
@@ -100,6 +101,10 @@ public static class EvaluationEndpoints
         endpoints.MapGet("/api/evaluation/computer-operator-regression/metrics", (
             IComputerOperatorRegressionMetricsService metrics) =>
             Results.Ok(metrics.Get()));
+
+        endpoints.MapGet("/api/evaluation/computer-operator-regression/readiness", (
+            IComputerOperatorRegressionReadinessGate readiness) =>
+            Results.Ok(readiness.Evaluate()));
 
         endpoints.MapPost("/api/evaluation/computer-operator-regression/candidates/{candidateId}/draft", (
             string candidateId,

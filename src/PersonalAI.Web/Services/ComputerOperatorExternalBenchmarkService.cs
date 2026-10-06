@@ -30,16 +30,8 @@ public sealed class ComputerOperatorExternalBenchmarkService(
         ArgumentNullException.ThrowIfNull(request);
 
         var gate = readiness.Evaluate();
-        if (!gate.Passed)
-        {
-            var detail =
-                gate.Reasons.Count == 0
-                    ? "Regression readiness gate chưa đạt."
-                    : string.Join(" ", gate.Reasons);
-
-            throw new ComputerOperatorExternalBenchmarkValidationException(
-                $"Chưa được phép chuẩn bị external benchmark: {detail}");
-        }
+        EnsureReadiness(
+            gate);
 
         var maximumCases =
             request.MaximumCases ?? DefaultMaximumCases;
@@ -104,6 +96,28 @@ public sealed class ComputerOperatorExternalBenchmarkService(
             plans.Length,
             ReadyForExecution: true,
             plans);
+    }
+
+    internal static void EnsureReadinessForAcceptance(
+        ComputerOperatorRegressionReadinessGateResult gate) =>
+        EnsureReadiness(
+            gate);
+
+    private static void EnsureReadiness(
+        ComputerOperatorRegressionReadinessGateResult gate)
+    {
+        ArgumentNullException.ThrowIfNull(gate);
+
+        if (gate.Passed)
+            return;
+
+        var detail =
+            gate.Reasons.Count == 0
+                ? "Regression readiness gate chưa đạt."
+                : string.Join(" ", gate.Reasons);
+
+        throw new ComputerOperatorExternalBenchmarkValidationException(
+            $"Chưa được phép chuẩn bị external benchmark: {detail}");
     }
 
     internal static ComputerOperatorExternalBenchmarkCasePlan ParseCaseForAcceptance(

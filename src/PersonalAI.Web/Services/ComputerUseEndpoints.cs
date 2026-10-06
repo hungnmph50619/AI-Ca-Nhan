@@ -32,7 +32,9 @@ public static class ComputerUseEndpoints
         services.AddSingleton<IComputerOperatorLearnedTimingService, ComputerOperatorLearnedTimingService>();
         services.AddSingleton<IComputerOperatorAdaptiveWaitPolicyResolver, ComputerOperatorAdaptiveWaitPolicyResolver>();
         services.AddSingleton<IComputerOperatorExperienceRepository, SqliteComputerOperatorExperienceRepository>();
+        services.AddSingleton<IComputerOperatorExperienceAggregateStore, SqliteComputerOperatorExperienceAggregateStore>();
         services.AddSingleton<IComputerOperatorExperienceValidator, ComputerOperatorExperienceValidator>();
+        services.AddSingleton<IComputerOperatorExperienceConsolidator, ComputerOperatorExperienceConsolidator>();
         services.AddSingleton<IComputerDisplayTopologyService, WindowsComputerDisplayTopologyService>();
         services.AddSingleton<IComputerDpiCalibrationService, ComputerDpiCalibrationService>();
         services.AddSingleton<IComputerCoordinateTransformService, ComputerCoordinateTransformService>();

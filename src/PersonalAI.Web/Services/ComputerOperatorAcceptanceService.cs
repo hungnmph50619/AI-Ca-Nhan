@@ -344,6 +344,11 @@ public sealed class ComputerOperatorAcceptanceService
 
         RunCheck(
             checks,
+            "computer.app.launch là wrapper và không được mở Operator session bên ngoài RunAsync",
+            CheckAppLaunchWrapperDoesNotOwnOuterOperatorSession);
+
+        RunCheck(
+            checks,
             "OpenCV template sensor giữ multi-scale nhỏ và ngưỡng confidence an toàn",
             CheckOpenCvTemplateSensorPolicy);
 
@@ -5072,6 +5077,57 @@ public sealed class ComputerOperatorAcceptanceService
             !execution.Running &&
             !parentToken.IsCancellationRequested,
             "Complete session không được biến một task đã hoàn tất bình thường thành cancellation.");
+    }
+
+
+
+    private static void CheckAppLaunchWrapperDoesNotOwnOuterOperatorSession()
+    {
+        var wrapperMethod =
+            typeof(ToolExecutionService)
+                .GetMethod(
+                    "IsComputerOperatorWrapper",
+                    System.Reflection.BindingFlags.NonPublic |
+                    System.Reflection.BindingFlags.Static);
+
+        var trackingMethod =
+            typeof(ToolExecutionService)
+                .GetMethod(
+                    "ShouldTrackInOperatorConsole",
+                    System.Reflection.BindingFlags.NonPublic |
+                    System.Reflection.BindingFlags.Static);
+
+        Require(
+            wrapperMethod is not null &&
+            trackingMethod is not null,
+            "ToolExecutionService phải phân biệt wrapper Computer Operator với primitive desktop.");
+
+        var appLaunchIsWrapper =
+            (bool?)wrapperMethod.Invoke(
+                null,
+                new object[] { "computer.app.launch" });
+
+        var runTaskIsWrapper =
+            (bool?)wrapperMethod.Invoke(
+                null,
+                new object[] { "computer.operator.run-task" });
+
+        var appLaunchTrackedOutside =
+            (bool?)trackingMethod.Invoke(
+                null,
+                new object[] { "computer.app.launch" });
+
+        var primitiveTracked =
+            (bool?)trackingMethod.Invoke(
+                null,
+                new object[] { "computer.keyboard.press-key" });
+
+        Require(
+            appLaunchIsWrapper == true &&
+            runTaskIsWrapper == true &&
+            appLaunchTrackedOutside == false &&
+            primitiveTracked == true,
+            "computer.app.launch/run-task chỉ chuyển quyền vào ComputerOperatorTaskService; primitive desktop mới được join/own execution session ở ToolExecutionService.");
     }
 
 

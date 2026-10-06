@@ -393,9 +393,7 @@ public sealed class ToolExecutionService(
     }
 
     private static bool ShouldTrackInOperatorConsole(string toolName) =>
-        !toolName.Equals(
-            "computer.operator.run-task",
-            StringComparison.OrdinalIgnoreCase)
+        !IsComputerOperatorWrapper(toolName)
         && !toolName.Equals(
             "computer.vision.locate",
             StringComparison.OrdinalIgnoreCase)
@@ -404,6 +402,14 @@ public sealed class ToolExecutionService(
             StringComparison.OrdinalIgnoreCase)
         && !toolName.Equals(
             "league.practice.open",
+            StringComparison.OrdinalIgnoreCase);
+
+    private static bool IsComputerOperatorWrapper(string toolName) =>
+        toolName.Equals(
+            "computer.operator.run-task",
+            StringComparison.OrdinalIgnoreCase)
+        || toolName.Equals(
+            "computer.app.launch",
             StringComparison.OrdinalIgnoreCase);
 
     private static ToolExecutionResponse Complete(

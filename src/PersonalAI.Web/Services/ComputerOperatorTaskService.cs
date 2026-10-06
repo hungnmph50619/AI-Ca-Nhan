@@ -166,6 +166,7 @@ public sealed class ComputerOperatorTaskService(
     IStructuredDesktopVerificationService structuredVerification,
     IComputerOperatorCheckpointStore checkpoints,
     IComputerOperatorTelemetry telemetry,
+    IComputerOperatorExperienceRepository experienceRepository,
     IUniversalReliableOperatorCoordinator reliableOperator,
     IComputerOperatorRegressionCandidateStore regressionCandidates,
     ILogger<ComputerOperatorTaskService> logger)
@@ -267,6 +268,9 @@ public sealed class ComputerOperatorTaskService(
         var steps = new List<ComputerOperatorTaskStep>();
         var taskHistory = new List<string>();
         var recovery = new ComputerOperatorRecoverySession();
+        var learning =
+            new ComputerOperatorLearningSession(
+                experienceRepository);
         var loopGuard = new ComputerOperatorLoopGuardSession();
         var actionState = new ComputerOperatorActionStateMachine();
         var verifiedMilestones = new HashSet<string>(
@@ -1942,6 +1946,17 @@ public sealed class ComputerOperatorTaskService(
                         decision.ExpectedEffect,
                         decision.Confidence);
 
+                    learning.RecordFailure(
+                        sceneFingerprint,
+                        ClassifyFailureKind(
+                            decision.Action,
+                            exception.Message,
+                            actionApplied: false,
+                            verificationFailed: false)
+                            .ToString(),
+                        strategyDiagnosticId,
+                        decision.Confidence);
+
                     taskHistory.Add(
                         $"STEP {index}: FAILED {actionSignature} — {exception.Message}");
 
@@ -2038,6 +2053,17 @@ public sealed class ComputerOperatorTaskService(
                         sceneFingerprint,
                         action.Detail,
                         decision.ExpectedEffect,
+                        decision.Confidence);
+
+                    learning.RecordFailure(
+                        sceneFingerprint,
+                        ClassifyFailureKind(
+                            decision.Action,
+                            action.Detail,
+                            actionApplied: false,
+                            verificationFailed: false)
+                            .ToString(),
+                        strategyDiagnosticId,
                         decision.Confidence);
 
                     taskHistory.Add(
@@ -2356,6 +2382,17 @@ public sealed class ComputerOperatorTaskService(
                         decision.ExpectedEffect,
                         verification.Confidence);
 
+                    learning.RecordFailure(
+                        sceneFingerprint,
+                        ClassifyFailureKind(
+                            decision.Action,
+                            verification.Detail,
+                            actionApplied: true,
+                            verificationFailed: true)
+                            .ToString(),
+                        strategyDiagnosticId,
+                        verification.Confidence);
+
                     taskHistory.Add(
                         $"STEP {index}: VERIFY-FAILED {actionSignature} — {verification.Detail}; EXPECTED: {decision.ExpectedEffect}");
 
@@ -2483,6 +2520,23 @@ public sealed class ComputerOperatorTaskService(
 
                 taskHistory.Add(
                     $"STEP {index}: VERIFIED {actionSignature} — {verification.Detail}; EXPECTED: {decision.ExpectedEffect}");
+
+                var learningCandidate =
+                    learning.TryRecordVerifiedRecovery(
+                        strategyDiagnosticId,
+                        verification.Confidence);
+
+                if (learningCandidate.Created)
+                {
+                    taskHistory.Add(
+                        $"LEARNING-CANDIDATE: {learningCandidate.Reason}");
+
+                    progress.Add(
+                        "learning-candidate",
+                        learningCandidate.Reason,
+                        "candidate",
+                        verification.Confidence);
+                }
 
                 checkpoint = SaveCheckpointSafely(
                     checkpoint,

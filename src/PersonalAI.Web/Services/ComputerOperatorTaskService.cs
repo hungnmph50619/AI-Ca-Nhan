@@ -177,6 +177,7 @@ public sealed class ComputerOperatorTaskService(
     IComputerOperatorProcedureContextService procedureContextService,
     IComputerOperatorProcedureContextStore procedureContextStore,
     IComputerOperatorVersionedFragmentRetriever versionedFragmentRetriever,
+    IComputerOperatorProcedureEdgeLifecycleService procedureEdgeLifecycle,
     IComputerOperatorStrategyRanker strategyRanker,
     IUniversalReliableOperatorCoordinator reliableOperator,
     IComputerOperatorRegressionCandidateStore regressionCandidates,
@@ -506,6 +507,23 @@ public sealed class ComputerOperatorTaskService(
                     progress.AddDiagnostic(
                         "procedure-graph",
                         $"cycle={index}; edgeClosed=true; from={BuildDiagnosticId(closedProcedureEdge.FromStateFingerprint)}; to={BuildDiagnosticId(closedProcedureEdge.ToStateFingerprint)}; strategy={closedProcedureEdge.StrategyKey}; successCount={closedProcedureEdge.SuccessCount}; confidence={closedProcedureEdge.AverageConfidence:0.000}; actualObservedTarget=true.");
+                }
+
+                if (closedProcedureEdge is not null)
+                {
+                    var supersession =
+                        procedureEdgeLifecycle.Reconcile(
+                            closedProcedureEdge.FromStateFingerprint);
+
+                    if (supersession.SupersededEdges > 0)
+                    {
+                        taskHistory.Add(
+                            $"PROCEDURE-SUPERSESSION: {supersession.Reason}");
+
+                        progress.AddDiagnostic(
+                            "procedure-supersession",
+                            $"cycle={index}; evaluated={supersession.EvaluatedEdges}; superseded={supersession.SupersededEdges}; winner={supersession.WinningStrategyKey ?? "-"}; rawEdgesDeleted=false.");
+                    }
                 }
 
                 var outgoingProcedureEdges =

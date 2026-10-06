@@ -104,6 +104,16 @@ public sealed class ComputerOperatorAcceptanceService
 
         RunCheck(
             checks,
+            "v4.5 minimal intent schema không mang full planner payload",
+            CheckMinimalIntentSchema);
+
+        RunCheck(
+            checks,
+            "v4.5 unified decision kernel compile đúng một action an toàn",
+            CheckUnifiedDecisionKernelCompilesSafeAction);
+
+        RunCheck(
+            checks,
             "local visual provider health cooldown sau failure lặp",
             CheckLocalVisualProviderHealthCooldown);
 
@@ -1581,6 +1591,90 @@ public sealed class ComputerOperatorAcceptanceService
             sceneElements.TryGetProperty("maxItems", out var maxItems) &&
             maxItems.GetInt32() == 12,
             "Gemini operator schema chưa khóa action enum hoặc giới hạn sceneElements đúng thiết kế.");
+    }
+
+    private static void CheckMinimalIntentSchema()
+    {
+        var schema =
+            DesktopVisionService.CreateDesktopOperatorIntentJsonSchemaForAcceptance();
+
+        Require(
+            schema.ValueKind == JsonValueKind.Object &&
+            schema.TryGetProperty("properties", out var properties) &&
+            properties.TryGetProperty("intent", out var intent) &&
+            intent.TryGetProperty("enum", out var intents) &&
+            intents.EnumerateArray().Any(item =>
+                item.GetString() == "click_target") &&
+            !properties.TryGetProperty("sceneElements", out _) &&
+            !properties.TryGetProperty("plan", out _) &&
+            !properties.TryGetProperty("verifiedMilestones", out _),
+            "Minimal Intent schema vẫn mang payload planner lớn hoặc thiếu intent enum.");
+    }
+
+    private static void CheckUnifiedDecisionKernelCompilesSafeAction()
+    {
+        var kernel =
+            new UnifiedDecisionKernel();
+
+        var frame =
+            new DesktopScreenshotFrame(
+                Jpeg: Array.Empty<byte>(),
+                Left: 0,
+                Top: 0,
+                Width: 1920,
+                Height: 1080,
+                CapturedAtUtc: DateTimeOffset.UtcNow);
+
+        var intent =
+            new DesktopOperatorIntent(
+                Intent: "click_target",
+                Target: "Phòng Tập",
+                Query: string.Empty,
+                Text: string.Empty,
+                Key: string.Empty,
+                Keys: Array.Empty<string>(),
+                ImageX: 500,
+                ImageY: 300,
+                BoxLeft: 450,
+                BoxTop: 270,
+                BoxWidth: 120,
+                BoxHeight: 60,
+                ScrollDelta: 0,
+                ExpectedEffect: "Màn hình Phòng Tập được mở.",
+                Confidence: 0.94,
+                Reason: "Nút Phòng Tập đang hiển thị rõ.");
+
+        var compiled =
+            kernel.TryCompile(
+                intent,
+                frame,
+                out var decision,
+                out _);
+
+        var unsafeIntent =
+            intent with
+            {
+                ImageX = 900,
+                ImageY = 700
+            };
+
+        var unsafeCompiled =
+            kernel.TryCompile(
+                unsafeIntent,
+                frame,
+                out _,
+                out _);
+
+        Require(
+            compiled &&
+            decision.Action == "click-left" &&
+            decision.TargetLabel == "Phòng Tập" &&
+            decision.BoxWidth == 120 &&
+            decision.ExpectedEffect.Contains(
+                "Phòng Tập",
+                StringComparison.OrdinalIgnoreCase) &&
+            !unsafeCompiled,
+            "Unified Decision Kernel chưa compile/reject intent pointer đúng policy an toàn.");
     }
 
     private static void CheckLocalVisualProviderHealthCooldown()

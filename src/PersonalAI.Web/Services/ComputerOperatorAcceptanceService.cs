@@ -214,6 +214,11 @@ public sealed class ComputerOperatorAcceptanceService
 
         RunCheck(
             checks,
+            "v4.9.1 scenario pack có 6 case an toàn, duy nhất và installer bắt buộc xác nhận",
+            CheckExternalBenchmarkScenarioPackContract);
+
+        RunCheck(
+            checks,
             "OpenCV template sensor giữ multi-scale nhỏ và ngưỡng confidence an toàn",
             CheckOpenCvTemplateSensorPolicy);
 
@@ -2438,6 +2443,69 @@ public sealed class ComputerOperatorAcceptanceService
             plan.MaximumSteps == 12 &&
             plan.RequiresInteractiveDesktop,
             "External benchmark preparation contract chưa chặn readiness lỗi hoặc parse case chưa đúng.");
+    }
+
+    private static void CheckExternalBenchmarkScenarioPackContract()
+    {
+        var pack =
+            PersonalAI.Web.Evaluation.Benchmarks
+                .ComputerOperatorBenchmarkScenarioCatalog
+                .GetPack();
+
+        var cases =
+            PersonalAI.Web.Evaluation.Benchmarks
+                .ComputerOperatorBenchmarkScenarioCatalog
+                .BuildRegressionCases();
+
+        var rejectedWithoutConfirmation = false;
+        try
+        {
+            ComputerOperatorBenchmarkScenarioPackService
+                .EnsureConfirmedForAcceptance(
+                    confirmed: false);
+        }
+        catch (ComputerOperatorBenchmarkScenarioPackException)
+        {
+            rejectedWithoutConfirmation = true;
+        }
+
+        var ids =
+            cases.Select(item => item.Id).ToArray();
+
+        Require(
+            rejectedWithoutConfirmation &&
+            pack.Version ==
+                PersonalAI.Web.Evaluation.Benchmarks
+                    .ComputerOperatorBenchmarkScenarioCatalog
+                    .PackVersion &&
+            pack.Platform == "windows" &&
+            pack.Scenarios.Count ==
+                PersonalAI.Web.Evaluation.Benchmarks
+                    .ComputerOperatorBenchmarkScenarioCatalog
+                    .ScenarioCount &&
+            cases.Count ==
+                PersonalAI.Web.Evaluation.Benchmarks
+                    .ComputerOperatorBenchmarkScenarioCatalog
+                    .ScenarioCount &&
+            ids.Distinct(StringComparer.Ordinal).Count() == ids.Length &&
+            cases.All(item =>
+                item.Enabled &&
+                item.Category ==
+                    ComputerOperatorExternalBenchmarkService
+                        .BenchmarkCategory &&
+                item.Metadata is not null &&
+                item.Metadata.TryGetValue(
+                    "risk",
+                    out var risk) &&
+                risk == "low") &&
+            pack.Scenarios.All(scenario =>
+                scenario.MaximumSteps is >= 1 and <=
+                    ComputerOperatorExternalBenchmarkService
+                        .HardMaximumSteps &&
+                scenario.RequiresInteractiveDesktop &&
+                scenario.Goal.Length >= 2 &&
+                scenario.ExpectedEffect.Length >= 2),
+            "External benchmark Scenario Pack chưa đảm bảo đủ 6 case an toàn, duy nhất hoặc confirmation gate.");
     }
 
     private static void CheckOcrProviderEmptyResultDoesNotTripHealth()

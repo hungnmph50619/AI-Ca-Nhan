@@ -154,6 +154,16 @@ jobs:
 
             Write-Host "Đạt Incident Regression Dataset: $(@($incidentDataset.incidents).Count)/$(@($incidentDataset.incidents).Count) incidents được bao phủ và pass."
 
+            $readiness = Invoke-RestMethod "$base/api/evaluation/computer-operator-regression/readiness"
+            if ($readiness.passed -ne $true -or $readiness.status -ne "pass") {
+              $readinessReasons = @($readiness.reasons | ForEach-Object { [string]$_ })
+              throw "Computer Operator regression readiness gate BLOCKED: $($readinessReasons -join '; ')"
+            }
+            if ($readiness.metrics.labPassRate -lt 1.0 -or $readiness.metrics.runtimeUnreviewedCandidates -ne 0) {
+              throw "Regression readiness gate trả pass nhưng metrics chưa đạt ngưỡng bắt buộc."
+            }
+            Write-Host "Đạt Regression Readiness Gate: PASS; lab=$($readiness.metrics.labPassedCases)/$($readiness.metrics.labTotalCases); unreviewed=$($readiness.metrics.runtimeUnreviewedCandidates)."
+
             $appStatus = Invoke-RestMethod "$base/api/status"
             $releaseSource = Get-Content "src/PersonalAI.Web/Models/SystemModels.cs" -Raw
             if ($releaseSource -notmatch 'public const string Version = "([^"]+)"') {

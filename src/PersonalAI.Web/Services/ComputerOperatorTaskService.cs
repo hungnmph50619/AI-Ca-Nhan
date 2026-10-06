@@ -1172,7 +1172,7 @@ public sealed class ComputerOperatorTaskService(
 
                     progress.AddDiagnostic(
                         "recovery",
-                        $"cycle={index}; scene={sceneDiagnosticId}; strategy={ComputeDiagnosticId(loopStrategy)}; decision=POST-TRANSITION-EARLY-SUPPRESS; consumedUntilStep={recentlyConsumedUntilStep}; loopGuardObserved=false; replaySideEffect=false.");
+                        $"cycle={index}; scene={sceneDiagnosticId}; strategy={LimitDiagnostic(loopStrategy, 180)}; decision=POST-TRANSITION-EARLY-SUPPRESS; consumedUntilStep={recentlyConsumedUntilStep}; loopGuardObserved=false; replaySideEffect=false.");
 
                     _ = actionState.MoveTo(
                         ComputerOperatorActionState.Replan,

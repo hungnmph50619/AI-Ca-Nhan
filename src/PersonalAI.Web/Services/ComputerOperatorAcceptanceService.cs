@@ -274,6 +274,11 @@ public sealed class ComputerOperatorAcceptanceService
 
         RunCheck(
             checks,
+            "v4.9.13 procedure graph giữ fragment đã đúng và cho phép học nhánh mới từ cùng verified state",
+            CheckProcedureGraphPartialReuseAndBranching);
+
+        RunCheck(
+            checks,
             "OpenCV template sensor giữ multi-scale nhỏ và ngưỡng confidence an toàn",
             CheckOpenCvTemplateSensorPolicy);
 
@@ -3691,6 +3696,164 @@ public sealed class ComputerOperatorAcceptanceService
                     item.FromStateFingerprint.Length == 64 &&
                     item.ExpectedEffectFingerprint.Length == 64),
                 "Failure ở bước C không được xóa transition A-B/B-C đã VERIFY PASS; transition lặp lại phải tăng success count thay vì tạo bản ghi rác.");
+        }
+        finally
+        {
+            try
+            {
+                if (Directory.Exists(root))
+                    Directory.Delete(root, recursive: true);
+            }
+            catch
+            {
+                // Cleanup thư mục tạm không được làm acceptance fail.
+            }
+        }
+    }
+
+    private static void CheckProcedureGraphPartialReuseAndBranching()
+    {
+        var root =
+            Path.Combine(
+                Path.GetTempPath(),
+                "personalai-procedure-graph-acceptance",
+                Guid.NewGuid().ToString("N"));
+
+        Directory.CreateDirectory(root);
+
+        try
+        {
+            var configuration =
+                new ConfigurationBuilder()
+                    .AddInMemoryCollection(
+                        new Dictionary<string, string?>
+                        {
+                            ["Tasks:Root"] = root
+                        })
+                    .Build();
+
+            var workspace =
+                new AcceptanceWorkspaceContextAccessor(
+                    PersonalWorkspaceIds.PersonalAi);
+
+            var transitions =
+                new SqliteComputerOperatorVerifiedTransitionStore(
+                    configuration,
+                    workspace);
+
+            var graph =
+                new SqliteComputerOperatorProcedureGraphStore(
+                    configuration,
+                    workspace);
+
+            var session =
+                new ComputerOperatorProcedureGraphSession(
+                    graph);
+
+            var stateA =
+                transitions.FingerprintSemanticState(
+                    "observed-state-a");
+            var stateB =
+                transitions.FingerprintSemanticState(
+                    "observed-state-b");
+            var stateC =
+                transitions.FingerprintSemanticState(
+                    "observed-state-c");
+            var stateD =
+                transitions.FingerprintSemanticState(
+                    "observed-state-d");
+            var stateX =
+                transitions.FingerprintSemanticState(
+                    "observed-state-x");
+
+            _ =
+                session.ObserveState(
+                    stateA);
+
+            session.RecordVerifiedAction(
+                stateA,
+                "strategy-a-b",
+                transitions.FingerprintSemanticState(
+                    "effect-b"),
+                0.97);
+
+            var edgeAB =
+                session.ObserveState(
+                    stateB);
+
+            session.RecordVerifiedAction(
+                stateB,
+                "strategy-b-c",
+                transitions.FingerprintSemanticState(
+                    "effect-c"),
+                0.96);
+
+            var edgeBC =
+                session.ObserveState(
+                    stateC);
+
+            // C -> D thất bại: không gọi RecordVerifiedAction, nên graph cũ không bị phá.
+            var beforeRecovery =
+                graph.GetOutgoing(
+                    stateC);
+
+            session.RecordVerifiedAction(
+                stateC,
+                "strategy-c-x",
+                transitions.FingerprintSemanticState(
+                    "effect-x"),
+                0.93);
+
+            var edgeCX =
+                session.ObserveState(
+                    stateX);
+
+            // Sau này tìm được một strategy khác cũng đúng từ C.
+            _ =
+                session.ObserveState(
+                    stateC);
+
+            session.RecordVerifiedAction(
+                stateC,
+                "strategy-c-d-v2",
+                transitions.FingerprintSemanticState(
+                    "effect-d"),
+                0.95);
+
+            var edgeCD =
+                session.ObserveState(
+                    stateD);
+
+            var outgoingA =
+                graph.GetOutgoing(
+                    stateA);
+
+            var outgoingB =
+                graph.GetOutgoing(
+                    stateB);
+
+            var outgoingC =
+                graph.GetOutgoing(
+                    stateC);
+
+            Require(
+                edgeAB is not null &&
+                edgeBC is not null &&
+                edgeCX is not null &&
+                edgeCD is not null &&
+                beforeRecovery.Count == 0 &&
+                outgoingA.Count == 1 &&
+                outgoingB.Count == 1 &&
+                outgoingC.Count == 2 &&
+                outgoingC.Any(item =>
+                    item.ToStateFingerprint == stateX &&
+                    item.StrategyKey == "strategy-c-x") &&
+                outgoingC.Any(item =>
+                    item.ToStateFingerprint == stateD &&
+                    item.StrategyKey == "strategy-c-d-v2") &&
+                graph.CountNodes() == 5 &&
+                graph.CountEdges() == 4,
+                "Procedure graph phải giữ A->B và B->C sau failure ở C, đồng thời cho phép C có nhiều verified branch mới mà không ghi đè fragment cũ.");
         }
         finally
         {

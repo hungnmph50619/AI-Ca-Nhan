@@ -32,6 +32,7 @@ public static class ComputerUseEndpoints
         services.AddSingleton<IComputerOperatorLearnedTimingService, ComputerOperatorLearnedTimingService>();
         services.AddSingleton<IComputerOperatorAdaptiveWaitPolicyResolver, ComputerOperatorAdaptiveWaitPolicyResolver>();
         services.AddSingleton<IComputerOperatorExperienceRepository, SqliteComputerOperatorExperienceRepository>();
+        services.AddSingleton<IComputerOperatorExperienceValidator, ComputerOperatorExperienceValidator>();
         services.AddSingleton<IComputerDisplayTopologyService, WindowsComputerDisplayTopologyService>();
         services.AddSingleton<IComputerDpiCalibrationService, ComputerDpiCalibrationService>();
         services.AddSingleton<IComputerCoordinateTransformService, ComputerCoordinateTransformService>();
@@ -263,6 +264,7 @@ public static class ComputerUseEndpoints
                 loi = diagnostics.FailureCount,
                 phucHoi = diagnostics.RecoveryCount,
                 candidate = diagnostics.CandidateCount,
+                trustedExperience = diagnostics.ExperienceCount,
                 chienLuoc = diagnostics.StrategyCount,
                 nguyenTac = new[]
                 {

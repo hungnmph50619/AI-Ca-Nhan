@@ -124,6 +124,11 @@ public sealed class ComputerOperatorAcceptanceService
 
         RunCheck(
             checks,
+            "scene fingerprint luôn là SHA-256 hex 64 ký tự trước khi vào Procedure Context/Graph",
+            CheckDesktopSceneFingerprintContract);
+
+        RunCheck(
+            checks,
             "v4.5.2 verification conflict chuyển sang reobserve",
             CheckVerificationConflictRequiresReobserve);
 
@@ -1972,6 +1977,47 @@ public sealed class ComputerOperatorAcceptanceService
                 StringComparison.Ordinal),
             "Visual scene identity chưa đổi khi perceptual hash thay đổi mạnh.");
     }
+
+
+    private static void CheckDesktopSceneFingerprintContract()
+    {
+        var foreground =
+            new ComputerWindowInfo(
+                "0x5678",
+                "Fingerprint Contract",
+                "acceptance",
+                20,
+                true,
+                0,
+                0,
+                1920,
+                1080);
+
+        var state =
+            new ComputerOperatorDesktopState(
+                DateTimeOffset.UtcNow,
+                foreground,
+                [foreground],
+                FrameLeft: 0,
+                FrameTop: 0,
+                FrameWidth: 1920,
+                FrameHeight: 1080,
+                CaptureScope: DesktopCaptureScopes.VirtualDesktop,
+                CaptureWindowId: null,
+                CaptureWindowWasForeground: false);
+
+        var fingerprint =
+            ComputerOperatorTaskService.BuildDesktopSceneFingerprintForAcceptance(
+                state);
+
+        Require(
+            fingerprint.Length == 64 &&
+            fingerprint.All(character =>
+                character is >= '0' and <= '9' ||
+                character is >= 'A' and <= 'F'),
+            "BuildDesktopSceneFingerprint phải trả SHA-256 hex 64 ký tự, không được trả raw scene material.");
+    }
+
 
     private static void CheckVerificationConflictRequiresReobserve()
     {

@@ -4835,18 +4835,23 @@ public sealed class ComputerOperatorTaskService(
                         $"{NormalizeSceneToken(node.Role)}:{NormalizeSceneToken(node.Name)}:{NormalizeSceneToken(node.AutomationId)}:{Quantize(node.Left, 32)},{Quantize(node.Top, 32)},{Quantize(node.Width, 32)},{Quantize(node.Height, 32)}:toggle={NormalizeSceneToken(node.ToggleState)}:expand={NormalizeSceneToken(node.ExpandCollapseState)}:selected={node.IsSelected?.ToString() ?? "?"}:value={valueFingerprint}:patterns={string.Join(",", node.Patterns.OrderBy(pattern => pattern, StringComparer.OrdinalIgnoreCase))}";
                 }))}";
 
-        return string.Join(
-            "|",
-            new[]
-            {
-                foreground,
-                $"frame:{state.CaptureScope}:{Quantize(state.FrameLeft, 32)},{Quantize(state.FrameTop, 32)},{Quantize(state.FrameWidth, 32)},{Quantize(state.FrameHeight, 32)}",
-                $"windows:{string.Join(";", visible)}",
-                structured,
-                visualHash is null
-                    ? "visual:none"
-                    : $"visual:{visualHash.Algorithm}:{visualHash.Hex}"
-            });
+        var material =
+            string.Join(
+                "|",
+                new[]
+                {
+                    foreground,
+                    $"frame:{state.CaptureScope}:{Quantize(state.FrameLeft, 32)},{Quantize(state.FrameTop, 32)},{Quantize(state.FrameWidth, 32)},{Quantize(state.FrameHeight, 32)}",
+                    $"windows:{string.Join(";", visible)}",
+                    structured,
+                    visualHash is null
+                        ? "visual:none"
+                        : $"visual:{visualHash.Algorithm}:{visualHash.Hex}"
+                });
+
+        return Convert.ToHexString(
+            SHA256.HashData(
+                Encoding.UTF8.GetBytes(material)));
     }
 
     internal static string BuildDesktopSceneFingerprintForAcceptance(

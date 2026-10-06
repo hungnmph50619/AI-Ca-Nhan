@@ -3078,11 +3078,14 @@ jobs:
           grep -Fq 'actionExecutor.Execute(' src/PersonalAI.Web/Services/ComputerOperatorTaskService.cs
           grep -Fq 'RevalidateWindowAtPoint' src/PersonalAI.Web/Services/ComputerOperatorActionExecutor.cs
           grep -Fq 'Cửa sổ topmost đã thay đổi ngay trước primitive' src/PersonalAI.Web/Services/ComputerOperatorActionExecutor.cs
-          grep -Fq 'TryGetComputerOperatorGoal' src/PersonalAI.Web/Services/ToolOrchestrationService.cs
-          grep -Fq 'server-computer-operator-route' src/PersonalAI.Web/Services/ToolOrchestrationService.cs
-          grep -Fq 'computer.operator.run-task' src/PersonalAI.Web/Services/ToolOrchestrationService.cs
-          grep -Fq 'foreground' src/PersonalAI.Web/Services/ToolOrchestrationService.cs
-          grep -Fq 'looksLikeSingleAppLaunch' src/PersonalAI.Web/Services/ToolOrchestrationService.cs
+          grep -Fq 'provider.ProposeFunctionCallAsync' src/PersonalAI.Web/Services/ToolOrchestrationService.cs
+          grep -Fq 'planningMode: "provider-native"' src/PersonalAI.Web/Services/ToolOrchestrationService.cs
+          grep -Fq '"computer.operator.run-task"' src/PersonalAI.Web/Services/ComputerOperatorTaskTool.cs
+          ! grep -Fq 'TryGetComputerOperatorGoal' src/PersonalAI.Web/Services/ToolOrchestrationService.cs
+          ! grep -Fq 'server-computer-operator-route' src/PersonalAI.Web/Services/ToolOrchestrationService.cs
+          ! grep -Fq 'looksLikeSingleAppLaunch' src/PersonalAI.Web/Services/ToolOrchestrationService.cs
+          ! grep -Fq 'IsDirectLeaguePracticeCommand' src/PersonalAI.Web/Services/ChatTurnService.cs
+          ! grep -Fq '"league.practice.open"' src/PersonalAI.Web/Services/ChatTurnService.cs
           grep -Fq 'ComputerCanonicalInteractionPoint' src/PersonalAI.Web/Models/ComputerCoordinateModels.cs
           grep -Fq 'ToCanonicalPoint' src/PersonalAI.Web/Services/ComputerCoordinateTransformService.cs
           grep -Fq 'NormalizeDesktopCoordinate' src/PersonalAI.Web/Services/ComputerCoordinateTransformService.cs

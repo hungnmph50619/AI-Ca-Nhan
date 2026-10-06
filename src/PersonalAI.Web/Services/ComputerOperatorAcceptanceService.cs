@@ -199,6 +199,11 @@ public sealed class ComputerOperatorAcceptanceService
 
         RunCheck(
             checks,
+            "v4.8.6 reliability metrics chặn external benchmark khi còn candidate chưa review",
+            CheckRegressionReliabilityMetricsReadiness);
+
+        RunCheck(
+            checks,
             "OpenCV template sensor giữ multi-scale nhỏ và ngưỡng confidence an toàn",
             CheckOpenCvTemplateSensorPolicy);
 
@@ -2195,6 +2200,72 @@ public sealed class ComputerOperatorAcceptanceService
                 out var incidentId) &&
             incidentId == draft.Incident.Id,
             "Reviewed regression promotion chưa chặn thiếu xác nhận hoặc chưa đánh dấu metadata review đúng.");
+    }
+
+    private static void CheckRegressionReliabilityMetricsReadiness()
+    {
+        var now = DateTimeOffset.UtcNow;
+        var lab =
+            new PersonalAI.Web.Evaluation.Regression.ComputerOperatorRegressionLabReport(
+                Version: "acceptance",
+                StartedAtUtc: now.AddSeconds(-1),
+                CompletedAtUtc: now,
+                TotalCases: 6,
+                PassedCases: 6,
+                FailedCases: 0,
+                PassRate: 1d,
+                DurationMilliseconds: 10,
+                Cases: Array.Empty<PersonalAI.Web.Evaluation.Regression.ComputerOperatorRegressionCaseResult>());
+
+        var candidate =
+            new ComputerOperatorRegressionCandidate(
+                Id: "runtime-acceptance-abcdef123456",
+                CapturedAtUtc: now,
+                GoalHash: new string('a', 64),
+                Outcome: "blocked",
+                Summary: "Không xác minh được kết quả.",
+                CurrentStage: "blocked",
+                ObservationCount: 3,
+                ActionCount: 1,
+                Provider: "Gemini",
+                Model: "acceptance-model",
+                FailureSignals: ["verification-failed"]);
+
+        var snapshot =
+            new ComputerOperatorRegressionCandidateSnapshot(
+                Count: 1,
+                MaximumEntries: 50,
+                Candidates: [candidate]);
+
+        var withoutPromotion =
+            ComputerOperatorRegressionMetricsService
+                .CalculateForAcceptance(
+                    lab,
+                    snapshot,
+                    new HashSet<string>(StringComparer.Ordinal));
+
+        var promotedId =
+            $"runtime-verification-failed-{candidate.GoalHash[..12]}";
+
+        var withPromotion =
+            ComputerOperatorRegressionMetricsService
+                .CalculateForAcceptance(
+                    lab,
+                    snapshot,
+                    new HashSet<string>(
+                        [promotedId],
+                        StringComparer.Ordinal));
+
+        Require(
+            withoutPromotion.BaselineCoverageHealthy &&
+            !withoutPromotion.ReadyForExternalBenchmark &&
+            withoutPromotion.RuntimeUnreviewedCandidates == 1 &&
+            withoutPromotion.RuntimePromotionRate == 0d &&
+            withPromotion.BaselineCoverageHealthy &&
+            withPromotion.ReadyForExternalBenchmark &&
+            withPromotion.RuntimeUnreviewedCandidates == 0 &&
+            withPromotion.RuntimePromotionRate == 1d,
+            "Regression reliability metrics chưa chặn/cho phép external benchmark đúng theo coverage và review state.");
     }
 
     private static void CheckOcrProviderEmptyResultDoesNotTripHealth()

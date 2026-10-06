@@ -44,6 +44,14 @@ public sealed record AdaptiveWaitResult(
 
 public interface IAdaptiveVerificationWaitEngine
 {
+    Task<AdaptiveWaitResult> WaitWithProgressIntelligenceAsync(
+        Func<CancellationToken, Task<ComputerOperatorProgressObservation>> observationProvider,
+        AdaptiveWaitPolicy? policy = null,
+        string? targetWindowId = null,
+        string? action = null,
+        string? expectedEffect = null,
+        CancellationToken cancellationToken = default);
+
     Task<AdaptiveWaitResult> WaitAsync(
         Func<CancellationToken, Task<AdaptiveProgressSample>> sampleProvider,
         AdaptiveWaitPolicy? policy = null,
@@ -72,9 +80,42 @@ public interface IAdaptiveVerificationWaitEngine
 }
 
 public sealed class AdaptiveVerificationWaitEngine(
-    IAdaptiveObservationWakeSource? wakeSource = null)
+    IAdaptiveObservationWakeSource? wakeSource = null,
+    IComputerOperatorProgressIntelligence? progressIntelligence = null)
     : IAdaptiveVerificationWaitEngine
 {
+    public Task<AdaptiveWaitResult> WaitWithProgressIntelligenceAsync(
+        Func<CancellationToken, Task<ComputerOperatorProgressObservation>> observationProvider,
+        AdaptiveWaitPolicy? policy = null,
+        string? targetWindowId = null,
+        string? action = null,
+        string? expectedEffect = null,
+        CancellationToken cancellationToken = default)
+    {
+        ArgumentNullException.ThrowIfNull(observationProvider);
+
+        var intelligence =
+            progressIntelligence ??
+            new ComputerOperatorProgressIntelligence(
+                new ComputerOperatorRuntimeStateIntelligence());
+
+        return WaitAsync(
+            async token =>
+            {
+                var observation =
+                    await observationProvider(token);
+
+                return intelligence
+                    .Assess(observation)
+                    .AdaptiveSample;
+            },
+            policy,
+            targetWindowId,
+            action,
+            expectedEffect,
+            cancellationToken);
+    }
+
     public Task<AdaptiveWaitResult> WaitAsync(
         Func<CancellationToken, Task<AdaptiveProgressSample>> sampleProvider,
         AdaptiveWaitPolicy? policy = null,

@@ -168,6 +168,7 @@ public sealed class ComputerOperatorTaskService(
     IComputerOperatorAdaptiveWaitPolicyResolver adaptiveWaitPolicyResolver,
     IStructuredDesktopSnapshotService structuredDesktop,
     IStructuredDesktopVerificationService structuredVerification,
+    IStructuredTargetRevalidator structuredTargetRevalidator,
     IComputerOperatorCheckpointStore checkpoints,
     IComputerOperatorTelemetry telemetry,
     IComputerOperatorExperienceRepository experienceRepository,
@@ -199,9 +200,6 @@ public sealed class ComputerOperatorTaskService(
     private const int ScopedLeaseSeconds = 120;
     private const int ScopedLeaseRenewalThresholdSeconds = 25;
     private const double MinimumConfidence = 0.72;
-    private static readonly StructuredTargetRevalidator StructuredTargetRevalidator =
-        new();
-
 
     private static readonly string[] SecretTerms =
     [
@@ -2014,7 +2012,7 @@ public sealed class ComputerOperatorTaskService(
                                 decision.Action);
 
                         var revalidated =
-                            StructuredTargetRevalidator.Revalidate(
+                            structuredTargetRevalidator.Revalidate(
                                 decision,
                                 freshGraph,
                                 DateTimeOffset.UtcNow);

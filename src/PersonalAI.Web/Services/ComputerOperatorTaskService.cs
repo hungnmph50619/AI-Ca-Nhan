@@ -3368,12 +3368,11 @@ public sealed class ComputerOperatorTaskService(
                     route =
                         verificationAssessment.Route;
 
-                    if (route.Route ==
-                        DesktopVerificationRoute.LocalVerified)
-                    {
-                        localRouteForFusion =
-                            route;
-                    }
+                    localRouteForFusion =
+                        route.Route ==
+                            DesktopVerificationRoute.LocalVerified
+                            ? route
+                            : null;
                 }
 
                 progress.Add(

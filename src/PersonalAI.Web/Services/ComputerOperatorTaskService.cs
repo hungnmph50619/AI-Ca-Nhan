@@ -3436,59 +3436,11 @@ public sealed class ComputerOperatorTaskService(
                     verifierStopwatch.Stop();
                     geminiVerifyTelemetry.Complete(
                         result.Satisfied,
-                        "gemini");
+                        "provider-router");
 
                     progress.AddDiagnostic(
                         "provider",
-                        $"provider=Gemini; purpose=verify; latencyMs={verifierStopwatch.ElapsedMilliseconds}; satisfied={result.Satisfied}; confidence={result.Confidence:0.000}; route={visionFrame.Source}.");
-                }
-                catch (HttpRequestException exception)
-                    when (providerResilience.IsTransientVisionFailure(exception))
-                {
-                    verifierStopwatch.Stop();
-                    progress.AddDiagnostic(
-                        "provider",
-                        $"provider=Gemini; purpose=verify; latencyMs={verifierStopwatch.ElapsedMilliseconds}; result=transient-error; http={(int?)exception.StatusCode ?? 0}; replaySideEffect=false.");
-
-                    progress.Add(
-                        "vision-transient",
-                        $"Gemini Vision tạm thời không khả dụng ({(int?)exception.StatusCode ?? 0}). Chờ ngắn rồi thử xác minh lại một lần; không replay action.",
-                        "wait");
-
-                    await Task.Delay(
-                        900,
-                        cancellationToken);
-
-                    try
-                    {
-                        result = await vision.VerifyAsync(
-                            visionFrame.Frame,
-                            decision.ExpectedEffect,
-                            frameDifference,
-                            cancellationToken);
-
-                        geminiVerifyTelemetry.Complete(
-                            result.Satisfied,
-                            "gemini-retry");
-                    }
-                    catch (HttpRequestException retryException)
-                        when (providerResilience.IsTransientVisionFailure(retryException))
-                    {
-                        geminiVerifyTelemetry.Complete(
-                            success: false,
-                            route: "gemini-transient");
-
-                        return new(
-                            Verified: false,
-                            Confidence: strongLocalVisualTransition
-                                ? visualVerdict.Confidence
-                                : 0,
-                            Detail:
-                                $"Gemini Vision tạm thời không khả dụng sau lần thử lại (HTTP {(int?)retryException.StatusCode ?? 0}). Kết quả hành động chưa thể kết luận; phải quan sát lại trạng thái hiện tại và tuyệt đối không replay side effect.",
-                            Inconclusive: true,
-                            VisualTransitionObserved:
-                                strongLocalVisualTransition);
-                    }
+                        $"provider={vision.Name}; purpose=verify; latencyMs={verifierStopwatch.ElapsedMilliseconds}; satisfied={result.Satisfied}; confidence={result.Confidence:0.000}; route={visionFrame.Source}; fallbackOwnedBy=ComputerOperatorVisionRouter.");
                 }
                 catch (InvalidOperationException exception)
                     when (providerResilience.IsVisionProviderExhausted(exception))

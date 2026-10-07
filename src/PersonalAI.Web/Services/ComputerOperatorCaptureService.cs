@@ -4,6 +4,9 @@ namespace PersonalAI.Web.Services;
 
 public interface IComputerOperatorCaptureService
 {
+    Task<DesktopScreenshotFrame> CaptureObservationAsync(
+        CancellationToken cancellationToken = default);
+
     Task<DesktopScreenshotFrame> CaptureAsync(
         VerificationCaptureContext? context,
         CancellationToken cancellationToken = default);
@@ -24,6 +27,12 @@ public sealed class ComputerOperatorCaptureService(
     : IComputerOperatorCaptureService
 {
     private const int MaximumWaitMs = 5000;
+
+    public Task<DesktopScreenshotFrame> CaptureObservationAsync(
+        CancellationToken cancellationToken = default) =>
+        screenshots.CaptureStableVirtualScreenAsync(
+            MaximumWaitMs,
+            cancellationToken);
 
     public async Task<DesktopScreenshotFrame> CaptureAsync(
         VerificationCaptureContext? context,

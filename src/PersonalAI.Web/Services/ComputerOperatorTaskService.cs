@@ -3818,24 +3818,20 @@ public sealed class ComputerOperatorTaskService(
             },
             result.Status);
 
-        if (result.Verified)
+        if (result.Verified || result.Failed)
         {
-            return new(
-                true,
-                0.97,
-                $"Adaptive Wait xác minh kết quả mà không replay action: {result.Reason}");
+            progress.Add(
+                "adaptive-wait-handoff",
+                result.Verified
+                    ? "Adaptive Wait phát hiện evidence mạnh nhưng không tự kết luận VERIFIED. Chuyển evidence sang vòng reobserve + Unified Verification Engine."
+                    : "Adaptive Wait phát hiện evidence thất bại mạnh nhưng không tự kết luận FAILED. Chuyển sang vòng reobserve + Unified Verification Engine.",
+                "handoff",
+                result.Confidence);
         }
 
-        if (result.Failed)
-        {
-            return new(
-                false,
-                0.97,
-                $"Adaptive Wait có bằng chứng thất bại rõ ràng: {result.Reason}");
-        }
-
-        // Stalled/Pending không đồng nghĩa Failed. Caller sẽ dùng frame mới
-        // nhất và semantic verifier trước khi được phép replan.
+        // Adaptive Wait chỉ là progress/wakeup mechanism, không phải verification
+        // authority. Mọi trạng thái Verified/Failed/Stalled/Pending đều phải quay
+        // về caller để chụp frame mới nhất và đi qua Unified Verification Engine.
         return null;
     }
 

@@ -23,6 +23,7 @@ public static class ComputerUseEndpoints
         services.AddSingleton<IStructuredDesktopVerificationService, StructuredDesktopVerificationService>();
         services.AddSingleton<IStructuredTargetRevalidator, StructuredTargetRevalidator>();
         services.AddSingleton<IComputerOperatorDesktopStateBuilder, ComputerOperatorDesktopStateBuilder>();
+        services.AddSingleton<IComputerOperatorCaptureService, ComputerOperatorCaptureService>();
         services.AddSingleton<IFlaUiTextAccessibilityBackend, FlaUiTextAccessibilityBackend>();
         services.AddSingleton<ITextAccessibilityBackend, CompositeTextAccessibilityBackend>();
         services.AddSingleton<ITextClipboardWriter, WindowsTextClipboardWriter>();

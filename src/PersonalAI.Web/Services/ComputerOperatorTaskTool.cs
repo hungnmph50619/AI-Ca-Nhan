@@ -39,6 +39,7 @@ public sealed class ComputerOperatorTaskTool(
         Capabilities:
         [
             "computer",
+            "side-effect",
             "orchestrator",
             "multi-step"
         ],

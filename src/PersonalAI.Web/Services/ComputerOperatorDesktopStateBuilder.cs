@@ -1,3 +1,5 @@
+using PersonalAI.Web.Models;
+
 namespace PersonalAI.Web.Services;
 
 public interface IComputerOperatorDesktopStateBuilder

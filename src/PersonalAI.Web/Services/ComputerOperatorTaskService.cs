@@ -174,7 +174,6 @@ public sealed class ComputerOperatorTaskService(
     IComputerOperatorVerifiedTransitionStore verifiedTransitions,
     IComputerOperatorProcedureGraphStore procedureGraph,
     IComputerOperatorPartialResumeResolver partialResumeResolver,
-    IComputerOperatorProcedureFragmentRetriever fragmentRetriever,
     IComputerOperatorProcedureContextService procedureContextService,
     IComputerOperatorProcedureContextStore procedureContextStore,
     IComputerOperatorVersionedFragmentRetriever versionedFragmentRetriever,
@@ -560,14 +559,9 @@ public sealed class ComputerOperatorTaskService(
                             bestFragment.Edges.Select(edge =>
                                 edge.ActionKind));
 
-                    taskHistory.Add(
-                        bestCandidate.ExactStartState
-                            ? $"PROCEDURE-FRAGMENT: Đã có đoạn exact-state VERIFY PASS dài {bestFragment.Length} bước; action-kinds={actionKinds}; confidence={bestCandidate.EffectiveConfidence:0.00}; minimum-success={bestFragment.MinimumSuccessCount}. Không replay mù; vẫn VERIFY từng bước."
-                            : $"PROCEDURE-FRAGMENT-VERSIONED: Tìm thấy đoạn từ UI/context version cũ cùng family, dài {bestFragment.Length} bước; action-kinds={actionKinds}; compatibility={bestCandidate.CompatibilityKind}; adjusted-confidence={bestCandidate.EffectiveConfidence:0.00}. Chỉ dùng làm gợi ý để revalidate trên UI hiện tại; KHÔNG Fast Path.");
-
                     progress.AddDiagnostic(
                         "procedure-fragment",
-                        $"cycle={index}; candidates={knownFragments.Count}; exactStart={bestCandidate.ExactStartState}; compatibility={bestCandidate.CompatibilityKind}; compatibilityMultiplier={bestCandidate.CompatibilityMultiplier:0.000}; effectiveConfidence={bestCandidate.EffectiveConfidence:0.000}; bestLength={bestFragment.Length}; minimumSuccess={bestFragment.MinimumSuccessCount}; actions={LimitDiagnostic(actionKinds, 220)}; source={BuildDiagnosticId(bestCandidate.SourceStateFingerprint)}; end={BuildDiagnosticId(bestFragment.EndStateFingerprint)}; autoExecute=false.");
+                        $"cycle={index}; candidates={knownFragments.Count}; exactStart={bestCandidate.ExactStartState}; compatibility={bestCandidate.CompatibilityKind}; compatibilityMultiplier={bestCandidate.CompatibilityMultiplier:0.000}; effectiveConfidence={bestCandidate.EffectiveConfidence:0.000}; bestLength={bestFragment.Length}; minimumSuccess={bestFragment.MinimumSuccessCount}; actions={LimitDiagnostic(actionKinds, 220)}; source={BuildDiagnosticId(bestCandidate.SourceStateFingerprint)}; end={BuildDiagnosticId(bestFragment.EndStateFingerprint)}; recoveryOnly=true; plannerHint=false; autoExecute=false.");
                 }
 
                 if (resumeAssessmentPending)
@@ -706,13 +700,9 @@ public sealed class ComputerOperatorTaskService(
                                 currentProcedureContext);
 
                         var localRoute =
-                            fastPath.Eligible
-                                ? structuredRoute
-                                    ? "memory-fast-path-structured"
-                                    : "memory-fast-path-local"
-                                : structuredRoute
-                                    ? "structured-first"
-                                    : "local-planner";
+                            structuredRoute
+                                ? "structured-first"
+                                : "local-planner";
 
                         plannerStopwatch.Stop();
                         planTelemetry.Complete(
@@ -722,15 +712,17 @@ public sealed class ComputerOperatorTaskService(
                         cycleTrace.PlannerRoute =
                             localRoute;
                         cycleTrace.PlannerTrace.Add(
+                            structuredRoute
+                                ? "Structured=Resolved"
+                                : "Structured/Local=Resolved");
+                        cycleTrace.PlannerTrace.Add(
                             fastPath.Eligible
-                                ? "MemoryFastPath=Eligible"
-                                : structuredRoute
-                                    ? "Structured=Resolved"
-                                    : "Structured/Local=Resolved");
+                                ? "MemoryRecommendation=Available(RecoveryOnly)"
+                                : "MemoryRecommendation=NotAvailable");
 
                         progress.AddDiagnostic(
                             "fast-path",
-                            $"cycle={index}; eligible={fastPath.Eligible}; status={fastPath.Status}; strategy={localStrategyKey}; action={decision.Action}; successes={fastPath.SuccessCount}; confidence={fastPath.Confidence:0.000}; geminiCalled=false; directReplay=false; safetyAndVerifyRequired=true; reason={LimitDiagnostic(fastPath.Reason, 240)}.");
+                            $"cycle={index}; eligible={fastPath.Eligible}; status={fastPath.Status}; strategy={localStrategyKey}; action={decision.Action}; successes={fastPath.SuccessCount}; confidence={fastPath.Confidence:0.000}; recoveryOnly=true; affectsPlanner=false; geminiCalled=false; directReplay=false; safetyAndVerifyRequired=true; reason={LimitDiagnostic(fastPath.Reason, 240)}.");
 
                         progress.Add(
                             structuredRoute
@@ -766,9 +758,7 @@ public sealed class ComputerOperatorTaskService(
                                 currentProcedureContext);
 
                         var ocrRoute =
-                            fastPath.Eligible
-                                ? "memory-fast-path-ocr"
-                                : "ocr-local";
+                            "ocr-local";
 
                         plannerStopwatch.Stop();
                         planTelemetry.Complete(
@@ -780,13 +770,15 @@ public sealed class ComputerOperatorTaskService(
                         cycleTrace.PlannerTrace.Add(
                             "Structured/Local=NotResolved");
                         cycleTrace.PlannerTrace.Add(
+                            "OCR=Resolved");
+                        cycleTrace.PlannerTrace.Add(
                             fastPath.Eligible
-                                ? "MemoryFastPath=Eligible(OCR)"
-                                : "OCR=Resolved");
+                                ? "MemoryRecommendation=Available(RecoveryOnly)"
+                                : "MemoryRecommendation=NotAvailable");
 
                         progress.AddDiagnostic(
                             "fast-path",
-                            $"cycle={index}; eligible={fastPath.Eligible}; status={fastPath.Status}; strategy={ocrStrategyKey}; action={decision.Action}; successes={fastPath.SuccessCount}; confidence={fastPath.Confidence:0.000}; geminiCalled=false; directReplay=false; safetyAndVerifyRequired=true; reason={LimitDiagnostic(fastPath.Reason, 240)}.");
+                            $"cycle={index}; eligible={fastPath.Eligible}; status={fastPath.Status}; strategy={ocrStrategyKey}; action={decision.Action}; successes={fastPath.SuccessCount}; confidence={fastPath.Confidence:0.000}; recoveryOnly=true; affectsPlanner=false; geminiCalled=false; directReplay=false; safetyAndVerifyRequired=true; reason={LimitDiagnostic(fastPath.Reason, 240)}.");
 
                         progress.Add(
                             "ocr-local",

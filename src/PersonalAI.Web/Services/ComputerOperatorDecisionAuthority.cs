@@ -20,10 +20,17 @@ public sealed record ComputerOperatorDecisionAuthorityDecision(
     bool PreferKnownFragment,
     string Reason);
 
+public sealed record ComputerOperatorExecutionReadinessInput(
+    ComputerOperatorConfidenceAssessment ConfidenceAssessment,
+    int ConsecutiveLowConfidenceCount);
+
 public interface IComputerOperatorDecisionAuthority
 {
     ComputerOperatorDecisionAuthorityDecision Evaluate(
         ComputerOperatorDecisionAuthorityInput input);
+
+    ComputerOperatorDecisionAuthorityDecision EvaluateExecutionReadiness(
+        ComputerOperatorExecutionReadinessInput input);
 }
 
 /// <summary>
@@ -75,5 +82,40 @@ public sealed class ComputerOperatorDecisionAuthority
             RequiresFreshObservation: false,
             PreferKnownFragment: false,
             "Planner action được phép đi tiếp sang Grounding/Safety/Executor.");
+    }
+
+    public ComputerOperatorDecisionAuthorityDecision EvaluateExecutionReadiness(
+        ComputerOperatorExecutionReadinessInput input)
+    {
+        ArgumentNullException.ThrowIfNull(input);
+        ArgumentNullException.ThrowIfNull(input.ConfidenceAssessment);
+
+        var confidence = input.ConfidenceAssessment;
+
+        if (confidence.Decision ==
+            ComputerOperatorConfidenceDecision.Execute)
+        {
+            return new(
+                ComputerOperatorDecisionAuthorityDirectives.Execute,
+                AllowExecution: true,
+                RequiresFreshObservation: false,
+                PreferKnownFragment: false,
+                $"Confidence evidence đủ để execute: {confidence.Reason}");
+        }
+
+        var exhausted =
+            input.ConsecutiveLowConfidenceCount >= 3;
+
+        return new(
+            ComputerOperatorDecisionAuthorityDirectives.Replan,
+            AllowExecution: false,
+            RequiresFreshObservation: true,
+            PreferKnownFragment: false,
+            exhausted
+                ? $"Confidence evidence vẫn không đủ sau {input.ConsecutiveLowConfidenceCount} lần quan sát; authority từ chối execute. {confidence.Reason}"
+                : confidence.Decision ==
+                  ComputerOperatorConfidenceDecision.GeminiFallback
+                    ? $"Confidence evidence yêu cầu quan sát/semantic context mới trước khi execute. {confidence.Reason}"
+                    : $"Confidence evidence thấp; phải re-observe trước khi execute. {confidence.Reason}");
     }
 }

@@ -47,6 +47,7 @@ public static class ComputerUseEndpoints
         services.AddSingleton<IComputerOperatorRecoveryCoordinator, ComputerOperatorRecoveryCoordinator>();
         services.AddSingleton<IComputerOperatorDecisionAuthority, ComputerOperatorDecisionAuthority>();
         services.AddSingleton<IComputerOperatorIntentCompiler, UnifiedDecisionKernel>();
+        services.AddSingleton<IComputerOperatorConfidenceEngine, ComputerOperatorConfidenceEngine>();
         services.AddSingleton<IComputerOperatorStrategyRanker, ComputerOperatorStrategyRanker>();
         services.AddSingleton<IComputerDisplayTopologyService, WindowsComputerDisplayTopologyService>();
         services.AddSingleton<IComputerDpiCalibrationService, ComputerDpiCalibrationService>();

@@ -225,6 +225,20 @@ public sealed class ComputerOperatorVerificationEngine(
     public bool ShouldReobserveOnSemanticConflict(
         bool semanticSatisfied,
         bool strongLocalVisualTransition) =>
+        ShouldReobserveOnSemanticConflictCore(
+            semanticSatisfied,
+            strongLocalVisualTransition);
+
+    internal static bool ShouldReobserveOnSemanticConflictForAcceptance(
+        bool semanticSatisfied,
+        bool strongLocalVisualTransition) =>
+        ShouldReobserveOnSemanticConflictCore(
+            semanticSatisfied,
+            strongLocalVisualTransition);
+
+    private static bool ShouldReobserveOnSemanticConflictCore(
+        bool semanticSatisfied,
+        bool strongLocalVisualTransition) =>
         !semanticSatisfied &&
         strongLocalVisualTransition;
 

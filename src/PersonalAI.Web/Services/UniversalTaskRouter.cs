@@ -55,6 +55,20 @@ public sealed class UniversalTaskRouter(
     IUniversalCapabilityDiscoveryService? capabilityDiscovery = null)
     : IUniversalTaskRouter
 {
+    public UniversalTaskRouter(
+        IExecutionAgentRegistry executionAgents,
+        IExecutionGateway gateway,
+        IToolCapabilityRegistry? toolCapabilities = null,
+        IUniversalCapabilityDiscoveryService? capabilityDiscovery = null)
+        : this(
+            executionAgents,
+            gateway,
+            new PlanningAuthorityPolicy(),
+            toolCapabilities,
+            capabilityDiscovery)
+    {
+    }
+
     private const double MinimumSelectionConfidence = 0.66;
     private const double MinimumWinningMargin = 0.06;
     private const double CostPenaltyWeight = 0.025;

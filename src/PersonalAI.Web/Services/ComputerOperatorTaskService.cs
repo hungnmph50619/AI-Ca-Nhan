@@ -3054,17 +3054,21 @@ public sealed class ComputerOperatorTaskService(
                                 : "inconclusive",
                     structuredResult.Confidence);
 
-                if (structuredResult.Status ==
-                    StructuredVerificationStatus.Verified)
+                var structuredAssessment =
+                    verificationEngine.EvaluateAuthoritativeStructured(
+                        structuredResult);
+
+                if (structuredAssessment.Handled &&
+                    structuredAssessment.Verified)
                 {
                     return new(
                         true,
-                        structuredResult.Confidence,
-                        $"Structured verifier xác minh thành công: {structuredResult.Reason}");
+                        structuredAssessment.Confidence,
+                        structuredAssessment.Detail);
                 }
 
-                if (structuredResult.Status ==
-                    StructuredVerificationStatus.Failed)
+                if (structuredAssessment.Handled &&
+                    !structuredAssessment.Verified)
                 {
                     await Task.Delay(
                         320,
@@ -3113,22 +3117,17 @@ public sealed class ComputerOperatorTaskService(
                                     : "inconclusive",
                         structuredRetry.Confidence);
 
-                    if (structuredRetry.Status ==
-                        StructuredVerificationStatus.Verified)
-                    {
-                        return new(
-                            true,
-                            structuredRetry.Confidence,
-                            $"Structured verifier xác minh sau lần đọc lại: {structuredRetry.Reason}");
-                    }
+                    var structuredRetryAssessment =
+                        verificationEngine.EvaluateAuthoritativeStructured(
+                            structuredRetry,
+                            retry: true);
 
-                    if (structuredRetry.Status ==
-                        StructuredVerificationStatus.Failed)
+                    if (structuredRetryAssessment.Handled)
                     {
                         return new(
-                            false,
-                            structuredRetry.Confidence,
-                            $"Structured verifier xác minh thất bại sau hai lần đọc state: {structuredRetry.Reason}");
+                            structuredRetryAssessment.Verified,
+                            structuredRetryAssessment.Confidence,
+                            structuredRetryAssessment.Detail);
                     }
 
                     // Retry trở thành inconclusive: tiếp tục event/frame/Gemini.

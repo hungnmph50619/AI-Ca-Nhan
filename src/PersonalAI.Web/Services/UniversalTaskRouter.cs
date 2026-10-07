@@ -116,8 +116,10 @@ public sealed class UniversalTaskRouter(
         "phần mềm",
         "cửa sổ",
         "windows",
-        "notepad",
-        "calculator"
+        "chương trình",
+        "giao diện",
+        "foreground",
+        "window"
     ];
 
     private static readonly string[] ConnectorTerms =

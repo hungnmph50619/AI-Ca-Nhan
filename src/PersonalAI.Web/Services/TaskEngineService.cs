@@ -115,12 +115,19 @@ public sealed class TaskEngineService : ITaskEngineService
                 _registry.GetAll(),
                 maximumTools: 20);
         var definitions =
-            exposure.Tools;
+            exposure.Tools
+                .Where(definition =>
+                    definition.Capabilities is null ||
+                    !definition.Capabilities.Contains(
+                        "orchestrator",
+                        StringComparer.OrdinalIgnoreCase))
+                .ToArray();
 
         _logger.LogInformation(
-            "Task planner tool exposure: {Selected}/{Considered}; {Reason}",
-            exposure.SelectedTools,
+            "Task planner tool exposure: {Selected}/{Considered}; nestedOrchestratorsExcluded={Excluded}; {Reason}",
+            definitions.Length,
             exposure.ConsideredTools,
+            exposure.SelectedTools - definitions.Length,
             exposure.Reason);
 
         var prompt = BuildPlanningPrompt(goal, definitions);

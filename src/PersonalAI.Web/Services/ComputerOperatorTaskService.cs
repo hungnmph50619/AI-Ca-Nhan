@@ -156,7 +156,7 @@ public sealed class ComputerOperatorTaskService(
     IDesktopDynamicTargetTracker targetTracker,
     ILocalVisualVerificationService localVisualVerification,
     IDesktopVisualTargetPersistenceService visualTargetPersistence,
-    IDesktopOcrActionPlanner ocrActionPlanner,
+    IComputerOperatorOcrPlanningRouter ocrPlanningRouter,
     IComputerOperatorLocalPlanningRouter localPlanningRouter,
     IComputerOperatorGroundingService groundingService,
     IDesktopLocalFastObserver fastObserver,
@@ -726,11 +726,13 @@ public sealed class ComputerOperatorTaskService(
                                 ? $"provider=local-structured; purpose=plan; cycle={index}; scene={sceneDiagnosticId}; structuredNodes={desktopState.StructuredScene?.NodeCount ?? 0}; action={decision.Action}; elementId={LimitDiagnostic(decision.TargetElementId, 80)}; geminiCalled=false."
                                 : $"provider=local; purpose=plan; cycle={index}; scene={sceneDiagnosticId}; action={decision.Action}; geminiCalled=false.");
                     }
-                    else if (ocrActionPlanner.TryPlan(
+                    else if (ocrPlanningRouter.TryPlan(
                                  normalizedGoal,
                                  desktopState,
-                                 out decision))
+                                 out var ocrPlan))
                     {
+                        decision =
+                            ocrPlan.Decision;
                         var ocrStrategyKey =
                             BuildDiagnosticId(
                                 BuildSemanticActionSignature(
@@ -744,7 +746,7 @@ public sealed class ComputerOperatorTaskService(
                                 currentProcedureContext);
 
                         var ocrRoute =
-                            "ocr-local";
+                            ocrPlan.Route;
 
                         plannerStopwatch.Stop();
                         planTelemetry.Complete(

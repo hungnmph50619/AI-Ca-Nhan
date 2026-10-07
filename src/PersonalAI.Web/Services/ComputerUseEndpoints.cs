@@ -93,6 +93,7 @@ public static class ComputerUseEndpoints
         services.AddSingleton<IDesktopOcrProvider, PaddleOnnxDesktopOcrProvider>();
         services.AddSingleton<IDesktopOcrSensor, DesktopOcrSensorRouter>();
         services.AddSingleton<IDesktopOcrActionPlanner, DesktopOcrActionPlanner>();
+        services.AddSingleton<IComputerOperatorOcrPlanningRouter, ComputerOperatorOcrPlanningRouter>();
         services.AddSingleton<IDesktopLocalActionPlanner, DesktopLocalActionPlanner>();
         services.AddSingleton<IComputerOperatorLocalPlanningRouter, ComputerOperatorLocalPlanningRouter>();
         services.AddSingleton<IComputerOperatorGroundingService, ComputerOperatorGroundingService>();

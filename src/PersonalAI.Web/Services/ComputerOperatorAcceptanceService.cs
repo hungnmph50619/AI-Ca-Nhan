@@ -135,6 +135,11 @@ public sealed class ComputerOperatorAcceptanceService(
 
         RunCheck(
             checks,
+            "v4.4.10 Unified Verification Engine gom quyền kết luận local/semantic",
+            CheckUnifiedVerificationEngineAuthority);
+
+        RunCheck(
+            checks,
             "verification provider exhaustion không được làm chết task khi có thể reobserve",
             CheckVisionProviderExhaustionIsRecoverable);
 
@@ -2079,6 +2084,39 @@ public sealed class ComputerOperatorAcceptanceService(
             "BuildDesktopSceneFingerprint phải trả SHA-256 hex 64 ký tự, không được trả raw scene material.");
     }
 
+
+    private static void CheckUnifiedVerificationEngineAuthority()
+    {
+        var router =
+            new DesktopVerificationRouter();
+
+        var policy =
+            new AdaptiveGeminiCallPolicy();
+
+        var fusion =
+            new UniversalEvidenceFusionEngine();
+
+        var reliable =
+            new UniversalReliableOperatorCoordinator(
+                new StubUniversalCapabilityDiscoveryService(),
+                new UniversalCapabilityCache(
+                    new StubUniversalCapabilityDiscoveryService()),
+                fusion,
+                new UniversalResilienceExecutor());
+
+        var engine =
+            new ComputerOperatorVerificationEngine(
+                router,
+                policy,
+                reliable);
+
+        Require(
+            ComputerOperatorVerificationStatuses.Verified == "verified" &&
+            ComputerOperatorVerificationStatuses.Failed == "failed" &&
+            ComputerOperatorVerificationStatuses.Wait == "wait" &&
+            ComputerOperatorVerificationStatuses.SemanticRequired == "semantic-required",
+            "Unified Verification Engine phải có đúng bốn trạng thái authority chuẩn.");
+    }
 
     private static void CheckVerificationConflictRequiresReobserve()
     {

@@ -182,7 +182,7 @@ public sealed class ComputerOperatorTaskService(
     IComputerOperatorRecoveryCoordinator recoveryCoordinator,
     IComputerOperatorDecisionAuthority decisionAuthority,
     IComputerOperatorStrategyRanker strategyRanker,
-    IUniversalReliableOperatorCoordinator reliableOperator,
+    IComputerOperatorVerificationEngine verificationEngine,
     IComputerOperatorRegressionCandidateStore regressionCandidates,
     ILogger<ComputerOperatorTaskService> logger)
     : IComputerOperatorTaskService
@@ -192,12 +192,8 @@ public sealed class ComputerOperatorTaskService(
     private const int ScopedLeaseSeconds = 120;
     private const int ScopedLeaseRenewalThresholdSeconds = 25;
     private const double MinimumConfidence = 0.72;
-    private static readonly IDesktopVerificationRouter VerificationRouter =
-        new DesktopVerificationRouter();
     private static readonly IDesktopRoiVisionService RoiVision =
         new DesktopRoiVisionService();
-    private static readonly IAdaptiveGeminiCallPolicy GeminiCallPolicy =
-        new AdaptiveGeminiCallPolicy();
     private static readonly IDesktopDynamicTargetTracker TargetTracker =
         new DesktopDynamicTargetTracker();
     private static readonly IComputerOperatorConfidenceEngine ConfidenceEngine =
@@ -3370,50 +3366,35 @@ public sealed class ComputerOperatorTaskService(
                     $"Quan sát cục bộ nhanh: {fastObservation.Summary}",
                     observation: true);
 
-                var route = VerificationRouter.Route(
-                    decision,
-                    fastObservation,
-                    frameDifference);
+                var verificationAssessment =
+                    verificationEngine.EvaluateLocal(
+                        decision,
+                        fastObservation,
+                        frameDifference,
+                        visualVerdict);
+
+                var route =
+                    verificationAssessment.Route;
+
+                if (route.Route ==
+                    DesktopVerificationRoute.LocalVerified)
+                {
+                    localRouteForFusion =
+                        route;
+                }
 
                 progress.AddDiagnostic(
                     "trace-verification",
-                    $"action={decision.Action}; expected={LimitDiagnostic(decision.ExpectedEffect, 180)}; foregroundChanged={fastObservation.ForegroundWindowChanged}; windowBoundsChanged={fastObservation.WindowBoundsChanged}; screenChanged={fastObservation.ScreenChanged}; fastChangeRatio={fastObservation.ChangeRatio:0.000000}; frameComparable={frameDifference?.Comparable}; frameChangedRatio={frameDifference?.ChangedRatio ?? -1:0.000000}; dHash={localVisual?.HashDistance ?? -1}; visualVerdict={visualVerdict.Status}; visualConfidence={visualVerdict.Confidence:0.000}; route={route.Route}; routeConfidence={route.Confidence:0.000}; reason={LimitDiagnostic(route.Reason, 240)}.");
+                    $"action={decision.Action}; expected={LimitDiagnostic(decision.ExpectedEffect, 180)}; foregroundChanged={fastObservation.ForegroundWindowChanged}; windowBoundsChanged={fastObservation.WindowBoundsChanged}; screenChanged={fastObservation.ScreenChanged}; fastChangeRatio={fastObservation.ChangeRatio:0.000000}; frameComparable={frameDifference?.Comparable}; frameChangedRatio={frameDifference?.ChangedRatio ?? -1:0.000000}; dHash={localVisual?.HashDistance ?? -1}; visualVerdict={visualVerdict.Status}; visualConfidence={visualVerdict.Confidence:0.000}; route={route.Route}; verificationStatus={verificationAssessment.Status}; routeConfidence={route.Confidence:0.000}; reason={LimitDiagnostic(verificationAssessment.Reason, 240)}.");
 
                 progress.Add(
                     "verification-route",
-                    $"Verification Router: {route.Route} — {route.Reason}",
-                    route.Route == DesktopVerificationRoute.GeminiRequired
-                        ? "gemini"
-                        : "local",
-                    route.Confidence);
+                    $"Unified Verification Engine: {verificationAssessment.Status} — {verificationAssessment.Reason}",
+                    verificationAssessment.Status,
+                    verificationAssessment.Confidence);
 
-                if (route.Route == DesktopVerificationRoute.LocalVerified)
+                if (verificationAssessment.LocalFusion is { } localDecision)
                 {
-                    if (visualVerdict.Status ==
-                            LocalVisualVerificationStatus.Changed &&
-                        visualVerdict.Confidence >= 0.88)
-                    {
-                        route =
-                            route with
-                            {
-                                Confidence =
-                                    Math.Min(
-                                        0.99,
-                                        Math.Max(
-                                            route.Confidence,
-                                            visualVerdict.Confidence)),
-                                Reason =
-                                    $"{route.Reason} Local visual fusion corroborates change: {visualVerdict.Reason}"
-                            };
-                    }
-
-                    localRouteForFusion = route;
-
-                    var localDecision =
-                        reliableOperator.EvaluateLocalVerification(
-                            decision,
-                            route);
-
                     progress.Add(
                         "evidence-fusion",
                         $"Evidence Fusion local: {localDecision.Source} — {localDecision.Reason}",
@@ -3421,32 +3402,18 @@ public sealed class ComputerOperatorTaskService(
                             ? "verified"
                             : "semantic-required",
                         localDecision.Confidence);
-
-                    if (localDecision.Verified)
-                    {
-                        return new(
-                            true,
-                            localDecision.Confidence,
-                            $"Universal Reliable Operator xác minh local: {localDecision.Reason}");
-                    }
-
-                    // Một strong-local source đơn lẻ (ví dụ scroll/frame)
-                    // không được tự complete. Tiếp tục semantic verification.
                 }
 
-                var shouldAdaptiveWait =
-                    ComputerOperatorAdaptiveWaitPolicy.SupportsAdaptiveWaiting(
-                        decision.Action) &&
-                    (route.Route == DesktopVerificationRoute.LocalFailed ||
-                     visualVerdict.Status ==
-                        LocalVisualVerificationStatus.Stable ||
-                     (route.Route == DesktopVerificationRoute.GeminiRequired &&
-                      !fastObservation.ForegroundWindowChanged &&
-                      !fastObservation.WindowBoundsChanged &&
-                      (frameDifference?.Comparable != true ||
-                       frameDifference.ChangedRatio < 0.01)));
+                if (verificationAssessment.Status ==
+                    ComputerOperatorVerificationStatuses.Verified)
+                {
+                    return new(
+                        true,
+                        verificationAssessment.Confidence,
+                        $"Unified Verification Engine xác minh local: {verificationAssessment.Reason}");
+                }
 
-                if (shouldAdaptiveWait)
+                if (verificationAssessment.ShouldAdaptiveWait)
                 {
                     var adaptiveResult =
                         await WaitForAdaptiveTransitionAsync(
@@ -3497,41 +3464,51 @@ public sealed class ComputerOperatorTaskService(
                         "Bộ chờ thích ứng chưa có bằng chứng cuối cùng; đã chụp trạng thái mới nhất để chuyển sang xác minh ngữ nghĩa.",
                         "semantic");
                 }
-                else if (route.Route == DesktopVerificationRoute.LocalFailed)
+                if (verificationAssessment.ShouldAdaptiveWait)
                 {
-                    return new(
-                        false,
-                        route.Confidence,
-                        $"Xác minh cục bộ thất bại: {route.Reason}");
-                }
+                    verificationAssessment =
+                        verificationEngine.EvaluateLocal(
+                            decision,
+                            fastObservation,
+                            frameDifference,
+                            visualVerdict);
 
-                var adaptive = GeminiCallPolicy.EvaluateVerification(
-                    decision,
-                    fastObservation,
-                    frameDifference);
+                    route =
+                        verificationAssessment.Route;
+
+                    if (route.Route ==
+                        DesktopVerificationRoute.LocalVerified)
+                    {
+                        localRouteForFusion =
+                            route;
+                    }
+                }
 
                 progress.Add(
                     "gemini-call-policy",
-                    $"Adaptive Gemini: {adaptive.Decision} — {adaptive.Reason}",
-                    adaptive.Decision == AdaptiveGeminiDecision.CallGemini
+                    $"Unified Verification Engine: {verificationAssessment.Status} — {verificationAssessment.AdaptiveDecision.Reason}",
+                    verificationAssessment.Status ==
+                            ComputerOperatorVerificationStatuses.SemanticRequired
                         ? "gemini"
                         : "local",
-                    adaptive.Confidence);
+                    verificationAssessment.Confidence);
 
-                if (adaptive.Decision == AdaptiveGeminiDecision.SkipAndPass)
+                if (verificationAssessment.Status ==
+                    ComputerOperatorVerificationStatuses.Verified)
                 {
                     return new(
                         true,
-                        adaptive.Confidence,
-                        $"Không gọi Gemini: {adaptive.Reason}");
+                        verificationAssessment.Confidence,
+                        $"Không cần semantic verifier: {verificationAssessment.Reason}");
                 }
 
-                if (adaptive.Decision == AdaptiveGeminiDecision.SkipAndFail)
+                if (verificationAssessment.Status ==
+                    ComputerOperatorVerificationStatuses.Failed)
                 {
                     return new(
                         false,
-                        adaptive.Confidence,
-                        $"Không gọi Gemini: {adaptive.Reason}");
+                        verificationAssessment.Confidence,
+                        $"Unified Verification Engine xác minh thất bại: {verificationAssessment.Reason}");
                 }
             }
 
@@ -3692,7 +3669,7 @@ public sealed class ComputerOperatorTaskService(
                 }
 
                 var reliableVerification =
-                    reliableOperator.EvaluateSemanticVerification(
+                    verificationEngine.EvaluateSemantic(
                         decision,
                         localRouteForFusion,
                         result.Satisfied,

@@ -54,7 +54,10 @@ public static class ComputerUseEndpoints
         services.AddSingleton<IComputerOperatorAcceptanceService, ComputerOperatorAcceptanceService>();
         services.AddSingleton<IComputerOperatorCheckpointStore, SqliteComputerOperatorCheckpointStore>();
         services.AddSingleton<IComputerOperatorTelemetry, ComputerOperatorTelemetry>();
+        services.AddSingleton<IDesktopVerificationRouter, DesktopVerificationRouter>();
+        services.AddSingleton<IAdaptiveGeminiCallPolicy, AdaptiveGeminiCallPolicy>();
         services.AddSingleton<IUniversalReliableOperatorCoordinator, UniversalReliableOperatorCoordinator>();
+        services.AddSingleton<IComputerOperatorVerificationEngine, ComputerOperatorVerificationEngine>();
         services.AddSingleton<IComputerOperatorTaskService, ComputerOperatorTaskService>();
         services.AddSingleton<IExecutionAgent, ComputerOperatorExecutionAgent>();
         services.AddSingleton<IExecutionAgentRegistry, ExecutionAgentRegistry>();

@@ -79,6 +79,7 @@ public static class ComputerUseEndpoints
         services.AddSingleton<IDesktopDynamicTargetTracker, DesktopDynamicTargetTracker>();
         services.AddSingleton<IDesktopTemplateMatchingSensor, OpenCvTemplateMatchingSensor>();
         services.AddSingleton<IDesktopVisualTargetPersistenceService, DesktopVisualTargetPersistenceService>();
+        services.AddSingleton<IComputerOperatorVisualTargetRecoveryService, ComputerOperatorVisualTargetRecoveryService>();
         services.AddSingleton<ILocalVisualTargetResolver, LocalVisualTargetResolver>();
         services.AddSingleton<ILocalVisualVerificationService, LocalVisualVerificationService>();
         services.AddSingleton<ILocalVisualProviderHealthRegistry, LocalVisualProviderHealthRegistry>();

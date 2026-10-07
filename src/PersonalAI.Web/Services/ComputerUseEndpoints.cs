@@ -21,6 +21,7 @@ public static class ComputerUseEndpoints
         services.AddSingleton<IFlaUiAutomationClient, FlaUiAutomationClient>();
         services.AddSingleton<IStructuredDesktopSnapshotService, StructuredDesktopSnapshotService>();
         services.AddSingleton<IStructuredDesktopVerificationService, StructuredDesktopVerificationService>();
+        services.AddSingleton<IStructuredTargetRevalidator, StructuredTargetRevalidator>();
         services.AddSingleton<IFlaUiTextAccessibilityBackend, FlaUiTextAccessibilityBackend>();
         services.AddSingleton<ITextAccessibilityBackend, CompositeTextAccessibilityBackend>();
         services.AddSingleton<ITextClipboardWriter, WindowsTextClipboardWriter>();

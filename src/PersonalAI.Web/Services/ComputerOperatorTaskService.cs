@@ -3825,8 +3825,7 @@ public sealed class ComputerOperatorTaskService(
                 result.Verified
                     ? "Adaptive Wait phát hiện evidence mạnh nhưng không tự kết luận VERIFIED. Chuyển evidence sang vòng reobserve + Unified Verification Engine."
                     : "Adaptive Wait phát hiện evidence thất bại mạnh nhưng không tự kết luận FAILED. Chuyển sang vòng reobserve + Unified Verification Engine.",
-                "handoff",
-                result.Confidence);
+                "handoff");
         }
 
         // Adaptive Wait chỉ là progress/wakeup mechanism, không phải verification

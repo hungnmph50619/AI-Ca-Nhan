@@ -2100,20 +2100,14 @@ public sealed class ComputerOperatorAcceptanceService(
 
     private static void CheckVerificationConflictRequiresReobserve()
     {
-        var engine =
-            new ComputerOperatorVerificationEngine(
-                new DesktopVerificationRouter(),
-                new AdaptiveGeminiCallPolicy(),
-                new UniversalReliableOperatorCoordinator());
-
         Require(
-            engine.ShouldReobserveOnSemanticConflict(
+            ComputerOperatorVerificationEngine.ShouldReobserveOnSemanticConflictForAcceptance(
                 semanticSatisfied: false,
                 strongLocalVisualTransition: true) &&
-            !engine.ShouldReobserveOnSemanticConflict(
+            !ComputerOperatorVerificationEngine.ShouldReobserveOnSemanticConflictForAcceptance(
                 semanticSatisfied: true,
                 strongLocalVisualTransition: true) &&
-            !engine.ShouldReobserveOnSemanticConflict(
+            !ComputerOperatorVerificationEngine.ShouldReobserveOnSemanticConflictForAcceptance(
                 semanticSatisfied: false,
                 strongLocalVisualTransition: false),
             "Verification conflict policy chưa phân biệt đúng local transition mạnh và semantic false.");

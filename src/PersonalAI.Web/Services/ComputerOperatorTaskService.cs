@@ -180,6 +180,7 @@ public sealed class ComputerOperatorTaskService(
     IComputerOperatorProcedureEdgeLifecycleService procedureEdgeLifecycle,
     IComputerOperatorRecoveryCoordinator recoveryCoordinator,
     IComputerOperatorDecisionAuthority decisionAuthority,
+    IComputerOperatorIntentCompiler intentCompiler,
     IComputerOperatorStrategyRanker strategyRanker,
     IUniversalReliableOperatorCoordinator reliableOperator,
     IDesktopVerificationRouter verificationRouter,
@@ -203,8 +204,6 @@ public sealed class ComputerOperatorTaskService(
         new ComputerOperatorFailureRecoveryEngine();
     private static readonly IDesktopLocalActionPlanner LocalPlanner =
         new DesktopLocalActionPlanner();
-    private static readonly UnifiedDecisionKernel DecisionKernel =
-        new();
     private static readonly StructuredTargetRevalidator StructuredTargetRevalidator =
         new();
 
@@ -889,7 +888,7 @@ public sealed class ComputerOperatorTaskService(
                                 DateTimeOffset.UtcNow);
                         var kernelCompiled =
                             minimalIntent is not null &&
-                            DecisionKernel.TryCompile(
+                            intentCompiler.TryCompile(
                                 minimalIntent,
                                 frame,
                                 out kernelDecision,

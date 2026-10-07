@@ -19,8 +19,18 @@ public sealed record ComputerOperatorLocalVerificationAssessment(
     double Confidence,
     string Reason);
 
+public sealed record ComputerOperatorAuthoritativeVerificationAssessment(
+    bool Handled,
+    bool Verified,
+    double Confidence,
+    string Detail,
+    string Route);
+
 public interface IComputerOperatorVerificationEngine
 {
+    ComputerOperatorAuthoritativeVerificationAssessment EvaluateAuthoritativeText(
+        TextInteractionResult? textInteraction);
+
     ComputerOperatorLocalVerificationAssessment EvaluateLocal(
         DesktopOperatorDecision decision,
         DesktopFastObservation observation,
@@ -46,6 +56,31 @@ public sealed class ComputerOperatorVerificationEngine(
     IUniversalReliableOperatorCoordinator reliableOperator)
     : IComputerOperatorVerificationEngine
 {
+    public ComputerOperatorAuthoritativeVerificationAssessment EvaluateAuthoritativeText(
+        TextInteractionResult? textInteraction)
+    {
+        if (textInteraction is not
+            {
+                Verified: true,
+                ActualText: not null
+            })
+        {
+            return new(
+                Handled: false,
+                Verified: false,
+                Confidence: 0,
+                Detail: "Không có authoritative local text evidence.",
+                Route: "not-applicable");
+        }
+
+        return new(
+            Handled: true,
+            Verified: true,
+            Confidence: 1.0,
+            Detail: $"Local Text Verifier: {textInteraction.Detail}",
+            Route: "local-text");
+    }
+
     public ComputerOperatorLocalVerificationAssessment EvaluateLocal(
         DesktopOperatorDecision decision,
         DesktopFastObservation observation,

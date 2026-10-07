@@ -50,6 +50,7 @@ public interface IUniversalTaskRouter
 public sealed class UniversalTaskRouter(
     IExecutionAgentRegistry executionAgents,
     IExecutionGateway gateway,
+    IPlanningAuthorityPolicy planningAuthority,
     IToolCapabilityRegistry? toolCapabilities = null,
     IUniversalCapabilityDiscoveryService? capabilityDiscovery = null)
     : IUniversalTaskRouter
@@ -148,6 +149,20 @@ public sealed class UniversalTaskRouter(
 
         var preferred = Normalize(
             request.PreferredChannel);
+
+        var authority =
+            planningAuthority.Classify(
+                goal);
+
+        if (authority.PreferTaskEngine)
+        {
+            return new(
+                goal,
+                Array.Empty<UniversalTaskRouteCandidate>(),
+                SelectedChannel: null,
+                NeedsFurtherRouting: true,
+                $"Yêu cầu được phân loại {authority.Authority}; Universal Router chỉ route channel và không được thay TaskEngine lập kế hoạch nhiều bước. {authority.Reason}");
+        }
 
         var runtimeCapabilities =
             capabilityDiscovery?.Discover();

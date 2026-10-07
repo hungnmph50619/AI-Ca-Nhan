@@ -3081,7 +3081,9 @@ jobs:
           grep -Fq 'IComputerOperatorActionExecutor' src/PersonalAI.Web/Services/ComputerOperatorActionExecutor.cs
           grep -Fq 'targeting.Resolve(decision, frame)' src/PersonalAI.Web/Services/ComputerOperatorActionExecutor.cs
           grep -Fq 'Foreground đã thay đổi trước thao tác bàn phím' src/PersonalAI.Web/Services/ComputerOperatorActionExecutor.cs
-          grep -Fq 'actionExecutor.Execute(' src/PersonalAI.Web/Services/ComputerOperatorTaskService.cs
+          grep -Fq 'IComputerOperatorExecutionCoordinator' src/PersonalAI.Web/Services/ComputerOperatorExecutionCoordinator.cs
+          grep -Fq 'actionExecutor.Execute(' src/PersonalAI.Web/Services/ComputerOperatorExecutionCoordinator.cs
+          grep -Fq 'executionCoordinator.Execute(' src/PersonalAI.Web/Services/ComputerOperatorTaskService.cs
           grep -Fq 'RevalidateWindowAtPoint' src/PersonalAI.Web/Services/ComputerOperatorActionExecutor.cs
           grep -Fq 'Cửa sổ topmost đã thay đổi ngay trước primitive' src/PersonalAI.Web/Services/ComputerOperatorActionExecutor.cs
           grep -Fq 'provider.ProposeFunctionCallAsync' src/PersonalAI.Web/Services/ToolOrchestrationService.cs

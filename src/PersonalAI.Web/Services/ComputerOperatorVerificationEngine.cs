@@ -31,6 +31,10 @@ public interface IComputerOperatorVerificationEngine
     ComputerOperatorAuthoritativeVerificationAssessment EvaluateAuthoritativeText(
         TextInteractionResult? textInteraction);
 
+    ComputerOperatorAuthoritativeVerificationAssessment EvaluateAuthoritativeStructured(
+        StructuredVerificationResult structuredResult,
+        bool retry = false);
+
     ComputerOperatorLocalVerificationAssessment EvaluateLocal(
         DesktopOperatorDecision decision,
         DesktopFastObservation observation,
@@ -83,6 +87,48 @@ public sealed class ComputerOperatorVerificationEngine(
             Confidence: 1.0,
             Detail: $"Local Text Verifier: {textInteraction.Detail}",
             Route: "local-text");
+    }
+
+    public ComputerOperatorAuthoritativeVerificationAssessment EvaluateAuthoritativeStructured(
+        StructuredVerificationResult structuredResult,
+        bool retry = false)
+    {
+        ArgumentNullException.ThrowIfNull(structuredResult);
+
+        return structuredResult.Status switch
+        {
+            StructuredVerificationStatus.Verified =>
+                new(
+                    Handled: true,
+                    Verified: true,
+                    Confidence: structuredResult.Confidence,
+                    Detail: retry
+                        ? $"Structured verifier xác minh sau lần đọc lại: {structuredResult.Reason}"
+                        : $"Structured verifier xác minh thành công: {structuredResult.Reason}",
+                    Route: retry
+                        ? "structured-retry"
+                        : "structured"),
+            StructuredVerificationStatus.Failed =>
+                new(
+                    Handled: true,
+                    Verified: false,
+                    Confidence: structuredResult.Confidence,
+                    Detail: retry
+                        ? $"Structured verifier xác minh thất bại sau hai lần đọc state: {structuredResult.Reason}"
+                        : $"Structured verifier xác minh thất bại: {structuredResult.Reason}",
+                    Route: retry
+                        ? "structured-retry"
+                        : "structured"),
+            _ =>
+                new(
+                    Handled: false,
+                    Verified: false,
+                    Confidence: structuredResult.Confidence,
+                    Detail: structuredResult.Reason,
+                    Route: retry
+                        ? "structured-retry-inconclusive"
+                        : "structured-inconclusive")
+        };
     }
 
     public ComputerOperatorLocalVerificationAssessment EvaluateLocal(

@@ -191,6 +191,7 @@ public sealed class ComputerOperatorTaskService(
     IComputerOperatorConfidenceEngine confidenceEngine,
     IComputerOperatorFailureRecoveryEngine failureRecoveryEngine,
     IComputerOperatorProviderResiliencePolicy providerResilience,
+    IComputerOperatorProviderPlanningRouter providerPlanningRouter,
     IComputerOperatorPlanningContextBuilder planningContextBuilder,
     IComputerOperatorStrategyRanker strategyRanker,
     IUniversalReliableOperatorCoordinator reliableOperator,
@@ -655,6 +656,12 @@ public sealed class ComputerOperatorTaskService(
                     sameDegradedScene &&
                     DateTimeOffset.UtcNow < plannerBackoffUntil;
 
+                var providerPlanningRoute =
+                    providerPlanningRouter.Evaluate(
+                        vision.Ready,
+                        providerBackoffActive,
+                        plannerBackoffUntil);
+
                 DesktopVisualTargetTemplate? plannedVisualTemplate =
                     null;
 
@@ -778,10 +785,11 @@ public sealed class ComputerOperatorTaskService(
                             "provider",
                             $"provider=ocr-local; purpose=plan; cycle={index}; scene={sceneDiagnosticId}; action={decision.Action}; confidence={decision.Confidence:0.000}; detail={LimitDiagnostic(decision.Reason, 180)}; geminiCalled=false.");
                     }
-                    else if (!vision.Ready)
+                    else if (providerPlanningRoute.Status ==
+                             ComputerOperatorProviderPlanningStatuses.Unavailable)
                     {
                         decision =
-                            providerResilience.CreateProviderUnavailableBlockedDecision();
+                            providerPlanningRoute.Decision!;
 
                         cycleTrace.PlannerRoute =
                             "provider-unavailable";
@@ -806,10 +814,11 @@ public sealed class ComputerOperatorTaskService(
                             "provider",
                             $"provider=Gemini; purpose=plan; cycle={index}; ready=false; scene={sceneDiagnosticId}; fallback=local-structured-exhausted; taskCrash=false.");
                     }
-                    else if (providerBackoffActive)
+                    else if (providerPlanningRoute.Status ==
+                             ComputerOperatorProviderPlanningStatuses.Cooldown)
                     {
-                        decision = providerResilience.CreatePlannerCooldownWaitDecision(
-                            plannerBackoffUntil);
+                        decision =
+                            providerPlanningRoute.Decision!;
 
                         cycleTrace.PlannerRoute =
                             "provider-cooldown";

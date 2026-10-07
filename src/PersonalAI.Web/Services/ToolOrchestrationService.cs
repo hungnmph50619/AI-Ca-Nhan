@@ -45,6 +45,7 @@ public sealed class ToolOrchestrationService : IToolOrchestrationService
     private readonly IToolInputValidator _validator;
     private readonly IToolExecutionService _executor;
     private readonly IToolExposurePolicy _exposurePolicy;
+    private readonly IPlanningAuthorityPolicy _planningAuthority;
     private readonly IAiProviderResolver _providerResolver;
     private readonly IToolResultSynthesisService _synthesizer;
     private readonly IToolActivityStore _activityStore;
@@ -61,6 +62,7 @@ public sealed class ToolOrchestrationService : IToolOrchestrationService
         IToolInputValidator validator,
         IToolExecutionService executor,
         IToolExposurePolicy exposurePolicy,
+        IPlanningAuthorityPolicy planningAuthority,
         IAiProviderResolver providerResolver,
         IToolResultSynthesisService synthesizer,
         IToolActivityStore activityStore,
@@ -71,6 +73,7 @@ public sealed class ToolOrchestrationService : IToolOrchestrationService
         _validator = validator;
         _executor = executor;
         _exposurePolicy = exposurePolicy;
+        _planningAuthority = planningAuthority;
         _providerResolver = providerResolver;
         _synthesizer = synthesizer;
         _activityStore = activityStore;
@@ -94,6 +97,22 @@ public sealed class ToolOrchestrationService : IToolOrchestrationService
         var currentIntent =
             planningConversation.FirstOrDefault()?.Content
             ?? string.Empty;
+
+        var authority =
+            _planningAuthority.Classify(
+                currentIntent);
+
+        if (!authority.AllowToolOrchestration)
+        {
+            _logger.LogInformation(
+                "Tool orchestration skipped by planning authority. Authority={Authority}; Signals={Signals}; Reason={Reason}",
+                authority.Authority,
+                authority.SequentialSignalCount,
+                authority.Reason);
+
+            return null;
+        }
+
         var exposure =
             _exposurePolicy.Select(
                 currentIntent,

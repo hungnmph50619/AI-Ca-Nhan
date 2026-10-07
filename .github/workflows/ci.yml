@@ -3121,7 +3121,9 @@ jobs:
           ! grep -Fq 'action = ExecuteDecision(decision, frame);' src/PersonalAI.Web/Services/ComputerOperatorTaskService.cs
           grep -Fq '"frame-difference"' src/PersonalAI.Web/Services/ComputerOperatorTaskService.cs
           grep -Fq 'changedRatio=' src/PersonalAI.Web/Services/DesktopVisionService.cs
-          grep -Fq 'RequiresExpectedEffect' src/PersonalAI.Web/Services/ComputerOperatorTaskService.cs
+          grep -Fq 'IComputerOperatorActionSafetyPolicy' src/PersonalAI.Web/Services/ComputerOperatorActionSafetyPolicy.cs
+          grep -Fq 'missing-expected-effect' src/PersonalAI.Web/Services/ComputerOperatorActionSafetyPolicy.cs
+          grep -Fq 'actionSafetyPolicy.ValidateExpectedEffect' src/PersonalAI.Web/Services/ComputerOperatorTaskService.cs
           grep -Fq 'VERIFY-FAILED' src/PersonalAI.Web/Services/ComputerOperatorTaskService.cs
           grep -Fq 'STEP {index}: VERIFIED' src/PersonalAI.Web/Services/ComputerOperatorTaskService.cs
           grep -Fq 'ComputerOperatorRecoverySession' src/PersonalAI.Web/Services/ComputerOperatorRecoverySession.cs

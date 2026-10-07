@@ -3311,7 +3311,8 @@ jobs:
           grep -Fq 'ITextAccessibilityBackend' src/PersonalAI.Web/Services/GenericTextInteractionEngine.cs
           grep -Fq 'ITextClipboardWriter' src/PersonalAI.Web/Services/GenericTextInteractionEngine.cs
           grep -Fq 'TextInteractionStrategies.AccessibilityDirect' src/PersonalAI.Web/Services/GenericTextInteractionEngine.cs
-          grep -Fq 'textInteraction.Execute' src/PersonalAI.Web/Services/ComputerOperatorTaskService.cs
+          grep -Fq 'textInteraction.Execute' src/PersonalAI.Web/Services/ComputerOperatorExecutionCoordinator.cs
+          grep -Fq 'executionResult.TextInteraction' src/PersonalAI.Web/Services/ComputerOperatorTaskService.cs
           grep -Fq 'không gọi screenshot/Gemini' src/PersonalAI.Web/Services/ComputerOperatorTaskService.cs
           grep -Fq 'type-text là thao tác ATOMIC' src/PersonalAI.Web/Services/DesktopVisionService.cs
           grep -Fq 'CheckGenericTextEngineDirectSetAndVerify' src/PersonalAI.Web/Services/ComputerOperatorAcceptanceService.cs

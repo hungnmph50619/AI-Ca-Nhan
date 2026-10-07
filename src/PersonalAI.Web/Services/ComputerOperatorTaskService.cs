@@ -182,6 +182,8 @@ public sealed class ComputerOperatorTaskService(
     IComputerOperatorRecoveryCoordinator recoveryCoordinator,
     IComputerOperatorDecisionAuthority decisionAuthority,
     IComputerOperatorStrategyRanker strategyRanker,
+    IUniversalReliableOperatorCoordinator reliableOperator,
+    IDesktopVerificationRouter verificationRouter,
     IComputerOperatorVerificationEngine verificationEngine,
     IComputerOperatorRegressionCandidateStore regressionCandidates,
     ILogger<ComputerOperatorTaskService> logger)
@@ -4011,7 +4013,7 @@ public sealed class ComputerOperatorTaskService(
                             difference);
 
                     var route =
-                        VerificationRouter.Route(
+                        verificationRouter.Route(
                             decision,
                             observation,
                             difference);

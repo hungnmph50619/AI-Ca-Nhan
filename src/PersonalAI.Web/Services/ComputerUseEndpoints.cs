@@ -94,6 +94,7 @@ public static class ComputerUseEndpoints
         services.AddSingleton<IDesktopOcrSensor, DesktopOcrSensorRouter>();
         services.AddSingleton<IDesktopOcrActionPlanner, DesktopOcrActionPlanner>();
         services.AddSingleton<IDesktopLocalActionPlanner, DesktopLocalActionPlanner>();
+        services.AddSingleton<IComputerOperatorLocalPlanningRouter, ComputerOperatorLocalPlanningRouter>();
         services.AddSingleton<IComputerOperatorGroundingService, ComputerOperatorGroundingService>();
         services.AddSingleton<IDesktopLocalFastObserver, DesktopLocalFastObserver>();
         services.AddSingleton<IComputerWindowVisibilityService, ComputerWindowVisibilityService>();

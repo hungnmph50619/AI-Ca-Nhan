@@ -157,7 +157,7 @@ public sealed class ComputerOperatorTaskService(
     ILocalVisualVerificationService localVisualVerification,
     IDesktopVisualTargetPersistenceService visualTargetPersistence,
     IDesktopOcrActionPlanner ocrActionPlanner,
-    IDesktopLocalActionPlanner localActionPlanner,
+    IComputerOperatorLocalPlanningRouter localPlanningRouter,
     IComputerOperatorGroundingService groundingService,
     IDesktopLocalFastObserver fastObserver,
     IDesktopTemporalSceneService temporalScenes,
@@ -664,15 +664,16 @@ public sealed class ComputerOperatorTaskService(
                         planningContextBuilder.BuildLocalHistory(
                             taskHistory);
 
-                    if (localActionPlanner.TryPlan(
+                    if (localPlanningRouter.TryPlan(
                             normalizedGoal,
                             desktopState,
                             localHistory,
-                            out decision))
+                            out var localPlan))
                     {
+                        decision =
+                            localPlan.Decision;
                         var structuredRoute =
-                            desktopState.StructuredScene is not null &&
-                            !string.IsNullOrWhiteSpace(decision.TargetElementId);
+                            localPlan.StructuredRoute;
 
                         var localStrategyKey =
                             BuildDiagnosticId(
@@ -687,9 +688,7 @@ public sealed class ComputerOperatorTaskService(
                                 currentProcedureContext);
 
                         var localRoute =
-                            structuredRoute
-                                ? "structured-first"
-                                : "local-planner";
+                            localPlan.Route;
 
                         plannerStopwatch.Stop();
                         planTelemetry.Complete(

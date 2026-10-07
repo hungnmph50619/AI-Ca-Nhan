@@ -181,6 +181,7 @@ public sealed class ComputerOperatorTaskService(
     IComputerOperatorRecoveryCoordinator recoveryCoordinator,
     IComputerOperatorDecisionAuthority decisionAuthority,
     IComputerOperatorIntentCompiler intentCompiler,
+    IComputerOperatorConfidenceEngine confidenceEngine,
     IComputerOperatorStrategyRanker strategyRanker,
     IUniversalReliableOperatorCoordinator reliableOperator,
     IDesktopVerificationRouter verificationRouter,
@@ -198,8 +199,6 @@ public sealed class ComputerOperatorTaskService(
         new DesktopRoiVisionService();
     private static readonly IDesktopDynamicTargetTracker TargetTracker =
         new DesktopDynamicTargetTracker();
-    private static readonly IComputerOperatorConfidenceEngine ConfidenceEngine =
-        new ComputerOperatorConfidenceEngine();
     private static readonly IComputerOperatorFailureRecoveryEngine RecoveryEngine =
         new ComputerOperatorFailureRecoveryEngine();
     private static readonly IDesktopLocalActionPlanner LocalPlanner =
@@ -1710,7 +1709,7 @@ public sealed class ComputerOperatorTaskService(
                 }
 
                 var confidenceAssessment =
-                    ConfidenceEngine.AssessBeforeExecution(
+                    confidenceEngine.AssessBeforeExecution(
                         decision,
                         currentScene,
                         trackingResult);
@@ -1721,42 +1720,57 @@ public sealed class ComputerOperatorTaskService(
                     confidenceAssessment.Decision.ToString().ToLowerInvariant(),
                     confidenceAssessment.OverallConfidence);
 
-                if (confidenceAssessment.Decision !=
-                    ComputerOperatorConfidenceDecision.Execute)
+                var nextLowConfidenceCount =
+                    confidenceAssessment.Decision ==
+                        ComputerOperatorConfidenceDecision.Execute
+                        ? 0
+                        : lowConfidenceCount + 1;
+
+                var readinessDecision =
+                    decisionAuthority.EvaluateExecutionReadiness(
+                        new ComputerOperatorExecutionReadinessInput(
+                            confidenceAssessment,
+                            nextLowConfidenceCount));
+
+                progress.AddDiagnostic(
+                    "decision-authority-readiness",
+                    $"cycle={index}; confidenceDecision={confidenceAssessment.Decision}; overall={confidenceAssessment.OverallConfidence:0.000}; directive={readinessDecision.Directive}; allowExecution={readinessDecision.AllowExecution}; lowConfidenceCount={nextLowConfidenceCount}; reason={LimitDiagnostic(readinessDecision.Reason, 260)}.");
+
+                if (!readinessDecision.AllowExecution)
                 {
-                    lowConfidenceCount++;
+                    lowConfidenceCount =
+                        nextLowConfidenceCount;
 
                     taskHistory.Add(
-                        $"CONFIDENCE-REPLAN: {confidenceAssessment.Reason}");
+                        $"CONFIDENCE-AUTHORITY-{readinessDecision.Directive.ToUpperInvariant()}: {readinessDecision.Reason}");
 
                     recovery.RecordFailure(
                         BuildSemanticActionSignature(decision),
                         decision.Action,
                         ComputerOperatorFailureKinds.LowConfidence,
                         sceneFingerprint,
-                        confidenceAssessment.Reason,
+                        readinessDecision.Reason,
                         decision.ExpectedEffect,
                         confidenceAssessment.OverallConfidence);
 
-                    if (lowConfidenceCount >= 3)
+                    if (readinessDecision.Directive ==
+                        ComputerOperatorDecisionAuthorityDirectives.Block)
                     {
                         _ = actionState.MoveTo(
                             ComputerOperatorActionState.Blocked,
-                            "Confidence Engine không đủ chắc chắn sau 3 lần quan sát.");
+                            readinessDecision.Reason);
 
                         progress.Block(
-                            "Confidence Engine không đủ chắc chắn để thực thi sau 3 lần quan sát.");
+                            readinessDecision.Reason);
+
                         return Finish(
                             false,
-                            "Đã dừng an toàn vì scene/target/action vẫn không đủ chắc chắn.");
+                            "Decision Authority đã dừng an toàn vì scene/target/action vẫn không đủ chắc chắn.");
                     }
 
                     _ = actionState.MoveTo(
                         ComputerOperatorActionState.Replan,
-                        confidenceAssessment.Decision ==
-                            ComputerOperatorConfidenceDecision.GeminiFallback
-                            ? "Confidence trung gian; yêu cầu Gemini quan sát lại với ngữ cảnh mới."
-                            : "Confidence thấp; cần re-observe trước khi execute.");
+                        readinessDecision.Reason);
 
                     await Task.Delay(
                         confidenceAssessment.Decision ==
@@ -2553,7 +2567,7 @@ public sealed class ComputerOperatorTaskService(
                     }
 
                     var verificationAssessment =
-                        ConfidenceEngine.AssessVerification(
+                        confidenceEngine.AssessVerification(
                             decision,
                             observation: null,
                             verification.Confidence,
@@ -2567,17 +2581,9 @@ public sealed class ComputerOperatorTaskService(
                         verificationAssessment.Decision.ToString().ToLowerInvariant(),
                         verificationAssessment.OverallConfidence);
 
-                    if (verification.Verified &&
-                        verificationAssessment.OverallConfidence < MinimumConfidence)
-                    {
-                        verification = verification with
-                        {
-                            Verified = false,
-                            Confidence = verificationAssessment.OverallConfidence,
-                            Detail =
-                                $"Composite confidence chưa đủ để chấp nhận verification. {verificationAssessment.Reason}"
-                        };
-                    }
+                    progress.AddDiagnostic(
+                        "verification-confidence-evidence",
+                        $"overall={verificationAssessment.OverallConfidence:0.000}; confidenceRoute={verificationAssessment.Decision}; advisoryOnly=true; verificationAuthority=ComputerOperatorVerificationEngine; reason={LimitDiagnostic(verificationAssessment.Reason, 240)}.");
                 }
 
                 var afterForeground =

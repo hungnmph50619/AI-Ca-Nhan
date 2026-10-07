@@ -170,7 +170,7 @@ public sealed class ComputerOperatorTaskService(
     IStructuredDesktopVerificationService structuredVerification,
     IStructuredTargetRevalidator structuredTargetRevalidator,
     IComputerOperatorDesktopStateBuilder desktopStateBuilder,
-    IComputerOperatorSceneIdentityService sceneIdentity,
+    IComputerOperatorObservationEvidenceAggregator observationEvidence,
     IComputerOperatorCaptureService captureService,
     IComputerOperatorCheckpointStore checkpoints,
     IComputerOperatorTelemetry telemetry,
@@ -443,38 +443,30 @@ public sealed class ComputerOperatorTaskService(
                         $"Không chụp được desktop: {exception.Message}");
                 }
 
-                var desktopState = desktopStateBuilder.Build(frame);
+                var observation =
+                    observationEvidence.Build(
+                        frame);
 
-                DesktopPerceptualHash? sceneVisualHash =
-                    null;
-                try
-                {
-                    sceneVisualHash =
-                        localVisualSensor.ComputeHash(
-                            frame);
-                }
-                catch (Exception exception) when (
-                    exception is
-                        PlatformNotSupportedException or
-                        ArgumentException or
-                        InvalidOperationException or
-                        ToolExecutionInputException)
+                var desktopState =
+                    observation.DesktopState;
+                var sceneFingerprint =
+                    observation.SceneFingerprint;
+                var windowsContext =
+                    observation.PromptSummary;
+                var active =
+                    observation.ForegroundWindow;
+
+                if (!string.IsNullOrWhiteSpace(
+                        observation.VisualHashFallbackReason))
                 {
                     progress.AddDiagnostic(
                         "scene-identity",
-                        $"Visual scene hash không khả dụng ({exception.GetType().Name}); fallback về structural scene fingerprint.");
+                        observation.VisualHashFallbackReason);
                 }
-
-                var sceneFingerprint =
-                    sceneIdentity.BuildFingerprint(
-                        desktopState,
-                        sceneVisualHash);
-                var windowsContext = desktopState.ToPromptSummary();
-                var active = desktopState.ForegroundWindow;
 
                 progress.Add(
                     "desktop-state",
-                    $"Unified Desktop State: foreground={active?.Title ?? "không xác định"}; windows={desktopState.Windows.Count}; structuredNodes={desktopState.StructuredScene?.NodeCount ?? 0}; graphNodes={desktopState.StructuredGraph?.NodeCount ?? 0}; interactive={desktopState.StructuredGraph?.InteractiveNodeCount ?? 0}; frame={desktopState.CaptureScope}/{desktopState.FrameWidth}x{desktopState.FrameHeight}.",
+                    observation.DesktopStateSummary,
                     observation: true);
 
                 var sceneDiagnosticId =

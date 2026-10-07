@@ -24,6 +24,7 @@ public static class ComputerUseEndpoints
         services.AddSingleton<IStructuredTargetRevalidator, StructuredTargetRevalidator>();
         services.AddSingleton<IComputerOperatorDesktopStateBuilder, ComputerOperatorDesktopStateBuilder>();
         services.AddSingleton<IComputerOperatorSceneIdentityService, ComputerOperatorSceneIdentityService>();
+        services.AddSingleton<IComputerOperatorObservationEvidenceAggregator, ComputerOperatorObservationEvidenceAggregator>();
         services.AddSingleton<IComputerOperatorCaptureService, ComputerOperatorCaptureService>();
         services.AddSingleton<IFlaUiTextAccessibilityBackend, FlaUiTextAccessibilityBackend>();
         services.AddSingleton<ITextAccessibilityBackend, CompositeTextAccessibilityBackend>();

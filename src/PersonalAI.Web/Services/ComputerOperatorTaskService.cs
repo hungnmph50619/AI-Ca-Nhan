@@ -192,6 +192,7 @@ public sealed class ComputerOperatorTaskService(
     IComputerOperatorFailureRecoveryEngine failureRecoveryEngine,
     IComputerOperatorProviderResiliencePolicy providerResilience,
     IComputerOperatorProviderPlanningRouter providerPlanningRouter,
+    IComputerOperatorFullPlanningCoordinator fullPlanningCoordinator,
     IComputerOperatorPlanningContextBuilder planningContextBuilder,
     IComputerOperatorStrategyRanker strategyRanker,
     IUniversalReliableOperatorCoordinator reliableOperator,
@@ -928,14 +929,17 @@ public sealed class ComputerOperatorTaskService(
                                 "provider",
                                 $"provider=Gemini; purpose=minimal-intent-first; cycle={index}; latencyMs={minimalResult.LatencyMilliseconds}; result={(minimalIntent is null ? "invalid" : "rejected")}; kernelDetail={LimitDiagnostic(kernelRejection, 220)}; fallback=full-planner.");
 
-                            decision =
-                                await vision.DecideActionAsync(
+                            var fullPlan =
+                                await fullPlanningCoordinator.PlanAsync(
                                     frame,
                                     normalizedGoal,
                                     windowsContext,
                                     historyContext,
                                     temporalSceneContext,
                                     linked.Token);
+
+                            decision =
+                                fullPlan.Decision;
 
                             plannerStopwatch.Stop();
                             planTelemetry.Complete(
@@ -945,8 +949,7 @@ public sealed class ComputerOperatorTaskService(
                             cycleTrace.PlannerRoute =
                                 "gemini-full-fallback";
 
-                            if (providerResilience.IsDegradedPlannerDecision(
-                                    decision))
+                            if (fullPlan.Degraded)
                             {
                                 plannerDegradedScene =
                                     sceneFingerprint;
@@ -963,7 +966,7 @@ public sealed class ComputerOperatorTaskService(
 
                                 progress.AddDiagnostic(
                                     "provider",
-                                    $"provider=Gemini; purpose=full-fallback; cycle={index}; latencyMs={plannerStopwatch.ElapsedMilliseconds}; result=degraded; scene={sceneDiagnosticId}; circuit=open; backoffSeconds={backoffSeconds}; action={decision.Action}; replaySideEffect=false.");
+                                    $"provider=Gemini; purpose=full-fallback; cycle={index}; latencyMs={fullPlan.LatencyMilliseconds}; result=degraded; scene={sceneDiagnosticId}; circuit=open; backoffSeconds={backoffSeconds}; action={decision.Action}; replaySideEffect=false.");
                             }
                             else
                             {
@@ -976,7 +979,7 @@ public sealed class ComputerOperatorTaskService(
 
                                 progress.AddDiagnostic(
                                     "provider",
-                                    $"provider=Gemini; purpose=full-fallback; cycle={index}; latencyMs={plannerStopwatch.ElapsedMilliseconds}; action={decision.Action}; confidence={decision.Confidence:0.000}; payload=parsed; minimalIntentRejected=true.");
+                                    $"provider=Gemini; purpose=full-fallback; cycle={index}; latencyMs={fullPlan.LatencyMilliseconds}; action={decision.Action}; confidence={decision.Confidence:0.000}; payload=parsed; minimalIntentRejected=true.");
                             }
                         }
                     }

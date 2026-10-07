@@ -57,6 +57,7 @@ public static class ComputerUseEndpoints
         services.AddSingleton<IComputerOperatorFailureRecoveryEngine, ComputerOperatorFailureRecoveryEngine>();
         services.AddSingleton<IComputerOperatorProviderResiliencePolicy, ComputerOperatorProviderResiliencePolicy>();
         services.AddSingleton<IComputerOperatorProviderPlanningRouter, ComputerOperatorProviderPlanningRouter>();
+        services.AddSingleton<IComputerOperatorFullPlanningCoordinator, ComputerOperatorFullPlanningCoordinator>();
         services.AddSingleton<IComputerOperatorPlanningContextBuilder, ComputerOperatorPlanningContextBuilder>();
         services.AddSingleton<IComputerOperatorStrategyRanker, ComputerOperatorStrategyRanker>();
         services.AddSingleton<IComputerDisplayTopologyService, WindowsComputerDisplayTopologyService>();

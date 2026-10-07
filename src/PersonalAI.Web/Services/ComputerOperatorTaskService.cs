@@ -3076,6 +3076,16 @@ public sealed class ComputerOperatorTaskService(
                     await execution.WaitIfPausedAsync(
                         cancellationToken);
 
+                    after.Clear();
+                    after = await captureService.CaptureAsync(
+                        verificationCaptureContext,
+                        cancellationToken);
+
+                    progress.Add(
+                        "structured-verification-reobserve",
+                        $"Đã re-observe frame mới trước structured verification retry: {after.Width}x{after.Height}; scope={after.CaptureScope}; window={after.WindowId ?? "-"}; foreground={after.WindowWasForeground}.",
+                        observation: true);
+
                     var structuredRetryState =
                         desktopStateBuilder.Build(after);
 
@@ -3315,6 +3325,40 @@ public sealed class ComputerOperatorTaskService(
                         "adaptive-wait",
                         "Bộ chờ thích ứng chưa có bằng chứng cuối cùng; đã chụp trạng thái mới nhất để chuyển sang xác minh ngữ nghĩa.",
                         "semantic");
+
+                    localVisual =
+                        verificationBaseline is not null &&
+                        !verificationContextChanged
+                            ? localVisualSensor.Analyze(
+                                verificationBaseline,
+                                after)
+                            : null;
+
+                    visualVerdict =
+                        localVisualVerification.Evaluate(
+                            localVisual);
+
+                    strongLocalVisualTransition =
+                        visualVerdict.Status ==
+                            LocalVisualVerificationStatus.Changed &&
+                        visualVerdict.Confidence >=
+                            0.85 &&
+                        (frameDifference?.Comparable == true &&
+                         frameDifference.ChangedRatio >=
+                            0.015);
+
+                    var refreshedFastAfter =
+                        fastObserver.CaptureSample(after);
+
+                    fastObservation =
+                        fastObserver.Analyze(
+                            fastObserverBaseline,
+                            refreshedFastAfter,
+                            frameDifference);
+
+                    progress.AddDiagnostic(
+                        "verification-reobserve",
+                        $"action={decision.Action}; refreshed=true; foregroundChanged={fastObservation.ForegroundWindowChanged}; windowBoundsChanged={fastObservation.WindowBoundsChanged}; screenChanged={fastObservation.ScreenChanged}; fastChangeRatio={fastObservation.ChangeRatio:0.000000}; frameComparable={frameDifference?.Comparable}; frameChangedRatio={frameDifference?.ChangedRatio ?? -1:0.000000}; dHash={localVisual?.HashDistance ?? -1}; visualVerdict={visualVerdict.Status}; visualConfidence={visualVerdict.Confidence:0.000}.");
                 }
                 if (verificationAssessment.ShouldAdaptiveWait)
                 {

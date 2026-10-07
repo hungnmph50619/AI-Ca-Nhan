@@ -44,6 +44,7 @@ public sealed class ToolOrchestrationService : IToolOrchestrationService
     private readonly IToolRegistry _registry;
     private readonly IToolInputValidator _validator;
     private readonly IToolExecutionService _executor;
+    private readonly IToolExposurePolicy _exposurePolicy;
     private readonly IAiProviderResolver _providerResolver;
     private readonly IToolResultSynthesisService _synthesizer;
     private readonly IToolActivityStore _activityStore;
@@ -59,6 +60,7 @@ public sealed class ToolOrchestrationService : IToolOrchestrationService
         IToolRegistry registry,
         IToolInputValidator validator,
         IToolExecutionService executor,
+        IToolExposurePolicy exposurePolicy,
         IAiProviderResolver providerResolver,
         IToolResultSynthesisService synthesizer,
         IToolActivityStore activityStore,
@@ -68,6 +70,7 @@ public sealed class ToolOrchestrationService : IToolOrchestrationService
         _registry = registry;
         _validator = validator;
         _executor = executor;
+        _exposurePolicy = exposurePolicy;
         _providerResolver = providerResolver;
         _synthesizer = synthesizer;
         _activityStore = activityStore;
@@ -86,7 +89,24 @@ public sealed class ToolOrchestrationService : IToolOrchestrationService
 
         CleanupExpired();
         var provider = _providerResolver.GetActive();
-        var definitions = _registry.GetAll();
+        var planningConversation =
+            BuildFunctionPlanningConversation(messages);
+        var currentIntent =
+            planningConversation.FirstOrDefault()?.Content
+            ?? string.Empty;
+        var exposure =
+            _exposurePolicy.Select(
+                currentIntent,
+                _registry.GetAll(),
+                maximumTools: 16);
+        var definitions =
+            exposure.Tools;
+
+        _logger.LogInformation(
+            "Provider tool exposure: {Selected}/{Considered}; {Reason}",
+            exposure.SelectedTools,
+            exposure.ConsideredTools,
+            exposure.Reason);
 
         if (TryGetVisualLocateTarget(messages, out var visualTarget))
         {
@@ -134,7 +154,7 @@ public sealed class ToolOrchestrationService : IToolOrchestrationService
             .ToArray();
 
         var decision = await provider.ProposeFunctionCallAsync(
-            BuildFunctionPlanningConversation(messages),
+            planningConversation,
             providerFunctions,
             cancellationToken);
 

@@ -3047,10 +3047,14 @@ jobs:
           grep -Fq 'CaptureStableWindowAsync(' src/PersonalAI.Web/Services/DesktopScreenshotService.cs
           grep -Fq 'CaptureScope = "window"' src/PersonalAI.Web/Services/DesktopScreenshotService.cs
           grep -Fq 'WindowWasForeground = window.IsForeground' src/PersonalAI.Web/Services/DesktopScreenshotService.cs
-          grep -Fq 'CapturePostActionFrameAsync' src/PersonalAI.Web/Services/ComputerOperatorTaskService.cs
+          grep -Fq 'IComputerOperatorCaptureService captureService' src/PersonalAI.Web/Services/ComputerOperatorTaskService.cs
+          grep -Fq 'captureService.CaptureDynamicAsync' src/PersonalAI.Web/Services/ComputerOperatorTaskService.cs
+          grep -Fq 'captureService.CaptureAsync' src/PersonalAI.Web/Services/ComputerOperatorTaskService.cs
           grep -Fq 'CaptureStableMonitorAsync(' src/PersonalAI.Web/Services/DesktopScreenshotService.cs
-          grep -Fq 'displays.GetMonitorAtPoint' src/PersonalAI.Web/Services/ComputerOperatorTaskService.cs
-          grep -Fq 'screenshots.CaptureStableMonitorAsync' src/PersonalAI.Web/Services/ComputerOperatorTaskService.cs
+          grep -Fq 'IComputerOperatorCaptureService' src/PersonalAI.Web/Services/ComputerOperatorCaptureService.cs
+          grep -Fq 'displays.GetMonitorAtPoint' src/PersonalAI.Web/Services/ComputerOperatorCaptureService.cs
+          grep -Fq 'screenshots.CaptureStableMonitorAsync' src/PersonalAI.Web/Services/ComputerOperatorCaptureService.cs
+          grep -Fq 'screenshots.CaptureStableVirtualScreenAsync' src/PersonalAI.Web/Services/ComputerOperatorCaptureService.cs
           grep -Fq 'frame.CaptureScope == "window"' src/PersonalAI.Web/Services/DesktopVisionService.cs
           grep -Fq 'ComputerOperatorAcceptanceService' src/PersonalAI.Web/Services/ComputerOperatorAcceptanceService.cs
           grep -Fq 'CheckImagePixelWithNegativeVirtualOrigin' src/PersonalAI.Web/Services/ComputerOperatorAcceptanceService.cs

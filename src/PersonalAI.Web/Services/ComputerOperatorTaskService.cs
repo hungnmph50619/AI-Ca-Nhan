@@ -153,12 +153,11 @@ public sealed class ComputerOperatorTaskService(
     IDesktopFrameDifferenceService frameDifferences,
     IDesktopRoiVisionService roiVision,
     IDesktopLocalVisualSensor localVisualSensor,
-    IDesktopDynamicTargetTracker targetTracker,
     ILocalVisualVerificationService localVisualVerification,
     IDesktopVisualTargetPersistenceService visualTargetPersistence,
     IComputerOperatorOcrPlanningRouter ocrPlanningRouter,
     IComputerOperatorLocalPlanningRouter localPlanningRouter,
-    IComputerOperatorGroundingService groundingService,
+    IComputerOperatorClickGroundingCoordinator clickGroundingCoordinator,
     IComputerOperatorActionSafetyPolicy actionSafetyPolicy,
     IDesktopLocalFastObserver fastObserver,
     IDesktopTemporalSceneService temporalScenes,
@@ -1439,12 +1438,17 @@ public sealed class ComputerOperatorTaskService(
 
                 if (IsClickAction(decision.Action))
                 {
-                    var grounding =
-                        groundingService.GroundClickTarget(
+                    var clickGrounding =
+                        clickGroundingCoordinator.Ground(
                             decision,
                             desktopState,
+                            frame,
+                            active,
                             IsDeterministicTextSurface(
                                 active));
+
+                    var grounding =
+                        clickGrounding.Grounding;
 
                     progress.Add(
                         "target-grounding",
@@ -1475,22 +1479,12 @@ public sealed class ComputerOperatorTaskService(
                     decision =
                         grounding.Decision;
 
-                    var plannedWindow = ResolveTrackingWindow(
-                        decision,
-                        active,
-                        frame);
-                    var currentWindow = plannedWindow is null
-                        ? null
-                        : computer.GetWindows(50).Windows.FirstOrDefault(
-                            window => window.WindowId.Equals(
-                                plannedWindow.WindowId,
-                                StringComparison.OrdinalIgnoreCase));
-
-                    var tracking = targetTracker.Track(
-                        decision,
-                        frame,
-                        plannedWindow,
-                        currentWindow);
+                    var plannedWindow =
+                        clickGrounding.PlannedWindow;
+                    var currentWindow =
+                        clickGrounding.CurrentWindow;
+                    var tracking =
+                        clickGrounding.Tracking!;
                     trackingResult = tracking;
 
                     progress.Add(
@@ -3990,46 +3984,6 @@ public sealed class ComputerOperatorTaskService(
         // Stalled/Pending không đồng nghĩa Failed. Caller sẽ dùng frame mới
         // nhất và semantic verifier trước khi được phép replan.
         return null;
-    }
-
-    private ComputerWindowInfo? ResolveTrackingWindow(
-        DesktopOperatorDecision decision,
-        ComputerWindowInfo? activeAtPlanning,
-        DesktopScreenshotFrame planningFrame)
-    {
-        if (!string.IsNullOrWhiteSpace(decision.CoordinateWindowId))
-        {
-            return computer.GetWindows(50).Windows.FirstOrDefault(
-                window => window.WindowId.Equals(
-                    decision.CoordinateWindowId.Trim(),
-                    StringComparison.OrdinalIgnoreCase));
-        }
-
-        if (activeAtPlanning is null)
-            return null;
-
-        if (decision.BoxWidth <= 1 ||
-            decision.BoxHeight <= 1)
-            return activeAtPlanning;
-
-        var centerX =
-            planningFrame.Left +
-            decision.BoxLeft +
-            decision.BoxWidth / 2;
-        var centerY =
-            planningFrame.Top +
-            decision.BoxTop +
-            decision.BoxHeight / 2;
-
-        var insideActive =
-            centerX >= activeAtPlanning.Left &&
-            centerX < activeAtPlanning.Left + activeAtPlanning.Width &&
-            centerY >= activeAtPlanning.Top &&
-            centerY < activeAtPlanning.Top + activeAtPlanning.Height;
-
-        return insideActive
-            ? activeAtPlanning
-            : null;
     }
 
     private ComputerOperatorCheckpoint SaveCheckpointSafely(

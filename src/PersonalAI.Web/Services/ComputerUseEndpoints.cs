@@ -100,6 +100,7 @@ public static class ComputerUseEndpoints
         services.AddSingleton<IDesktopLocalActionPlanner, DesktopLocalActionPlanner>();
         services.AddSingleton<IComputerOperatorLocalPlanningRouter, ComputerOperatorLocalPlanningRouter>();
         services.AddSingleton<IComputerOperatorGroundingService, ComputerOperatorGroundingService>();
+        services.AddSingleton<IComputerOperatorClickGroundingCoordinator, ComputerOperatorClickGroundingCoordinator>();
         services.AddSingleton<IComputerOperatorActionSafetyPolicy, ComputerOperatorActionSafetyPolicy>();
         services.AddSingleton<IDesktopLocalFastObserver, DesktopLocalFastObserver>();
         services.AddSingleton<IComputerWindowVisibilityService, ComputerWindowVisibilityService>();

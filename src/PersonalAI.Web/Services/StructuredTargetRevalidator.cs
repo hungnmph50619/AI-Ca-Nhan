@@ -21,7 +21,16 @@ public sealed record StructuredTargetRevalidationResult(
             StructuredTargetRevalidationStatus.Remapped;
 }
 
+public interface IStructuredTargetRevalidator
+{
+    StructuredTargetRevalidationResult Revalidate(
+        DesktopOperatorDecision decision,
+        UnifiedStructuredSceneGraph? graph,
+        DateTimeOffset nowUtc);
+}
+
 public sealed class StructuredTargetRevalidator
+    : IStructuredTargetRevalidator
 {
     private static readonly IStructuredDesktopResolver Resolver =
         new StructuredDesktopResolver();

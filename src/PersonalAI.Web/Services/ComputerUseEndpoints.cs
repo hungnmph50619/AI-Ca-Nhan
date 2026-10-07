@@ -83,6 +83,7 @@ public static class ComputerUseEndpoints
         services.AddSingleton<IDesktopOcrProvider, PaddleOnnxDesktopOcrProvider>();
         services.AddSingleton<IDesktopOcrSensor, DesktopOcrSensorRouter>();
         services.AddSingleton<IDesktopOcrActionPlanner, DesktopOcrActionPlanner>();
+        services.AddSingleton<IDesktopLocalActionPlanner, DesktopLocalActionPlanner>();
         services.AddSingleton<IComputerOperatorGroundingService, ComputerOperatorGroundingService>();
         services.AddSingleton<IDesktopLocalFastObserver, DesktopLocalFastObserver>();
         services.AddSingleton<IComputerWindowVisibilityService, ComputerWindowVisibilityService>();

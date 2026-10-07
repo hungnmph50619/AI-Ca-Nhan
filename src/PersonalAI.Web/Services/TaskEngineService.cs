@@ -56,6 +56,7 @@ public sealed class TaskEngineService : ITaskEngineService
     private readonly IToolRegistry _registry;
     private readonly IToolInputValidator _validator;
     private readonly IToolExecutionService _executor;
+    private readonly IToolExposurePolicy _exposurePolicy;
     private readonly IToolResultSynthesisService _synthesizer;
     private readonly IAiProviderResolver _providerResolver;
     private readonly IToolActivityStore _activityStore;
@@ -67,6 +68,7 @@ public sealed class TaskEngineService : ITaskEngineService
         IToolRegistry registry,
         IToolInputValidator validator,
         IToolExecutionService executor,
+        IToolExposurePolicy exposurePolicy,
         IToolResultSynthesisService synthesizer,
         IAiProviderResolver providerResolver,
         IToolActivityStore activityStore,
@@ -77,6 +79,7 @@ public sealed class TaskEngineService : ITaskEngineService
         _registry = registry;
         _validator = validator;
         _executor = executor;
+        _exposurePolicy = exposurePolicy;
         _synthesizer = synthesizer;
         _providerResolver = providerResolver;
         _activityStore = activityStore;
@@ -106,7 +109,20 @@ public sealed class TaskEngineService : ITaskEngineService
         var taskDependencies = NormalizeTaskDependencies(dependsOnTaskIds);
 
         var provider = _providerResolver.GetActive();
-        var definitions = _registry.GetAll();
+        var exposure =
+            _exposurePolicy.Select(
+                goal,
+                _registry.GetAll(),
+                maximumTools: 20);
+        var definitions =
+            exposure.Tools;
+
+        _logger.LogInformation(
+            "Task planner tool exposure: {Selected}/{Considered}; {Reason}",
+            exposure.SelectedTools,
+            exposure.ConsideredTools,
+            exposure.Reason);
+
         var prompt = BuildPlanningPrompt(goal, definitions);
         var answer = await provider.ReplyAsync(
             [new ChatMessage("user", prompt)],

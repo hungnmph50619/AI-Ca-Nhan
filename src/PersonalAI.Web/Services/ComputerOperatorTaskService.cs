@@ -169,6 +169,7 @@ public sealed class ComputerOperatorTaskService(
     IStructuredDesktopSnapshotService structuredDesktop,
     IStructuredDesktopVerificationService structuredVerification,
     IStructuredTargetRevalidator structuredTargetRevalidator,
+    IComputerOperatorDesktopStateBuilder desktopStateBuilder,
     IComputerOperatorCheckpointStore checkpoints,
     IComputerOperatorTelemetry telemetry,
     IComputerOperatorExperienceRepository experienceRepository,
@@ -440,7 +441,7 @@ public sealed class ComputerOperatorTaskService(
                         $"Không chụp được desktop: {exception.Message}");
                 }
 
-                var desktopState = BuildDesktopState(frame);
+                var desktopState = desktopStateBuilder.Build(frame);
 
                 DesktopPerceptualHash? sceneVisualHash =
                     null;
@@ -3169,7 +3170,7 @@ public sealed class ComputerOperatorTaskService(
                         StringComparison.OrdinalIgnoreCase))
             {
                 var structuredAfter =
-                    BuildDesktopState(after);
+                    desktopStateBuilder.Build(after);
 
                 using var structuredVerifyTelemetry =
                     telemetry.Begin(
@@ -3218,7 +3219,7 @@ public sealed class ComputerOperatorTaskService(
                         cancellationToken);
 
                     var structuredRetryState =
-                        BuildDesktopState(after);
+                        desktopStateBuilder.Build(after);
 
                     using var structuredVerifyRetryTelemetry =
                         telemetry.Begin(
@@ -3944,7 +3945,7 @@ public sealed class ComputerOperatorTaskService(
                                 StringComparison.OrdinalIgnoreCase))
                     {
                         var structuredState =
-                            BuildDesktopState(frame);
+                            desktopStateBuilder.Build(frame);
 
                         var structuredSample =
                             structuredVerification.Verify(
@@ -5013,49 +5014,6 @@ public sealed class ComputerOperatorTaskService(
             : (int)Math.Round(
                 value / (double)quantum,
                 MidpointRounding.AwayFromZero) * quantum;
-
-    private ComputerOperatorDesktopState BuildDesktopState(
-        DesktopScreenshotFrame frame)
-    {
-        var windows = computer.GetWindows(50).Windows;
-        var active = windows.FirstOrDefault(window => window.IsForeground)
-            ?? computer.GetActiveWindow();
-
-        StructuredDesktopSnapshot? structuredScene = null;
-
-        if (active is not null &&
-            !string.IsNullOrWhiteSpace(active.WindowId))
-        {
-            structuredScene =
-                structuredDesktop.CaptureWindow(
-                    active.WindowId,
-                    maximumNodes: 240,
-                    maximumDepth: 7);
-        }
-
-        var structuredGraph =
-            UnifiedStructuredSceneGraphBuilder.Build(
-                structuredScene,
-                active,
-                frame.Left,
-                frame.Top,
-                frame.Width,
-                frame.Height);
-
-        return new ComputerOperatorDesktopState(
-            frame.CapturedAtUtc,
-            active,
-            windows,
-            frame.Left,
-            frame.Top,
-            frame.Width,
-            frame.Height,
-            frame.CaptureScope,
-            frame.WindowId,
-            frame.WindowWasForeground,
-            structuredScene,
-            structuredGraph);
-    }
 
     private static string RequireActive(
         ComputerWindowInfo? active)

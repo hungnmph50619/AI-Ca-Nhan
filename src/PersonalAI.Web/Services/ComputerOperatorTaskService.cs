@@ -814,7 +814,7 @@ public sealed class ComputerOperatorTaskService(
                     }
                     else if (providerBackoffActive)
                     {
-                        decision = providerResilience.CreatePlannerCooldownWaitDecision(
+                        decision = providerResilience.providerResilience.CreatePlannerCooldownWaitDecision(
                             plannerBackoffUntil);
 
                         cycleTrace.PlannerRoute =
@@ -879,7 +879,7 @@ public sealed class ComputerOperatorTaskService(
                         var kernelRejection =
                             string.Empty;
                         var kernelDecision =
-                            decision = CreatePlannerCooldownWaitDecision(
+                            decision = providerResilience.CreatePlannerCooldownWaitDecision(
                                 DateTimeOffset.UtcNow);
                         var kernelCompiled =
                             minimalIntent is not null &&
@@ -949,7 +949,7 @@ public sealed class ComputerOperatorTaskService(
                             cycleTrace.PlannerRoute =
                                 "gemini-full-fallback";
 
-                            if (IsProviderDegradedPlannerDecision(
+                            if (providerResilience.IsDegradedPlannerDecision(
                                     decision))
                             {
                                 plannerDegradedScene =
@@ -1430,7 +1430,7 @@ public sealed class ComputerOperatorTaskService(
                     var waitMilliseconds =
                         cycleTrace.RecoveryCode ==
                             "provider-cooldown"
-                            ? CalculateProviderCooldownDelayMilliseconds(
+                            ? providerResilience.CalculateCooldownDelayMilliseconds(
                                 plannerBackoffUntil,
                                 DateTimeOffset.UtcNow)
                             : 900;
@@ -3545,7 +3545,7 @@ public sealed class ComputerOperatorTaskService(
                         $"provider=Gemini; purpose=verify; latencyMs={verifierStopwatch.ElapsedMilliseconds}; satisfied={result.Satisfied}; confidence={result.Confidence:0.000}; route={visionFrame.Source}.");
                 }
                 catch (HttpRequestException exception)
-                    when (providerResilience.IsTransientVisionFailure(exception))
+                    when (providerResilience.providerResilience.IsTransientVisionFailure(exception))
                 {
                     verifierStopwatch.Stop();
                     progress.AddDiagnostic(
@@ -3574,7 +3574,7 @@ public sealed class ComputerOperatorTaskService(
                             "gemini-retry");
                     }
                     catch (HttpRequestException retryException)
-                        when (IsTransientVisionFailure(retryException))
+                        when (providerResilience.IsTransientVisionFailure(retryException))
                     {
                         geminiVerifyTelemetry.Complete(
                             success: false,

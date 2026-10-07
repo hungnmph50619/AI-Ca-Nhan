@@ -412,8 +412,7 @@ public sealed class ComputerOperatorTaskService(
 
                 try
                 {
-                    frame = await screenshots.CaptureStableVirtualScreenAsync(
-                        maximumWaitMs: 5000,
+                    frame = await captureService.CaptureObservationAsync(
                         linked.Token);
 
                     observeTelemetry.Complete(

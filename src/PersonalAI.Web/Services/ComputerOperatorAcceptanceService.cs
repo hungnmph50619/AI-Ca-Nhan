@@ -2024,14 +2024,14 @@ public sealed class ComputerOperatorAcceptanceService(
                 CaptureWindowWasForeground: false);
 
         var first =
-            ComputerOperatorTaskService.BuildDesktopSceneFingerprintForAcceptance(
+            ComputerOperatorSceneIdentityService.BuildFingerprintForAcceptance(
                 state,
                 new DesktopPerceptualHash(
                     0x0000000000000000UL,
                     "dhash-9x8"));
 
         var second =
-            ComputerOperatorTaskService.BuildDesktopSceneFingerprintForAcceptance(
+            ComputerOperatorSceneIdentityService.BuildFingerprintForAcceptance(
                 state,
                 new DesktopPerceptualHash(
                     0xFFFFFFFFFFFFFFFFUL,
@@ -2073,7 +2073,7 @@ public sealed class ComputerOperatorAcceptanceService(
                 CaptureWindowWasForeground: false);
 
         var fingerprint =
-            ComputerOperatorTaskService.BuildDesktopSceneFingerprintForAcceptance(
+            ComputerOperatorSceneIdentityService.BuildFingerprintForAcceptance(
                 state);
 
         Require(

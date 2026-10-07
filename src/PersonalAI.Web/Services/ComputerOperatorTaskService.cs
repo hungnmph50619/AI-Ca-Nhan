@@ -159,6 +159,7 @@ public sealed class ComputerOperatorTaskService(
     IComputerOperatorOcrPlanningRouter ocrPlanningRouter,
     IComputerOperatorLocalPlanningRouter localPlanningRouter,
     IComputerOperatorGroundingService groundingService,
+    IComputerOperatorActionSafetyPolicy actionSafetyPolicy,
     IDesktopLocalFastObserver fastObserver,
     IDesktopTemporalSceneService temporalScenes,
     IComputerOperatorActionExecutor actionExecutor,
@@ -1659,8 +1660,11 @@ public sealed class ComputerOperatorTaskService(
                     decision = tracking.Decision;
                 }
 
-                if (RequiresExpectedEffect(decision.Action) &&
-                    string.IsNullOrWhiteSpace(decision.ExpectedEffect))
+                var expectedEffectSafety =
+                    actionSafetyPolicy.ValidateExpectedEffect(
+                        decision);
+
+                if (!expectedEffectSafety.Safe)
                 {
                     taskHistory.Add(
                         $"STEP {index}: REJECTED {decision.Action} — thiếu EXPECTED EFFECT để xác minh.");
@@ -4201,14 +4205,6 @@ public sealed class ComputerOperatorTaskService(
         return keys.Contains("CTRL") &&
                keys.Contains("A");
     }
-
-    private static bool RequiresExpectedEffect(
-        string action) =>
-        action is not
-            "wait" and not
-            "complete" and not
-            "blocked" and not
-            "move-pointer";
 
     private static bool IsClickAction(
         string action) =>

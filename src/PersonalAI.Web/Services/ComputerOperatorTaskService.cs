@@ -187,7 +187,7 @@ public sealed class ComputerOperatorTaskService(
     IComputerOperatorProcedureEdgeLifecycleService procedureEdgeLifecycle,
     IComputerOperatorRecoveryCoordinator recoveryCoordinator,
     IComputerOperatorDecisionAuthority decisionAuthority,
-    IComputerOperatorIntentCompiler intentCompiler,
+    IComputerOperatorMinimalIntentCoordinator minimalIntentCoordinator,
     IComputerOperatorConfidenceEngine confidenceEngine,
     IComputerOperatorFailureRecoveryEngine failureRecoveryEngine,
     IComputerOperatorProviderResiliencePolicy providerResilience,
@@ -866,31 +866,24 @@ public sealed class ComputerOperatorTaskService(
                                 currentSubgoal,
                                 latestGoalProgress);
 
-                        var minimalStopwatch =
-                            Stopwatch.StartNew();
-
-                        var minimalIntent =
-                            await vision.DecideIntentAsync(
+                        var minimalResult =
+                            await minimalIntentCoordinator.TryPlanAsync(
                                 frame,
                                 normalizedGoal,
                                 windowsContext,
                                 historyContext,
                                 linked.Token);
 
-                        minimalStopwatch.Stop();
-
+                        var minimalIntent =
+                            minimalResult.Intent;
                         var kernelRejection =
-                            string.Empty;
+                            minimalResult.RejectionReason;
                         var kernelDecision =
-                            decision = providerResilience.CreatePlannerCooldownWaitDecision(
+                            minimalResult.Decision ??
+                            providerResilience.CreatePlannerCooldownWaitDecision(
                                 DateTimeOffset.UtcNow);
                         var kernelCompiled =
-                            minimalIntent is not null &&
-                            intentCompiler.TryCompile(
-                                minimalIntent,
-                                frame,
-                                out kernelDecision,
-                                out kernelRejection);
+                            minimalResult.Compiled;
 
                         if (kernelCompiled)
                         {
@@ -920,7 +913,7 @@ public sealed class ComputerOperatorTaskService(
 
                             progress.AddDiagnostic(
                                 "provider",
-                                $"provider=Gemini; purpose=minimal-intent-first; cycle={index}; latencyMs={minimalStopwatch.ElapsedMilliseconds}; intent={minimalIntent!.Intent}; kernel=compiled; action={decision.Action}; confidence={decision.Confidence:0.000}; fullPlannerCalled=false; circuit=open:false.");
+                                $"provider=Gemini; purpose=minimal-intent-first; cycle={index}; latencyMs={minimalResult.LatencyMilliseconds}; intent={minimalIntent!.Intent}; kernel=compiled; action={decision.Action}; confidence={decision.Confidence:0.000}; fullPlannerCalled=false; circuit=open:false.");
                         }
                         else
                         {

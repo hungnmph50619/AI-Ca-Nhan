@@ -52,6 +52,7 @@ public static class ComputerUseEndpoints
         services.AddSingleton<IComputerOperatorRecoveryCoordinator, ComputerOperatorRecoveryCoordinator>();
         services.AddSingleton<IComputerOperatorDecisionAuthority, ComputerOperatorDecisionAuthority>();
         services.AddSingleton<IComputerOperatorIntentCompiler, UnifiedDecisionKernel>();
+        services.AddSingleton<IComputerOperatorMinimalIntentCoordinator, ComputerOperatorMinimalIntentCoordinator>();
         services.AddSingleton<IComputerOperatorConfidenceEngine, ComputerOperatorConfidenceEngine>();
         services.AddSingleton<IComputerOperatorFailureRecoveryEngine, ComputerOperatorFailureRecoveryEngine>();
         services.AddSingleton<IComputerOperatorProviderResiliencePolicy, ComputerOperatorProviderResiliencePolicy>();

@@ -162,8 +162,7 @@ public sealed class ComputerOperatorTaskService(
     IComputerOperatorActionSafetyPolicy actionSafetyPolicy,
     IDesktopLocalFastObserver fastObserver,
     IDesktopTemporalSceneService temporalScenes,
-    IComputerOperatorActionExecutor actionExecutor,
-    IGenericTextInteractionEngine textInteraction,
+    IComputerOperatorExecutionCoordinator executionCoordinator,
     IAdaptiveVerificationWaitEngine adaptiveWait,
     IComputerOperatorProgressIntelligence progressIntelligence,
     IComputerOperatorAdaptiveWaitPolicyResolver adaptiveWaitPolicyResolver,
@@ -1932,46 +1931,29 @@ public sealed class ComputerOperatorTaskService(
                             revalidated.Decision;
                     }
 
-                    if (decision.Action.Equals(
-                            "type-text",
-                            StringComparison.OrdinalIgnoreCase))
+                    var executionResult =
+                        executionCoordinator.Execute(
+                            decision,
+                            frame);
+
+                    action =
+                        executionResult.Action;
+                    textInteractionResult =
+                        executionResult.TextInteraction;
+
+                    if (textInteractionResult is not null)
                     {
-                        var activeForText = computer.GetActiveWindow()
-                            ?? throw new ToolExecutionInputException(
-                                "Không xác định được foreground window cho Text Engine.");
-
-                        textInteractionResult = textInteraction.Execute(
-                            new TextInteractionRequest(
-                                activeForText.WindowId,
-                                RequireValue(decision.Text, "text"),
-                                TextInteractionWriteModes.ReplaceAll));
-
-                        action = new ComputerActionResponse(
-                            ComputerUseCapabilities.TypeText,
-                            textInteractionResult.Applied || textInteractionResult.Verified,
-                            textInteractionResult.Detail);
-
                         progress.Add(
                             "text-engine",
                             $"Text Engine: strategy={textInteractionResult.Strategy}; verified={textInteractionResult.Verified}; repair={textInteractionResult.RepairAttempted}; rollback={textInteractionResult.RolledBack}.",
                             textInteractionResult.Verified ? "verified" : "fallback",
                             textInteractionResult.Verified ? 1.0 : null);
                     }
-                    else
-                    {
-                        action = actionExecutor.Execute(
-                            decision,
-                            frame);
-                    }
 
                     executionTelemetry.Complete(
                         success: action.Applied,
                         route:
-                            decision.Action.Equals(
-                                "type-text",
-                                StringComparison.OrdinalIgnoreCase)
-                                ? "text-engine"
-                                : "computer");
+                            executionResult.Route);
 
                     executionStopwatch.Stop();
                     cycleTrace.Executed =
@@ -1979,15 +1961,7 @@ public sealed class ComputerOperatorTaskService(
                     cycleTrace.ExecutionMilliseconds =
                         executionStopwatch.ElapsedMilliseconds;
                     cycleTrace.Executor =
-                        decision.Action.Equals(
-                            "type-text",
-                            StringComparison.OrdinalIgnoreCase)
-                            ? "text-engine"
-                            : decision.Action.StartsWith(
-                                "structured-",
-                                StringComparison.OrdinalIgnoreCase)
-                                ? "uia-structured"
-                                : "computer-input";
+                        executionResult.Executor;
                 }
                 catch (ToolExecutionInputException exception)
                 {

@@ -4,6 +4,7 @@ public static class ComputerOperatorDecisionAuthorityDirectives
 {
     public const string Execute = "execute";
     public const string Replan = "replan";
+    public const string Block = "block";
 }
 
 public sealed record ComputerOperatorDecisionAuthorityInput(
@@ -107,12 +108,14 @@ public sealed class ComputerOperatorDecisionAuthority
             input.ConsecutiveLowConfidenceCount >= 3;
 
         return new(
-            ComputerOperatorDecisionAuthorityDirectives.Replan,
+            exhausted
+                ? ComputerOperatorDecisionAuthorityDirectives.Block
+                : ComputerOperatorDecisionAuthorityDirectives.Replan,
             AllowExecution: false,
-            RequiresFreshObservation: true,
+            RequiresFreshObservation: !exhausted,
             PreferKnownFragment: false,
             exhausted
-                ? $"Confidence evidence vẫn không đủ sau {input.ConsecutiveLowConfidenceCount} lần quan sát; authority từ chối execute. {confidence.Reason}"
+                ? $"Confidence evidence vẫn không đủ sau {input.ConsecutiveLowConfidenceCount} lần quan sát; Decision Authority chặn execute để dừng an toàn. {confidence.Reason}"
                 : confidence.Decision ==
                   ComputerOperatorConfidenceDecision.GeminiFallback
                     ? $"Confidence evidence yêu cầu quan sát/semantic context mới trước khi execute. {confidence.Reason}"

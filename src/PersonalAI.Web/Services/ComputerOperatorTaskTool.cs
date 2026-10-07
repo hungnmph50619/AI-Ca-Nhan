@@ -36,6 +36,13 @@ public sealed class ComputerOperatorTaskTool(
         Schema,
         LocalOnly: true,
         RequiresConfirmation: true,
+        Capabilities:
+        [
+            "computer",
+            "orchestrator",
+            "multi-step"
+        ],
+        SupportsVerification: true,
         LongRunning: true);
 
     public async Task<JsonElement> ExecuteAsync(

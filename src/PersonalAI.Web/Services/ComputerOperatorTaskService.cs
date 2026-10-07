@@ -3485,7 +3485,7 @@ public sealed class ComputerOperatorTaskService(
                     throw;
                 }
 
-                if (ShouldReobserveOnVerificationConflict(
+                if (verificationEngine.ShouldReobserveOnSemanticConflict(
                         result.Satisfied,
                         strongLocalVisualTransition))
                 {
@@ -3594,19 +3594,6 @@ public sealed class ComputerOperatorTaskService(
         actionSignature.Equals(
             consumedSignature,
             StringComparison.OrdinalIgnoreCase);
-
-    internal static bool ShouldReobserveOnVerificationConflictForAcceptance(
-        bool semanticSatisfied,
-        bool strongLocalVisualTransition) =>
-        ShouldReobserveOnVerificationConflict(
-            semanticSatisfied,
-            strongLocalVisualTransition);
-
-    private static bool ShouldReobserveOnVerificationConflict(
-        bool semanticSatisfied,
-        bool strongLocalVisualTransition) =>
-        !semanticSatisfied &&
-        strongLocalVisualTransition;
 
     internal static int CalculateProviderCooldownDelayMillisecondsForAcceptance(
         DateTimeOffset backoffUntil,

@@ -814,7 +814,7 @@ public sealed class ComputerOperatorTaskService(
                     }
                     else if (providerBackoffActive)
                     {
-                        decision = providerResilience.providerResilience.CreatePlannerCooldownWaitDecision(
+                        decision = providerResilience.CreatePlannerCooldownWaitDecision(
                             plannerBackoffUntil);
 
                         cycleTrace.PlannerRoute =
@@ -3545,7 +3545,7 @@ public sealed class ComputerOperatorTaskService(
                         $"provider=Gemini; purpose=verify; latencyMs={verifierStopwatch.ElapsedMilliseconds}; satisfied={result.Satisfied}; confidence={result.Confidence:0.000}; route={visionFrame.Source}.");
                 }
                 catch (HttpRequestException exception)
-                    when (providerResilience.providerResilience.IsTransientVisionFailure(exception))
+                    when (providerResilience.IsTransientVisionFailure(exception))
                 {
                     verifierStopwatch.Stop();
                     progress.AddDiagnostic(

@@ -3,6 +3,22 @@ using PersonalAI.Web.Models;
 
 namespace PersonalAI.Web.Services;
 
+public sealed record ComputerOperatorPlannerResilienceState(
+    string? DegradedScene,
+    int DegradedCount,
+    DateTimeOffset BackoffUntil,
+    bool BackoffActive,
+    int BackoffSeconds)
+{
+    public static ComputerOperatorPlannerResilienceState Healthy { get; } =
+        new(
+            null,
+            0,
+            DateTimeOffset.MinValue,
+            false,
+            0);
+}
+
 public interface IComputerOperatorProviderResiliencePolicy
 {
     bool IsVisionProviderExhausted(Exception exception);
@@ -12,6 +28,18 @@ public interface IComputerOperatorProviderResiliencePolicy
     int CalculateCooldownDelayMilliseconds(
         DateTimeOffset backoffUntil,
         DateTimeOffset now);
+
+    ComputerOperatorPlannerResilienceState NormalizePlannerState(
+        string currentScene,
+        ComputerOperatorPlannerResilienceState state,
+        DateTimeOffset now);
+
+    ComputerOperatorPlannerResilienceState RecordPlannerDegraded(
+        string currentScene,
+        ComputerOperatorPlannerResilienceState state,
+        DateTimeOffset now);
+
+    ComputerOperatorPlannerResilienceState ResetPlannerState();
 
     bool IsDegradedPlannerDecision(
         DesktopOperatorDecision decision);
@@ -70,6 +98,63 @@ public sealed class ComputerOperatorProviderResiliencePolicy
                 .TotalMilliseconds),
             900,
             5000);
+
+    public ComputerOperatorPlannerResilienceState NormalizePlannerState(
+        string currentScene,
+        ComputerOperatorPlannerResilienceState state,
+        DateTimeOffset now)
+    {
+        var sameDegradedScene =
+            state.DegradedScene is not null &&
+            state.DegradedScene.Equals(
+                currentScene,
+                StringComparison.Ordinal);
+
+        if (!sameDegradedScene)
+            return ComputerOperatorPlannerResilienceState.Healthy;
+
+        return state with
+        {
+            BackoffActive =
+                now < state.BackoffUntil,
+            BackoffSeconds =
+                Math.Max(
+                    0,
+                    (int)Math.Ceiling(
+                        (state.BackoffUntil - now)
+                        .TotalSeconds))
+        };
+    }
+
+    public ComputerOperatorPlannerResilienceState RecordPlannerDegraded(
+        string currentScene,
+        ComputerOperatorPlannerResilienceState state,
+        DateTimeOffset now)
+    {
+        var nextCount =
+            state.DegradedScene is not null &&
+            state.DegradedScene.Equals(
+                currentScene,
+                StringComparison.Ordinal)
+                ? state.DegradedCount + 1
+                : 1;
+
+        var backoffSeconds =
+            Math.Min(
+                20,
+                5 * nextCount);
+
+        return new(
+            currentScene,
+            nextCount,
+            now.AddSeconds(
+                backoffSeconds),
+            true,
+            backoffSeconds);
+    }
+
+    public ComputerOperatorPlannerResilienceState ResetPlannerState() =>
+        ComputerOperatorPlannerResilienceState.Healthy;
 
     public bool IsDegradedPlannerDecision(
         DesktopOperatorDecision decision)

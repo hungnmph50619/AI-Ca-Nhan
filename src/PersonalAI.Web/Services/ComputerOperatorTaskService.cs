@@ -317,9 +317,8 @@ public sealed class ComputerOperatorTaskService(
         var keyboardRepairFailures = 0;
         var keyboardResetRequired = false;
         var keyboardSelectionReady = false;
-        string? plannerDegradedScene = null;
-        var plannerDegradedCount = 0;
-        var plannerBackoffUntil = DateTimeOffset.MinValue;
+        var plannerResilienceState =
+            ComputerOperatorPlannerResilienceState.Healthy;
         IReadOnlyList<DesktopSceneElement> previousScene = Array.Empty<DesktopSceneElement>();
         var temporalSceneContext = string.Empty;
         ComputerOperatorCycleTrace? pendingCycleTrace =
@@ -641,27 +640,17 @@ public sealed class ComputerOperatorTaskService(
                     telemetry.Begin(
                         ComputerOperatorTelemetryStages.GeminiPlan);
 
-                var sameDegradedScene =
-                    plannerDegradedScene is not null &&
-                    plannerDegradedScene.Equals(
+                plannerResilienceState =
+                    providerResilience.NormalizePlannerState(
                         sceneFingerprint,
-                        StringComparison.Ordinal);
-
-                if (!sameDegradedScene)
-                {
-                    plannerDegradedCount = 0;
-                    plannerBackoffUntil = DateTimeOffset.MinValue;
-                }
-
-                var providerBackoffActive =
-                    sameDegradedScene &&
-                    DateTimeOffset.UtcNow < plannerBackoffUntil;
+                        plannerResilienceState,
+                        DateTimeOffset.UtcNow);
 
                 var providerPlanningRoute =
                     providerPlanningRouter.Evaluate(
                         vision.Ready,
-                        providerBackoffActive,
-                        plannerBackoffUntil);
+                        plannerResilienceState.BackoffActive,
+                        plannerResilienceState.BackoffUntil);
 
                 DesktopVisualTargetTemplate? plannedVisualTemplate =
                     null;
@@ -837,12 +826,12 @@ public sealed class ComputerOperatorTaskService(
 
                         progress.Add(
                             "provider-cooldown",
-                            $"Scene chưa đổi và Gemini đang cooldown đến {plannerBackoffUntil:HH:mm:ss}; structured/local planner không có action đủ chắc chắn nên chờ an toàn.",
+                            $"Scene chưa đổi và Gemini đang cooldown đến {plannerResilienceState.BackoffUntil:HH:mm:ss}; structured/local planner không có action đủ chắc chắn nên chờ an toàn.",
                             "wait");
 
                         progress.AddDiagnostic(
                             "provider",
-                            $"provider=Gemini; purpose=plan; cycle={index}; circuit=open; scene={sceneDiagnosticId}; backoffUntil={plannerBackoffUntil:O}; fallback=safe-wait.");
+                            $"provider=Gemini; purpose=plan; cycle={index}; circuit=open; scene={sceneDiagnosticId}; backoffUntil={plannerResilienceState.BackoffUntil:O}; fallback=safe-wait.");
                     }
                     else
                     {
@@ -891,12 +880,8 @@ public sealed class ComputerOperatorTaskService(
                             decision =
                                 kernelDecision;
 
-                            plannerDegradedScene =
-                                null;
-                            plannerDegradedCount =
-                                0;
-                            plannerBackoffUntil =
-                                DateTimeOffset.MinValue;
+                            plannerResilienceState =
+                                providerResilience.ResetPlannerState();
 
                             plannerStopwatch.Stop();
                             planTelemetry.Complete(
@@ -951,18 +936,14 @@ public sealed class ComputerOperatorTaskService(
 
                             if (fullPlan.Degraded)
                             {
-                                plannerDegradedScene =
-                                    sceneFingerprint;
-                                plannerDegradedCount++;
+                                plannerResilienceState =
+                                    providerResilience.RecordPlannerDegraded(
+                                        sceneFingerprint,
+                                        plannerResilienceState,
+                                        DateTimeOffset.UtcNow);
 
                                 var backoffSeconds =
-                                    Math.Min(
-                                        20,
-                                        5 * plannerDegradedCount);
-
-                                plannerBackoffUntil =
-                                    DateTimeOffset.UtcNow.AddSeconds(
-                                        backoffSeconds);
+                                    plannerResilienceState.BackoffSeconds;
 
                                 progress.AddDiagnostic(
                                     "provider",
@@ -970,12 +951,8 @@ public sealed class ComputerOperatorTaskService(
                             }
                             else
                             {
-                                plannerDegradedScene =
-                                    null;
-                                plannerDegradedCount =
-                                    0;
-                                plannerBackoffUntil =
-                                    DateTimeOffset.MinValue;
+                                plannerResilienceState =
+                                    providerResilience.ResetPlannerState();
 
                                 progress.AddDiagnostic(
                                     "provider",
@@ -1430,7 +1407,7 @@ public sealed class ComputerOperatorTaskService(
                         cycleTrace.RecoveryCode ==
                             "provider-cooldown"
                             ? providerResilience.CalculateCooldownDelayMilliseconds(
-                                plannerBackoffUntil,
+                                plannerResilienceState.BackoffUntil,
                                 DateTimeOffset.UtcNow)
                             : 900;
 

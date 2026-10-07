@@ -926,7 +926,7 @@ public sealed class ComputerOperatorTaskService(
 
                             progress.AddDiagnostic(
                                 "provider",
-                                $"provider=Gemini; purpose=minimal-intent-first; cycle={index}; latencyMs={minimalStopwatch.ElapsedMilliseconds}; result={(minimalIntent is null ? "invalid" : "rejected")}; kernelDetail={LimitDiagnostic(kernelRejection, 220)}; fallback=full-planner.");
+                                $"provider=Gemini; purpose=minimal-intent-first; cycle={index}; latencyMs={minimalResult.LatencyMilliseconds}; result={(minimalIntent is null ? "invalid" : "rejected")}; kernelDetail={LimitDiagnostic(kernelRejection, 220)}; fallback=full-planner.");
 
                             decision =
                                 await vision.DecideActionAsync(

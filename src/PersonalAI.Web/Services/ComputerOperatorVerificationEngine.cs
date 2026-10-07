@@ -37,6 +37,10 @@ public interface IComputerOperatorVerificationEngine
         DesktopFrameDifference? frameDifference,
         LocalVisualVerificationResult visualVerdict);
 
+    bool ShouldReobserveOnSemanticConflict(
+        bool semanticSatisfied,
+        bool strongLocalVisualTransition);
+
     UniversalReliableVerificationDecision EvaluateSemantic(
         DesktopOperatorDecision decision,
         DesktopVerificationRoutingResult? localRoute,
@@ -217,6 +221,12 @@ public sealed class ComputerOperatorVerificationEngine(
                 adaptive.Confidence),
             adaptive.Reason);
     }
+
+    public bool ShouldReobserveOnSemanticConflict(
+        bool semanticSatisfied,
+        bool strongLocalVisualTransition) =>
+        !semanticSatisfied &&
+        strongLocalVisualTransition;
 
     public UniversalReliableVerificationDecision EvaluateSemantic(
         DesktopOperatorDecision decision,

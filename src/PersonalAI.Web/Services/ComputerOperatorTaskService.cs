@@ -155,6 +155,7 @@ public sealed class ComputerOperatorTaskService(
     IDesktopLocalVisualSensor localVisualSensor,
     ILocalVisualVerificationService localVisualVerification,
     IDesktopVisualTargetPersistenceService visualTargetPersistence,
+    IComputerOperatorVisualTargetRecoveryService visualTargetRecovery,
     IComputerOperatorOcrPlanningRouter ocrPlanningRouter,
     IComputerOperatorLocalPlanningRouter localPlanningRouter,
     IComputerOperatorClickGroundingCoordinator clickGroundingCoordinator,
@@ -1495,132 +1496,50 @@ public sealed class ComputerOperatorTaskService(
 
                     if (!tracking.SafeToExecute)
                     {
-                        DesktopTargetTrackingResult? visualRecovery =
+                        ComputerOperatorVisualTargetRecoveryResult? visualRecovery =
                             null;
 
-                        var sameWindow =
-                            plannedWindow is not null &&
-                            currentWindow is not null &&
-                            plannedWindow.WindowId.Equals(
-                                currentWindow.WindowId,
-                                StringComparison.OrdinalIgnoreCase);
-
-                        if (sameWindow &&
-                            plannedVisualTemplate?.Available == true)
+                        try
                         {
-                            DesktopScreenshotFrame? reacquireFrame =
-                                null;
+                            visualRecovery =
+                                await visualTargetRecovery.TryRecoverAsync(
+                                    decision,
+                                    plannedWindow,
+                                    currentWindow,
+                                    plannedVisualTemplate,
+                                    linked.Token);
 
-                            try
+                            if (visualRecovery.Attempted)
                             {
-                                reacquireFrame =
-                                    await screenshots.CaptureStableVirtualScreenAsync(
-                                        maximumWaitMs: 3000,
-                                        linked.Token);
-
-                                var relocation =
-                                    visualTargetPersistence.Relocate(
-                                        reacquireFrame,
-                                        plannedVisualTemplate,
-                                        minimumScore: 0.90);
-
-                                if (relocation.Relocated &&
-                                    !relocation.Ambiguous &&
-                                    relocation.Confidence >= 0.90)
-                                {
-                                    var centerDesktopX =
-                                        reacquireFrame.Left +
-                                        relocation.Left +
-                                        relocation.Width / 2;
-                                    var centerDesktopY =
-                                        reacquireFrame.Top +
-                                        relocation.Top +
-                                        relocation.Height / 2;
-
-                                    var insideSameWindow =
-                                        centerDesktopX >= currentWindow!.Left &&
-                                        centerDesktopX <
-                                            currentWindow.Left +
-                                            currentWindow.Width &&
-                                        centerDesktopY >= currentWindow.Top &&
-                                        centerDesktopY <
-                                            currentWindow.Top +
-                                            currentWindow.Height;
-
-                                    if (insideSameWindow)
-                                    {
-                                        var recoveredDecision =
-                                            decision with
-                                            {
-                                                BoxLeft =
-                                                    relocation.Left,
-                                                BoxTop =
-                                                    relocation.Top,
-                                                BoxWidth =
-                                                    relocation.Width,
-                                                BoxHeight =
-                                                    relocation.Height,
-                                                ImageX =
-                                                    relocation.Left +
-                                                    relocation.Width / 2,
-                                                ImageY =
-                                                    relocation.Top +
-                                                    relocation.Height / 2,
-                                                Confidence =
-                                                    Math.Min(
-                                                        decision.Confidence,
-                                                        relocation.Confidence)
-                                            };
-
-                                        visualRecovery =
-                                            new(
-                                                recoveredDecision,
-                                                Adjusted: true,
-                                                SafeToExecute: true,
-                                                Confidence:
-                                                    relocation.Confidence,
-                                                Reason:
-                                                    $"Geometry tracker không đủ nhưng OpenCV reacquire tìm lại target duy nhất trong cùng WindowId. {relocation.Reason}");
-
-                                        // Executor cần geometry của capture mới,
-                                        // nhưng không cần giữ JPEG sau khi reacquire.
-                                        frame =
-                                            reacquireFrame;
-                                        frame.Clear();
-                                        reacquireFrame =
-                                            null;
-                                    }
-                                }
-
                                 progress.Add(
                                     "visual-target-recovery",
-                                    visualRecovery is not null
-                                        ? visualRecovery.Reason
-                                        : $"Visual reacquire chưa đủ an toàn: {relocation.Reason}",
-                                    visualRecovery is not null
-                                        ? "reacquired"
-                                        : relocation.Ambiguous
-                                            ? "ambiguous"
-                                            : "not-found",
-                                    relocation.Confidence,
+                                    visualRecovery.Reason,
+                                    visualRecovery.Status,
+                                    visualRecovery.Confidence,
                                     observation: true);
                             }
-                            catch (Exception exception) when (
-                                exception is
-                                    ToolExecutionInputException or
-                                    InvalidOperationException)
+
+                            if (visualRecovery.Recovered &&
+                                visualRecovery.ReplacementFrame is not null)
                             {
-                                logger.LogDebug(
-                                    exception,
-                                    "Visual target reacquire không khả dụng; giữ nguyên hành vi replan.");
-                            }
-                            finally
-                            {
-                                reacquireFrame?.Clear();
+                                // Executor cần geometry của capture mới,
+                                // nhưng không cần giữ JPEG sau khi reacquire.
+                                frame =
+                                    visualRecovery.ReplacementFrame;
                             }
                         }
+                        catch (Exception exception) when (
+                            exception is
+                                ToolExecutionInputException or
+                                InvalidOperationException)
+                        {
+                            logger.LogDebug(
+                                exception,
+                                "Visual target reacquire không khả dụng; giữ nguyên hành vi replan.");
+                        }
 
-                        if (visualRecovery is null)
+                        if (visualRecovery?.Recovered != true ||
+                            visualRecovery.Tracking is null)
                         {
                             taskHistory.Add(
                                 $"TARGET-TRACKING-REPLAN: {tracking.Reason}");
@@ -1646,9 +1565,9 @@ public sealed class ComputerOperatorTaskService(
                         }
 
                         tracking =
-                            visualRecovery!;
+                            visualRecovery.Tracking;
                         trackingResult =
-                            visualRecovery;
+                            visualRecovery.Tracking;
                     }
 
                     decision = tracking.Decision;

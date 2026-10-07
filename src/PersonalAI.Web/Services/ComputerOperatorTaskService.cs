@@ -692,16 +692,17 @@ public sealed class ComputerOperatorTaskService(
                             success: true,
                             route: localRoute);
 
-                        cycleTrace.PlannerRoute =
-                            localRoute;
-                        cycleTrace.PlannerTrace.Add(
-                            structuredRoute
-                                ? "Structured=Resolved"
-                                : "Structured/Local=Resolved");
-                        cycleTrace.PlannerTrace.Add(
-                            fastPath.Eligible
-                                ? "MemoryRecommendation=Available(RecoveryOnly)"
-                                : "MemoryRecommendation=NotAvailable");
+                        cycleTrace.ApplyPlannerTrace(
+                            new(
+                                localRoute,
+                                [
+                                    structuredRoute
+                                        ? "Structured=Resolved"
+                                        : "Structured/Local=Resolved",
+                                    fastPath.Eligible
+                                        ? "MemoryRecommendation=Available(RecoveryOnly)"
+                                        : "MemoryRecommendation=NotAvailable"
+                                ]));
 
                         progress.AddDiagnostic(
                             "fast-path",
@@ -750,16 +751,16 @@ public sealed class ComputerOperatorTaskService(
                             success: true,
                             route: ocrRoute);
 
-                        cycleTrace.PlannerRoute =
-                            ocrRoute;
-                        cycleTrace.PlannerTrace.Add(
-                            "Structured/Local=NotResolved");
-                        cycleTrace.PlannerTrace.Add(
-                            "OCR=Resolved");
-                        cycleTrace.PlannerTrace.Add(
-                            fastPath.Eligible
-                                ? "MemoryRecommendation=Available(RecoveryOnly)"
-                                : "MemoryRecommendation=NotAvailable");
+                        cycleTrace.ApplyPlannerTrace(
+                            new(
+                                ocrRoute,
+                                [
+                                    "Structured/Local=NotResolved",
+                                    "OCR=Resolved",
+                                    fastPath.Eligible
+                                        ? "MemoryRecommendation=Available(RecoveryOnly)"
+                                        : "MemoryRecommendation=NotAvailable"
+                                ]));
 
                         progress.AddDiagnostic(
                             "fast-path",
@@ -781,14 +782,14 @@ public sealed class ComputerOperatorTaskService(
                         decision =
                             providerPlanningRoute.Decision!;
 
-                        cycleTrace.PlannerRoute =
-                            "provider-unavailable";
-                        cycleTrace.PlannerTrace.Add(
-                            "Structured/Local=NotResolved");
-                        cycleTrace.PlannerTrace.Add(
-                            "OCR=NotResolved");
-                        cycleTrace.PlannerTrace.Add(
-                            "Gemini=Unavailable");
+                        cycleTrace.ApplyPlannerTrace(
+                            new(
+                                "provider-unavailable",
+                                [
+                                    "Structured/Local=NotResolved",
+                                    "OCR=NotResolved",
+                                    "Gemini=Unavailable"
+                                ]));
 
                         plannerStopwatch.Stop();
                         planTelemetry.Complete(
@@ -810,14 +811,14 @@ public sealed class ComputerOperatorTaskService(
                         decision =
                             providerPlanningRoute.Decision!;
 
-                        cycleTrace.PlannerRoute =
-                            "provider-cooldown";
-                        cycleTrace.PlannerTrace.Add(
-                            "Structured/Local=NotResolved");
-                        cycleTrace.PlannerTrace.Add(
-                            "OCR=NotResolved");
-                        cycleTrace.PlannerTrace.Add(
-                            "Gemini=Skipped(cooldown)");
+                        cycleTrace.ApplyPlannerTrace(
+                            new(
+                                "provider-cooldown",
+                                [
+                                    "Structured/Local=NotResolved",
+                                    "OCR=NotResolved",
+                                    "Gemini=Skipped(cooldown)"
+                                ]));
 
                         plannerStopwatch.Stop();
                         planTelemetry.Complete(
@@ -839,14 +840,14 @@ public sealed class ComputerOperatorTaskService(
                             "analyze",
                             $"Structured/local/OCR chưa có action đủ chắc chắn; ưu tiên Gemini Minimal Intent cho frame {frame.Width}x{frame.Height} trước full planner.");
 
-                        cycleTrace.PlannerRoute =
-                            "gemini-minimal-intent";
-                        cycleTrace.PlannerTrace.Add(
-                            "Structured/Local=NotResolved");
-                        cycleTrace.PlannerTrace.Add(
-                            "OCR=NotResolved");
-                        cycleTrace.PlannerTrace.Add(
-                            "GeminiMinimalIntent=CalledFirst");
+                        cycleTrace.ApplyPlannerTrace(
+                            new(
+                                "gemini-minimal-intent",
+                                [
+                                    "Structured/Local=NotResolved",
+                                    "OCR=NotResolved",
+                                    "GeminiMinimalIntent=CalledFirst"
+                                ]));
 
                         var historyContext =
                             planningContextBuilder.BuildPlannerHistory(
@@ -888,8 +889,10 @@ public sealed class ComputerOperatorTaskService(
                                 success: true,
                                 route: "gemini-minimal-intent");
 
-                            cycleTrace.PlannerTrace.Add(
-                                "GeminiMinimalIntent=Compiled");
+                            cycleTrace.ApplyPlannerTrace(
+                                new(
+                                    null,
+                                    ["GeminiMinimalIntent=Compiled"]));
 
                             progress.Add(
                                 "decision-kernel",
@@ -903,12 +906,15 @@ public sealed class ComputerOperatorTaskService(
                         }
                         else
                         {
-                            cycleTrace.PlannerTrace.Add(
-                                minimalIntent is null
-                                    ? "GeminiMinimalIntent=Unavailable"
-                                    : "GeminiMinimalIntent=Rejected");
-                            cycleTrace.PlannerTrace.Add(
-                                "GeminiFull=FallbackCalled");
+                            cycleTrace.ApplyPlannerTrace(
+                                new(
+                                    null,
+                                    [
+                                        minimalIntent is null
+                                            ? "GeminiMinimalIntent=Unavailable"
+                                            : "GeminiMinimalIntent=Rejected",
+                                        "GeminiFull=FallbackCalled"
+                                    ]));
 
                             progress.AddDiagnostic(
                                 "provider",
@@ -931,8 +937,10 @@ public sealed class ComputerOperatorTaskService(
                                 success: true,
                                 route: "gemini-full-fallback");
 
-                            cycleTrace.PlannerRoute =
-                                "gemini-full-fallback";
+                            cycleTrace.ApplyPlannerTrace(
+                                new(
+                                    "gemini-full-fallback",
+                                    []));
 
                             if (fullPlan.Degraded)
                             {

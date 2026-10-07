@@ -3,6 +3,10 @@ using System.Text;
 
 namespace PersonalAI.Web.Services;
 
+public sealed record ComputerOperatorPlannerTraceUpdate(
+    string? Route,
+    IReadOnlyList<string> Entries);
+
 public sealed class ComputerOperatorCycleTrace(
     int cycle,
     string goal)
@@ -87,6 +91,27 @@ public sealed class ComputerOperatorCycleTrace(
     public void MarkEmitted() =>
         Emitted =
             true;
+
+    public void ApplyPlannerTrace(
+        ComputerOperatorPlannerTraceUpdate update)
+    {
+        if (!string.IsNullOrWhiteSpace(
+                update.Route))
+        {
+            PlannerRoute =
+                update.Route;
+        }
+
+        foreach (var entry in update.Entries)
+        {
+            if (!string.IsNullOrWhiteSpace(
+                    entry))
+            {
+                PlannerTrace.Add(
+                    entry);
+            }
+        }
+    }
 
     public string RenderSummary()
     {

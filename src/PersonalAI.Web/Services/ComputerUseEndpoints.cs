@@ -72,6 +72,7 @@ public static class ComputerUseEndpoints
         services.AddSingleton<IDesktopScreenshotService, WindowsDesktopScreenshotService>();
         services.AddSingleton<IDesktopFrameDifferenceService, DesktopFrameDifferenceService>();
         services.AddSingleton<IDesktopLocalVisualSensor, DesktopLocalVisualSensor>();
+        services.AddSingleton<IDesktopDynamicTargetTracker, DesktopDynamicTargetTracker>();
         services.AddSingleton<IDesktopTemplateMatchingSensor, OpenCvTemplateMatchingSensor>();
         services.AddSingleton<IDesktopVisualTargetPersistenceService, DesktopVisualTargetPersistenceService>();
         services.AddSingleton<ILocalVisualTargetResolver, LocalVisualTargetResolver>();

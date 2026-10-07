@@ -152,6 +152,7 @@ public sealed class ComputerOperatorTaskService(
     IComputerSafeTargetingService targeting,
     IDesktopFrameDifferenceService frameDifferences,
     IDesktopLocalVisualSensor localVisualSensor,
+    IDesktopDynamicTargetTracker targetTracker,
     ILocalVisualVerificationService localVisualVerification,
     IDesktopVisualTargetPersistenceService visualTargetPersistence,
     IDesktopOcrActionPlanner ocrActionPlanner,
@@ -199,8 +200,6 @@ public sealed class ComputerOperatorTaskService(
     private const double MinimumConfidence = 0.72;
     private static readonly IDesktopRoiVisionService RoiVision =
         new DesktopRoiVisionService();
-    private static readonly IDesktopDynamicTargetTracker TargetTracker =
-        new DesktopDynamicTargetTracker();
     private static readonly StructuredTargetRevalidator StructuredTargetRevalidator =
         new();
 
@@ -1503,7 +1502,7 @@ public sealed class ComputerOperatorTaskService(
                                 plannedWindow.WindowId,
                                 StringComparison.OrdinalIgnoreCase));
 
-                    var tracking = TargetTracker.Track(
+                    var tracking = targetTracker.Track(
                         decision,
                         frame,
                         plannedWindow,

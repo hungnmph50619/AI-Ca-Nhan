@@ -22,6 +22,7 @@ public static class ComputerUseEndpoints
         services.AddSingleton<IStructuredDesktopSnapshotService, StructuredDesktopSnapshotService>();
         services.AddSingleton<IStructuredDesktopVerificationService, StructuredDesktopVerificationService>();
         services.AddSingleton<IStructuredTargetRevalidator, StructuredTargetRevalidator>();
+        services.AddSingleton<IComputerOperatorStructuredPreExecutionRevalidator, ComputerOperatorStructuredPreExecutionRevalidator>();
         services.AddSingleton<IComputerOperatorDesktopStateBuilder, ComputerOperatorDesktopStateBuilder>();
         services.AddSingleton<IComputerOperatorSceneIdentityService, ComputerOperatorSceneIdentityService>();
         services.AddSingleton<IComputerOperatorObservationEvidenceAggregator, ComputerOperatorObservationEvidenceAggregator>();

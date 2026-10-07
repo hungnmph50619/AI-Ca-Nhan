@@ -169,7 +169,7 @@ public sealed class ComputerOperatorTaskService(
     IComputerOperatorAdaptiveWaitPolicyResolver adaptiveWaitPolicyResolver,
     IStructuredDesktopSnapshotService structuredDesktop,
     IStructuredDesktopVerificationService structuredVerification,
-    IStructuredTargetRevalidator structuredTargetRevalidator,
+    IComputerOperatorStructuredPreExecutionRevalidator structuredPreExecutionRevalidator,
     IComputerOperatorDesktopStateBuilder desktopStateBuilder,
     IComputerOperatorObservationEvidenceAggregator observationEvidence,
     IComputerOperatorCaptureService captureService,
@@ -1889,36 +1889,18 @@ public sealed class ComputerOperatorTaskService(
                                 "structured-",
                                 StringComparison.OrdinalIgnoreCase))
                     {
-                        var activeForStructured =
-                            computer.GetActiveWindow()
-                            ?? throw new ToolExecutionInputException(
-                                "Không xác định được foreground trước structured target revalidation.");
-
-                        var freshSnapshot =
-                            structuredDesktop.CaptureWindow(
-                                activeForStructured.WindowId,
-                                maximumNodes: 240,
-                                maximumDepth: 7);
-
-                        var freshGraph =
-                            UnifiedStructuredSceneGraphBuilder.Build(
-                                freshSnapshot,
-                                activeForStructured,
-                                desktopState.FrameLeft,
-                                desktopState.FrameTop,
-                                desktopState.FrameWidth,
-                                desktopState.FrameHeight);
-
                         using var structuredRevalidateTelemetry =
                             telemetry.Begin(
                                 ComputerOperatorTelemetryStages.StructuredRevalidate,
                                 decision.Action);
 
-                        var revalidated =
-                            structuredTargetRevalidator.Revalidate(
+                        var structuredRevalidation =
+                            structuredPreExecutionRevalidator.Revalidate(
                                 decision,
-                                freshGraph,
-                                DateTimeOffset.UtcNow);
+                                desktopState);
+
+                        var revalidated =
+                            structuredRevalidation.Result;
 
                         structuredRevalidateTelemetry.Complete(
                             revalidated.SafeToExecute,
@@ -1938,7 +1920,7 @@ public sealed class ComputerOperatorTaskService(
 
                         progress.AddDiagnostic(
                             "structured-target",
-                            $"cycle={index}; status={revalidated.Status}; action={decision.Action}; oldTarget={LimitDiagnostic(decision.TargetElementId, 80)}; newTarget={LimitDiagnostic(revalidated.Decision.TargetElementId, 80)}; confidence={revalidated.Confidence:0.000}; sceneAgeMs={(freshGraph is null ? -1 : Math.Max(0, (DateTimeOffset.UtcNow - freshGraph.CapturedAtUtc).TotalMilliseconds)):0}.");
+                            $"cycle={index}; status={revalidated.Status}; action={decision.Action}; oldTarget={LimitDiagnostic(decision.TargetElementId, 80)}; newTarget={LimitDiagnostic(revalidated.Decision.TargetElementId, 80)}; confidence={revalidated.Confidence:0.000}; sceneAgeMs={structuredRevalidation.SceneAgeMilliseconds:0}; window={LimitDiagnostic(structuredRevalidation.WindowId, 80)}.");
 
                         if (!revalidated.SafeToExecute)
                         {

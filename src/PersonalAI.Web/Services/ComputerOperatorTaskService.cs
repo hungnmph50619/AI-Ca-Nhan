@@ -155,6 +155,7 @@ public sealed class ComputerOperatorTaskService(
     ILocalVisualVerificationService localVisualVerification,
     IDesktopVisualTargetPersistenceService visualTargetPersistence,
     IDesktopOcrActionPlanner ocrActionPlanner,
+    IDesktopLocalActionPlanner localActionPlanner,
     IComputerOperatorGroundingService groundingService,
     IDesktopLocalFastObserver fastObserver,
     IDesktopTemporalSceneService temporalScenes,
@@ -200,8 +201,6 @@ public sealed class ComputerOperatorTaskService(
         new DesktopRoiVisionService();
     private static readonly IDesktopDynamicTargetTracker TargetTracker =
         new DesktopDynamicTargetTracker();
-    private static readonly IDesktopLocalActionPlanner LocalPlanner =
-        new DesktopLocalActionPlanner();
     private static readonly StructuredTargetRevalidator StructuredTargetRevalidator =
         new();
 
@@ -674,7 +673,7 @@ public sealed class ComputerOperatorTaskService(
                             "\n",
                             taskHistory.TakeLast(40));
 
-                    if (LocalPlanner.TryPlan(
+                    if (localActionPlanner.TryPlan(
                             normalizedGoal,
                             desktopState,
                             localHistory,

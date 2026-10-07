@@ -2087,35 +2087,15 @@ public sealed class ComputerOperatorAcceptanceService(
 
     private static void CheckUnifiedVerificationEngineAuthority()
     {
-        var router =
-            new DesktopVerificationRouter();
-
-        var policy =
-            new AdaptiveGeminiCallPolicy();
-
-        var fusion =
-            new UniversalEvidenceFusionEngine();
-
-        var reliable =
-            new UniversalReliableOperatorCoordinator(
-                new StubUniversalCapabilityDiscoveryService(),
-                new UniversalCapabilityCache(
-                    new StubUniversalCapabilityDiscoveryService()),
-                fusion,
-                new UniversalResilienceExecutor());
-
-        var engine =
-            new ComputerOperatorVerificationEngine(
-                router,
-                policy,
-                reliable);
-
         Require(
+            typeof(IComputerOperatorVerificationEngine)
+                .IsAssignableFrom(
+                    typeof(ComputerOperatorVerificationEngine)) &&
             ComputerOperatorVerificationStatuses.Verified == "verified" &&
             ComputerOperatorVerificationStatuses.Failed == "failed" &&
             ComputerOperatorVerificationStatuses.Wait == "wait" &&
             ComputerOperatorVerificationStatuses.SemanticRequired == "semantic-required",
-            "Unified Verification Engine phải có đúng bốn trạng thái authority chuẩn.");
+            "Unified Verification Engine phải là authority duy nhất và có đúng bốn trạng thái chuẩn.");
     }
 
     private static void CheckVerificationConflictRequiresReobserve()

@@ -182,6 +182,7 @@ public sealed class ComputerOperatorTaskService(
     IComputerOperatorDecisionAuthority decisionAuthority,
     IComputerOperatorIntentCompiler intentCompiler,
     IComputerOperatorConfidenceEngine confidenceEngine,
+    IComputerOperatorFailureRecoveryEngine failureRecoveryEngine,
     IComputerOperatorStrategyRanker strategyRanker,
     IUniversalReliableOperatorCoordinator reliableOperator,
     IDesktopVerificationRouter verificationRouter,
@@ -199,8 +200,6 @@ public sealed class ComputerOperatorTaskService(
         new DesktopRoiVisionService();
     private static readonly IDesktopDynamicTargetTracker TargetTracker =
         new DesktopDynamicTargetTracker();
-    private static readonly IComputerOperatorFailureRecoveryEngine RecoveryEngine =
-        new ComputerOperatorFailureRecoveryEngine();
     private static readonly IDesktopLocalActionPlanner LocalPlanner =
         new DesktopLocalActionPlanner();
     private static readonly StructuredTargetRevalidator StructuredTargetRevalidator =
@@ -2247,7 +2246,7 @@ public sealed class ComputerOperatorTaskService(
                         $"State machine: {diagnoseState.State} -> {replanState.State}",
                         "replan");
 
-                    var recoveryPlan = RecoveryEngine.Plan(
+                    var recoveryPlan = failureRecoveryEngine.Plan(
                         new ComputerOperatorFailureContext(
                             ClassifyFailureKind(
                                 decision.Action,
@@ -2389,7 +2388,7 @@ public sealed class ComputerOperatorTaskService(
                         $"State machine: {diagnoseState.State} -> {replanState.State}",
                         "replan");
 
-                    var recoveryPlan = RecoveryEngine.Plan(
+                    var recoveryPlan = failureRecoveryEngine.Plan(
                         new ComputerOperatorFailureContext(
                             ClassifyFailureKind(
                                 decision.Action,
@@ -2741,7 +2740,7 @@ public sealed class ComputerOperatorTaskService(
                         $"State machine: {diagnoseState.State} -> {replanState.State}",
                         "replan");
 
-                    var recoveryPlan = RecoveryEngine.Plan(
+                    var recoveryPlan = failureRecoveryEngine.Plan(
                         new ComputerOperatorFailureContext(
                             ClassifyFailureKind(
                                 decision.Action,

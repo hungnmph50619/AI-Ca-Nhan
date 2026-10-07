@@ -170,6 +170,7 @@ public sealed class ComputerOperatorTaskService(
     IStructuredDesktopVerificationService structuredVerification,
     IStructuredTargetRevalidator structuredTargetRevalidator,
     IComputerOperatorDesktopStateBuilder desktopStateBuilder,
+    IComputerOperatorCaptureService captureService,
     IComputerOperatorCheckpointStore checkpoints,
     IComputerOperatorTelemetry telemetry,
     IComputerOperatorExperienceRepository experienceRepository,
@@ -1912,7 +1913,7 @@ public sealed class ComputerOperatorTaskService(
                 {
                     try
                     {
-                        verificationBaseline = await CapturePostActionFrameAsync(linked.Token);
+                        verificationBaseline = await captureService.CaptureDynamicAsync(linked.Token);
                         verificationCaptureContext =
                             VerificationCaptureContext.From(
                                 verificationBaseline);
@@ -3135,7 +3136,7 @@ public sealed class ComputerOperatorTaskService(
         await execution.WaitIfPausedAsync(cancellationToken);
 
         DesktopScreenshotFrame after =
-            await CapturePostActionFrameAsync(
+            await captureService.CaptureAsync(
                 verificationCaptureContext,
                 cancellationToken);
 
@@ -3427,7 +3428,7 @@ public sealed class ComputerOperatorTaskService(
                     // Sau thời gian chờ phải dùng observation mới nhất cho
                     // semantic verification, tuyệt đối không dùng frame cũ.
                     after.Clear();
-                    after = await CapturePostActionFrameAsync(
+                    after = await captureService.CaptureAsync(
                         verificationCaptureContext,
                         cancellationToken);
 
@@ -3933,7 +3934,7 @@ public sealed class ComputerOperatorTaskService(
                 await execution.WaitIfPausedAsync(token);
 
                 var frame =
-                    await CapturePostActionFrameAsync(
+                    await captureService.CaptureAsync(
                         verificationCaptureContext,
                         token);
 
@@ -4141,115 +4142,6 @@ public sealed class ComputerOperatorTaskService(
         // Stalled/Pending không đồng nghĩa Failed. Caller sẽ dùng frame mới
         // nhất và semantic verifier trước khi được phép replan.
         return null;
-    }
-
-    private async Task<DesktopScreenshotFrame> CapturePostActionFrameAsync(
-        VerificationCaptureContext? context,
-        CancellationToken cancellationToken)
-    {
-        if (context is null)
-            return await CapturePostActionFrameAsync(cancellationToken);
-
-        try
-        {
-            if (context.CaptureScope.Equals(
-                    "window",
-                    StringComparison.OrdinalIgnoreCase) &&
-                !string.IsNullOrWhiteSpace(context.WindowId))
-            {
-                return await screenshots.CaptureStableWindowAsync(
-                    context.WindowId,
-                    maximumWaitMs: 5000,
-                    cancellationToken);
-            }
-
-            if (context.CaptureScope.Equals(
-                    "monitor",
-                    StringComparison.OrdinalIgnoreCase) &&
-                !string.IsNullOrWhiteSpace(context.MonitorDevice))
-            {
-                return await screenshots.CaptureStableMonitorAsync(
-                    context.MonitorDevice,
-                    maximumWaitMs: 5000,
-                    cancellationToken);
-            }
-
-            if (context.CaptureScope.Equals(
-                    "virtual-desktop",
-                    StringComparison.OrdinalIgnoreCase))
-            {
-                return await screenshots.CaptureStableVirtualScreenAsync(
-                    maximumWaitMs: 5000,
-                    cancellationToken);
-            }
-        }
-        catch (Exception exception) when (
-            exception is ToolExecutionInputException or
-            InvalidOperationException)
-        {
-            logger.LogDebug(
-                exception,
-                "Không giữ được Verification Capture Context; fallback về capture động rồi đánh dấu context changed.");
-        }
-
-        return await CapturePostActionFrameAsync(
-            cancellationToken);
-    }
-
-    private async Task<DesktopScreenshotFrame> CapturePostActionFrameAsync(
-        CancellationToken cancellationToken)
-    {
-        var active = computer.GetActiveWindow();
-
-        if (active is not null &&
-            active.Width >= 64 &&
-            active.Height >= 64)
-        {
-            try
-            {
-                return await screenshots.CaptureStableWindowAsync(
-                    active.WindowId,
-                    maximumWaitMs: 5000,
-                    cancellationToken);
-            }
-            catch (Exception exception) when (
-                exception is ToolExecutionInputException or
-                InvalidOperationException)
-            {
-                logger.LogDebug(
-                    exception,
-                    "Không chụp ổn định được foreground window {WindowId}; thử monitor theo con trỏ.",
-                    active.WindowId);
-            }
-        }
-
-        try
-        {
-            var cursor = computer.GetCursorPosition();
-            var monitor = displays.GetMonitorAtPoint(
-                cursor.X,
-                cursor.Y);
-
-            if (monitor is not null)
-            {
-                return await screenshots.CaptureStableMonitorAsync(
-                    monitor.DeviceName,
-                    maximumWaitMs: 5000,
-                    cancellationToken);
-            }
-        }
-        catch (Exception exception) when (
-            exception is ToolExecutionInputException or
-            InvalidOperationException)
-        {
-            logger.LogDebug(
-                exception,
-                "Không chụp ổn định được monitor theo con trỏ; fallback về virtual desktop.");
-        }
-
-        return await screenshots.CaptureStableVirtualScreenAsync(
-            maximumWaitMs: 5000,
-            cancellationToken);
     }
 
     private ComputerWindowInfo? ResolveTrackingWindow(

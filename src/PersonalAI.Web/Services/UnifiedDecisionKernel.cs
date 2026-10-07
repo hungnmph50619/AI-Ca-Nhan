@@ -2,7 +2,22 @@ using PersonalAI.Web.Models;
 
 namespace PersonalAI.Web.Services;
 
+public interface IComputerOperatorIntentCompiler
+{
+    bool TryCompile(
+        DesktopOperatorIntent intent,
+        DesktopScreenshotFrame frame,
+        out DesktopOperatorDecision decision,
+        out string rejectionReason);
+}
+
+/// <summary>
+/// Chỉ biên dịch Minimal Intent thành một action candidate có cấu trúc.
+/// Không có quyền quyết định EXECUTE/REPLAN; quyền đó thuộc
+/// IComputerOperatorDecisionAuthority sau khi loop/recovery signals được đánh giá.
+/// </summary>
 public sealed class UnifiedDecisionKernel
+    : IComputerOperatorIntentCompiler
 {
     private static readonly IReadOnlyDictionary<string, string> IntentToAction =
         new Dictionary<string, string>(

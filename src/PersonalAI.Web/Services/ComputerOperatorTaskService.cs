@@ -151,6 +151,7 @@ public sealed class ComputerOperatorTaskService(
     IComputerDisplayTopologyService displays,
     IComputerSafeTargetingService targeting,
     IDesktopFrameDifferenceService frameDifferences,
+    IDesktopRoiVisionService roiVision,
     IDesktopLocalVisualSensor localVisualSensor,
     IDesktopDynamicTargetTracker targetTracker,
     ILocalVisualVerificationService localVisualVerification,
@@ -198,8 +199,6 @@ public sealed class ComputerOperatorTaskService(
     private const int ScopedLeaseSeconds = 120;
     private const int ScopedLeaseRenewalThresholdSeconds = 25;
     private const double MinimumConfidence = 0.72;
-    private static readonly IDesktopRoiVisionService RoiVision =
-        new DesktopRoiVisionService();
     private static readonly StructuredTargetRevalidator StructuredTargetRevalidator =
         new();
 
@@ -3508,7 +3507,7 @@ public sealed class ComputerOperatorTaskService(
                 }
             }
 
-            var visionFrame = RoiVision.SelectVerificationFrame(
+            var visionFrame = roiVision.SelectVerificationFrame(
                 decision,
                 previousFrame,
                 after,

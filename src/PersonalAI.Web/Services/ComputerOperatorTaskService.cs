@@ -2355,32 +2355,29 @@ public sealed class ComputerOperatorTaskService(
                     "verify");
 
                 ActionVerificationResult verification;
-                var authoritativeLocalText =
-                    textInteractionResult is
-                    {
-                        Verified: true,
-                        ActualText: not null
-                    };
+                var authoritativeVerification =
+                    verificationEngine.EvaluateAuthoritativeText(
+                        textInteractionResult);
 
-                if (authoritativeLocalText)
+                if (authoritativeVerification.Handled)
                 {
                     verificationBaseline?.Clear();
                     verification = new(
-                        true,
-                        1.0,
-                        $"Local Text Verifier: {textInteractionResult!.Detail}");
+                        authoritativeVerification.Verified,
+                        authoritativeVerification.Confidence,
+                        authoritativeVerification.Detail);
 
                     progress.Add(
                         "verification-route",
                         "Text verification hoàn tất cục bộ; không gọi screenshot/Gemini.",
-                        "local",
-                        1.0);
+                        authoritativeVerification.Route,
+                        authoritativeVerification.Confidence);
 
                     progress.Add(
                         "confidence-verify",
                         "Local exact text readback là bằng chứng xác định; bỏ composite Vision confidence.",
                         "verified",
-                        1.0);
+                        authoritativeVerification.Confidence);
                 }
                 else
                 {

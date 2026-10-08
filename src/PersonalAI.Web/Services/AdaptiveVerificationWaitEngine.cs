@@ -760,25 +760,40 @@ public static class ComputerOperatorAdaptiveWaitPolicy
                 .Trim()
                 .ToLowerInvariant();
 
-        var delayedTransitionExpected =
-            effect.Contains("open") ||
+        var explicitlySlowLifecycle =
             effect.Contains("launch") ||
-            effect.Contains("start") ||
-            effect.Contains("appear") ||
-            effect.Contains("ready") ||
             effect.Contains("loading") ||
             effect.Contains("load") ||
+            effect.Contains("khởi động") ||
+            effect.Contains("đang tải");
+
+        var desktopObject =
             effect.Contains("window") ||
             effect.Contains("application") ||
             effect.Contains("process") ||
-            effect.Contains("mở") ||
-            effect.Contains("khởi động") ||
-            effect.Contains("xuất hiện") ||
-            effect.Contains("sẵn sàng") ||
-            effect.Contains("đang tải") ||
+            effect.Contains("program") ||
+            effect.Contains("client") ||
             effect.Contains("cửa sổ") ||
             effect.Contains("ứng dụng") ||
-            effect.Contains("tiến trình");
+            effect.Contains("tiến trình") ||
+            effect.Contains("chương trình");
+
+        var desktopTransitionVerb =
+            effect.Contains("open") ||
+            effect.Contains("start") ||
+            effect.Contains("appear") ||
+            effect.Contains("ready") ||
+            effect.Contains("show") ||
+            effect.Contains("create") ||
+            effect.Contains("mở") ||
+            effect.Contains("xuất hiện") ||
+            effect.Contains("sẵn sàng") ||
+            effect.Contains("hiển thị") ||
+            effect.Contains("tạo");
+
+        var delayedTransitionExpected =
+            explicitlySlowLifecycle ||
+            (desktopObject && desktopTransitionVerb);
 
         if (delayedTransitionExpected)
             return policy;

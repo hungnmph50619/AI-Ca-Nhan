@@ -1544,6 +1544,18 @@ public sealed class ComputerOperatorTaskService(
                         if (repeatedGroundingFailureCount >= 3)
                         {
                             var detail = $"Grounding thất bại {repeatedGroundingFailureCount} lần trên cùng scene/target/status; dừng thử lại cho tới khi có bằng chứng mới. {grounding.Reason}";
+                            checkpoint = SaveCheckpointSafely(
+                                checkpoint,
+                                verifiedMilestones,
+                                currentSubgoal,
+                                latestGoalProgress,
+                                lastObservedStateFingerprint: sceneFingerprint);
+                            MarkCheckpointStatusSafely(
+                                checkpoint,
+                                ComputerOperatorCheckpointStatuses.Interrupted);
+                            progress.AddDiagnostic(
+                                "recovery-checkpoint",
+                                $"Grounding loop guard: giữ {verifiedMilestones.Count} verified milestones; scene={BuildDiagnosticId(sceneFingerprint)}; không replay action cũ.");
                             progress.Block(detail);
                             return Finish(false, detail);
                         }

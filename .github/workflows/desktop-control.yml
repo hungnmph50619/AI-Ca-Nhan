@@ -69,6 +69,20 @@ jobs:
     steps:
       - name: Tải mã nguồn
         uses: actions/checkout@v4
+      - name: Validate external benchmark PowerShell syntax
+        shell: pwsh
+        run: |
+          $tokens = $null
+          $parseErrors = $null
+          [System.Management.Automation.Language.Parser]::ParseFile(
+            (Join-Path $PWD "scripts/run_computer_operator_external_benchmark.ps1"),
+            [ref]$tokens,
+            [ref]$parseErrors
+          ) | Out-Null
+          if ($parseErrors.Count -gt 0) {
+            $parseErrors | ForEach-Object { Write-Error $_.Message }
+            throw "External benchmark PowerShell syntax check failed."
+          }
       - name: Cài đặt .NET 8
         uses: actions/setup-dotnet@v4
         with:

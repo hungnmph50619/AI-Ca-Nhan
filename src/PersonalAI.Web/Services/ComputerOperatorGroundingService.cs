@@ -68,6 +68,17 @@ public sealed class ComputerOperatorGroundingService(
                 "Grounding contract hiện chỉ áp dụng cho click target.");
         }
 
+        // A proposed UIA element identity must be executed through the structured
+        // route where its live token is revalidated, not downgraded to a blind
+        // pixel click. Ask the planner to choose structured-invoke/reobserve.
+        if (!string.IsNullOrWhiteSpace(proposed.TargetElementId))
+        {
+            return Unavailable(
+                proposed,
+                evidence,
+                "Click candidate mang UIA element ID; cần structured action xác minh token, không hạ cấp thành click tọa độ.");
+        }
+
         if (string.IsNullOrWhiteSpace(proposed.TargetLabel))
         {
             // An unlabeled box has no semantic corroboration. Require the

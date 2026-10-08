@@ -71,6 +71,24 @@ public sealed class ComputerOperatorClickGroundingCoordinator(
                                 plannedWindow.WindowId,
                                 StringComparison.OrdinalIgnoreCase));
 
+        // Never track a visual target against a window whose geometry changed
+        // after planning. The old frame's box can now point at another control.
+        if (plannedWindow is not null &&
+            currentWindow is not null &&
+            !SameWindowGeometry(plannedWindow, currentWindow))
+        {
+            return new(
+                new(
+                    ComputerOperatorGroundingStatuses.Stale,
+                    groundedDecision,
+                    0,
+                    grounding.Evidence,
+                    "Cửa sổ đã thay đổi vị trí hoặc kích thước sau planning; phải quan sát lại trước click."),
+                null,
+                plannedWindow,
+                currentWindow);
+        }
+
         var tracking =
             targetTracker.Track(
                 groundedDecision,
@@ -84,6 +102,15 @@ public sealed class ComputerOperatorClickGroundingCoordinator(
             plannedWindow,
             currentWindow);
     }
+
+    internal static bool SameWindowGeometry(
+        ComputerWindowInfo before,
+        ComputerWindowInfo after) =>
+        before.WindowId.Equals(after.WindowId, StringComparison.OrdinalIgnoreCase) &&
+        before.Left == after.Left &&
+        before.Top == after.Top &&
+        before.Width == after.Width &&
+        before.Height == after.Height;
 
     private ComputerWindowInfo? ResolveTrackingWindow(
         DesktopOperatorDecision decision,

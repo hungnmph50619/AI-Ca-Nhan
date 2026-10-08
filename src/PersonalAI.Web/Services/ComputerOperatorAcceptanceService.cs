@@ -2364,6 +2364,18 @@ public sealed class ComputerOperatorAcceptanceService(
                 decision with { TargetLabel = string.Empty, Confidence = 0.60 },
                 deterministicTextSurface: false),
             "Unified Grounding Contract phải cho phép nguồn planner visual độc lập khi đủ mạnh nhưng vẫn fail-closed trên deterministic text surface hoặc confidence thấp.");
+
+        Require(
+            ComputerOperatorGroundingService.PlannerBoxAgreesWithOcr(
+                decision,
+                decision with { BoxLeft = 120, BoxTop = 95 }) &&
+            !ComputerOperatorGroundingService.PlannerBoxAgreesWithOcr(
+                decision,
+                decision with { BoxLeft = 300, BoxTop = 95 }) &&
+            !ComputerOperatorGroundingService.PlannerBoxAgreesWithOcr(
+                decision,
+                decision with { CoordinateSpace = ComputerCoordinateSpaces.WindowNormalized }),
+            "Grounding phải phân biệt bbox OCR cùng phần tử và bbox planner thuộc nút khác hoặc khác hệ tọa độ.");
     }
 
     private static void CheckNativeAppLaunchRejectsBrowserIdentity()

@@ -49,7 +49,11 @@ public sealed record ComputerOperatorExternalBenchmarkExecutionResult(
     string Summary,
     string Provider,
     string Model,
-    double DurationMilliseconds);
+    double DurationMilliseconds,
+    int VerifiedActionCount = 0,
+    int VerificationFailureCount = 0,
+    int VerificationInconclusiveCount = 0,
+    int RecoveryCount = 0);
 
 
 public sealed record EvaluateComputerOperatorExternalBenchmarkCaseRequest(

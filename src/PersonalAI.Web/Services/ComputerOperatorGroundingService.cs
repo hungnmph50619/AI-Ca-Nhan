@@ -109,12 +109,15 @@ public sealed class ComputerOperatorGroundingService(
 
             if (HasUsablePlannerBox(proposed))
             {
+                var agrees = PlannerBoxAgreesWithOcr(proposed, grounded);
                 evidence.Add(
                     new(
                         "planner-visual",
-                        true,
+                        agrees,
                         proposed.Confidence,
-                        "Planner cũng cung cấp visual bbox cho cùng semantic target."));
+                        agrees
+                            ? "Planner visual box giao với bbox OCR đã xác minh."
+                            : "Planner visual box không giao bbox OCR; bỏ tọa độ planner và chỉ sử dụng OCR."));
             }
 
             return Resolved(
@@ -177,6 +180,30 @@ public sealed class ComputerOperatorGroundingService(
         HasUsablePlannerBox(decision) &&
         double.IsFinite(decision.Confidence) &&
         decision.Confidence >= MinimumPlannerVisualConfidence;
+
+    internal static bool PlannerBoxAgreesWithOcr(
+        DesktopOperatorDecision planner,
+        DesktopOperatorDecision ocr)
+    {
+        if (!HasUsablePlannerBox(planner) || !HasUsablePlannerBox(ocr))
+            return false;
+
+        // Compare only boxes grounded in the same planning-frame coordinate space.
+        if (planner.CoordinateSpace != ComputerCoordinateSpaces.ImagePixel ||
+            ocr.CoordinateSpace != ComputerCoordinateSpaces.ImagePixel)
+            return false;
+
+        var overlapWidth = Math.Min(
+            (long)planner.BoxLeft + planner.BoxWidth,
+            (long)ocr.BoxLeft + ocr.BoxWidth) -
+            Math.Max(planner.BoxLeft, ocr.BoxLeft);
+        var overlapHeight = Math.Min(
+            (long)planner.BoxTop + planner.BoxHeight,
+            (long)ocr.BoxTop + ocr.BoxHeight) -
+            Math.Max(planner.BoxTop, ocr.BoxTop);
+
+        return overlapWidth > 0 && overlapHeight > 0;
+    }
 
     private static bool HasUsablePlannerBox(
         DesktopOperatorDecision decision) =>

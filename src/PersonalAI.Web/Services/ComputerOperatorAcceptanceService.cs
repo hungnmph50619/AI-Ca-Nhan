@@ -3063,14 +3063,64 @@ public sealed class ComputerOperatorAcceptanceService(
                     verificationFailureCount: 2,
                     recoveryCount: 2);
 
+        var executionStore =
+            new ComputerOperatorExternalBenchmarkExecutionStore();
+
+        executionStore.Record(
+            new PersonalAI.Web.Evaluation.Benchmarks.ComputerOperatorExternalBenchmarkExecutionResult(
+                Version: "acceptance",
+                WorkspaceId: PersonalWorkspaceIds.PersonalAi,
+                CaseId: "acceptance-metrics",
+                Title: "Acceptance metrics",
+                ExpectedEffect: "Expected effect observed",
+                StartedAtUtc: DateTimeOffset.UtcNow.AddSeconds(-2),
+                CompletedAtUtc: DateTimeOffset.UtcNow,
+                TaskCompleted: true,
+                WithinStepBudget: true,
+                ReadyForIndependentEvaluation: true,
+                MaximumSteps: 24,
+                RecordedSteps: 8,
+                ObservationCount: 12,
+                ActionCount: 7,
+                Summary: "acceptance",
+                Provider: "local",
+                Model: "acceptance",
+                DurationMilliseconds: 1500,
+                VerifiedActionCount: 5,
+                VerificationFailureCount: 2,
+                VerificationInconclusiveCount: 1,
+                RecoveryCount: 2));
+
+        var evaluator =
+            new ComputerOperatorExternalBenchmarkEvaluationService(
+                executionStore,
+                new AcceptanceWorkspaceContextAccessor(
+                    PersonalWorkspaceIds.PersonalAi));
+
+        var evaluation =
+            evaluator.Evaluate(
+                new PersonalAI.Web.Evaluation.Benchmarks.EvaluateComputerOperatorExternalBenchmarkCaseRequest(
+                    CaseId: "acceptance-metrics",
+                    Confirmed: true,
+                    ExpectedEffectObserved: true,
+                    EvidenceSummary: "Expected effect was independently observed."));
+
+        var outputMetricsPreserved =
+            evaluation.VerifiedActionCount == 5 &&
+            evaluation.VerificationFailureCount == 2 &&
+            evaluation.VerificationInconclusiveCount == 1 &&
+            evaluation.RecoveryCount == 2;
+
         Require(
             !onlyTaskCompleted &&
             !observedButExecutionInvalid &&
             passed &&
             rejectedWithoutVerifiedAction &&
             rejectedWhenFailureNotRecovered &&
-            passedWhenFailureRecovered,
-            "Independent benchmark evaluation phải cần execution hợp lệ, external evidence và VERIFY/RECOVERY metrics nhất quán.");
+            passedWhenFailureRecovered &&
+            evaluation.Passed &&
+            outputMetricsPreserved,
+            "Independent benchmark evaluation phải cần execution hợp lệ, external evidence và phải trả nguyên VERIFY/RECOVERY metrics ra output.");
     }
 
     private static void CheckRuntimeStateIntelligenceContract()

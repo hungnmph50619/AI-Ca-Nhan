@@ -3627,8 +3627,11 @@ public sealed class ComputerOperatorTaskService(
         CancellationToken cancellationToken)
     {
         var policy =
-            adaptiveWaitPolicyResolver.Resolve(
-                decision.Action);
+            ComputerOperatorAdaptiveWaitPolicy.RefineForExpectedEffect(
+                decision.Action,
+                decision.ExpectedEffect,
+                adaptiveWaitPolicyResolver.Resolve(
+                    decision.Action));
 
         progress.Add(
             "adaptive-wait",

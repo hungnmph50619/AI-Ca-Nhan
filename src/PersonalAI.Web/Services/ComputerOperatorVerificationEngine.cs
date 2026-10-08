@@ -131,6 +131,12 @@ public sealed class ComputerOperatorVerificationEngine(
         };
     }
 
+    // A visual change proves a transition, not that a specific control or key
+    // produced its expected effect. Require semantic/structured evidence.
+    internal static bool RequiresEffectVerification(string? action) =>
+        action is "click-left" or "double-click-left" or "click-right" or
+            "press-key" or "press-hotkey";
+
     public ComputerOperatorLocalVerificationAssessment EvaluateLocal(
         DesktopOperatorDecision decision,
         DesktopFastObservation observation,
@@ -178,7 +184,8 @@ public sealed class ComputerOperatorVerificationEngine(
                     decision,
                     route);
 
-            if (localFusion.Verified)
+            if (localFusion.Verified &&
+                !RequiresEffectVerification(decision.Action))
             {
                 return new(
                     ComputerOperatorVerificationStatuses.Verified,
@@ -248,8 +255,11 @@ public sealed class ComputerOperatorVerificationEngine(
         var status =
             adaptive.Decision switch
             {
-                AdaptiveGeminiDecision.SkipAndPass =>
+                AdaptiveGeminiDecision.SkipAndPass when
+                    !RequiresEffectVerification(decision.Action) =>
                     ComputerOperatorVerificationStatuses.Verified,
+                AdaptiveGeminiDecision.SkipAndPass =>
+                    ComputerOperatorVerificationStatuses.SemanticRequired,
                 AdaptiveGeminiDecision.SkipAndFail =>
                     ComputerOperatorVerificationStatuses.Failed,
                 _ =>

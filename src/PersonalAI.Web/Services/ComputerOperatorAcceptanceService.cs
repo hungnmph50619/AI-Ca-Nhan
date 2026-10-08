@@ -482,6 +482,11 @@ public sealed class ComputerOperatorAcceptanceService(
 
         RunCheck(
             checks,
+            "Checkpoint không bị giảm tiến độ khi Resume và planner replan",
+            CheckResumeProgressMonotonic);
+
+        RunCheck(
+            checks,
             "UIA Invoke chỉ nhận token hợp lệ, hiển thị và có capability",
             CheckUiaInvokeEligibility);
 
@@ -6632,6 +6637,17 @@ public sealed class ComputerOperatorAcceptanceService(
                 decision with { BoxWidth = 900 },
                 frame, ComputerCoordinateSpaces.ImagePixel),
             "Bounding box quá rộng vẫn vượt qua Grounding.");
+    }
+
+    private static void CheckResumeProgressMonotonic()
+    {
+        Require(
+            ComputerOperatorTaskService.PreserveCheckpointGoalProgress(0.7, 0.1) == 0.7 &&
+            ComputerOperatorTaskService.PreserveCheckpointGoalProgress(0.7, 0.9) == 0.9 &&
+            ComputerOperatorTaskService.PreserveCheckpointGoalProgress(0.7, double.NaN) == 0.7 &&
+            ComputerOperatorTaskService.PreserveCheckpointGoalProgress(0.7, 2.0) == 1.0 &&
+            ComputerOperatorTaskService.PreserveCheckpointGoalProgress(0.7, -1.0) == 0.7,
+            "Resume phải giữ tiến độ đã xác minh, không chấp nhận NaN hoặc tiến độ ngoài [0,1].");
     }
 
     private static void CheckGroundingFailureKey()

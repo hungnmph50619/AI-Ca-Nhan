@@ -176,6 +176,7 @@ public sealed class ComputerOperatorTaskService(
     IComputerOperatorDesktopStateBuilder desktopStateBuilder,
     IComputerOperatorObservationEvidenceAggregator observationEvidence,
     IComputerOperatorCaptureService captureService,
+    IComputerOperatorVisualEvidenceRecorder visualEvidence,
     IComputerOperatorCheckpointStore checkpoints,
     IComputerOperatorTelemetry telemetry,
     IComputerOperatorExperienceRepository experienceRepository,
@@ -250,6 +251,14 @@ public sealed class ComputerOperatorTaskService(
 
         progress.Start(
             $"Bắt đầu tác vụ: {normalizedGoal}");
+
+        var evidenceRunId =
+            visualEvidence.BeginTask(
+                normalizedGoal);
+
+        progress.AddDiagnostic(
+            "visual-evidence",
+            $"run={evidenceRunId}; root=benchmark-results/operator-diagnostics; images=best-effort; rawGoalStored=false.");
 
         var reliableRuntime =
             reliableOperator.GetRuntimeSnapshot();
@@ -435,6 +444,13 @@ public sealed class ComputerOperatorTaskService(
                         "observe",
                         $"Đã chụp frame ổn định {frame.Width}x{frame.Height} lúc {frame.CapturedAtUtc:O}.",
                         observation: true);
+
+                    visualEvidence.RecordFrame(
+                        evidenceRunId,
+                        index,
+                        "observe",
+                        frame,
+                        foreground: activeBeforeObservation);
                 }
                 catch (OperationCanceledException)
                 {
@@ -1826,6 +1842,17 @@ public sealed class ComputerOperatorTaskService(
                             VerificationCaptureContext.From(
                                 verificationBaseline);
                         fastObserverBaseline = fastObserver.CaptureSample(verificationBaseline);
+
+                        visualEvidence.RecordFrame(
+                            evidenceRunId,
+                            index,
+                            "before-action",
+                            verificationBaseline,
+                            decision.Action,
+                            decision.TargetLabel,
+                            decision.ExpectedEffect,
+                            computer.GetActiveWindow());
+
                         progress.Add(
                             "frame-baseline",
                             $"Đã khóa Verification Capture Context: scope={verificationCaptureContext.CaptureScope}; window={verificationCaptureContext.WindowId ?? "-"}; monitor={verificationCaptureContext.MonitorDevice ?? "-"}; origin=({verificationCaptureContext.Left},{verificationCaptureContext.Top}); size={verificationCaptureContext.Width}x{verificationCaptureContext.Height}; dpi={verificationCaptureContext.DpiX}x{verificationCaptureContext.DpiY}.",
@@ -2402,6 +2429,8 @@ public sealed class ComputerOperatorTaskService(
                             verificationBaseline,
                             verificationCaptureContext,
                             fastObserverBaseline,
+                            evidenceRunId,
+                            index,
                             linked.Token);
 
                         verificationTelemetry.Complete(
@@ -2464,6 +2493,22 @@ public sealed class ComputerOperatorTaskService(
                             : $"Failed: {verification.Detail}";
                 cycleTrace.VerificationConfidence =
                     verification.Confidence;
+
+                visualEvidence.RecordOutcome(
+                    evidenceRunId,
+                    index,
+                    decision.Action,
+                    decision.TargetLabel,
+                    decision.ExpectedEffect,
+                    verification.Verified
+                        ? "verified"
+                        : verification.Inconclusive
+                            ? "inconclusive"
+                            : "failed",
+                    verification.Confidence,
+                    verification.Detail,
+                    afterForeground);
+
                 cycleTrace.Evidence.Add(
                     $"verification={(verification.Verified ? "support" : verification.Inconclusive ? "inconclusive" : "contradict")}; confidence={verification.Confidence:0.000}; detail={LimitDiagnostic(verification.Detail, 180)}");
 
@@ -2946,6 +2991,11 @@ public sealed class ComputerOperatorTaskService(
             bool completed,
             string summary)
         {
+            visualEvidence.CompleteTask(
+                evidenceRunId,
+                completed ? "completed" : "failed",
+                summary);
+
             if (!completed)
             {
                 var snapshot = progress.Get();
@@ -2992,6 +3042,8 @@ public sealed class ComputerOperatorTaskService(
         DesktopScreenshotFrame? verificationBaseline,
         VerificationCaptureContext? verificationCaptureContext,
         DesktopFastObserverSample? fastObserverBaseline,
+        string evidenceRunId,
+        int cycleIndex,
         CancellationToken cancellationToken)
     {
         progress.Add(
@@ -3011,6 +3063,16 @@ public sealed class ComputerOperatorTaskService(
             await captureService.CaptureAsync(
                 verificationCaptureContext,
                 cancellationToken);
+
+        visualEvidence.RecordFrame(
+            evidenceRunId,
+            cycleIndex,
+            "after-action",
+            after,
+            decision.Action,
+            decision.TargetLabel,
+            decision.ExpectedEffect,
+            computer.GetActiveWindow());
 
         try
         {
@@ -3099,6 +3161,16 @@ public sealed class ComputerOperatorTaskService(
                     after = await captureService.CaptureAsync(
                         verificationCaptureContext,
                         cancellationToken);
+
+                    visualEvidence.RecordFrame(
+                        evidenceRunId,
+                        cycleIndex,
+                        "after-reobserve",
+                        after,
+                        decision.Action,
+                        decision.TargetLabel,
+                        decision.ExpectedEffect,
+                        computer.GetActiveWindow());
 
                     progress.Add(
                         "structured-verification-reobserve",
@@ -3312,6 +3384,16 @@ public sealed class ComputerOperatorTaskService(
                     after = await captureService.CaptureAsync(
                         verificationCaptureContext,
                         cancellationToken);
+
+                    visualEvidence.RecordFrame(
+                        evidenceRunId,
+                        cycleIndex,
+                        "after-wait",
+                        after,
+                        decision.Action,
+                        decision.TargetLabel,
+                        decision.ExpectedEffect,
+                        computer.GetActiveWindow());
 
                     verificationContextChanged =
                         verificationCaptureContext is not null &&

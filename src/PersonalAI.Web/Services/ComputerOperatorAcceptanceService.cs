@@ -477,6 +477,11 @@ public sealed class ComputerOperatorAcceptanceService(
 
         RunCheck(
             checks,
+            "Recovery không lặp cùng grounding thất bại khi scene không đổi",
+            CheckGroundingFailureKey);
+
+        RunCheck(
+            checks,
             "UIA Invoke chỉ nhận token hợp lệ, hiển thị và có capability",
             CheckUiaInvokeEligibility);
 
@@ -6627,6 +6632,36 @@ public sealed class ComputerOperatorAcceptanceService(
                 decision with { BoxWidth = 900 },
                 frame, ComputerCoordinateSpaces.ImagePixel),
             "Bounding box quá rộng vẫn vượt qua Grounding.");
+    }
+
+    private static void CheckGroundingFailureKey()
+    {
+        var decision = new DesktopOperatorDecision(
+            State: "", Plan: "", CurrentSubgoal: "", GoalProgress: 0,
+            VerifiedMilestones: Array.Empty<string>(),
+            Action: "click-left", Query: "", Text: "", Key: "",
+            Keys: Array.Empty<string>(), Url: "", TargetLabel: "Target A",
+            CoordinateSpace: ComputerCoordinateSpaces.ImagePixel,
+            CoordinateWindowId: "0x1", ImageX: 10, ImageY: 10,
+            EndImageX: 0, EndImageY: 0, NormalizedX: 0, NormalizedY: 0,
+            EndNormalizedX: 0, EndNormalizedY: 0,
+            BoxLeft: 0, BoxTop: 0, BoxWidth: 20, BoxHeight: 20,
+            BoxNormalizedLeft: 0, BoxNormalizedTop: 0,
+            BoxNormalizedWidth: 0, BoxNormalizedHeight: 0,
+            ScrollDelta: 0, ExpectedEffect: "", Confidence: 0.9,
+            Reason: "", SceneElements: Array.Empty<DesktopSceneElement>(),
+            TargetElementId: "");
+        var key = ComputerOperatorTaskService.BuildGroundingFailureKey(
+            "scene-1", decision, ComputerOperatorGroundingStatuses.Ambiguous);
+        Require(
+            key == ComputerOperatorTaskService.BuildGroundingFailureKey(
+                "scene-1", decision, ComputerOperatorGroundingStatuses.Ambiguous) &&
+            key != ComputerOperatorTaskService.BuildGroundingFailureKey(
+                "scene-2", decision, ComputerOperatorGroundingStatuses.Ambiguous) &&
+            key != ComputerOperatorTaskService.BuildGroundingFailureKey(
+                "scene-1", decision with { TargetLabel = "Target B" },
+                ComputerOperatorGroundingStatuses.Ambiguous),
+            "Recovery key phải ổn định trên cùng scene/target và đổi khi scene/target thay đổi.");
     }
 
     private static void CheckGroundingRejectsMovedWindow()

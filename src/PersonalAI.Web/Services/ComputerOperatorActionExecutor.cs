@@ -35,6 +35,18 @@ public sealed class ComputerOperatorActionExecutor(
 
         if (IsClickAction(action))
         {
+            // A window-scoped screenshot must belong to the grounded window.
+            // Otherwise valid-looking image coordinates may hit a different control.
+            if (!string.IsNullOrWhiteSpace(frame.WindowId) &&
+                !string.IsNullOrWhiteSpace(decision.CoordinateWindowId) &&
+                !frame.WindowId.Equals(
+                    decision.CoordinateWindowId,
+                    StringComparison.OrdinalIgnoreCase))
+            {
+                throw new ToolExecutionInputException(
+                    "Screenshot window và grounded target không khớp; cần chụp lại trước khi click.");
+            }
+
             safeTarget = targeting.Resolve(decision, frame);
             point = safeTarget.Point;
         }

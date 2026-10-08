@@ -253,18 +253,9 @@ public sealed class ComputerOperatorVerificationEngine(
                 frameDifference);
 
         var status =
-            adaptive.Decision switch
-            {
-                AdaptiveGeminiDecision.SkipAndPass when
-                    !RequiresEffectVerification(decision.Action) =>
-                    ComputerOperatorVerificationStatuses.Verified,
-                AdaptiveGeminiDecision.SkipAndPass =>
-                    ComputerOperatorVerificationStatuses.SemanticRequired,
-                AdaptiveGeminiDecision.SkipAndFail =>
-                    ComputerOperatorVerificationStatuses.Failed,
-                _ =>
-                    ComputerOperatorVerificationStatuses.SemanticRequired
-            };
+            ClassifyAdaptiveVerification(
+                decision.Action,
+                adaptive.Decision);
 
         return new(
             status,
@@ -277,6 +268,24 @@ public sealed class ComputerOperatorVerificationEngine(
                 adaptive.Confidence),
             adaptive.Reason);
     }
+
+    // The verification engine alone decides whether adaptive evidence is
+    // sufficient. A visual/local pass is not proof of a click/key effect.
+    internal static string ClassifyAdaptiveVerification(
+        string? action,
+        AdaptiveGeminiDecision adaptiveDecision) =>
+        adaptiveDecision switch
+        {
+            AdaptiveGeminiDecision.SkipAndPass when
+                !RequiresEffectVerification(action) =>
+                ComputerOperatorVerificationStatuses.Verified,
+            AdaptiveGeminiDecision.SkipAndPass =>
+                ComputerOperatorVerificationStatuses.SemanticRequired,
+            AdaptiveGeminiDecision.SkipAndFail =>
+                ComputerOperatorVerificationStatuses.Failed,
+            _ =>
+                ComputerOperatorVerificationStatuses.SemanticRequired
+        };
 
     public bool ShouldReobserveOnSemanticConflict(
         bool semanticSatisfied,

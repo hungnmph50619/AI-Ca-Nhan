@@ -1460,6 +1460,47 @@ public sealed class ComputerOperatorTaskService(
                     $"State machine: {targetState.State} — {targetState.Detail}",
                     "target");
 
+                // When a click candidate carries a live UIA token, prefer the
+                // structured InvokePattern instead of a stale pixel coordinate.
+                // A missing/non-invokable token still takes the fail-closed
+                // grounding route; never guess another element.
+                if (decision.Action == "click-left" &&
+                    !string.IsNullOrWhiteSpace(decision.TargetElementId) &&
+                    desktopState.StructuredScene is { } structuredScene &&
+                    !string.IsNullOrWhiteSpace(decision.CoordinateWindowId) &&
+                    string.Equals(
+                        decision.CoordinateWindowId,
+                        active?.WindowId,
+                        StringComparison.OrdinalIgnoreCase))
+                {
+                    var matchedNodes = structuredScene.Nodes
+                        .Where(node =>
+                            string.Equals(
+                                node.Token,
+                                decision.TargetElementId,
+                                StringComparison.Ordinal) &&
+                            !node.IsOffscreen &&
+                            node.IsEnabled &&
+                            node.Patterns.Any(pattern =>
+                                string.Equals(pattern, "Invoke", StringComparison.OrdinalIgnoreCase)))
+                        .Take(2)
+                        .ToArray();
+
+                    if (matchedNodes.Length == 1)
+                    {
+                        decision = decision with
+                        {
+                            Action = "structured-invoke",
+                            Reason = $"{decision.Reason} UIA token được tìm thấy duy nhất với InvokePattern; chuyển click sang structured-invoke."
+                        };
+                        progress.Add(
+                            "target-grounding",
+                            "Đã chuyển click sang structured-invoke nhờ UIA token hợp lệ và InvokePattern.",
+                            "structured",
+                            observation: true);
+                    }
+                }
+
                 if (IsClickAction(decision.Action))
                 {
                     var clickGrounding =

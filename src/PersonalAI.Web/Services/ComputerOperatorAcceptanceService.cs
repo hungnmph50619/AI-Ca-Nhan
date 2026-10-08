@@ -2369,6 +2369,10 @@ public sealed class ComputerOperatorAcceptanceService(
             ComputerOperatorGroundingService.IsAmbiguousOcrReason(
                 "OCR_AMBIGUOUS: multiple text matches") &&
             !ComputerOperatorGroundingService.IsAmbiguousOcrReason(
+                "OCR grounding unavailable") &&
+            ComputerOperatorGroundingService.IsOcrWindowConflict(
+                "OCR_WINDOW_CONFLICT: wrong foreground") &&
+            !ComputerOperatorGroundingService.IsOcrWindowConflict(
                 "OCR grounding unavailable"),
             "OCR target mơ hồ phải chặn visual fallback thay vì coi như OCR unavailable.");
 

@@ -2371,6 +2371,13 @@ public sealed class ComputerOperatorAcceptanceService(
             "Unified Grounding Contract phải cho phép nguồn planner visual độc lập khi đủ mạnh nhưng vẫn fail-closed trên deterministic text surface hoặc confidence thấp.");
 
         Require(
+            ComputerOperatorGroundingService.HasStructuredElementIdentity(
+                decision with { TargetElementId = "uia-token" }) &&
+            !ComputerOperatorGroundingService.HasStructuredElementIdentity(
+                decision with { TargetElementId = string.Empty }),
+            "Grounding phải nhận diện mục tiêu UIA và không hạ cấp thành pixel click.");
+
+        Require(
             ComputerOperatorGroundingService.IsAmbiguousOcrReason(
                 "OCR_AMBIGUOUS: multiple text matches") &&
             !ComputerOperatorGroundingService.IsAmbiguousOcrReason(

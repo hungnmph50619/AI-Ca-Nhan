@@ -116,7 +116,7 @@ public sealed class DesktopLocalActionPlanner
                 key: "ENTER",
                 currentSubgoal: $"Mở {target} từ kết quả Windows Search.",
                 expectedEffect: $"Windows Search khởi chạy ứng dụng phù hợp với từ khóa {target}.",
-                reason: "Local planner có bằng chứng xác minh rằng query đã có trong Windows Search; ưu tiên Enter deterministic trước recovery/yield của chiến lược mở ứng dụng.",
+                reason: "Local planner có bằng chứng xác minh rằng query đã có trong Windows Search; bước generic tiếp theo là Enter deterministic trước recovery/yield của chiến lược mở ứng dụng.",
                 plan: "Nhấn Enter một lần rồi quan sát cửa sổ foreground mới.");
 
             return true;

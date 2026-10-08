@@ -89,7 +89,7 @@ if (-not $readiness.passed) {
     Write-Host ""
     Write-Host "Regression readiness has not passed. Desktop benchmark will not run." -ForegroundColor Yellow
     Write-Host "See: $(Join-Path $OutputDirectory '03-readiness.json')"
-    exit 2
+    throw "Regression readiness did not pass; see 03-readiness.json"
 }
 
 Write-Host "[4/6] Prepare all external benchmark cases..."
@@ -123,12 +123,11 @@ Write-Host ""
 
 if (-not $suite.completed -or $suite.completedCases -ne $suite.plannedCases -or $suite.readyForIndependentEvaluationCases -ne $suite.plannedCases) {
     Write-Host "Suite is not ready for independent evaluation." -ForegroundColor Yellow
-    exit 3
+    throw "Suite is not ready for independent evaluation"
 }
 
 Write-Host "Execution suite completed. Next step: independently review evidence for each case; this script intentionally does not self-grade PASS." -ForegroundColor Green
 $benchmarkOutcome = "SUCCEEDED"
-exit 0
 } catch {
     $errorRecord = $_
     $responseBody = $null
@@ -158,7 +157,7 @@ exit 0
     } | ConvertTo-Json -Depth 8 | Set-Content (Join-Path $runFolder "error-details.json") -Encoding UTF8
     Write-Host "Benchmark FAILED: $($errorRecord.Exception.Message)" -ForegroundColor Red
     if ($responseBody) { Write-Host "Server response: $responseBody" -ForegroundColor Yellow }
-    exit 1
+    $benchmarkOutcome = "FAILED"
 } finally {
     # Recorder is best effort; preserve original benchmark outcome if evidence export fails.
     try {
@@ -198,7 +197,11 @@ exit 0
         Compress-Archive -LiteralPath $runFolder -DestinationPath $zipPath -Force -ErrorAction Stop
         Write-Host "DIAGNOSTIC ZIP: $zipPath" -ForegroundColor Cyan
         Write-Host "Open folder: $reportsRoot" -ForegroundColor Cyan
+        try { Set-Content -LiteralPath (Join-Path $reportsRoot "LATEST-ZIP.txt") -Value $zipPath -Encoding UTF8 } catch {}
     } catch {
         Write-Warning "ZIP packaging failed; uncompressed run remains at $runFolder. $($_.Exception.Message)"
     }
 }
+
+if ($benchmarkOutcome -ne "SUCCEEDED") { exit 1 }
+exit 0

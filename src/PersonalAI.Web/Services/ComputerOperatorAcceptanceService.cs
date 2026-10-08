@@ -250,6 +250,11 @@ public sealed class ComputerOperatorAcceptanceService(
 
         RunCheck(
             checks,
+            "v4.9.2.1 latest benchmark execution trả đúng lần chạy mới nhất và giữ VERIFY/RECOVERY metrics",
+            CheckExternalBenchmarkLatestExecutionContract);
+
+        RunCheck(
+            checks,
             "v4.9.3 independent benchmark evaluation không dùng task completed làm PASS một mình",
             CheckExternalBenchmarkIndependentEvaluationContract);
 
@@ -3008,6 +3013,84 @@ public sealed class ComputerOperatorAcceptanceService(
             readyWhenFailuresRecovered &&
             ComputerOperatorExternalBenchmarkRunner.HardTimeoutSeconds >= 120,
             "External benchmark runner chưa khóa confirmation/interactive desktop hoặc VERIFY/RECOVERY readiness semantics chưa đúng.");
+    }
+
+    private static void CheckExternalBenchmarkLatestExecutionContract()
+    {
+        var store =
+            new ComputerOperatorExternalBenchmarkExecutionStore();
+
+        var started =
+            DateTimeOffset.UtcNow.AddSeconds(-10);
+
+        store.Record(
+            new PersonalAI.Web.Evaluation.Benchmarks.ComputerOperatorExternalBenchmarkExecutionResult(
+                Version: "acceptance",
+                WorkspaceId: PersonalWorkspaceIds.PersonalAi,
+                CaseId: "latest-case",
+                Title: "Latest case",
+                ExpectedEffect: "first",
+                StartedAtUtc: started,
+                CompletedAtUtc: started.AddSeconds(2),
+                TaskCompleted: true,
+                WithinStepBudget: true,
+                ReadyForIndependentEvaluation: true,
+                MaximumSteps: 24,
+                RecordedSteps: 4,
+                ObservationCount: 6,
+                ActionCount: 4,
+                Summary: "first",
+                Provider: "local",
+                Model: "acceptance",
+                DurationMilliseconds: 2000,
+                VerifiedActionCount: 3,
+                VerificationFailureCount: 0,
+                VerificationInconclusiveCount: 1,
+                RecoveryCount: 0));
+
+        store.Record(
+            new PersonalAI.Web.Evaluation.Benchmarks.ComputerOperatorExternalBenchmarkExecutionResult(
+                Version: "acceptance",
+                WorkspaceId: PersonalWorkspaceIds.PersonalAi,
+                CaseId: "latest-case",
+                Title: "Latest case",
+                ExpectedEffect: "second",
+                StartedAtUtc: started.AddSeconds(3),
+                CompletedAtUtc: started.AddSeconds(6),
+                TaskCompleted: true,
+                WithinStepBudget: true,
+                ReadyForIndependentEvaluation: true,
+                MaximumSteps: 24,
+                RecordedSteps: 7,
+                ObservationCount: 11,
+                ActionCount: 7,
+                Summary: "second",
+                Provider: "local",
+                Model: "acceptance",
+                DurationMilliseconds: 3000,
+                VerifiedActionCount: 5,
+                VerificationFailureCount: 1,
+                VerificationInconclusiveCount: 2,
+                RecoveryCount: 1));
+
+        var latest =
+            store.GetLatest(
+                "latest-case");
+
+        var missing =
+            store.GetLatest(
+                "missing-case");
+
+        Require(
+            latest is not null &&
+            latest.Summary == "second" &&
+            latest.ExpectedEffect == "second" &&
+            latest.VerifiedActionCount == 5 &&
+            latest.VerificationFailureCount == 1 &&
+            latest.VerificationInconclusiveCount == 2 &&
+            latest.RecoveryCount == 1 &&
+            missing is null,
+            "Latest benchmark execution phải trả đúng lần chạy mới nhất, giữ nguyên VERIFY/RECOVERY metrics và trả null cho case chưa chạy.");
     }
 
     private static void CheckExternalBenchmarkIndependentEvaluationContract()

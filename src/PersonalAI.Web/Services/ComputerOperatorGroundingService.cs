@@ -144,6 +144,16 @@ public sealed class ComputerOperatorGroundingService(
                 "OCR phát hiện nhiều phần tử trùng nhãn; không được fallback sang tọa độ planner.");
         }
 
+        if (IsOcrWindowConflict(ocrReason))
+        {
+            return new(
+                ComputerOperatorGroundingStatuses.Stale,
+                proposed,
+                0,
+                evidence,
+                "Cửa sổ OCR không khớp target của quyết định; phải re-observe, không fallback sang visual coordinates.");
+        }
+
         if (deterministicTextSurface)
         {
             return Unavailable(
@@ -190,6 +200,9 @@ public sealed class ComputerOperatorGroundingService(
         HasUsablePlannerBox(decision) &&
         double.IsFinite(decision.Confidence) &&
         decision.Confidence >= MinimumPlannerVisualConfidence;
+
+    internal static bool IsOcrWindowConflict(string? reason) =>
+        reason?.StartsWith("OCR_WINDOW_CONFLICT:", StringComparison.Ordinal) == true;
 
     internal static bool IsAmbiguousOcrReason(string? reason) =>
         reason?.StartsWith("OCR_AMBIGUOUS:", StringComparison.Ordinal) == true;

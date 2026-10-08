@@ -70,7 +70,9 @@ public sealed class ComputerOperatorGroundingService(
 
         if (string.IsNullOrWhiteSpace(proposed.TargetLabel))
         {
-            if (HasUsablePlannerBox(proposed))
+            // An unlabeled box has no semantic corroboration. Require the
+            // same minimum confidence as the visual fallback path.
+            if (CanUsePlannerVisualFallback(proposed, deterministicTextSurface))
             {
                 evidence.Add(
                     new(
@@ -89,7 +91,7 @@ public sealed class ComputerOperatorGroundingService(
             return Unavailable(
                 proposed,
                 evidence,
-                "Không có semantic label hoặc bbox hợp lệ để grounding.");
+                "Không có semantic label và planner bbox chưa đủ điều kiện visual grounding an toàn.");
         }
 
         if (ocrActionPlanner.TryGroundTarget(

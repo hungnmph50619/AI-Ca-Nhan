@@ -346,6 +346,8 @@ public sealed class ComputerOperatorTaskService(
             0;
         var resumeAssessmentPending =
             resumableCheckpoint is not null;
+        string? lastGroundingFailureKey = null;
+        var repeatedGroundingFailureCount = 0;
 
         try
         {
@@ -1498,6 +1500,12 @@ public sealed class ComputerOperatorTaskService(
                     }
                 }
 
+                if (!IsClickAction(decision.Action))
+                {
+                    lastGroundingFailureKey = null;
+                    repeatedGroundingFailureCount = 0;
+                }
+
                 if (IsClickAction(decision.Action))
                 {
                     var clickGrounding =
@@ -1525,6 +1533,21 @@ public sealed class ComputerOperatorTaskService(
 
                     if (!grounding.Resolved)
                     {
+                        var failureKey = BuildGroundingFailureKey(
+                            sceneFingerprint, decision, grounding.Status);
+                        repeatedGroundingFailureCount =
+                            failureKey == lastGroundingFailureKey
+                                ? repeatedGroundingFailureCount + 1
+                                : 1;
+                        lastGroundingFailureKey = failureKey;
+
+                        if (repeatedGroundingFailureCount >= 3)
+                        {
+                            var detail = $"Grounding thất bại {repeatedGroundingFailureCount} lần trên cùng scene/target/status; dừng thử lại cho tới khi có bằng chứng mới. {grounding.Reason}";
+                            progress.Block(detail);
+                            return Finish(false, detail);
+                        }
+
                         taskHistory.Add(
                             $"TARGET-GROUNDING-REPLAN: status={grounding.Status}; target='{decision.TargetLabel}'; {grounding.Reason}");
 
@@ -1537,6 +1560,9 @@ public sealed class ComputerOperatorTaskService(
                             linked.Token);
                         continue;
                     }
+
+                    lastGroundingFailureKey = null;
+                    repeatedGroundingFailureCount = 0;
 
                     decision =
                         grounding.Decision;
@@ -4148,6 +4174,17 @@ public sealed class ComputerOperatorTaskService(
         return keys.Contains("CTRL") &&
                keys.Contains("A");
     }
+
+    internal static string BuildGroundingFailureKey(
+        string sceneFingerprint,
+        DesktopOperatorDecision decision,
+        string status) =>
+        string.Join("|",
+            sceneFingerprint,
+            decision.Action,
+            decision.TargetElementId,
+            decision.TargetLabel,
+            status);
 
     private static bool IsClickAction(
         string action) =>

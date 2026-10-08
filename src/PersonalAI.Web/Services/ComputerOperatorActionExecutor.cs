@@ -228,6 +228,17 @@ public sealed class ComputerOperatorActionExecutor(
             point.DesktopY,
             "click");
 
+        // Do not execute an image-grounded click against a different window.
+        // The topmost window may have changed since the frame was captured.
+        if (!string.IsNullOrWhiteSpace(decision.CoordinateWindowId) &&
+            !targetWindow.WindowId.Equals(
+                decision.CoordinateWindowId,
+                StringComparison.OrdinalIgnoreCase))
+        {
+            throw new ToolExecutionInputException(
+                "Cửa sổ tại điểm click không khớp cửa sổ đã grounding; cần quan sát lại trước khi click.");
+        }
+
         _ = computer.SmoothMoveCursor(
             point.DesktopX,
             point.DesktopY,

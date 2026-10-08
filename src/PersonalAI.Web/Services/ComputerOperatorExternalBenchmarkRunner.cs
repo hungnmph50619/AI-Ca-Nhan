@@ -59,7 +59,7 @@ public sealed class ComputerOperatorExternalBenchmarkRunner(
 
         var isolationResult =
             await isolation.PrepareAsync(
-                scenario.Id,
+                scenario.CaseId,
                 cancellationToken);
 
         if (!isolationResult.Ready)

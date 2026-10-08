@@ -75,4 +75,8 @@ public sealed record ComputerOperatorExternalBenchmarkEvaluationResult(
     string EvidenceSummary,
     bool Passed,
     string Status,
-    string EvaluationMode);
+    string EvaluationMode,
+    int VerifiedActionCount = 0,
+    int VerificationFailureCount = 0,
+    int VerificationInconclusiveCount = 0,
+    int RecoveryCount = 0);

@@ -101,7 +101,10 @@ public sealed class ComputerOperatorExternalBenchmarkRunner(
             IsReadyForIndependentEvaluation(
                 result.Completed,
                 recordedSteps,
-                scenario.MaximumSteps);
+                scenario.MaximumSteps,
+                result.VerifiedActionCount,
+                result.VerificationFailureCount,
+                result.RecoveryCount);
 
         var execution =
             new ComputerOperatorExternalBenchmarkExecutionResult(
@@ -122,7 +125,11 @@ public sealed class ComputerOperatorExternalBenchmarkRunner(
             result.Summary,
             result.Provider,
             result.Model,
-            stopwatch.Elapsed.TotalMilliseconds);
+            stopwatch.Elapsed.TotalMilliseconds,
+            result.VerifiedActionCount,
+            result.VerificationFailureCount,
+            result.VerificationInconclusiveCount,
+            result.RecoveryCount);
 
         executions.Record(
             execution);
@@ -133,20 +140,32 @@ public sealed class ComputerOperatorExternalBenchmarkRunner(
     internal static bool IsReadyForIndependentEvaluationForAcceptance(
         bool taskCompleted,
         int recordedSteps,
-        int maximumSteps) =>
+        int maximumSteps,
+        int verifiedActionCount = 1,
+        int verificationFailureCount = 0,
+        int recoveryCount = 0) =>
         IsReadyForIndependentEvaluation(
             taskCompleted,
             recordedSteps,
-            maximumSteps);
+            maximumSteps,
+            verifiedActionCount,
+            verificationFailureCount,
+            recoveryCount);
 
     private static bool IsReadyForIndependentEvaluation(
         bool taskCompleted,
         int recordedSteps,
-        int maximumSteps) =>
+        int maximumSteps,
+        int verifiedActionCount,
+        int verificationFailureCount,
+        int recoveryCount) =>
         taskCompleted &&
         maximumSteps > 0 &&
         recordedSteps >= 0 &&
-        recordedSteps <= maximumSteps;
+        recordedSteps <= maximumSteps &&
+        verifiedActionCount > 0 &&
+        verificationFailureCount >= 0 &&
+        recoveryCount >= verificationFailureCount;
 
     internal static void EnsureConfirmedForAcceptance(
         bool confirmed) =>

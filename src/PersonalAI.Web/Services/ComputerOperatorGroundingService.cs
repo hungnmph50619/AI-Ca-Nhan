@@ -134,7 +134,7 @@ public sealed class ComputerOperatorGroundingService(
                 0,
                 ocrReason));
 
-        if (ocrReason.StartsWith("OCR_AMBIGUOUS:", StringComparison.Ordinal))
+        if (IsAmbiguousOcrReason(ocrReason))
         {
             return new(
                 ComputerOperatorGroundingStatuses.Ambiguous,
@@ -190,6 +190,9 @@ public sealed class ComputerOperatorGroundingService(
         HasUsablePlannerBox(decision) &&
         double.IsFinite(decision.Confidence) &&
         decision.Confidence >= MinimumPlannerVisualConfidence;
+
+    internal static bool IsAmbiguousOcrReason(string? reason) =>
+        reason?.StartsWith("OCR_AMBIGUOUS:", StringComparison.Ordinal) == true;
 
     internal static bool PlannerBoxAgreesWithOcr(
         DesktopOperatorDecision planner,

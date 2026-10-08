@@ -10,12 +10,26 @@ if (-not $ConfirmDesktopActions) {
     throw "Benchmark will control the real desktop. Re-run with -ConfirmDesktopActions after closing sensitive data and preparing to observe the screen."
 }
 
+# Keep every run in one predictable, user-facing location.
+$benchmarkStartedAt = Get-Date
+$runId = "TEST-" + $benchmarkStartedAt.ToString("yyyyMMdd-HHmmss") + "-" + [guid]::NewGuid().ToString("N").Substring(0, 6)
+$reportsRoot = Join-Path (Split-Path -Parent $PSScriptRoot) "BENCHMARK-REPORTS"
+$runFolder = Join-Path $reportsRoot $runId
+$evidenceFolder = Join-Path $runFolder "visual-evidence"
+New-Item -ItemType Directory -Force -Path $runFolder | Out-Null
 if ([string]::IsNullOrWhiteSpace($OutputDirectory)) {
-    $timestamp = Get-Date -Format "yyyyMMdd-HHmmss"
-    $OutputDirectory = Join-Path $PWD "benchmark-results\computer-operator-$timestamp"
+    $OutputDirectory = Join-Path $runFolder "benchmark-json"
 }
-
 New-Item -ItemType Directory -Force -Path $OutputDirectory | Out-Null
+$transcriptStarted = $false
+try {
+    Start-Transcript -Path (Join-Path $runFolder "powershell-transcript.txt") -Force -ErrorAction Stop | Out-Null
+    $transcriptStarted = $true
+} catch {
+    Write-Warning "Unable to start transcript: $($_.Exception.Message)"
+}
+$benchmarkOutcome = "FAILED"
+
 
 function Invoke-PersonalAiJson {
     param(
@@ -53,6 +67,7 @@ function Save-Json {
     return $path
 }
 
+try {
 Write-Host "== PersonalAI Computer Operator External Benchmark =="
 Write-Host "Base URL: $BaseUrl"
 Write-Host "Output:   $OutputDirectory"
@@ -112,4 +127,78 @@ if (-not $suite.completed -or $suite.completedCases -ne $suite.plannedCases -or 
 }
 
 Write-Host "Execution suite completed. Next step: independently review evidence for each case; this script intentionally does not self-grade PASS." -ForegroundColor Green
+$benchmarkOutcome = "SUCCEEDED"
 exit 0
+} catch {
+    $errorRecord = $_
+    $responseBody = $null
+    if ($errorRecord.ErrorDetails -and $errorRecord.ErrorDetails.Message) {
+        $responseBody = [string]$errorRecord.ErrorDetails.Message
+    } elseif ($errorRecord.Exception.Response) {
+        try {
+            $stream = $errorRecord.Exception.Response.GetResponseStream()
+            if ($stream) {
+                $reader = New-Object System.IO.StreamReader($stream)
+                try { $responseBody = $reader.ReadToEnd() } finally { $reader.Dispose() }
+            }
+        } catch { $responseBody = "Could not extract HTTP response body: $($_.Exception.Message)" }
+    }
+    $httpStatus = $null
+    if ($errorRecord.Exception.Response) {
+        try { $httpStatus = [int]$errorRecord.Exception.Response.StatusCode } catch {}
+    }
+    @{
+        runId = $runId
+        timestampUtc = [DateTime]::UtcNow.ToString("o")
+        message = [string]$errorRecord.Exception.Message
+        category = [string]$errorRecord.CategoryInfo.Category
+        scriptStackTrace = [string]$errorRecord.ScriptStackTrace
+        httpStatus = $httpStatus
+        responseBody = $responseBody
+    } | ConvertTo-Json -Depth 8 | Set-Content (Join-Path $runFolder "error-details.json") -Encoding UTF8
+    Write-Host "Benchmark FAILED: $($errorRecord.Exception.Message)" -ForegroundColor Red
+    if ($responseBody) { Write-Host "Server response: $responseBody" -ForegroundColor Yellow }
+    exit 1
+} finally {
+    # Recorder is best effort; preserve original benchmark outcome if evidence export fails.
+    try {
+        $sourceEvidence = Join-Path (Split-Path -Parent $PSScriptRoot) "benchmark-results\operator-diagnostics"
+        if (Test-Path $sourceEvidence) {
+            $recent = @(Get-ChildItem -LiteralPath $sourceEvidence -Directory -ErrorAction Stop |
+                Where-Object { $_.LastWriteTime -ge $benchmarkStartedAt.AddMinutes(-2) })
+            if ($recent.Count -gt 0) {
+                New-Item -ItemType Directory -Force -Path $evidenceFolder | Out-Null
+                foreach ($item in $recent) {
+                    Copy-Item -LiteralPath $item.FullName -Destination (Join-Path $evidenceFolder $item.Name) -Recurse -Force -ErrorAction Stop
+                }
+            }
+        }
+    } catch {
+        [string]$_.Exception.Message | Set-Content (Join-Path $runFolder "evidence-export-warning.txt") -Encoding UTF8
+    }
+    try {
+        $commitHash = $null
+        try { $commitHash = (& git -C (Split-Path -Parent $PSScriptRoot) rev-parse HEAD 2>$null | Select-Object -First 1) } catch {}
+        @{
+            runId = $runId
+            startedAt = $benchmarkStartedAt.ToString("o")
+            endedAt = (Get-Date).ToString("o")
+            outcome = $benchmarkOutcome
+            repositoryCommit = $commitHash
+            outputDirectory = $OutputDirectory
+            evidenceRuns = @(if (Test-Path $evidenceFolder) { Get-ChildItem $evidenceFolder -Directory | Select-Object -ExpandProperty Name })
+            notice = "Evidence runs are selected by modification time and might include other overlapping executions."
+        } | ConvertTo-Json -Depth 8 | Set-Content (Join-Path $runFolder "manifest.json") -Encoding UTF8
+    } catch { Write-Warning "Could not save benchmark manifest: $($_.Exception.Message)" }
+    if ($transcriptStarted) {
+        try { Stop-Transcript | Out-Null } catch {}
+    }
+    try {
+        $zipPath = Join-Path $reportsRoot ($runId + ".zip")
+        Compress-Archive -LiteralPath $runFolder -DestinationPath $zipPath -Force -ErrorAction Stop
+        Write-Host "DIAGNOSTIC ZIP: $zipPath" -ForegroundColor Cyan
+        Write-Host "Open folder: $reportsRoot" -ForegroundColor Cyan
+    } catch {
+        Write-Warning "ZIP packaging failed; uncompressed run remains at $runFolder. $($_.Exception.Message)"
+    }
+}

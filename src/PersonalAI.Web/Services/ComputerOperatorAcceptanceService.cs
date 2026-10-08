@@ -2383,6 +2383,19 @@ public sealed class ComputerOperatorAcceptanceService(
             "Grounding phải nhận diện mục tiêu UIA và không hạ cấp thành pixel click.");
 
         Require(
+            ComputerOperatorGroundingService.ClassifyOcrGroundingFailure(
+                "OCR_AMBIGUOUS: multiple text matches") ==
+                ComputerOperatorGroundingStatuses.Ambiguous &&
+            ComputerOperatorGroundingService.ClassifyOcrGroundingFailure(
+                "OCR_WINDOW_CONFLICT: wrong foreground") ==
+                ComputerOperatorGroundingStatuses.Stale &&
+            ComputerOperatorGroundingService.ClassifyOcrGroundingFailure(
+                "OCR grounding unavailable") is null &&
+            ComputerOperatorGroundingService.ClassifyOcrGroundingFailure(
+                null) is null,
+            "OCR classification chỉ chặn fallback khi có mâu thuẫn rõ ràng.");
+
+        Require(
             ComputerOperatorGroundingService.IsAmbiguousOcrReason(
                 "OCR_AMBIGUOUS: multiple text matches") &&
             !ComputerOperatorGroundingService.IsAmbiguousOcrReason(

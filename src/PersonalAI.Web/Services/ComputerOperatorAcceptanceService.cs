@@ -2356,6 +2356,12 @@ public sealed class ComputerOperatorAcceptanceService(
                 deterministicTextSurface: true) &&
             !ComputerOperatorGroundingService.CanUsePlannerVisualFallbackForAcceptance(
                 decision with { Confidence = 0.60 },
+                deterministicTextSurface: false) &&
+            ComputerOperatorGroundingService.CanUsePlannerVisualFallbackForAcceptance(
+                decision with { TargetLabel = string.Empty },
+                deterministicTextSurface: false) &&
+            !ComputerOperatorGroundingService.CanUsePlannerVisualFallbackForAcceptance(
+                decision with { TargetLabel = string.Empty, Confidence = 0.60 },
                 deterministicTextSurface: false),
             "Unified Grounding Contract phải cho phép nguồn planner visual độc lập khi đủ mạnh nhưng vẫn fail-closed trên deterministic text surface hoặc confidence thấp.");
     }

@@ -764,6 +764,15 @@ public sealed class DesktopLocalActionPlanner
 
         if (typedMarkerIndex >= 0)
         {
+            // Preserve the established contract when a concrete WIN+S search
+            // session boundary exists: the local typed marker belongs to that
+            // session and is sufficient evidence.
+            if (searchSessionStart >= 0)
+                return true;
+
+            // If Search was already foreground and no WIN+S boundary exists,
+            // require authoritative type-text verification from the current
+            // task before advancing to Enter.
             var verifiedTypeTextBeforeMarker =
                 currentSearchHistory.LastIndexOf(
                     "verified type-text|",

@@ -119,7 +119,11 @@ public sealed class ComputerOperatorExternalBenchmarkEvaluationService(
             evidenceSummary,
             passed,
             passed ? "pass" : "fail",
-            "independent-evidence-review");
+            "independent-evidence-review",
+            execution.VerifiedActionCount,
+            execution.VerificationFailureCount,
+            execution.VerificationInconclusiveCount,
+            execution.RecoveryCount);
     }
 
     internal static bool DeterminePassedForAcceptance(

@@ -256,10 +256,38 @@ public sealed class ComputerOperatorVisualEvidenceRecorder(
         }
     }
 
-    private static string GetRootDirectory() =>
-        Path.Combine(
+    private static string GetRootDirectory()
+    {
+        // dotnet run, IDE launches and service hosting can use different
+        // working directories. Anchor evidence to the repository when present.
+        foreach (var candidate in new[]
+        {
+            Environment.CurrentDirectory,
+            AppContext.BaseDirectory
+        })
+        {
+            var directory = new DirectoryInfo(candidate);
+            while (directory is not null)
+            {
+                if (File.Exists(Path.Combine(
+                        directory.FullName,
+                        "scripts",
+                        "run_computer_operator_external_benchmark.ps1")))
+                {
+                    return Path.Combine(
+                        directory.FullName,
+                        GetRelativeRootForAcceptance());
+                }
+
+                directory = directory.Parent;
+            }
+        }
+
+        // Non-repository deployments still retain a valid local location.
+        return Path.Combine(
             Environment.CurrentDirectory,
             GetRelativeRootForAcceptance());
+    }
 
     private static string GetRunDirectory(
         string runId) =>

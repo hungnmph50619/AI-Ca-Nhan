@@ -3033,11 +3033,44 @@ public sealed class ComputerOperatorAcceptanceService(
                     withinStepBudget: true,
                     expectedEffectObserved: true);
 
+        var rejectedWithoutVerifiedAction =
+            !ComputerOperatorExternalBenchmarkEvaluationService
+                .DeterminePassedForAcceptance(
+                    taskCompleted: true,
+                    withinStepBudget: true,
+                    expectedEffectObserved: true,
+                    verifiedActionCount: 0,
+                    verificationFailureCount: 0,
+                    recoveryCount: 0);
+
+        var rejectedWhenFailureNotRecovered =
+            !ComputerOperatorExternalBenchmarkEvaluationService
+                .DeterminePassedForAcceptance(
+                    taskCompleted: true,
+                    withinStepBudget: true,
+                    expectedEffectObserved: true,
+                    verifiedActionCount: 5,
+                    verificationFailureCount: 2,
+                    recoveryCount: 1);
+
+        var passedWhenFailureRecovered =
+            ComputerOperatorExternalBenchmarkEvaluationService
+                .DeterminePassedForAcceptance(
+                    taskCompleted: true,
+                    withinStepBudget: true,
+                    expectedEffectObserved: true,
+                    verifiedActionCount: 5,
+                    verificationFailureCount: 2,
+                    recoveryCount: 2);
+
         Require(
             !onlyTaskCompleted &&
             !observedButExecutionInvalid &&
-            passed,
-            "Independent benchmark evaluation phải cần cả execution hợp lệ và evidence xác nhận expected effect.");
+            passed &&
+            rejectedWithoutVerifiedAction &&
+            rejectedWhenFailureNotRecovered &&
+            passedWhenFailureRecovered,
+            "Independent benchmark evaluation phải cần execution hợp lệ, external evidence và VERIFY/RECOVERY metrics nhất quán.");
     }
 
     private static void CheckRuntimeStateIntelligenceContract()

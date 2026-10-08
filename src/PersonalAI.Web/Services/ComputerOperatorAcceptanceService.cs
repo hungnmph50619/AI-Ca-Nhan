@@ -255,6 +255,11 @@ public sealed class ComputerOperatorAcceptanceService(
 
         RunCheck(
             checks,
+            "v4.9.2.2 external benchmark suite chạy tuần tự đủ scenario, bắt buộc confirmation và không tự chấm independent PASS",
+            CheckExternalBenchmarkSuiteContract);
+
+        RunCheck(
+            checks,
             "v4.9.3 independent benchmark evaluation không dùng task completed làm PASS một mình",
             CheckExternalBenchmarkIndependentEvaluationContract);
 
@@ -3091,6 +3096,60 @@ public sealed class ComputerOperatorAcceptanceService(
             latest.RecoveryCount == 1 &&
             missing is null,
             "Latest benchmark execution phải trả đúng lần chạy mới nhất, giữ nguyên VERIFY/RECOVERY metrics và trả null cho case chưa chạy.");
+    }
+
+    private static void CheckExternalBenchmarkSuiteContract()
+    {
+        var scenarios =
+            new AcceptanceExternalBenchmarkScenarioPackService();
+
+        var caseRunner =
+            new AcceptanceExternalBenchmarkRunner();
+
+        var suite =
+            new ComputerOperatorExternalBenchmarkSuiteRunner(
+                scenarios,
+                caseRunner);
+
+        var rejectedWithoutConfirmation = false;
+        try
+        {
+            _ =
+                suite.RunAsync(
+                        new(
+                            Confirmed: false))
+                    .GetAwaiter()
+                    .GetResult();
+        }
+        catch (PersonalAI.Web.Evaluation.Benchmarks.ComputerOperatorExternalBenchmarkValidationException)
+        {
+            rejectedWithoutConfirmation = true;
+        }
+
+        var result =
+            suite.RunAsync(
+                    new(
+                        Confirmed: true))
+                .GetAwaiter()
+                .GetResult();
+
+        var expectedCaseIds =
+            scenarios.GetPack()
+                .Scenarios
+                .Select(item =>
+                    $"external-{item.Id}")
+                .ToArray();
+
+        Require(
+            rejectedWithoutConfirmation &&
+            result.Completed &&
+            result.PlannedCases == expectedCaseIds.Length &&
+            result.CompletedCases == expectedCaseIds.Length &&
+            result.ReadyForIndependentEvaluationCases == expectedCaseIds.Length &&
+            caseRunner.CaseIds.SequenceEqual(expectedCaseIds) &&
+            result.Results.All(item =>
+                item.ReadyForIndependentEvaluation),
+            "External benchmark suite phải bắt buộc confirmation, chạy tuần tự đủ scenario theo thứ tự pack và chỉ tổng hợp execution readiness.");
     }
 
     private static void CheckExternalBenchmarkIndependentEvaluationContract()
@@ -14724,6 +14783,61 @@ STEP 3: VERIFIED press-hotkey|keys=WIN+S|effect=windows search xuất hiện và
 
         public IReadOnlyList<ComputerOperatorTimingProfile> GetProfiles() =>
             [profile];
+    }
+
+    private sealed class AcceptanceExternalBenchmarkScenarioPackService
+        : IComputerOperatorBenchmarkScenarioPackService
+    {
+        public PersonalAI.Web.Evaluation.Benchmarks.ComputerOperatorBenchmarkScenarioPack GetPack() =>
+            PersonalAI.Web.Evaluation.Benchmarks.ComputerOperatorBenchmarkScenarioCatalog.GetPack();
+
+        public ComputerOperatorBenchmarkScenarioPackInstallResult Install(
+            bool confirmed) =>
+            throw new NotSupportedException();
+    }
+
+    private sealed class AcceptanceExternalBenchmarkRunner
+        : IComputerOperatorExternalBenchmarkRunner
+    {
+        public List<string> CaseIds { get; } = [];
+
+        public Task<PersonalAI.Web.Evaluation.Benchmarks.ComputerOperatorExternalBenchmarkExecutionResult> RunCaseAsync(
+            PersonalAI.Web.Evaluation.Benchmarks.RunComputerOperatorExternalBenchmarkCaseRequest request,
+            CancellationToken cancellationToken = default)
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+
+            CaseIds.Add(
+                request.CaseId);
+
+            var now =
+                DateTimeOffset.UtcNow;
+
+            return Task.FromResult(
+                new PersonalAI.Web.Evaluation.Benchmarks.ComputerOperatorExternalBenchmarkExecutionResult(
+                    Version: "acceptance",
+                    WorkspaceId: PersonalWorkspaceIds.PersonalAi,
+                    CaseId: request.CaseId,
+                    Title: request.CaseId,
+                    ExpectedEffect: "verified",
+                    StartedAtUtc: now.AddMilliseconds(-10),
+                    CompletedAtUtc: now,
+                    TaskCompleted: true,
+                    WithinStepBudget: true,
+                    ReadyForIndependentEvaluation: true,
+                    MaximumSteps: 32,
+                    RecordedSteps: 4,
+                    ObservationCount: 5,
+                    ActionCount: 4,
+                    Summary: "acceptance",
+                    Provider: "local",
+                    Model: "acceptance",
+                    DurationMilliseconds: 10,
+                    VerifiedActionCount: 4,
+                    VerificationFailureCount: 0,
+                    VerificationInconclusiveCount: 0,
+                    RecoveryCount: 0));
+        }
     }
 
     private sealed class AcceptanceWorkspaceContextAccessor(

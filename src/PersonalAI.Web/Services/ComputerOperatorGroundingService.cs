@@ -134,6 +134,16 @@ public sealed class ComputerOperatorGroundingService(
                 0,
                 ocrReason));
 
+        if (ocrReason.StartsWith("OCR_AMBIGUOUS:", StringComparison.Ordinal))
+        {
+            return new(
+                ComputerOperatorGroundingStatuses.Ambiguous,
+                proposed,
+                0,
+                evidence,
+                "OCR phát hiện nhiều phần tử trùng nhãn; không được fallback sang tọa độ planner.");
+        }
+
         if (deterministicTextSurface)
         {
             return Unavailable(

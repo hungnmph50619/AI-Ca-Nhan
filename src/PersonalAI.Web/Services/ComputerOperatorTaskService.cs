@@ -23,7 +23,11 @@ public sealed record ComputerOperatorTaskResult(
     string Summary,
     IReadOnlyList<ComputerOperatorTaskStep> Steps,
     string Provider,
-    string Model);
+    string Model,
+    int VerifiedActionCount = 0,
+    int VerificationFailureCount = 0,
+    int VerificationInconclusiveCount = 0,
+    int RecoveryCount = 0);
 
 public sealed record VerificationCaptureContext(
     string CaptureScope,
@@ -315,6 +319,10 @@ public sealed class ComputerOperatorTaskService(
         var lowConfidenceCount = 0;
         var blockedReplanCount = 0;
         var keyboardRepairFailures = 0;
+        var verifiedActionCount = 0;
+        var verificationFailureCount = 0;
+        var verificationInconclusiveCount = 0;
+        var recoveryCount = 0;
         var keyboardResetRequired = false;
         var keyboardSelectionReady = false;
         var plannerResilienceState =
@@ -2472,6 +2480,7 @@ public sealed class ComputerOperatorTaskService(
                 if (!verification.Verified &&
                     verification.Inconclusive)
                 {
+                    verificationInconclusiveCount++;
                     if (verification.VisualTransitionObserved)
                     {
                         recentlyConsumedActionSignature =
@@ -2528,6 +2537,9 @@ public sealed class ComputerOperatorTaskService(
 
                 if (!verification.Verified)
                 {
+                    verificationFailureCount++;
+                    recoveryCount++;
+
                     if (IsKeyboardAction(decision.Action))
                     {
                         keyboardRepairFailures++;
@@ -2720,6 +2732,8 @@ public sealed class ComputerOperatorTaskService(
                 {
                     keyboardRepairFailures = 0;
                 }
+
+                verifiedActionCount++;
 
                 recentlyConsumedActionSignature =
                     actionSignature;
@@ -2957,7 +2971,11 @@ public sealed class ComputerOperatorTaskService(
                 summary,
                 steps.ToArray(),
                 vision.Name,
-                vision.Model);
+                vision.Model,
+                verifiedActionCount,
+                verificationFailureCount,
+                verificationInconclusiveCount,
+                recoveryCount);
         }
     }
 

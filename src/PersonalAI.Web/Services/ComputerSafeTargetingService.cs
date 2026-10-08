@@ -37,6 +37,13 @@ public sealed class ComputerSafeTargetingService(
             throw new ToolExecutionInputException(
                 "Bounding box click quá rộng để xác định một phần tử; cần grounding lại mục tiêu nhỏ hơn.");
 
+        // If the planner supplied both a point and an element box, they
+        // must agree. A disagreement means the target was not grounded
+        // consistently; never silently click the box center.
+        if (!PlannerPointMatchesBox(decision, space))
+            throw new ToolExecutionInputException(
+                "Điểm click và bounding box mục tiêu không khớp; cần xác định lại phần tử trước khi click.");
+
         var safeRequest = BuildSafeCenterRequest(
             decision,
             space);
@@ -49,6 +56,41 @@ public sealed class ComputerSafeTargetingService(
             safePoint,
             true,
             BuildBoxDetail(decision, space));
+    }
+
+    internal static bool PlannerPointMatchesBox(
+        DesktopOperatorDecision decision,
+        string space)
+    {
+        // Zero is the default for omitted coordinates, so require a
+        // positive pair before interpreting the point as an additional cue.
+        double x, y, left, top, width, height;
+        if (space == ComputerCoordinateSpaces.ImagePixel)
+        {
+            if (decision.ImageX <= 0 && decision.ImageY <= 0)
+                return true;
+            x = decision.ImageX;
+            y = decision.ImageY;
+            left = decision.BoxLeft;
+            top = decision.BoxTop;
+            width = decision.BoxWidth;
+            height = decision.BoxHeight;
+        }
+        else
+        {
+            if (decision.NormalizedX <= 0 && decision.NormalizedY <= 0)
+                return true;
+            x = decision.NormalizedX;
+            y = decision.NormalizedY;
+            left = decision.BoxNormalizedLeft;
+            top = decision.BoxNormalizedTop;
+            width = decision.BoxNormalizedWidth;
+            height = decision.BoxNormalizedHeight;
+        }
+
+        return double.IsFinite(x) && double.IsFinite(y) &&
+               x >= left && x <= left + width &&
+               y >= top && y <= top + height;
     }
 
     internal static bool IsElementSizedBox(

@@ -6624,15 +6624,15 @@ public sealed class ComputerOperatorAcceptanceService(
     {
         var patterns = new[] { "Invoke", "Value" };
         Require(
-            ComputerOperatorTaskService.IsEligibleUiaInvokeTarget(
+            ComputerOperatorGroundingService.IsEligibleUiaInvokeTarget(
                 "live-token", false, true, patterns, "live-token") &&
-            !ComputerOperatorTaskService.IsEligibleUiaInvokeTarget(
+            !ComputerOperatorGroundingService.IsEligibleUiaInvokeTarget(
                 "old-token", false, true, patterns, "live-token") &&
-            !ComputerOperatorTaskService.IsEligibleUiaInvokeTarget(
+            !ComputerOperatorGroundingService.IsEligibleUiaInvokeTarget(
                 "live-token", true, true, patterns, "live-token") &&
-            !ComputerOperatorTaskService.IsEligibleUiaInvokeTarget(
+            !ComputerOperatorGroundingService.IsEligibleUiaInvokeTarget(
                 "live-token", false, false, patterns, "live-token") &&
-            !ComputerOperatorTaskService.IsEligibleUiaInvokeTarget(
+            !ComputerOperatorGroundingService.IsEligibleUiaInvokeTarget(
                 "live-token", false, true, new[] { "Value" }, "live-token"),
             "UIA Invoke phải từ chối token sai, phần tử ẩn, disabled hoặc thiếu InvokePattern.");
     }

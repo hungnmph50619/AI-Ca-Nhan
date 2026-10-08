@@ -23,6 +23,7 @@ public static class EvaluationEndpoints
         services.AddSingleton<IComputerOperatorExternalBenchmarkService, ComputerOperatorExternalBenchmarkService>();
         services.AddSingleton<IComputerOperatorExternalBenchmarkExecutionStore, ComputerOperatorExternalBenchmarkExecutionStore>();
         services.AddScoped<IComputerOperatorExternalBenchmarkRunner, ComputerOperatorExternalBenchmarkRunner>();
+        services.AddScoped<IComputerOperatorExternalBenchmarkSuiteRunner, ComputerOperatorExternalBenchmarkSuiteRunner>();
         services.AddScoped<IComputerOperatorExternalBenchmarkEvaluationService, ComputerOperatorExternalBenchmarkEvaluationService>();
         services.AddSingleton<IComputerOperatorBenchmarkScenarioPackService, ComputerOperatorBenchmarkScenarioPackService>();
         services.AddSingleton<IComputerOperatorRegressionLabService, ComputerOperatorRegressionLabService>();
@@ -148,6 +149,38 @@ public static class EvaluationEndpoints
                         ? "execution-completed-awaiting-independent-evaluation"
                         : "execution-incomplete",
                     result.TaskCompleted
+                        ? AuditResults.Succeeded
+                        : AuditResults.Failed);
+
+                return Results.Ok(
+                    result);
+            }
+            catch (ComputerOperatorExternalBenchmarkValidationException exception)
+            {
+                return Results.BadRequest(
+                    new ApiError(exception.Message));
+            }
+        });
+
+        endpoints.MapPost("/api/evaluation/computer-operator-benchmark/run-suite", async (
+            RunComputerOperatorExternalBenchmarkSuiteRequest request,
+            IComputerOperatorExternalBenchmarkSuiteRunner runner,
+            IAuditRecorder audit,
+            CancellationToken cancellationToken) =>
+        {
+            try
+            {
+                var result =
+                    await runner.RunAsync(
+                        request,
+                        cancellationToken);
+
+                audit.Record(
+                    AuditAgents.User,
+                    "evaluation.computer-operator-benchmark.run-suite",
+                    $"benchmark-pack:{result.Version}",
+                    $"completed:{result.CompletedCases}/{result.PlannedCases};ready:{result.ReadyForIndependentEvaluationCases}",
+                    result.Completed
                         ? AuditResults.Succeeded
                         : AuditResults.Failed);
 

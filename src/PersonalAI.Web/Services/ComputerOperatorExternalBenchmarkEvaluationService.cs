@@ -101,7 +101,10 @@ public sealed class ComputerOperatorExternalBenchmarkEvaluationService(
             DeterminePassed(
                 execution.TaskCompleted,
                 execution.WithinStepBudget,
-                request.ExpectedEffectObserved);
+                request.ExpectedEffectObserved,
+                execution.VerifiedActionCount,
+                execution.VerificationFailureCount,
+                execution.RecoveryCount);
 
         return new(
             PersonalAiRelease.Version,
@@ -122,17 +125,29 @@ public sealed class ComputerOperatorExternalBenchmarkEvaluationService(
     internal static bool DeterminePassedForAcceptance(
         bool taskCompleted,
         bool withinStepBudget,
-        bool expectedEffectObserved) =>
+        bool expectedEffectObserved,
+        int verifiedActionCount = 1,
+        int verificationFailureCount = 0,
+        int recoveryCount = 0) =>
         DeterminePassed(
             taskCompleted,
             withinStepBudget,
-            expectedEffectObserved);
+            expectedEffectObserved,
+            verifiedActionCount,
+            verificationFailureCount,
+            recoveryCount);
 
     private static bool DeterminePassed(
         bool taskCompleted,
         bool withinStepBudget,
-        bool expectedEffectObserved) =>
+        bool expectedEffectObserved,
+        int verifiedActionCount,
+        int verificationFailureCount,
+        int recoveryCount) =>
         taskCompleted &&
         withinStepBudget &&
-        expectedEffectObserved;
+        expectedEffectObserved &&
+        verifiedActionCount > 0 &&
+        verificationFailureCount >= 0 &&
+        recoveryCount >= verificationFailureCount;
 }

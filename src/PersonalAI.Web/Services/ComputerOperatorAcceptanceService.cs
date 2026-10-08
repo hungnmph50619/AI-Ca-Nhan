@@ -2129,8 +2129,23 @@ public sealed class ComputerOperatorAcceptanceService(
             ComputerOperatorVerificationStatuses.Verified == "verified" &&
             ComputerOperatorVerificationStatuses.Failed == "failed" &&
             ComputerOperatorVerificationStatuses.Wait == "wait" &&
-            ComputerOperatorVerificationStatuses.SemanticRequired == "semantic-required",
-            "Unified Verification Engine phải là authority duy nhất và có đúng bốn trạng thái chuẩn.");
+            ComputerOperatorVerificationStatuses.SemanticRequired == "semantic-required" &&
+            ComputerOperatorVerificationEngine.ClassifyAdaptiveVerification(
+                "click-left", AdaptiveGeminiDecision.SkipAndPass) ==
+                ComputerOperatorVerificationStatuses.SemanticRequired &&
+            ComputerOperatorVerificationEngine.ClassifyAdaptiveVerification(
+                "press-key", AdaptiveGeminiDecision.SkipAndPass) ==
+                ComputerOperatorVerificationStatuses.SemanticRequired &&
+            ComputerOperatorVerificationEngine.ClassifyAdaptiveVerification(
+                "wait", AdaptiveGeminiDecision.SkipAndPass) ==
+                ComputerOperatorVerificationStatuses.Verified &&
+            ComputerOperatorVerificationEngine.ClassifyAdaptiveVerification(
+                "click-left", AdaptiveGeminiDecision.SkipAndFail) ==
+                ComputerOperatorVerificationStatuses.Failed &&
+            ComputerOperatorVerificationEngine.ClassifyAdaptiveVerification(
+                "click-left", AdaptiveGeminiDecision.CallGemini) ==
+                ComputerOperatorVerificationStatuses.SemanticRequired,
+            "Unified Verification Engine phải giữ bốn trạng thái và không xác minh click/key chỉ bằng visual pass.");
     }
 
     private static void CheckVerificationConflictRequiresReobserve()

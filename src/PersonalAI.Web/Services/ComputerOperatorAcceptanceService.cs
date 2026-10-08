@@ -2366,6 +2366,13 @@ public sealed class ComputerOperatorAcceptanceService(
             "Unified Grounding Contract phải cho phép nguồn planner visual độc lập khi đủ mạnh nhưng vẫn fail-closed trên deterministic text surface hoặc confidence thấp.");
 
         Require(
+            ComputerOperatorGroundingService.IsAmbiguousOcrReason(
+                "OCR_AMBIGUOUS: multiple text matches") &&
+            !ComputerOperatorGroundingService.IsAmbiguousOcrReason(
+                "OCR grounding unavailable"),
+            "OCR target mơ hồ phải chặn visual fallback thay vì coi như OCR unavailable.");
+
+        Require(
             ComputerOperatorGroundingService.PlannerBoxAgreesWithOcr(
                 decision,
                 decision with { BoxLeft = 120, BoxTop = 95 }) &&

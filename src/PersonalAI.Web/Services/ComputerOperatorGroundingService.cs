@@ -109,6 +109,8 @@ public sealed class ComputerOperatorGroundingService(
 
             if (HasUsablePlannerBox(proposed))
             {
+                var comparable = proposed.CoordinateSpace == ComputerCoordinateSpaces.ImagePixel &&
+                    grounded.CoordinateSpace == ComputerCoordinateSpaces.ImagePixel;
                 var agrees = PlannerBoxAgreesWithOcr(proposed, grounded);
                 evidence.Add(
                     new(
@@ -117,7 +119,19 @@ public sealed class ComputerOperatorGroundingService(
                         proposed.Confidence,
                         agrees
                             ? "Planner visual box giao với bbox OCR đã xác minh."
-                            : "Planner visual box không giao bbox OCR; bỏ tọa độ planner và chỉ sử dụng OCR."));
+                            : comparable
+                                ? "Planner box không giao bbox OCR; đây là xung đột danh tính mục tiêu."
+                                : "Không thể so sánh bbox planner/OCR khác hệ tọa độ."));
+
+                if (comparable && !agrees)
+                {
+                    return new(
+                        ComputerOperatorGroundingStatuses.Ambiguous,
+                        proposed,
+                        0,
+                        evidence,
+                        "OCR và planner xác định hai vùng mục tiêu khác nhau; cần quan sát lại, không click theo nguồn nào.");
+                }
             }
 
             return Resolved(

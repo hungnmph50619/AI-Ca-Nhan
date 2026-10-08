@@ -4690,8 +4690,13 @@ public sealed class ComputerOperatorAcceptanceService(
                 resumable is not null &&
                 resumable.Status ==
                     ComputerOperatorCheckpointStatuses.Interrupted &&
-                resumable.LastObservedStateFingerprint == stateB,
-                "Checkpoint sau restart phải giữ state fingerprint đã quan sát và chuyển running thành interrupted.");
+                resumable.LastObservedStateFingerprint == stateB &&
+                resumable.VerifiedMilestones.Count == 2 &&
+                resumable.VerifiedMilestones.Contains("A done") &&
+                resumable.VerifiedMilestones.Contains("B done") &&
+                resumable.GoalProgress == 0.50 &&
+                resumable.LastVerifiedAction == "strategy-a-b",
+                "Checkpoint sau restart phải giữ nguyên A/B, tiến độ, action đã xác minh và scene fingerprint; running thành interrupted.");
 
             var resolver =
                 new ComputerOperatorPartialResumeResolver(

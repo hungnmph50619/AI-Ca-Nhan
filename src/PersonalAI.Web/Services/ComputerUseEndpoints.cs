@@ -28,6 +28,7 @@ public static class ComputerUseEndpoints
         services.AddSingleton<IComputerOperatorObservationEvidenceAggregator, ComputerOperatorObservationEvidenceAggregator>();
         services.AddSingleton<IComputerOperatorCaptureService, ComputerOperatorCaptureService>();
         services.AddSingleton<IComputerOperatorVisualEvidenceRecorder, ComputerOperatorVisualEvidenceRecorder>();
+        services.AddSingleton<IComputerOperatorBenchmarkIsolationService, ComputerOperatorBenchmarkIsolationService>();
         services.AddSingleton<IFlaUiTextAccessibilityBackend, FlaUiTextAccessibilityBackend>();
         services.AddSingleton<ITextAccessibilityBackend, CompositeTextAccessibilityBackend>();
         services.AddSingleton<ITextClipboardWriter, WindowsTextClipboardWriter>();

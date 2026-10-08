@@ -14,6 +14,7 @@ public sealed class ComputerOperatorExternalBenchmarkRunner(
     IComputerOperatorExternalBenchmarkService benchmark,
     IComputerOperatorTaskService computerOperator,
     IComputerUseService computer,
+    IComputerOperatorBenchmarkIsolationService isolation,
     ComputerOperatorProgressStore progress,
     IWorkspaceContextAccessor workspace,
     IComputerOperatorExternalBenchmarkExecutionStore executions)
@@ -56,6 +57,30 @@ public sealed class ComputerOperatorExternalBenchmarkRunner(
                 status);
         }
 
+        var isolationResult =
+            await isolation.PrepareAsync(
+                scenario.Id,
+                cancellationToken);
+
+        if (!isolationResult.Ready)
+        {
+            throw new ComputerOperatorExternalBenchmarkValidationException(
+                $"Benchmark precondition chưa sạch: {isolationResult.Detail}");
+        }
+
+        var runToken =
+            BuildRunToken();
+
+        var materializedGoal =
+            MaterializeRunText(
+                scenario.Goal,
+                runToken);
+
+        var materializedExpectedEffect =
+            MaterializeRunText(
+                scenario.ExpectedEffect,
+                runToken);
+
         var startedAt =
             DateTimeOffset.UtcNow;
 
@@ -76,7 +101,7 @@ public sealed class ComputerOperatorExternalBenchmarkRunner(
         {
             result =
                 await computerOperator.RunAsync(
-                    scenario.Goal,
+                    materializedGoal,
                     timeout.Token);
         }
         catch (OperationCanceledException)
@@ -112,7 +137,7 @@ public sealed class ComputerOperatorExternalBenchmarkRunner(
                 workspace.CurrentWorkspaceId,
                 scenario.CaseId,
                 scenario.Title,
-                scenario.ExpectedEffect,
+                materializedExpectedEffect,
                 startedAt,
             DateTimeOffset.UtcNow,
             result.Completed,
@@ -184,6 +209,39 @@ public sealed class ComputerOperatorExternalBenchmarkRunner(
                 InteractiveSession: interactiveSession,
                 AvailableCapabilities: Array.Empty<string>(),
                 Limitations: Array.Empty<string>()));
+    }
+
+    internal static string MaterializeRunTextForAcceptance(
+        string value,
+        string runToken) =>
+        MaterializeRunText(
+            value,
+            runToken);
+
+    private static string BuildRunToken() =>
+        DateTimeOffset.UtcNow.ToString(
+            "yyyyMMddHHmmssfff",
+            System.Globalization.CultureInfo.InvariantCulture);
+
+    private static string MaterializeRunText(
+        string value,
+        string runToken)
+    {
+        const string marker =
+            "PersonalAI benchmark text entry";
+
+        if (string.IsNullOrWhiteSpace(value) ||
+            !value.Contains(
+                marker,
+                StringComparison.Ordinal))
+        {
+            return value;
+        }
+
+        return value.Replace(
+            marker,
+            $"{marker} {runToken}",
+            StringComparison.Ordinal);
     }
 
     private static void EnsureConfirmed(

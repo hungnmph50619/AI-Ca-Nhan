@@ -380,6 +380,16 @@ public sealed class ComputerOperatorAcceptanceService(
 
         RunCheck(
             checks,
+            "external benchmark dùng run-token riêng để dữ liệu text cũ không tạo false-positive",
+            CheckExternalBenchmarkRunTokenIsolation);
+
+        RunCheck(
+            checks,
+            "benchmark isolation bảo vệ Notepad không thuộc benchmark khỏi reset tự động",
+            CheckExternalBenchmarkProtectsUnrelatedNotepad);
+
+        RunCheck(
+            checks,
             "AI Operator Console chỉ coi BN_CLICKED thật là lệnh nút, không dừng vì focus notification",
             CheckOperatorConsoleIgnoresNonClickButtonNotifications);
 
@@ -5593,6 +5603,50 @@ public sealed class ComputerOperatorAcceptanceService(
             "Tool Registry phải expose Computer Operator tổng quát và không được expose league.practice.open cho provider-native function planning.");
     }
 
+
+    private static void CheckExternalBenchmarkRunTokenIsolation()
+    {
+        const string source =
+            "Mở Notepad, nhập chính xác dòng 'PersonalAI benchmark text entry', xác nhận dòng chữ đã xuất hiện.";
+
+        var first =
+            ComputerOperatorExternalBenchmarkRunner
+                .MaterializeRunTextForAcceptance(
+                    source,
+                    "RUN-A");
+
+        var second =
+            ComputerOperatorExternalBenchmarkRunner
+                .MaterializeRunTextForAcceptance(
+                    source,
+                    "RUN-B");
+
+        Require(
+            first.Contains(
+                "PersonalAI benchmark text entry RUN-A",
+                StringComparison.Ordinal) &&
+            second.Contains(
+                "PersonalAI benchmark text entry RUN-B",
+                StringComparison.Ordinal) &&
+            !first.Equals(
+                second,
+                StringComparison.Ordinal),
+            "Mỗi run benchmark text-entry phải materialize payload riêng; text từ run cũ không được thỏa case mới.");
+    }
+
+    private static void CheckExternalBenchmarkProtectsUnrelatedNotepad()
+    {
+        Require(
+            ComputerOperatorBenchmarkIsolationService
+                .IsProtectedNotepadForAcceptance(
+                    "notepad",
+                    "notes.txt - Notepad") &&
+            !ComputerOperatorBenchmarkIsolationService
+                .IsProtectedNotepadForAcceptance(
+                    "notepad",
+                    "*PersonalAI benchmark text entry - Notepad"),
+            "Isolation chỉ được coi Notepad có marker benchmark là disposable; tài liệu Notepad khác phải được bảo vệ.");
+    }
 
     private static void CheckOperatorConsoleIgnoresNonClickButtonNotifications()
     {

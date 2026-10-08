@@ -734,6 +734,76 @@ public static class ComputerOperatorAdaptiveWaitPolicy
         };
     }
 
+    public static AdaptiveWaitPolicy RefineForExpectedEffect(
+        string? action,
+        string? expectedEffect,
+        AdaptiveWaitPolicy policy)
+    {
+        ArgumentNullException.ThrowIfNull(policy);
+
+        var normalizedAction =
+            (action ?? string.Empty)
+                .Trim()
+                .ToLowerInvariant();
+
+        if (normalizedAction is not
+            ("click-left" or
+             "double-click-left" or
+             "press-key" or
+             "press-hotkey"))
+        {
+            return policy;
+        }
+
+        var effect =
+            (expectedEffect ?? string.Empty)
+                .Trim()
+                .ToLowerInvariant();
+
+        var delayedTransitionExpected =
+            effect.Contains("open") ||
+            effect.Contains("launch") ||
+            effect.Contains("start") ||
+            effect.Contains("appear") ||
+            effect.Contains("ready") ||
+            effect.Contains("loading") ||
+            effect.Contains("load") ||
+            effect.Contains("window") ||
+            effect.Contains("application") ||
+            effect.Contains("process") ||
+            effect.Contains("mở") ||
+            effect.Contains("khởi động") ||
+            effect.Contains("xuất hiện") ||
+            effect.Contains("sẵn sàng") ||
+            effect.Contains("đang tải") ||
+            effect.Contains("cửa sổ") ||
+            effect.Contains("ứng dụng") ||
+            effect.Contains("tiến trình");
+
+        if (delayedTransitionExpected)
+            return policy;
+
+        var shortStall =
+            normalizedAction is "press-key" or "press-hotkey"
+                ? TimeSpan.FromSeconds(3)
+                : TimeSpan.FromSeconds(4);
+
+        var shortAbsolute =
+            normalizedAction is "press-key" or "press-hotkey"
+                ? TimeSpan.FromSeconds(8)
+                : TimeSpan.FromSeconds(10);
+
+        return new(
+            policy.PollInterval,
+            policy.StallTimeout <= shortStall
+                ? policy.StallTimeout
+                : shortStall,
+            policy.AbsoluteTimeout <= shortAbsolute
+                ? policy.AbsoluteTimeout
+                : shortAbsolute,
+            policy.MinimumProgressConfidence);
+    }
+
     public static AdaptiveProgressSample FromDesktopObservation(
         DesktopFastObservation observation,
         DesktopFrameDifference? difference,

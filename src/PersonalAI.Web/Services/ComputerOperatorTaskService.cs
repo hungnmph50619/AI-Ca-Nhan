@@ -1112,7 +1112,9 @@ public sealed class ComputerOperatorTaskService(
                         decision.Confidence);
                 }
 
-                latestGoalProgress = decision.GoalProgress;
+                latestGoalProgress = PreserveCheckpointGoalProgress(
+                    latestGoalProgress,
+                    decision.GoalProgress);
 
                 progress.Add(
                     "goal-progress",
@@ -4185,6 +4187,18 @@ public sealed class ComputerOperatorTaskService(
 
         return keys.Contains("CTRL") &&
                keys.Contains("A");
+    }
+
+    internal static double PreserveCheckpointGoalProgress(
+        double previousProgress,
+        double proposedProgress)
+    {
+        var previous = double.IsFinite(previousProgress)
+            ? Math.Clamp(previousProgress, 0d, 1d)
+            : 0d;
+        return double.IsFinite(proposedProgress)
+            ? Math.Max(previous, Math.Clamp(proposedProgress, 0d, 1d))
+            : previous;
     }
 
     internal static string BuildGroundingFailureKey(

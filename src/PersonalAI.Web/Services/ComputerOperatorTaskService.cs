@@ -1474,15 +1474,12 @@ public sealed class ComputerOperatorTaskService(
                         StringComparison.OrdinalIgnoreCase))
                 {
                     var matchedNodes = structuredScene.Nodes
-                        .Where(node =>
-                            string.Equals(
-                                node.Token,
-                                decision.TargetElementId,
-                                StringComparison.Ordinal) &&
-                            !node.IsOffscreen &&
-                            node.IsEnabled &&
-                            node.Patterns.Any(pattern =>
-                                string.Equals(pattern, "Invoke", StringComparison.OrdinalIgnoreCase)))
+                        .Where(node => IsEligibleUiaInvokeTarget(
+                            node.Token,
+                            node.IsOffscreen,
+                            node.IsEnabled,
+                            node.Patterns,
+                            decision.TargetElementId))
                         .Take(2)
                         .ToArray();
 
@@ -3069,6 +3066,19 @@ public sealed class ComputerOperatorTaskService(
                 recoveryCount);
         }
     }
+
+    internal static bool IsEligibleUiaInvokeTarget(
+        string? token,
+        bool isOffscreen,
+        bool isEnabled,
+        IReadOnlyCollection<string> patterns,
+        string? expectedToken) =>
+        !string.IsNullOrWhiteSpace(expectedToken) &&
+        string.Equals(token, expectedToken, StringComparison.Ordinal) &&
+        !isOffscreen &&
+        isEnabled &&
+        patterns.Any(pattern => string.Equals(
+            pattern, "Invoke", StringComparison.OrdinalIgnoreCase));
 
     private sealed record ActionVerificationResult(
         bool Verified,

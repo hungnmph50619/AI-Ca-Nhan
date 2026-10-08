@@ -102,7 +102,11 @@ public sealed class ToolOrchestrationService : IToolOrchestrationService
             _planningAuthority.Classify(
                 currentIntent);
 
-        if (!authority.AllowToolOrchestration)
+        var allDefinitions =
+            _registry.GetAll();
+
+        if (!authority.AllowToolOrchestration &&
+            !authority.PreferTaskEngine)
         {
             _logger.LogInformation(
                 "Tool orchestration skipped by planning authority. Authority={Authority}; Signals={Signals}; Reason={Reason}",
@@ -113,19 +117,54 @@ public sealed class ToolOrchestrationService : IToolOrchestrationService
             return null;
         }
 
-        var exposure =
-            _exposurePolicy.Select(
-                currentIntent,
-                _registry.GetAll(),
-                maximumTools: 16);
-        var definitions =
-            exposure.Tools;
+        IReadOnlyList<ToolDefinition> definitions;
+        ToolExposureSelection? exposure =
+            null;
 
-        _logger.LogInformation(
-            "Provider tool exposure: {Selected}/{Considered}; {Reason}",
-            exposure.SelectedTools,
-            exposure.ConsideredTools,
-            exposure.Reason);
+        if (authority.PreferTaskEngine)
+        {
+            definitions =
+                allDefinitions
+                    .Where(definition =>
+                        (definition.Capabilities ?? Array.Empty<string>())
+                            .Contains(
+                                "multi-step",
+                                StringComparer.OrdinalIgnoreCase) &&
+                        (definition.Capabilities ?? Array.Empty<string>())
+                            .Contains(
+                                "orchestrator",
+                                StringComparer.OrdinalIgnoreCase))
+                    .OrderBy(
+                        definition => definition.Name,
+                        StringComparer.OrdinalIgnoreCase)
+                    .ToArray();
+
+            _logger.LogInformation(
+                "Planning authority selected bounded multi-step orchestrator exposure. Authority={Authority}; Signals={Signals}; Tools={Tools}; Reason={Reason}",
+                authority.Authority,
+                authority.SequentialSignalCount,
+                string.Join(",", definitions.Select(item => item.Name)),
+                authority.Reason);
+        }
+        else
+        {
+            exposure =
+                _exposurePolicy.Select(
+                    currentIntent,
+                    allDefinitions,
+                    maximumTools: 16);
+            definitions =
+                exposure.Tools;
+        }
+
+        if (exposure is not null)
+        {
+            _logger.LogInformation(
+                "Provider tool exposure: {Selected}/{Considered}; {Reason}",
+                exposure.SelectedTools,
+                exposure.ConsideredTools,
+                exposure.Reason);
+        }
 
         if (TryGetVisualLocateTarget(messages, out var visualTarget))
         {

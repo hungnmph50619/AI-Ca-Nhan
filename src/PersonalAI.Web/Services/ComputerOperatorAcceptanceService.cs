@@ -6630,15 +6630,16 @@ public sealed class ComputerOperatorAcceptanceService(
                 ComputerCoordinateSpaces.ImagePixel) with
             {
                 Action = "click-left",
+                TargetLabel = "Demo",
                 CurrentSubgoal =
-                    "Mở ứng dụng từ kết quả tìm kiếm.",
+                    "Mở ứng dụng Demo từ kết quả tìm kiếm.",
                 ExpectedEffect =
                     "Ứng dụng Demo sẽ bắt đầu khởi chạy.",
                 Reason =
-                    "Click kết quả tìm kiếm để khởi chạy ứng dụng."
+                    "Click kết quả tìm kiếm để khởi chạy ứng dụng Demo."
             };
 
-        var observation =
+        var matchingObservation =
             new DesktopFastObservation(
                 ScreenChanged: true,
                 ChangeRatio: 0.14,
@@ -6650,29 +6651,67 @@ public sealed class ComputerOperatorAcceptanceService(
                 TargetMoved: false,
                 TargetMissing: false,
                 TargetLikelyOccluded: false,
-                Summary: "acceptance");
+                Summary: "acceptance",
+                ActiveProcessName: "demo",
+                ActiveWindowTitle: "Demo");
 
-        var result =
+        var mismatchObservation =
+            matchingObservation with
+            {
+                ActiveProcessName = "calculator",
+                ActiveWindowTitle = "Calculator"
+            };
+
+        var frameDifference =
+            new DesktopFrameDifference(
+                true,
+                0.14,
+                140,
+                1000,
+                0,
+                0,
+                800,
+                600,
+                20,
+                "acceptance");
+
+        var matchingResult =
             router.Route(
                 decision,
-                observation,
-                new DesktopFrameDifference(
-                    true,
-                    0.14,
-                    140,
-                    1000,
-                    0,
-                    0,
-                    800,
-                    600,
-                    20,
-                    "acceptance"));
+                matchingObservation,
+                frameDifference);
+
+        var mismatchResult =
+            router.Route(
+                decision,
+                mismatchObservation,
+                frameDifference);
 
         Require(
-            result.Route ==
+            matchingResult.Route ==
                 DesktopVerificationRoute.LocalVerified &&
-            result.Confidence >= 0.95,
-            "Launch transition vẫn bị đẩy sang semantic verifier dù local evidence đã đủ mạnh.");
+            matchingResult.Confidence >= 0.95 &&
+            mismatchResult.Route ==
+                DesktopVerificationRoute.GeminiRequired &&
+            DesktopVerificationRouter.HasExpectedApplicationIdentityMatchForAcceptance(
+                decision with
+                {
+                    TargetLabel = "Notepad",
+                    CurrentSubgoal = "Mở Notepad.",
+                    ExpectedEffect = "Ứng dụng Notepad được khởi chạy."
+                },
+                "notepad",
+                "Untitled - Notepad") &&
+            !DesktopVerificationRouter.HasExpectedApplicationIdentityMatchForAcceptance(
+                decision with
+                {
+                    TargetLabel = "Notepad",
+                    CurrentSubgoal = "Mở Notepad.",
+                    ExpectedEffect = "Ứng dụng Notepad được khởi chạy."
+                },
+                "calculator",
+                "Calculator"),
+            "Launch verification phải local PASS khi app identity khớp và chuyển semantic khi foreground là ứng dụng khác.");
     }
 
     private static void CheckGeminiPlanningRepairsOnlySafeTruncation()

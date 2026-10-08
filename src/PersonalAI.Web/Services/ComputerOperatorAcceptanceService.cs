@@ -467,6 +467,11 @@ public sealed class ComputerOperatorAcceptanceService(
 
         RunCheck(
             checks,
+            "Grounding từ chối điểm click không thuộc nút và vùng mục tiêu quá rộng",
+            CheckClickGroundingConsistency);
+
+        RunCheck(
+            checks,
             "bộ nhớ recovery chặn lặp chiến lược thất bại",
             CheckRecoveryMemory);
 
@@ -6511,6 +6516,40 @@ public sealed class ComputerOperatorAcceptanceService(
             imageY > decision.BoxTop &&
             imageY < decision.BoxTop + decision.BoxHeight,
             "Safe targeting trên màn hình âm tạo điểm click ngoài bounding box.");
+    }
+
+    private static void CheckClickGroundingConsistency()
+    {
+        var frame = new DesktopScreenshotFrame(
+            Array.Empty<byte>(), 0, 0, 1000, 800,
+            DateTimeOffset.UtcNow);
+        var decision = BuildClickDecision(
+            ComputerCoordinateSpaces.ImagePixel,
+            boxLeft: 100, boxTop: 100,
+            boxWidth: 80, boxHeight: 60);
+
+        Require(
+            ComputerSafeTargetingService.IsElementSizedBox(
+                decision, frame, ComputerCoordinateSpaces.ImagePixel),
+            "Nút kích thước bình thường bị từ chối.");
+
+        Require(
+            ComputerSafeTargetingService.PlannerPointMatchesBox(
+                decision with { ImageX = 130, ImageY = 130 },
+                ComputerCoordinateSpaces.ImagePixel),
+            "Điểm click bên trong nút bị từ chối.");
+
+        Require(
+            !ComputerSafeTargetingService.PlannerPointMatchesBox(
+                decision with { ImageX = 300, ImageY = 130 },
+                ComputerCoordinateSpaces.ImagePixel),
+            "Điểm click thuộc nút khác vẫn vượt qua Grounding.");
+
+        Require(
+            !ComputerSafeTargetingService.IsElementSizedBox(
+                decision with { BoxWidth = 900 },
+                frame, ComputerCoordinateSpaces.ImagePixel),
+            "Bounding box quá rộng vẫn vượt qua Grounding.");
     }
 
     private static void CheckRecoveryMemory()

@@ -159,24 +159,17 @@ public sealed class ComputerOperatorGroundingService(
                 0,
                 ocrReason));
 
-        if (IsAmbiguousOcrReason(ocrReason))
+        var ocrConflict = ClassifyOcrGroundingFailure(ocrReason);
+        if (ocrConflict is not null)
         {
             return new(
-                ComputerOperatorGroundingStatuses.Ambiguous,
+                ocrConflict,
                 proposed,
                 0,
                 evidence,
-                "OCR phát hiện nhiều phần tử trùng nhãn; không được fallback sang tọa độ planner.");
-        }
-
-        if (IsOcrWindowConflict(ocrReason))
-        {
-            return new(
-                ComputerOperatorGroundingStatuses.Stale,
-                proposed,
-                0,
-                evidence,
-                "Cửa sổ OCR không khớp target của quyết định; phải re-observe, không fallback sang visual coordinates.");
+                ocrConflict == ComputerOperatorGroundingStatuses.Ambiguous
+                    ? "OCR phát hiện nhiều phần tử trùng nhãn; không được fallback sang tọa độ planner."
+                    : "Cửa sổ OCR không khớp target của quyết định; phải re-observe, không fallback sang visual coordinates.");
         }
 
         if (deterministicTextSurface)
@@ -241,6 +234,14 @@ public sealed class ComputerOperatorGroundingService(
 
     internal static bool HasStructuredElementIdentity(DesktopOperatorDecision decision) =>
         !string.IsNullOrWhiteSpace(decision.TargetElementId);
+
+    // Centralize fail-closed OCR evidence classification for every fallback path.
+    internal static string? ClassifyOcrGroundingFailure(string? reason) =>
+        IsAmbiguousOcrReason(reason)
+            ? ComputerOperatorGroundingStatuses.Ambiguous
+            : IsOcrWindowConflict(reason)
+                ? ComputerOperatorGroundingStatuses.Stale
+                : null;
 
     internal static bool IsOcrWindowConflict(string? reason) =>
         reason?.StartsWith("OCR_WINDOW_CONFLICT:", StringComparison.Ordinal) == true;

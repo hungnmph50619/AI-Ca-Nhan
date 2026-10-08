@@ -68,10 +68,23 @@ public sealed class DesktopVerificationRouter
 
             if (launchTransition)
             {
+                var identity =
+                    AssessExpectedApplicationIdentity(
+                        decision,
+                        observation);
+
+                if (!identity.Matched)
+                {
+                    return new(
+                        DesktopVerificationRoute.GeminiRequired,
+                        0.0,
+                        $"Launch transition đã xảy ra nhưng app identity chưa được local evidence xác nhận. {identity.Reason}");
+                }
+
                 return new(
                     DesktopVerificationRoute.LocalVerified,
-                    0.96,
-                    "Expected effect là khởi chạy/mở ứng dụng và local evidence xác nhận transition rõ ràng: foreground đổi kèm thay đổi hình học hoặc hình ảnh.");
+                    0.98,
+                    $"Expected effect là khởi chạy/mở đúng ứng dụng; foreground transition và app identity cùng khớp. {identity.Reason}");
             }
 
             if (frameDifference?.Comparable == true &&
@@ -147,10 +160,23 @@ public sealed class DesktopVerificationRouter
         {
             if (observation.ForegroundWindowChanged)
             {
+                var identity =
+                    AssessExpectedApplicationIdentity(
+                        decision,
+                        observation);
+
+                if (identity.Matched)
+                {
+                    return new(
+                        DesktopVerificationRoute.LocalVerified,
+                        0.98,
+                        $"Foreground đã đổi sang đúng app/window identity mong đợi. {identity.Reason}");
+                }
+
                 return new(
-                    DesktopVerificationRoute.LocalVerified,
-                    0.97,
-                    "Foreground window đã thay đổi sau thao tác focus.");
+                    DesktopVerificationRoute.GeminiRequired,
+                    0.0,
+                    $"Foreground đã đổi nhưng local evidence chưa xác nhận đúng app/window identity đích. {identity.Reason}");
             }
 
             return new(
@@ -234,6 +260,133 @@ public sealed class DesktopVerificationRouter
             0.0,
             "Kết quả cần hiểu semantic; chuyển sang Gemini Vision.");
     }
+
+    internal static bool HasExpectedApplicationIdentityMatchForAcceptance(
+        DesktopOperatorDecision decision,
+        string? activeProcessName,
+        string? activeWindowTitle) =>
+        AssessExpectedApplicationIdentity(
+            decision,
+            new DesktopFastObservation(
+                ScreenChanged: true,
+                ChangeRatio: 0.1,
+                ForegroundWindowChanged: true,
+                WindowBoundsChanged: true,
+                CursorMoved: false,
+                MonitorChanged: false,
+                DpiChanged: false,
+                TargetMoved: false,
+                TargetMissing: false,
+                TargetLikelyOccluded: false,
+                Summary: "acceptance",
+                ActiveProcessName: activeProcessName,
+                ActiveWindowTitle: activeWindowTitle))
+            .Matched;
+
+    private static ApplicationIdentityAssessment AssessExpectedApplicationIdentity(
+        DesktopOperatorDecision decision,
+        DesktopFastObservation observation)
+    {
+        var expectedText =
+            NormalizeIdentityText(
+                $"{decision.TargetLabel} {decision.Query} {decision.CurrentSubgoal} {decision.ExpectedEffect}");
+
+        var identityTokens =
+            expectedText
+                .Split(
+                    ' ',
+                    StringSplitOptions.RemoveEmptyEntries |
+                    StringSplitOptions.TrimEntries)
+                .Where(token =>
+                    token.Length >= 3 &&
+                    !IdentityStopWords.Contains(token))
+                .Distinct(StringComparer.OrdinalIgnoreCase)
+                .ToArray();
+
+        if (identityTokens.Length == 0)
+        {
+            return new(
+                Matched: false,
+                "Không rút ra được app identity cụ thể từ target/intent/expected effect; cần semantic verification.");
+        }
+
+        var actualIdentity =
+            NormalizeIdentityText(
+                $"{observation.ActiveProcessName} {observation.ActiveWindowTitle}");
+
+        var matched =
+            identityTokens
+                .Where(token =>
+                    actualIdentity.Contains(
+                        token,
+                        StringComparison.OrdinalIgnoreCase))
+                .ToArray();
+
+        if (matched.Length > 0)
+        {
+            return new(
+                Matched: true,
+                $"Identity token khớp foreground hiện tại: {string.Join(",", matched.Take(3))}; process={observation.ActiveProcessName ?? "-"}; title={observation.ActiveWindowTitle ?? "-"}.");
+        }
+
+        return new(
+            Matched: false,
+            $"Expected identity tokens=[{string.Join(",", identityTokens.Take(6))}] không khớp foreground process/title hiện tại ({observation.ActiveProcessName ?? "-"} / {observation.ActiveWindowTitle ?? "-"}).");
+    }
+
+    private static string NormalizeIdentityText(
+        string? value)
+    {
+        var source =
+            (value ?? string.Empty)
+                .Normalize(
+                    System.Text.NormalizationForm.FormD);
+
+        var builder =
+            new System.Text.StringBuilder(
+                source.Length);
+
+        foreach (var character in source)
+        {
+            var category =
+                System.Globalization.CharUnicodeInfo.GetUnicodeCategory(
+                    character);
+
+            if (category ==
+                System.Globalization.UnicodeCategory.NonSpacingMark)
+            {
+                continue;
+            }
+
+            builder.Append(
+                char.IsLetterOrDigit(character)
+                    ? char.ToLowerInvariant(character)
+                    : ' ');
+        }
+
+        return builder
+            .ToString()
+            .Normalize(
+                System.Text.NormalizationForm.FormC);
+    }
+
+    private static readonly HashSet<string> IdentityStopWords =
+        new(
+            new[]
+            {
+                "app", "application", "window", "windows", "foreground",
+                "launch", "start", "open", "focus", "focused",
+                "search", "result", "results", "keyword",
+                "the", "and", "from", "into", "with", "for", "then",
+                "ung", "dung", "cua", "so", "mo", "khoi", "chay",
+                "tim", "kiem", "ket", "qua", "tu", "khoa", "phu",
+                "hop", "voi", "sau", "tren", "da", "duoc", "dung"
+            },
+            StringComparer.OrdinalIgnoreCase);
+
+    private sealed record ApplicationIdentityAssessment(
+        bool Matched,
+        string Reason);
 
     internal static bool IsBrowserLaunchMismatchForAcceptance(
         DesktopOperatorDecision decision,

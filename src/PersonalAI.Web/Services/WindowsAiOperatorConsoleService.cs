@@ -12,7 +12,7 @@ public sealed class WindowsAiOperatorConsoleService
     private readonly ComputerControlGate control;
     private readonly ILogger<WindowsAiOperatorConsoleService> logger;
     private const int CompactWidth = 460;
-    private const int CompactHeight = 190;
+    private const int CompactHeight = 132;
     private const int DetailWidth = 680;
     private const int DetailHeight = 560;
     private const int Margin = 18;
@@ -90,6 +90,7 @@ public sealed class WindowsAiOperatorConsoleService
     private volatile bool _followTail = true;
     private volatile bool _programmaticLogScroll;
     private volatile bool _expanded;
+    private string _lastAutoExpandedOperatorTerminalStatus = string.Empty;
 
     public object GetDiagnosticStatus()
     {
@@ -379,6 +380,26 @@ public sealed class WindowsAiOperatorConsoleService
                         startedTicks);
                     _userHidden = false;
                     _followTail = true;
+                    // Task mới luôn bắt đầu ở HUD nhỏ để không che desktop.
+                    _expanded = false;
+                    _lastAutoExpandedOperatorTerminalStatus = string.Empty;
+                }
+
+                // Khi task kết thúc bất thường, tự bung chi tiết đúng một lần
+                // để người dùng nhận ra ngay, nhưng vẫn cho phép thu gọn lại.
+                if (useOperator &&
+                    !operatorSnapshot.Active &&
+                    operatorSnapshot.Status is "blocked" or "stopped" &&
+                    !string.Equals(
+                        _lastAutoExpandedOperatorTerminalStatus,
+                        operatorSnapshot.Status,
+                        StringComparison.OrdinalIgnoreCase))
+                {
+                    _expanded = true;
+                    _followTail = true;
+                    _lastText = string.Empty;
+                    _lastAutoExpandedOperatorTerminalStatus =
+                        operatorSnapshot.Status;
                 }
 
                 var forceVisibleTicks = Interlocked.Read(
@@ -686,12 +707,25 @@ Ctrl + Shift + F12 để dừng khẩn cấp.
     {
         var builder = new StringBuilder();
 
+        var currentStage =
+            (snapshot.CurrentStage ?? string.Empty)
+                .Trim()
+                .ToLowerInvariant();
+
         var heading = snapshot.Status switch
         {
             "paused" => "Ⅱ AI ĐANG TẠM DỪNG",
             "completed" => "✓ AI ĐÃ HOÀN TẤT",
-            "blocked" => "⚠ AI CẦN XỬ LÝ LẠI",
+            "blocked" => "⚠ AI BỊ CHẶN",
             "stopped" => "■ AI ĐÃ DỪNG",
+            _ when snapshot.Stale => "⚠ AI CÓ THỂ ĐANG TREO",
+            _ when currentStage == "wait" => "⏳ AI ĐANG CHỜ",
+            _ when currentStage is "analyze" or "analyze-retry" or "decide" =>
+                "◌ AI ĐANG SUY NGHĨ",
+            _ when currentStage is "verify" or "verify-result" or "confidence-verify" =>
+                "✓? AI ĐANG XÁC MINH",
+            _ when currentStage is "recovery" or "recovery-plan" or "replan" =>
+                "↻ AI ĐANG PHỤC HỒI",
             _ => "● AI ĐANG THỰC HIỆN"
         };
 
@@ -709,10 +743,21 @@ Ctrl + Shift + F12 để dừng khẩn cấp.
         if (latest is not null)
             builder.AppendLine(Limit(UserFacingMessage(latest.Stage, latest.Message), 108));
 
-        if (snapshot.Stale)
-            builder.AppendLine($"⚠ Chưa có bước mới trong {snapshot.StaleSeconds}s.");
+        var lastUpdateAgo =
+            Math.Max(
+                0,
+                (DateTimeOffset.UtcNow - snapshot.UpdatedAtUtc).TotalSeconds);
 
-        builder.AppendLine("Ctrl + Shift + F12 để dừng khẩn cấp · CHI TIẾT để xem log.");
+        if (snapshot.Stale)
+        {
+            builder.AppendLine(
+                $"⚠ Không có heartbeat mới {snapshot.StaleSeconds}s · có thể đang treo.");
+        }
+        else
+        {
+            builder.AppendLine(
+                $"Heartbeat {lastUpdateAgo:0.0}s trước · Ctrl+Shift+F12 dừng · CHI TIẾT xem log.");
+        }
         return builder.ToString();
     }
 

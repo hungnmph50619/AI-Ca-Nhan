@@ -172,6 +172,12 @@ $benchmarkOutcome = "SUCCEEDED"
                 }
             }
         }
+        if (-not (Test-Path $evidenceFolder) -or
+            @(Get-ChildItem -Path $evidenceFolder -File -Recurse -ErrorAction SilentlyContinue).Count -eq 0) {
+            "No recorded images were found. Recorder might not have started or its capture failed. Source path: $sourceEvidence" |
+                Set-Content (Join-Path $runFolder "VISUAL-EVIDENCE-MISSING.txt") -Encoding UTF8
+        }
+        }
     } catch {
         [string]$_.Exception.Message | Set-Content (Join-Path $runFolder "evidence-export-warning.txt") -Encoding UTF8
     }

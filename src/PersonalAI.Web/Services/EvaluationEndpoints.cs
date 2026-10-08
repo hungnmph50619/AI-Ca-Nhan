@@ -161,6 +161,20 @@ public static class EvaluationEndpoints
             }
         });
 
+        endpoints.MapGet("/api/evaluation/computer-operator-benchmark/latest/{caseId}", (
+            string caseId,
+            IComputerOperatorExternalBenchmarkExecutionStore executions) =>
+        {
+            var result =
+                executions.GetLatest(
+                    caseId);
+
+            return result is null
+                ? Results.NotFound()
+                : Results.Ok(
+                    result);
+        });
+
         endpoints.MapPost("/api/evaluation/computer-operator-benchmark/evaluate-case", (
             EvaluateComputerOperatorExternalBenchmarkCaseRequest request,
             IComputerOperatorExternalBenchmarkEvaluationService evaluator,

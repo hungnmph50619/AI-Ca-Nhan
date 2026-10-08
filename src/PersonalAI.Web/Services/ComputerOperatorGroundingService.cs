@@ -242,7 +242,16 @@ public sealed class ComputerOperatorGroundingService(
             (long)ocr.BoxTop + ocr.BoxHeight) -
             Math.Max(planner.BoxTop, ocr.BoxTop);
 
-        return overlapWidth > 0 && overlapHeight > 0;
+        if (overlapWidth <= 0 || overlapHeight <= 0)
+            return false;
+
+        // One-pixel overlap between neighboring controls is not agreement.
+        // Compare overlap with the smaller target so OCR text inside a
+        // larger button remains valid while adjacent buttons are rejected.
+        var intersection = overlapWidth * overlapHeight;
+        var plannerArea = (long)planner.BoxWidth * planner.BoxHeight;
+        var ocrArea = (long)ocr.BoxWidth * ocr.BoxHeight;
+        return intersection >= 0.5 * Math.Min(plannerArea, ocrArea);
     }
 
     private static bool HasUsablePlannerBox(

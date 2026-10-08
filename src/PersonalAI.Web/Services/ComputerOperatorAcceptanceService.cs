@@ -2387,6 +2387,9 @@ public sealed class ComputerOperatorAcceptanceService(
                 decision with { BoxLeft = 120, BoxTop = 95 }) &&
             !ComputerOperatorGroundingService.PlannerBoxAgreesWithOcr(
                 decision,
+                decision with { BoxLeft = 199, BoxTop = 95 }) &&
+            !ComputerOperatorGroundingService.PlannerBoxAgreesWithOcr(
+                decision,
                 decision with { BoxLeft = 300, BoxTop = 95 }) &&
             !ComputerOperatorGroundingService.PlannerBoxAgreesWithOcr(
                 decision,

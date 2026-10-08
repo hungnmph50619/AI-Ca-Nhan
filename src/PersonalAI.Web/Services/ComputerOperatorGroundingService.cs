@@ -71,7 +71,7 @@ public sealed class ComputerOperatorGroundingService(
         // A proposed UIA element identity must be executed through the structured
         // route where its live token is revalidated, not downgraded to a blind
         // pixel click. Ask the planner to choose structured-invoke/reobserve.
-        if (!string.IsNullOrWhiteSpace(proposed.TargetElementId))
+        if (HasStructuredElementIdentity(proposed))
         {
             return Unavailable(
                 proposed,
@@ -225,6 +225,9 @@ public sealed class ComputerOperatorGroundingService(
         HasUsablePlannerBox(decision) &&
         double.IsFinite(decision.Confidence) &&
         decision.Confidence >= MinimumPlannerVisualConfidence;
+
+    internal static bool HasStructuredElementIdentity(DesktopOperatorDecision decision) =>
+        !string.IsNullOrWhiteSpace(decision.TargetElementId);
 
     internal static bool IsOcrWindowConflict(string? reason) =>
         reason?.StartsWith("OCR_WINDOW_CONFLICT:", StringComparison.Ordinal) == true;

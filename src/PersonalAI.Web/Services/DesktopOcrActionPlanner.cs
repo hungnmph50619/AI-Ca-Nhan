@@ -241,6 +241,15 @@ public sealed class DesktopOcrActionPlanner(
         var window =
             state.ForegroundWindow;
 
+        if (!string.IsNullOrWhiteSpace(proposed.CoordinateWindowId) &&
+            !proposed.CoordinateWindowId.Equals(
+                window.WindowId,
+                StringComparison.OrdinalIgnoreCase))
+        {
+            reason = "OCR_WINDOW_CONFLICT: cửa sổ OCR foreground khác cửa sổ grounded target; cần quan sát lại.";
+            return false;
+        }
+
         var budget =
             budgetPolicy.ForPlanning(
                 state,

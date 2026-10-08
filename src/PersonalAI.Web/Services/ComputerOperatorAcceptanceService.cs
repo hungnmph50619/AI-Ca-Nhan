@@ -477,6 +477,11 @@ public sealed class ComputerOperatorAcceptanceService(
 
         RunCheck(
             checks,
+            "UIA Invoke chỉ nhận token hợp lệ, hiển thị và có capability",
+            CheckUiaInvokeEligibility);
+
+        RunCheck(
+            checks,
             "bộ nhớ recovery chặn lặp chiến lược thất bại",
             CheckRecoveryMemory);
 
@@ -6613,6 +6618,23 @@ public sealed class ComputerOperatorAcceptanceService(
             !ComputerOperatorClickGroundingCoordinator.SameWindowGeometry(
                 before, before with { Width = before.Width + 50 }),
             "Cửa sổ thay đổi hình học nhưng Grounding vẫn giữ tọa độ cũ.");
+    }
+
+    private static void CheckUiaInvokeEligibility()
+    {
+        var patterns = new[] { "Invoke", "Value" };
+        Require(
+            ComputerOperatorTaskService.IsEligibleUiaInvokeTarget(
+                "live-token", false, true, patterns, "live-token") &&
+            !ComputerOperatorTaskService.IsEligibleUiaInvokeTarget(
+                "old-token", false, true, patterns, "live-token") &&
+            !ComputerOperatorTaskService.IsEligibleUiaInvokeTarget(
+                "live-token", true, true, patterns, "live-token") &&
+            !ComputerOperatorTaskService.IsEligibleUiaInvokeTarget(
+                "live-token", false, false, patterns, "live-token") &&
+            !ComputerOperatorTaskService.IsEligibleUiaInvokeTarget(
+                "live-token", false, true, new[] { "Value" }, "live-token"),
+            "UIA Invoke phải từ chối token sai, phần tử ẩn, disabled hoặc thiếu InvokePattern.");
     }
 
     private static void CheckRecoveryMemory()

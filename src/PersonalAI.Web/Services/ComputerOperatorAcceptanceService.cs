@@ -472,6 +472,11 @@ public sealed class ComputerOperatorAcceptanceService(
 
         RunCheck(
             checks,
+            "Grounding từ chối tọa độ cũ khi cửa sổ di chuyển",
+            CheckGroundingRejectsMovedWindow);
+
+        RunCheck(
+            checks,
             "bộ nhớ recovery chặn lặp chiến lược thất bại",
             CheckRecoveryMemory);
 
@@ -6579,6 +6584,25 @@ public sealed class ComputerOperatorAcceptanceService(
                 decision with { BoxWidth = 900 },
                 frame, ComputerCoordinateSpaces.ImagePixel),
             "Bounding box quá rộng vẫn vượt qua Grounding.");
+    }
+
+    private static void CheckGroundingRejectsMovedWindow()
+    {
+        var before = new ComputerWindowInfo(
+            "0x1234", "Acceptance", "acceptance",
+            10, true, 100, 40, 800, 400);
+
+        Require(
+            ComputerOperatorClickGroundingCoordinator.SameWindowGeometry(
+                before, before with { }),
+            "Cửa sổ không đổi bị từ chối nhầm.");
+
+        Require(
+            !ComputerOperatorClickGroundingCoordinator.SameWindowGeometry(
+                before, before with { Left = before.Left + 30 }) &&
+            !ComputerOperatorClickGroundingCoordinator.SameWindowGeometry(
+                before, before with { Width = before.Width + 50 }),
+            "Cửa sổ thay đổi hình học nhưng Grounding vẫn giữ tọa độ cũ.");
     }
 
     private static void CheckRecoveryMemory()

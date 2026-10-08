@@ -226,6 +226,19 @@ public sealed class ComputerOperatorGroundingService(
         double.IsFinite(decision.Confidence) &&
         decision.Confidence >= MinimumPlannerVisualConfidence;
 
+    internal static bool IsEligibleUiaInvokeTarget(
+        string? token,
+        bool isOffscreen,
+        bool isEnabled,
+        IReadOnlyCollection<string> patterns,
+        string? expectedToken) =>
+        !string.IsNullOrWhiteSpace(expectedToken) &&
+        string.Equals(token, expectedToken, StringComparison.Ordinal) &&
+        !isOffscreen &&
+        isEnabled &&
+        patterns.Any(pattern => string.Equals(
+            pattern, "Invoke", StringComparison.OrdinalIgnoreCase));
+
     internal static bool HasStructuredElementIdentity(DesktopOperatorDecision decision) =>
         !string.IsNullOrWhiteSpace(decision.TargetElementId);
 

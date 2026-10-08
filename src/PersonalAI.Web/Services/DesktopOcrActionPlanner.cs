@@ -279,6 +279,15 @@ public sealed class DesktopOcrActionPlanner(
                     observation,
                     candidateLabel);
 
+            // Ambiguous local text is conflicting evidence, not an OCR outage.
+            // Do not try shorter synonyms or fall through to visual guessing.
+            if (resolution.Status == DesktopOcrResolutionStatus.Ambiguous)
+            {
+                reason =
+                    $"OCR_AMBIGUOUS: có nhiều phần tử khớp nhãn '{candidateLabel}'; cần quan sát hoặc làm rõ mục tiêu.";
+                return false;
+            }
+
             fused =
                 visualResolver.Resolve(
                     resolution,

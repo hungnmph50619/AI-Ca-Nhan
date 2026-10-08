@@ -102,11 +102,32 @@ public sealed class DesktopLocalActionPlanner
             return false;
         }
 
+        var shellSearchActive =
+            IsWindowsSearchSurface(
+                state.ForegroundWindow);
+
+        if (shellSearchActive &&
+            HasTypedTargetInCurrentSearchSession(
+                taskHistory,
+                target))
+        {
+            decision = Build(
+                action: "press-key",
+                key: "ENTER",
+                currentSubgoal: $"Mở {target} từ kết quả Windows Search.",
+                expectedEffect: $"Windows Search khởi chạy ứng dụng phù hợp với từ khóa {target}.",
+                reason: "Local planner có bằng chứng xác minh rằng query đã có trong Windows Search; ưu tiên Enter deterministic trước recovery/yield của chiến lược mở ứng dụng.",
+                plan: "Nhấn Enter một lần rồi quan sát cửa sổ foreground mới.");
+
+            return true;
+        }
+
         if (ShouldYieldOpenApplicationStrategy(
                 taskHistory))
         {
-            // Loop guard đã loại chiến lược mở/focus ứng dụng trên scene hiện tại.
-            // Trả quyền cho OCR/Gemini thay vì tái tạo cùng Win+S/focus action.
+            // Yield chỉ áp dụng cho việc tái tạo chiến lược mở/focus ứng dụng.
+            // Nếu Search đã có query được xác minh thì nhánh deterministic Enter
+            // ở trên phải được phép tiến bước trước guard này.
             return false;
         }
 
@@ -139,10 +160,6 @@ public sealed class DesktopLocalActionPlanner
 
             return true;
         }
-
-        var shellSearchActive =
-            IsWindowsSearchSurface(
-                state.ForegroundWindow);
 
         var hasVerifiedSearchLaunch =
             HasVerifiedSearchLaunchAttempt(
@@ -184,22 +201,6 @@ public sealed class DesktopLocalActionPlanner
             // Đã chờ launch có giới hạn nhưng vẫn chưa có foreground/cửa sổ đích.
             // Nhường quyền cho OCR/Gemini/recovery thay vì quay lại Windows Search.
             return false;
-        }
-
-        if (shellSearchActive &&
-            HasTypedTargetInCurrentSearchSession(
-                taskHistory,
-                target))
-        {
-            decision = Build(
-                action: "press-key",
-                key: "ENTER",
-                currentSubgoal: $"Mở {target} từ kết quả Windows Search.",
-                expectedEffect: $"Windows Search khởi chạy ứng dụng phù hợp với từ khóa {target}.",
-                reason: "Local planner đã có bằng chứng từ lịch sử rằng từ khóa tìm ứng dụng đã được nhập; bước generic tiếp theo là Enter.",
-                plan: "Nhấn Enter một lần rồi quan sát cửa sổ foreground mới.");
-
-            return true;
         }
 
         if (shellSearchActive)

@@ -747,17 +747,31 @@ public sealed class DesktopLocalActionPlanner
             "verified press-hotkey|keys=win+s",
             StringComparison.Ordinal);
 
-        if (searchSessionStart < 0)
-            return false;
+        // The task can begin with Windows Search already foreground, or Search
+        // can become foreground through a route whose open action is not
+        // represented by the exact WIN+S history marker. In that case, a
+        // verified LOCAL-SHELL-TYPED marker in the current task is still
+        // authoritative evidence that the query is already present.
+        var currentSearchHistory =
+            searchSessionStart >= 0
+                ? normalized[searchSessionStart..]
+                : normalized;
 
-        var currentSearchHistory = normalized[searchSessionStart..];
         var typedMarker = $"local-shell-typed:{target}".ToLowerInvariant();
+        var typedMarkerIndex = currentSearchHistory.LastIndexOf(
+            typedMarker,
+            StringComparison.Ordinal);
 
-        if (currentSearchHistory.Contains(
-                typedMarker,
-                StringComparison.Ordinal))
+        if (typedMarkerIndex >= 0)
         {
-            return true;
+            var verifiedTypeTextBeforeMarker =
+                currentSearchHistory.LastIndexOf(
+                    "verified type-text|",
+                    typedMarkerIndex,
+                    StringComparison.Ordinal);
+
+            if (verifiedTypeTextBeforeMarker >= 0)
+                return true;
         }
 
         var verifiedTypeText = currentSearchHistory.LastIndexOf(

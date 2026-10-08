@@ -2967,14 +2967,47 @@ public sealed class ComputerOperatorAcceptanceService(
                     recordedSteps: 25,
                     maximumSteps: 24);
 
+        var notReadyWithoutVerifiedAction =
+            !ComputerOperatorExternalBenchmarkRunner
+                .IsReadyForIndependentEvaluationForAcceptance(
+                    taskCompleted: true,
+                    recordedSteps: 10,
+                    maximumSteps: 24,
+                    verifiedActionCount: 0,
+                    verificationFailureCount: 0,
+                    recoveryCount: 0);
+
+        var notReadyWhenFailureHasNoRecovery =
+            !ComputerOperatorExternalBenchmarkRunner
+                .IsReadyForIndependentEvaluationForAcceptance(
+                    taskCompleted: true,
+                    recordedSteps: 10,
+                    maximumSteps: 24,
+                    verifiedActionCount: 6,
+                    verificationFailureCount: 2,
+                    recoveryCount: 1);
+
+        var readyWhenFailuresRecovered =
+            ComputerOperatorExternalBenchmarkRunner
+                .IsReadyForIndependentEvaluationForAcceptance(
+                    taskCompleted: true,
+                    recordedSteps: 10,
+                    maximumSteps: 24,
+                    verifiedActionCount: 6,
+                    verificationFailureCount: 2,
+                    recoveryCount: 2);
+
         Require(
             rejectedWithoutConfirmation &&
             rejectedWithoutInteractiveDesktop &&
             ready &&
             notReadyWhenIncomplete &&
             notReadyWhenOverBudget &&
+            notReadyWithoutVerifiedAction &&
+            notReadyWhenFailureHasNoRecovery &&
+            readyWhenFailuresRecovered &&
             ComputerOperatorExternalBenchmarkRunner.HardTimeoutSeconds >= 120,
-            "External benchmark runner chưa khóa confirmation/interactive desktop hoặc readiness semantics chưa đúng.");
+            "External benchmark runner chưa khóa confirmation/interactive desktop hoặc VERIFY/RECOVERY readiness semantics chưa đúng.");
     }
 
     private static void CheckExternalBenchmarkIndependentEvaluationContract()

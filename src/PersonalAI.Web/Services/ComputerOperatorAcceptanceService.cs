@@ -482,6 +482,11 @@ public sealed class ComputerOperatorAcceptanceService(
 
         RunCheck(
             checks,
+            "WAIT giữ thời gian tải dài nhưng dừng trạng thái đứng yên quá hạn",
+            CheckUnchangedWaitBudget);
+
+        RunCheck(
+            checks,
             "Checkpoint không bị giảm tiến độ khi Resume và planner replan",
             CheckResumeProgressMonotonic);
 
@@ -6653,6 +6658,21 @@ public sealed class ComputerOperatorAcceptanceService(
             ComputerOperatorTaskService.PreserveCheckpointGoalProgress(0.7, 2.0) == 1.0 &&
             ComputerOperatorTaskService.PreserveCheckpointGoalProgress(0.7, -1.0) == 0.7,
             "Resume phải giữ tiến độ đã xác minh, không chấp nhận NaN hoặc tiến độ ngoài [0,1].");
+    }
+
+    private static void CheckUnchangedWaitBudget()
+    {
+        var start = DateTimeOffset.UtcNow;
+        Require(
+            !ComputerOperatorTaskService.ShouldStopUnchangedWaiting(
+                start, start.AddSeconds(30)) &&
+            !ComputerOperatorTaskService.ShouldStopUnchangedWaiting(
+                start, start.AddSeconds(59)) &&
+            ComputerOperatorTaskService.ShouldStopUnchangedWaiting(
+                start, start.AddSeconds(60)) &&
+            ComputerOperatorTaskService.ShouldStopUnchangedWaiting(
+                start, start.AddSeconds(75)),
+            "Không dừng ứng dụng tải 30–59 giây; sau 60 giây WAIT không đổi phải báo stuck.");
     }
 
     private static void CheckGroundingFailureKey()

@@ -1511,6 +1511,22 @@ public sealed class ComputerOperatorTaskService(
                 waitingSceneFingerprint = null;
                 waitingSince = null;
 
+                if (string.Equals(decision.Action, "type-text", StringComparison.OrdinalIgnoreCase) &&
+                    HasUnrequestedSuffixOnQuotedGoalText(normalizedGoal, decision.Text))
+                {
+                    const string detail = "Nội dung type-text có ký tự bổ sung sau chuỗi được yêu cầu nhập nguyên văn. Không nhập sai; yêu cầu planner chọn lại nội dung chính xác.";
+                    taskHistory.Add($"STEP {index}: EXACT-TEXT-REPLAN — {detail}");
+                    progress.Add("replan", detail, "exact-text-guard");
+                    _ = actionState.MoveTo(ComputerOperatorActionState.Replan, detail);
+                    cycleTrace.RecoveryCode = "exact-text-mismatch";
+                    cycleTrace.RecoveryDetail = detail;
+                    cycleTrace.Result = "replan";
+                    cycleTrace.Next = "observe-exact-text";
+                    EmitCycleForensicSummary(progress, cycleTrace);
+                    await Task.Delay(250, linked.Token);
+                    continue;
+                }
+
                 DesktopTargetTrackingResult? trackingResult = null;
 
                 var targetState = actionState.MoveTo(
@@ -4257,6 +4273,24 @@ public sealed class ComputerOperatorTaskService(
         return double.IsFinite(proposedProgress)
             ? Math.Max(previous, Math.Clamp(proposedProgress, 0d, 1d))
             : previous;
+    }
+
+    internal static bool HasUnrequestedSuffixOnQuotedGoalText(string goal, string? plannedText)
+    {
+        if (string.IsNullOrEmpty(goal) || string.IsNullOrEmpty(plannedText))
+            return false;
+
+        foreach (System.Text.RegularExpressions.Match match in
+                 System.Text.RegularExpressions.Regex.Matches(
+                     goal, "['\\\"]([^'\\\"]{3,})['\\\"]"))
+        {
+            var literal = match.Groups[1].Value;
+            if (plannedText.Length > literal.Length &&
+                plannedText.StartsWith(literal, StringComparison.Ordinal))
+                return true;
+        }
+
+        return false;
     }
 
     internal static bool ShouldStopRepeatedAuthorityReplan(int consecutiveReplans) =>

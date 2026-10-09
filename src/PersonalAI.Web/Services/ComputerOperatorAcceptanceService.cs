@@ -6681,8 +6681,14 @@ public sealed class ComputerOperatorAcceptanceService(
                 "scene-2", decision, ComputerOperatorGroundingStatuses.Ambiguous) &&
             key != ComputerOperatorTaskService.BuildGroundingFailureKey(
                 "scene-1", decision with { TargetLabel = "Target B" },
+                ComputerOperatorGroundingStatuses.Ambiguous) &&
+            key != ComputerOperatorTaskService.BuildGroundingFailureKey(
+                "scene-1", decision with { CoordinateWindowId = "0x2" },
+                ComputerOperatorGroundingStatuses.Ambiguous) &&
+            key != ComputerOperatorTaskService.BuildGroundingFailureKey(
+                "scene-1", decision with { ExpectedEffect = "different effect" },
                 ComputerOperatorGroundingStatuses.Ambiguous),
-            "Recovery key phải ổn định trên cùng scene/target và đổi khi scene/target thay đổi.");
+            "Recovery key phải giữ ổn định cùng scene/target/window/effect, và đổi khi một trong các giá trị đó thay đổi.");
     }
 
     private static void CheckGroundingRejectsMovedWindow()

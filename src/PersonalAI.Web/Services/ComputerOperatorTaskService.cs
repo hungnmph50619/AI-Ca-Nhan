@@ -3452,6 +3452,7 @@ public sealed class ComputerOperatorTaskService(
                 observation: true);
 
             DesktopVerificationRoutingResult? localRouteForFusion = null;
+            var foregroundChangedObserved = false;
 
             if (fastObserverBaseline is not null)
             {
@@ -3460,6 +3461,7 @@ public sealed class ComputerOperatorTaskService(
                     fastObserverBaseline,
                     fastAfter,
                     frameDifference);
+                foregroundChangedObserved |= fastObservation.ForegroundWindowChanged;
 
                 progress.Add(
                     "fast-observer",
@@ -3603,6 +3605,7 @@ public sealed class ComputerOperatorTaskService(
                             fastObserverBaseline,
                             refreshedFastAfter,
                             frameDifference);
+                    foregroundChangedObserved |= fastObservation.ForegroundWindowChanged;
 
                     progress.AddDiagnostic(
                         "verification-reobserve",
@@ -3737,7 +3740,7 @@ public sealed class ComputerOperatorTaskService(
 
                 if (ShouldReobserveOnForegroundConflict(
                         result.Satisfied,
-                        fastObservation.ForegroundWindowChanged) ||
+                        foregroundChangedObserved) ||
                     verificationEngine.ShouldReobserveOnSemanticConflict(
                         result.Satisfied,
                         strongLocalVisualTransition))

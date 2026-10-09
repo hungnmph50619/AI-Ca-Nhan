@@ -171,6 +171,34 @@ $benchmarkOutcome = "SUCCEEDED"
             }
         } catch { $responseBody = "Could not extract HTTP response body: $($_.Exception.Message)" }
     }
+    # Even a failed run-suite may have persisted results for cases that ran.
+    # Collect them independently so an HTTP 400 cannot hide partial progress.
+    if ($null -ne $prepare -and $null -ne $prepare.cases) {
+        $partialLatest = @()
+        foreach ($plannedCase in $prepare.cases) {
+            $caseId = [string]$plannedCase.caseId
+            if ([string]::IsNullOrWhiteSpace($caseId)) { continue }
+            try {
+                $encodedCaseId = [Uri]::EscapeDataString($caseId)
+                $caseLatest = Invoke-PersonalAiJson -Method GET -Path "/api/evaluation/computer-operator-benchmark/latest/$encodedCaseId"
+                $partialLatest += [pscustomobject]@{
+                    caseId = $caseId
+                    latest = $caseLatest
+                }
+            } catch {
+                $partialLatest += [pscustomobject]@{
+                    caseId = $caseId
+                    error = [string]$_.Exception.Message
+                }
+            }
+        }
+        try {
+            Save-Json -Name "09-latest-after-failure.json" -Value $partialLatest | Out-Null
+            Write-Host "Saved latest per-case evidence after suite failure (not graded PASS)." -ForegroundColor Yellow
+        } catch {
+            [string]$_.Exception.Message | Set-Content -Path (Join-Path $runFolder "latest-capture-warning.txt") -Encoding UTF8
+        }
+    }
     # Preserve the planned suite when run-suite aborts before returning its
     # results. This is diagnostic-only; do not classify any case as PASS.
     if ($null -ne $prepare) {

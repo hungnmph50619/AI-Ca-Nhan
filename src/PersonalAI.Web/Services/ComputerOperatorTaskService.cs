@@ -1230,7 +1230,7 @@ public sealed class ComputerOperatorTaskService(
                             ? consecutiveAuthorityReplans + 1
                             : 1;
                     authorityReplanScene = sceneFingerprint;
-                    if (consecutiveAuthorityReplans >= 6)
+                    if (ShouldStopRepeatedAuthorityReplan(consecutiveAuthorityReplans))
                     {
                         var detail = "Decision Authority yêu cầu lập kế hoạch lại 6 lần liên tiếp trên cùng scene mà không có hành động mới; dừng an toàn, giữ checkpoint.";
                         checkpoint = SaveCheckpointSafely(
@@ -4258,6 +4258,9 @@ public sealed class ComputerOperatorTaskService(
             ? Math.Max(previous, Math.Clamp(proposedProgress, 0d, 1d))
             : previous;
     }
+
+    internal static bool ShouldStopRepeatedAuthorityReplan(int consecutiveReplans) =>
+        consecutiveReplans >= 6;
 
     internal static bool IsProviderCooldownWait(string? reason) =>
         reason?.Contains("cooldown", StringComparison.OrdinalIgnoreCase) == true;

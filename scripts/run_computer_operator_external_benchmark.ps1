@@ -171,6 +171,15 @@ $benchmarkOutcome = "SUCCEEDED"
             }
         } catch { $responseBody = "Could not extract HTTP response body: $($_.Exception.Message)" }
     }
+    # Preserve the changed readiness state when a failed case creates a
+    # pending runtime regression candidate during run-suite. Never auto-promote.
+    try {
+        $afterFailureReadiness = Invoke-PersonalAiJson -Method GET -Path "/api/evaluation/computer-operator-regression/readiness"
+        Save-Json -Name "07-readiness-after-failure.json" -Value $afterFailureReadiness | Out-Null
+        Write-Host "Post-failure regression readiness saved; pending candidates remain untouched." -ForegroundColor Yellow
+    } catch {
+        [string]$_.Exception.Message | Set-Content -Path (Join-Path $runFolder "readiness-capture-warning.txt") -Encoding UTF8
+    }
     $httpStatus = $null
     if ($errorRecord.Exception.Response) {
         try { $httpStatus = [int]$errorRecord.Exception.Response.StatusCode } catch {}

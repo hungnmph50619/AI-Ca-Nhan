@@ -6671,7 +6671,10 @@ public sealed class ComputerOperatorAcceptanceService(
             ComputerOperatorTaskService.ShouldStopUnchangedWaiting(
                 start, start.AddSeconds(60)) &&
             ComputerOperatorTaskService.ShouldStopUnchangedWaiting(
-                start, start.AddSeconds(75)),
+                start, start.AddSeconds(75)) &&
+            ComputerOperatorTaskService.IsProviderCooldownWait("Gemini provider-cooldown") &&
+            !ComputerOperatorTaskService.IsProviderCooldownWait("UI loading") &&
+            !ComputerOperatorTaskService.IsProviderCooldownWait(null),
             "Không dừng ứng dụng tải 30–59 giây; sau 60 giây WAIT không đổi phải báo stuck.");
     }
 

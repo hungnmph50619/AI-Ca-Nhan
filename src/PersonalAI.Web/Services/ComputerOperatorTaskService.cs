@@ -4208,8 +4208,10 @@ public sealed class ComputerOperatorTaskService(
         string.Join("|",
             sceneFingerprint,
             decision.Action,
+            decision.CoordinateWindowId,
             decision.TargetElementId,
             decision.TargetLabel,
+            decision.ExpectedEffect,
             status);
 
     private static bool IsClickAction(

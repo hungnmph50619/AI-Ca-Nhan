@@ -487,6 +487,11 @@ public sealed class ComputerOperatorAcceptanceService(
 
         RunCheck(
             checks,
+            "Decision Authority chỉ dừng REPLAN sau sáu lần cùng scene",
+            CheckRepeatedAuthorityReplanBudget);
+
+        RunCheck(
+            checks,
             "Checkpoint không bị giảm tiến độ khi Resume và planner replan",
             CheckResumeProgressMonotonic);
 
@@ -6658,6 +6663,17 @@ public sealed class ComputerOperatorAcceptanceService(
             ComputerOperatorTaskService.PreserveCheckpointGoalProgress(0.7, 2.0) == 1.0 &&
             ComputerOperatorTaskService.PreserveCheckpointGoalProgress(0.7, -1.0) == 0.7,
             "Resume phải giữ tiến độ đã xác minh, không chấp nhận NaN hoặc tiến độ ngoài [0,1].");
+    }
+
+    private static void CheckRepeatedAuthorityReplanBudget()
+    {
+        Require(
+            !ComputerOperatorTaskService.ShouldStopRepeatedAuthorityReplan(0) &&
+            !ComputerOperatorTaskService.ShouldStopRepeatedAuthorityReplan(1) &&
+            !ComputerOperatorTaskService.ShouldStopRepeatedAuthorityReplan(5) &&
+            ComputerOperatorTaskService.ShouldStopRepeatedAuthorityReplan(6) &&
+            ComputerOperatorTaskService.ShouldStopRepeatedAuthorityReplan(7),
+            "Chỉ chặn vòng lặp Decision Authority từ lần REPLAN thứ sáu.");
     }
 
     private static void CheckUnchangedWaitBudget()

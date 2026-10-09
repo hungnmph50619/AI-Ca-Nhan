@@ -81,7 +81,7 @@ def main(argv: list[str] | None = None) -> int:
                           "error_type": type(exc).__name__}), file=sys.stderr)
         return 2
     rendered = json.dumps(output, ensure_ascii=False, indent=2)
-    print(rendered)
+    print("PERSONALAI_UFO_BRIDGE_RESULT=" + json.dumps(output, ensure_ascii=False), flush=True)
     if args.result:
         args.result.parent.mkdir(parents=True, exist_ok=True)
         args.result.write_text(rendered + "\n", encoding="utf-8")

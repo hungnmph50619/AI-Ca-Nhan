@@ -122,6 +122,7 @@ app.MapWorkspaceFoundation();
 app.MapAuditFoundation();
 app.MapUndoFoundation();
 app.MapComputerUse();
+app.MapUfoBridge();
 app.MapBrowserAgent();
 app.MapConnectorFoundation();
 app.MapDevelopmentAgent();

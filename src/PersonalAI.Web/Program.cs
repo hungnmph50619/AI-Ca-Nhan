@@ -37,6 +37,7 @@ builder.Services.AddModelLab();
 builder.Services.AddAuditFoundation();
 builder.Services.AddUndoFoundation();
 builder.Services.AddComputerUse();
+builder.Services.AddSingleton<UfoProcessBridge>();
 builder.Services.AddBrowserAgent();
 builder.Services.AddConnectorFoundation();
 builder.Services.AddDevelopmentAgent();

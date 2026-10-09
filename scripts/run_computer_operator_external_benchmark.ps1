@@ -75,19 +75,17 @@ $requiredBaseline = "1cf946b27f6d3a46b101c461f50a646261450ad7"
 $requiredBranch = "experiment/computer-operator-v4-4-0-local-visual-sensors"
 # Verify the checked-out branch by Git refs rather than comparing the
 # formatted stdout of 'git branch --show-current' (Windows encoding/ANSI can vary).
-$headSymbolicRef = (& git -C $repoRoot symbolic-ref -q HEAD 2>$null | Select-Object -First 1)
-if ($LASTEXITCODE -ne 0 -or [string]::IsNullOrWhiteSpace($headSymbolicRef)) {
-    throw "BENCHMARK_VERSION_MISMATCH: Detached HEAD or unknown current branch. Switch to $requiredBranch."
-}
+# Read only commit object IDs; avoid PowerShell native-command pipeline
+# exit-code checks, which may be stale after Select-Object.
 $expectedRef = "refs/heads/$requiredBranch"
-$expectedCommit = (& git -C $repoRoot rev-parse --verify $expectedRef 2>$null | Select-Object -First 1)
-if ($LASTEXITCODE -ne 0 -or [string]::IsNullOrWhiteSpace($expectedCommit)) {
-    throw "BENCHMARK_VERSION_MISMATCH: Required local branch ref is missing: $expectedRef."
-}
-$checkedOutCommit = (& git -C $repoRoot rev-parse --verify HEAD 2>$null | Select-Object -First 1)
-if ($LASTEXITCODE -ne 0 -or [string]::IsNullOrWhiteSpace($checkedOutCommit) -or
-    ([string]$checkedOutCommit).Trim() -ne ([string]$expectedCommit).Trim()) {
-    throw "BENCHMARK_VERSION_MISMATCH: Checked-out HEAD does not match required branch tip $requiredBranch."
+$expectedCommit = [string](& git -C $repoRoot rev-parse --verify $expectedRef 2>$null)
+$checkedOutCommit = [string](& git -C $repoRoot rev-parse --verify HEAD 2>$null)
+$expectedCommit = $expectedCommit.Trim()
+$checkedOutCommit = $checkedOutCommit.Trim()
+if ($expectedCommit -notmatch '^[0-9a-fA-F]{40}$' -or
+    $checkedOutCommit -notmatch '^[0-9a-fA-F]{40}$' -or
+    $checkedOutCommit -ne $expectedCommit) {
+    throw "BENCHMARK_VERSION_MISMATCH: HEAD '$checkedOutCommit' does not match local branch '$requiredBranch' at '$expectedCommit'."
 }
 $localBranch = $requiredBranch
 $localCommit = (& git -C $repoRoot rev-parse HEAD 2>$null | Select-Object -First 1)

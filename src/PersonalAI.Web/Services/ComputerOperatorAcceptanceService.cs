@@ -492,6 +492,11 @@ public sealed class ComputerOperatorAcceptanceService(
 
         RunCheck(
             checks,
+            "Text planner không được thêm hậu tố vào chuỗi yêu cầu nguyên văn",
+            CheckQuotedGoalTextSuffix);
+
+        RunCheck(
+            checks,
             "Checkpoint không bị giảm tiến độ khi Resume và planner replan",
             CheckResumeProgressMonotonic);
 
@@ -6663,6 +6668,21 @@ public sealed class ComputerOperatorAcceptanceService(
             ComputerOperatorTaskService.PreserveCheckpointGoalProgress(0.7, 2.0) == 1.0 &&
             ComputerOperatorTaskService.PreserveCheckpointGoalProgress(0.7, -1.0) == 0.7,
             "Resume phải giữ tiến độ đã xác minh, không chấp nhận NaN hoặc tiến độ ngoài [0,1].");
+    }
+
+    private static void CheckQuotedGoalTextSuffix()
+    {
+        const string goal = "Nhập chính xác 'PersonalAI benchmark text entry' và xác minh.";
+        Require(
+            ComputerOperatorTaskService.HasUnrequestedSuffixOnQuotedGoalText(
+                goal, "PersonalAI benchmark text entry 20261009034352457") &&
+            !ComputerOperatorTaskService.HasUnrequestedSuffixOnQuotedGoalText(
+                goal, "PersonalAI benchmark text entry") &&
+            !ComputerOperatorTaskService.HasUnrequestedSuffixOnQuotedGoalText(
+                goal, "Notepad") &&
+            !ComputerOperatorTaskService.HasUnrequestedSuffixOnQuotedGoalText(
+                "Nhập một số bất kỳ", "123"),
+            "Planner không được tự thêm hậu tố vào nội dung nguyên văn.");
     }
 
     private static void CheckRepeatedAuthorityReplanBudget()

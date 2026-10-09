@@ -88,13 +88,12 @@ if ($expectedCommit -notmatch '^[0-9a-fA-F]{40}$' -or
     throw "BENCHMARK_VERSION_MISMATCH: HEAD '$checkedOutCommit' does not match local branch '$requiredBranch' at '$expectedCommit'."
 }
 $localBranch = $requiredBranch
-$localCommit = (& git -C $repoRoot rev-parse HEAD 2>$null | Select-Object -First 1)
-if ($LASTEXITCODE -ne 0 -or [string]::IsNullOrWhiteSpace($localCommit)) {
-    throw "BENCHMARK_VERSION_MISMATCH: Cannot resolve local HEAD."
-}
+$localCommit = $checkedOutCommit
+# Exit status is captured immediately, without piping to Select-Object.
 & git -C $repoRoot merge-base --is-ancestor $requiredBaseline HEAD 2>$null
-if ($LASTEXITCODE -ne 0) {
-    throw "BENCHMARK_VERSION_MISMATCH: HEAD $localCommit does not include required baseline $requiredBaseline. Run git fetch and git pull --ff-only before testing."
+$ancestryExitCode = $LASTEXITCODE
+if ($ancestryExitCode -ne 0) {
+    throw "BENCHMARK_VERSION_MISMATCH: HEAD $localCommit does not include required baseline $requiredBaseline (git exit $ancestryExitCode). Run git fetch and git pull --ff-only before testing."
 }
 Write-Host "Version preflight PASS: $localBranch @ $localCommit" -ForegroundColor Green
 

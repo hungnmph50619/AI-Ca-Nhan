@@ -7,3 +7,24 @@
 appsettings.Development.json
 appsettings.Local.json
 .env
+
+# UFO runtime and sensitive files
+/external/UFO/.venv/
+/external/UFO/venv/
+/external/UFO/**/__pycache__/
+/external/UFO/**/*.pyc
+/external/UFO/**/.env
+/external/UFO/**/.env.*
+/external/UFO/**/logs/
+/external/UFO/**/terminal-logs/
+/external/UFO/**/terminal-logs-snapshot*/
+/external/UFO/**/benchmark-results/
+/external/UFO/**/*.key
+/external/UFO/**/*.pem
+/external/UFO/**/secrets.*
+/external/UFO/**/credentials.*
+/external/UFO/**/token.*
+/external/UFO/**/api.key
+
+
+ufo-security-backup/

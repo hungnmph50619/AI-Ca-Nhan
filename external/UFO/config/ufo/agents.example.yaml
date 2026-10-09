@@ -1,0 +1,30 @@
+﻿HOST_AGENT:
+  VISUAL_MODE: true
+  REASONING_MODEL: false
+  API_TYPE: "gemini"
+  API_BASE: "https://generativelanguage.googleapis.com"
+  API_KEY: "${GEMINI_API_KEY}"
+  API_MODEL: "gemini-3.5-flash-lite"
+
+APP_AGENT:
+  VISUAL_MODE: true
+  REASONING_MODEL: false
+  API_TYPE: "gemini"
+  API_BASE: "https://generativelanguage.googleapis.com"
+  API_KEY: "${GEMINI_API_KEY}"
+  API_MODEL: "gemini-3.5-flash-lite"
+
+BACKUP_AGENT:
+  VISUAL_MODE: true
+  API_TYPE: "gemini"
+  API_BASE: "https://generativelanguage.googleapis.com"
+  API_KEY: "${GEMINI_API_KEY}"
+  API_MODEL: "gemini-3.5-flash-lite"
+
+EVALUATION_AGENT:
+  VISUAL_MODE: true
+  REASONING_MODEL: false
+  API_TYPE: "gemini"
+  API_BASE: "https://generativelanguage.googleapis.com"
+  API_KEY: "${GEMINI_API_KEY}"
+  API_MODEL: "gemini-3.5-flash-lite"

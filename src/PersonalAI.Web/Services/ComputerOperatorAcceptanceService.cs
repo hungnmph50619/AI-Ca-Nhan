@@ -135,6 +135,11 @@ public sealed class ComputerOperatorAcceptanceService(
 
         RunCheck(
             checks,
+            "Foreground đổi nhưng semantic chưa đồng ý phải quan sát lại, không PASS",
+            CheckForegroundSemanticConflict);
+
+        RunCheck(
+            checks,
             "v4.4.10 Unified Verification Engine gom quyền kết luận local/semantic",
             CheckUnifiedVerificationEngineAuthority);
 
@@ -2171,6 +2176,18 @@ public sealed class ComputerOperatorAcceptanceService(
                 "click-left", AdaptiveGeminiDecision.CallGemini) ==
                 ComputerOperatorVerificationStatuses.SemanticRequired,
             "Unified Verification Engine phải giữ bốn trạng thái và không xác minh click/key chỉ bằng visual pass.");
+    }
+
+    private static void CheckForegroundSemanticConflict()
+    {
+        Require(
+            ComputerOperatorTaskService.ShouldReobserveOnForegroundConflict(
+                semanticSatisfied: false, foregroundWindowChanged: true) &&
+            !ComputerOperatorTaskService.ShouldReobserveOnForegroundConflict(
+                semanticSatisfied: false, foregroundWindowChanged: false) &&
+            !ComputerOperatorTaskService.ShouldReobserveOnForegroundConflict(
+                semanticSatisfied: true, foregroundWindowChanged: true),
+            "Foreground transition chưa được giữ ở trạng thái INCONCLUSIVE khi semantic không đồng thuận.");
     }
 
     private static void CheckVerificationConflictRequiresReobserve()

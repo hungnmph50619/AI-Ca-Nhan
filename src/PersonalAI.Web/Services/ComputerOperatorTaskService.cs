@@ -3735,13 +3735,16 @@ public sealed class ComputerOperatorTaskService(
                     throw;
                 }
 
-                if (verificationEngine.ShouldReobserveOnSemanticConflict(
+                if (ShouldReobserveOnForegroundConflict(
+                        result.Satisfied,
+                        fastObservation.ForegroundWindowChanged) ||
+                    verificationEngine.ShouldReobserveOnSemanticConflict(
                         result.Satisfied,
                         strongLocalVisualTransition))
                 {
                     progress.Add(
                         "verification-conflict",
-                        $"Local visual evidence xác nhận UI đã thay đổi rõ ({frameDifference?.ChangedRatio * 100:0.00}%), nhưng Gemini semantic chưa xác nhận expected effect. Không được kết luận action-no-effect; chuyển sang Inconclusive và quan sát lại scene mới.",
+                        $"Local visual hoặc foreground evidence cho thấy UI đã chuyển trạng thái ({frameDifference?.ChangedRatio * 100:0.00}%), nhưng Gemini semantic chưa xác nhận expected effect. Không được kết luận action-no-effect; chuyển sang Inconclusive và quan sát lại scene mới.",
                         "inconclusive",
                         Math.Max(
                             visualVerdict.Confidence,
@@ -4274,6 +4277,11 @@ public sealed class ComputerOperatorTaskService(
             ? Math.Max(previous, Math.Clamp(proposedProgress, 0d, 1d))
             : previous;
     }
+
+    internal static bool ShouldReobserveOnForegroundConflict(
+        bool semanticSatisfied,
+        bool foregroundWindowChanged) =>
+        !semanticSatisfied && foregroundWindowChanged;
 
     internal static bool HasUnrequestedSuffixOnQuotedGoalText(string goal, string? plannedText)
     {

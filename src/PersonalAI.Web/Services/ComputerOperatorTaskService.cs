@@ -348,6 +348,8 @@ public sealed class ComputerOperatorTaskService(
             resumableCheckpoint is not null;
         string? lastGroundingFailureKey = null;
         var repeatedGroundingFailureCount = 0;
+        string? waitingSceneFingerprint = null;
+        DateTimeOffset? waitingSince = null;
 
         try
         {
@@ -1411,6 +1413,28 @@ public sealed class ComputerOperatorTaskService(
 
                 if (decision.Action == "wait")
                 {
+                    if (!string.Equals(waitingSceneFingerprint, sceneFingerprint, StringComparison.Ordinal))
+                    {
+                        waitingSceneFingerprint = sceneFingerprint;
+                        waitingSince = DateTimeOffset.UtcNow;
+                    }
+                    else if (waitingSince is not null &&
+                             ShouldStopUnchangedWaiting(waitingSince.Value, DateTimeOffset.UtcNow))
+                    {
+                        var detail = "Operator không tiến triển sau 60 giây chờ trên cùng trạng thái màn hình; dừng an toàn để điều tra thay vì tiếp tục tiêu hao step budget.";
+                        checkpoint = SaveCheckpointSafely(
+                            checkpoint,
+                            verifiedMilestones,
+                            currentSubgoal,
+                            latestGoalProgress,
+                            lastObservedStateFingerprint: sceneFingerprint);
+                        MarkCheckpointStatusSafely(
+                            checkpoint,
+                            ComputerOperatorCheckpointStatuses.Interrupted);
+                        progress.Block(detail);
+                        return Finish(false, detail);
+                    }
+
                     taskHistory.Add(
                         $"STEP {index}: WAIT — {decision.Reason}");
                     progress.Add(
@@ -1452,6 +1476,9 @@ public sealed class ComputerOperatorTaskService(
                         linked.Token);
                     continue;
                 }
+
+                waitingSceneFingerprint = null;
+                waitingSince = null;
 
                 DesktopTargetTrackingResult? trackingResult = null;
 
@@ -4200,6 +4227,11 @@ public sealed class ComputerOperatorTaskService(
             ? Math.Max(previous, Math.Clamp(proposedProgress, 0d, 1d))
             : previous;
     }
+
+    internal static bool ShouldStopUnchangedWaiting(
+        DateTimeOffset waitingSince,
+        DateTimeOffset now) =>
+        now - waitingSince >= TimeSpan.FromSeconds(60);
 
     internal static string BuildGroundingFailureKey(
         string sceneFingerprint,

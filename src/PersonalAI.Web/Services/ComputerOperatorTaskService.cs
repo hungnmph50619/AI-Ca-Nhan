@@ -1413,7 +1413,15 @@ public sealed class ComputerOperatorTaskService(
 
                 if (decision.Action == "wait")
                 {
-                    if (!string.Equals(waitingSceneFingerprint, sceneFingerprint, StringComparison.Ordinal))
+                    // Provider backoff is a bounded resilience policy, not a
+                    // frozen UI. Only the ordinary UI waiting route uses the
+                    // unchanged-scene timeout.
+                    if (IsProviderCooldownWait(decision.Reason))
+                    {
+                        waitingSceneFingerprint = null;
+                        waitingSince = null;
+                    }
+                    else if (!string.Equals(waitingSceneFingerprint, sceneFingerprint, StringComparison.Ordinal))
                     {
                         waitingSceneFingerprint = sceneFingerprint;
                         waitingSince = DateTimeOffset.UtcNow;
@@ -1448,9 +1456,7 @@ public sealed class ComputerOperatorTaskService(
                         "Chờ UI ổn định rồi quan sát lại.");
 
                     cycleTrace.RecoveryCode =
-                        decision.Reason.Contains(
-                            "cooldown",
-                            StringComparison.OrdinalIgnoreCase)
+                        IsProviderCooldownWait(decision.Reason)
                             ? "provider-cooldown"
                             : "waiting";
                     cycleTrace.RecoveryDetail =
@@ -4227,6 +4233,9 @@ public sealed class ComputerOperatorTaskService(
             ? Math.Max(previous, Math.Clamp(proposedProgress, 0d, 1d))
             : previous;
     }
+
+    internal static bool IsProviderCooldownWait(string? reason) =>
+        reason?.Contains("cooldown", StringComparison.OrdinalIgnoreCase) == true;
 
     internal static bool ShouldStopUnchangedWaiting(
         DateTimeOffset waitingSince,

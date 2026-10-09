@@ -10,11 +10,15 @@ namespace PersonalAI.Web.Services;
 public sealed class UfoProcessBridge
 {
     private readonly IConfiguration configuration;
+    private readonly ComputerOperatorExecutionControl ownership;
     private readonly SemaphoreSlim desktopGate = new(1, 1);
 
-    public UfoProcessBridge(IConfiguration configuration)
+    public UfoProcessBridge(
+        IConfiguration configuration,
+        ComputerOperatorExecutionControl ownership)
     {
         this.configuration = configuration;
+        this.ownership = ownership;
     }
 
     public async Task<UfoBridgeResult> RunAsync(
@@ -37,6 +41,12 @@ public sealed class UfoProcessBridge
         // No parallel UFO desktop owners through this process boundary.
         if (!await desktopGate.WaitAsync(0, cancellationToken))
             return new("desktop-busy", "INCONCLUSIVE", false, null);
+
+        if (!ownership.TryAcquireUfo())
+        {
+            desktopGate.Release();
+            return new("desktop-owned-by-legacy-or-ufo", "INCONCLUSIVE", false, null);
+        }
 
         try
         {
@@ -118,6 +128,7 @@ public sealed class UfoProcessBridge
         }
         finally
         {
+            ownership.ReleaseUfo();
             desktopGate.Release();
         }
     }

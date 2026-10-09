@@ -73,8 +73,9 @@ try {
 $repoRoot = Split-Path -Parent $PSScriptRoot
 $requiredBaseline = "1cf946b27f6d3a46b101c461f50a646261450ad7"
 $requiredBranch = "experiment/computer-operator-v4-4-0-local-visual-sensors"
-$localBranch = (& git -C $repoRoot branch --show-current 2>$null | Select-Object -First 1)
-if ($LASTEXITCODE -ne 0 -or $localBranch -ne $requiredBranch) {
+$localBranch = [string](& git -C $repoRoot branch --show-current 2>$null | Select-Object -First 1)
+$localBranch = $localBranch.Trim()
+if ($LASTEXITCODE -ne 0 -or $localBranch -cne $requiredBranch) {
     throw "BENCHMARK_VERSION_MISMATCH: Expected branch $requiredBranch, got '$localBranch'. Switch branch and git pull --ff-only before testing."
 }
 $localCommit = (& git -C $repoRoot rev-parse HEAD 2>$null | Select-Object -First 1)

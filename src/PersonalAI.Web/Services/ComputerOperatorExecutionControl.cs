@@ -5,6 +5,7 @@ public sealed class ComputerOperatorExecutionControl : IDisposable
     private readonly object _sync = new();
     private CancellationTokenSource? _stop;
     private bool _running;
+    private bool _ufoRunning;
     private bool _paused;
     private bool _pausable;
     private string _taskName = string.Empty;
@@ -12,6 +13,28 @@ public sealed class ComputerOperatorExecutionControl : IDisposable
     public string TaskName
     {
         get { lock (_sync) return _taskName; }
+    }
+
+    public bool UfoRunning
+    {
+        get { lock (_sync) return _ufoRunning; }
+    }
+
+    // UFO and legacy tasks share the same in-process ownership lock.
+    public bool TryAcquireUfo()
+    {
+        lock (_sync)
+        {
+            if (_running || _ufoRunning)
+                return false;
+            _ufoRunning = true;
+            return true;
+        }
+    }
+
+    public void ReleaseUfo()
+    {
+        lock (_sync) _ufoRunning = false;
     }
 
     public bool Running
@@ -35,6 +58,9 @@ public sealed class ComputerOperatorExecutionControl : IDisposable
     {
         lock (_sync)
         {
+            if (_ufoRunning)
+                throw new InvalidOperationException(
+                    "Desktop is owned by UFO; legacy operator cannot start.");
             _stop?.Cancel();
             _stop?.Dispose();
             _stop = new CancellationTokenSource();

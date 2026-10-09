@@ -86,12 +86,19 @@ public sealed class UfoProcessBridge
                 await process.WaitForExitAsync(timeout.Token);
                 var stdout = await stdoutTask;
                 _ = await stderrTask; // Never expose logs or potentially sensitive requests.
-                using var document = JsonDocument.Parse(stdout);
+                const string resultMarker = "PERSONALAI_UFO_BRIDGE_RESULT=";
+                var markerAt = stdout.LastIndexOf(resultMarker, StringComparison.Ordinal);
+                if (markerAt < 0)
+                    return new("missing-result", "INCONCLUSIVE", true, process.ExitCode);
+                var resultLine = stdout[(markerAt + resultMarker.Length)..]
+                    .Split(new[] { '\r', '\n' }, StringSplitOptions.RemoveEmptyEntries)
+                    .FirstOrDefault();
+                if (string.IsNullOrWhiteSpace(resultLine))
+                    return new("empty-result", "INCONCLUSIVE", true, process.ExitCode);
+                using var document = JsonDocument.Parse(resultLine);
                 var root = document.RootElement;
                 var status = root.TryGetProperty("process_status", out var p)
                     ? p.GetString() ?? "unknown" : "unknown";
-                var verdict = root.TryGetProperty("task_verdict", out var v)
-                    ? v.GetString() ?? "INCONCLUSIVE" : "INCONCLUSIVE";
                 // UFO process exit is not independent acceptance evidence.
                 return new(status, "INCONCLUSIVE",
                     root.TryGetProperty("executed", out var e) && e.GetBoolean(),
@@ -104,7 +111,7 @@ public sealed class UfoProcessBridge
             }
             catch (Exception)
             {
-                if (process.StartInfo is not null && !process.HasExited)
+                if (process.StartInfo is not null && process.Id > 0 && !process.HasExited)
                     process.Kill(entireProcessTree: true);
                 return new("launch-or-parse-error", "INCONCLUSIVE", false, null);
             }

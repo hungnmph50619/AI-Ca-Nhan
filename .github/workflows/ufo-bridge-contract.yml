@@ -1,0 +1,24 @@
+name: UFO Bridge Contract
+on:
+  push:
+    branches:
+      - experiment/ufo-integration
+  pull_request:
+    paths:
+      - 'integration/ufo_bridge.py'
+      - 'tests/test_ufo_bridge.py'
+      - '.github/workflows/ufo-bridge-contract.yml'
+  workflow_dispatch:
+
+jobs:
+  offline-contract:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.10'
+      - name: Verify UFO bridge contract (no agent/API calls)
+        run: python -m unittest discover -s tests -p 'test_ufo_bridge.py' -v

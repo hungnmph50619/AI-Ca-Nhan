@@ -44,6 +44,14 @@ public sealed record AdaptiveWaitResult(
 
 public interface IAdaptiveVerificationWaitEngine
 {
+    Task<AdaptiveWaitResult> WaitWithProgressIntelligenceAsync(
+        Func<CancellationToken, Task<ComputerOperatorProgressObservation>> observationProvider,
+        AdaptiveWaitPolicy? policy = null,
+        string? targetWindowId = null,
+        string? action = null,
+        string? expectedEffect = null,
+        CancellationToken cancellationToken = default);
+
     Task<AdaptiveWaitResult> WaitAsync(
         Func<CancellationToken, Task<AdaptiveProgressSample>> sampleProvider,
         AdaptiveWaitPolicy? policy = null,
@@ -72,9 +80,47 @@ public interface IAdaptiveVerificationWaitEngine
 }
 
 public sealed class AdaptiveVerificationWaitEngine(
-    IAdaptiveObservationWakeSource? wakeSource = null)
+    IAdaptiveObservationWakeSource? wakeSource = null,
+    IComputerOperatorProgressIntelligence? progressIntelligence = null,
+    IComputerOperatorAdaptiveWaitPolicyResolver? policyResolver = null)
     : IAdaptiveVerificationWaitEngine
 {
+    public Task<AdaptiveWaitResult> WaitWithProgressIntelligenceAsync(
+        Func<CancellationToken, Task<ComputerOperatorProgressObservation>> observationProvider,
+        AdaptiveWaitPolicy? policy = null,
+        string? targetWindowId = null,
+        string? action = null,
+        string? expectedEffect = null,
+        CancellationToken cancellationToken = default)
+    {
+        ArgumentNullException.ThrowIfNull(observationProvider);
+
+        var intelligence =
+            progressIntelligence ??
+            new ComputerOperatorProgressIntelligence(
+                new ComputerOperatorRuntimeStateIntelligence());
+
+        var resolvedPolicy =
+            policy ??
+            policyResolver?.Resolve(action);
+
+        return WaitAsync(
+            async token =>
+            {
+                var observation =
+                    await observationProvider(token);
+
+                return intelligence
+                    .Assess(observation)
+                    .AdaptiveSample;
+            },
+            resolvedPolicy,
+            targetWindowId,
+            action,
+            expectedEffect,
+            cancellationToken);
+    }
+
     public Task<AdaptiveWaitResult> WaitAsync(
         Func<CancellationToken, Task<AdaptiveProgressSample>> sampleProvider,
         AdaptiveWaitPolicy? policy = null,
@@ -686,6 +732,91 @@ public static class ComputerOperatorAdaptiveWaitPolicy
                     TimeSpan.FromSeconds(30),
                     0.70)
         };
+    }
+
+    public static AdaptiveWaitPolicy RefineForExpectedEffect(
+        string? action,
+        string? expectedEffect,
+        AdaptiveWaitPolicy policy)
+    {
+        ArgumentNullException.ThrowIfNull(policy);
+
+        var normalizedAction =
+            (action ?? string.Empty)
+                .Trim()
+                .ToLowerInvariant();
+
+        if (normalizedAction is not
+            ("click-left" or
+             "double-click-left" or
+             "press-key" or
+             "press-hotkey"))
+        {
+            return policy;
+        }
+
+        var effect =
+            (expectedEffect ?? string.Empty)
+                .Trim()
+                .ToLowerInvariant();
+
+        var explicitlySlowLifecycle =
+            effect.Contains("launch") ||
+            effect.Contains("loading") ||
+            effect.Contains("load") ||
+            effect.Contains("khởi động") ||
+            effect.Contains("đang tải");
+
+        var desktopObject =
+            effect.Contains("window") ||
+            effect.Contains("application") ||
+            effect.Contains("process") ||
+            effect.Contains("program") ||
+            effect.Contains("client") ||
+            effect.Contains("cửa sổ") ||
+            effect.Contains("ứng dụng") ||
+            effect.Contains("tiến trình") ||
+            effect.Contains("chương trình");
+
+        var desktopTransitionVerb =
+            effect.Contains("open") ||
+            effect.Contains("start") ||
+            effect.Contains("appear") ||
+            effect.Contains("ready") ||
+            effect.Contains("show") ||
+            effect.Contains("create") ||
+            effect.Contains("mở") ||
+            effect.Contains("xuất hiện") ||
+            effect.Contains("sẵn sàng") ||
+            effect.Contains("hiển thị") ||
+            effect.Contains("tạo");
+
+        var delayedTransitionExpected =
+            explicitlySlowLifecycle ||
+            (desktopObject && desktopTransitionVerb);
+
+        if (delayedTransitionExpected)
+            return policy;
+
+        var shortStall =
+            normalizedAction is "press-key" or "press-hotkey"
+                ? TimeSpan.FromSeconds(3)
+                : TimeSpan.FromSeconds(4);
+
+        var shortAbsolute =
+            normalizedAction is "press-key" or "press-hotkey"
+                ? TimeSpan.FromSeconds(8)
+                : TimeSpan.FromSeconds(10);
+
+        return new(
+            policy.PollInterval,
+            policy.StallTimeout <= shortStall
+                ? policy.StallTimeout
+                : shortStall,
+            policy.AbsoluteTimeout <= shortAbsolute
+                ? policy.AbsoluteTimeout
+                : shortAbsolute,
+            policy.MinimumProgressConfidence);
     }
 
     public static AdaptiveProgressSample FromDesktopObservation(

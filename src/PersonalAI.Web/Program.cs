@@ -48,12 +48,14 @@ builder.Services.AddAutomationFoundation();
 builder.Services.AddToolFramework();
 builder.Services.AddAgentFramework();
 builder.Services.AddExecutionGateway();
+builder.Services.AddPersonalAiMcp();
 builder.Services.AddUniversalTaskRouter();
 builder.Services.AddTaskEngine();
 builder.Services.AddSingleton<IKnowledgeGroundingService, KnowledgeGroundingService>();
 builder.Services.AddSingleton<KnowledgeSourceReader>();
 builder.Services.AddSingleton<IPersonalMemoryStore, PersonalMemoryStore>();
 builder.Services.AddSingleton<IPersonalMemoryGroundingService, PersonalMemoryGroundingService>();
+builder.Services.AddSingleton<IChatAttachmentStore, ChatAttachmentStore>();
 builder.Services.AddScoped<IContextManagerService, ContextManagerService>();
 builder.Services.AddHttpClient<GeminiChatService>(client =>
 {
@@ -75,6 +77,15 @@ builder.Services.AddHttpClient<DesktopVisionService>(client =>
     client.BaseAddress = new Uri("https://generativelanguage.googleapis.com/v1beta/");
     client.Timeout = TimeSpan.FromSeconds(45);
 });
+builder.Services.AddHttpClient<OpenAiComputerOperatorVisionProvider>(client =>
+{
+    client.BaseAddress = new Uri("https://api.openai.com/v1/");
+    client.Timeout = TimeSpan.FromSeconds(45);
+});
+builder.Services.AddTransient<IComputerOperatorVisionProvider, GeminiComputerOperatorVisionProvider>();
+builder.Services.AddTransient<IComputerOperatorVisionProvider>(serviceProvider =>
+    serviceProvider.GetRequiredService<OpenAiComputerOperatorVisionProvider>());
+builder.Services.AddSingleton<IComputerOperatorVisionRouter, ComputerOperatorVisionRouter>();
 builder.Services.AddHttpClient<MinimapBoxVisionService>(client =>
 {
     client.BaseAddress = new Uri("https://generativelanguage.googleapis.com/v1beta/");
@@ -102,6 +113,7 @@ app.UseEmergencyStop();
 app.UseV19Hardening();
 app.UseCompanionAuthentication();
 app.UseWorkspaceValidation();
+app.UsePersonalAiMcpBoundary();
 app.UseDefaultFiles();
 app.UseStaticFiles();
 
@@ -122,6 +134,7 @@ app.MapHardeningFoundation();
 app.MapPersonalAiOs();
 app.MapAgentFramework();
 app.MapExecutionGateway();
+app.MapPersonalAiMcp();
 app.MapUniversalTaskRouter();
 app.MapEvaluationFramework();
 app.MapModelLab();
@@ -549,6 +562,112 @@ app.MapPost("/api/context/preview", async (
     catch (KnowledgeDocumentValidationException exception)
     {
         return Results.BadRequest(new ApiError(exception.Message));
+    }
+});
+
+app.MapPost("/api/chat/attachments", async (
+    HttpRequest request,
+    IChatAttachmentStore attachmentStore,
+    IKnowledgeDocumentStore knowledgeStore,
+    IKnowledgeEmbeddingIndex embeddingIndex,
+    CancellationToken cancellationToken) =>
+{
+    if (!request.HasFormContentType)
+        return Results.BadRequest(
+            new ApiError("Yêu cầu tải tệp đính kèm không hợp lệ."));
+
+    try
+    {
+        var form =
+            await request.ReadFormAsync(
+                cancellationToken);
+
+        var file =
+            form.Files.GetFile(
+                "file");
+
+        if (file is null ||
+            form.Files.Count != 1)
+        {
+            return Results.BadRequest(
+                new ApiError("Hãy chọn đúng một tệp để đính kèm."));
+        }
+
+        var attachment =
+            await attachmentStore.AddAsync(
+                file,
+                cancellationToken);
+
+        if (attachment.Route.Equals(
+                "knowledge",
+                StringComparison.OrdinalIgnoreCase))
+        {
+            var document =
+                await knowledgeStore.AddAsync(
+                    file,
+                    cancellationToken);
+
+            await embeddingIndex.IndexDocumentAsync(
+                document.Id,
+                cancellationToken);
+
+            attachment =
+                attachmentStore.MarkKnowledgeDocument(
+                    attachment.Id,
+                    document.Id,
+                    document.ChunkCount);
+        }
+
+        return Results.Created(
+            $"/api/chat/attachments/{attachment.Id:D}",
+            attachment);
+    }
+    catch (InvalidDataException)
+    {
+        return Results.Json(
+            new ApiError("Tệp đính kèm vượt quá giới hạn hoặc không hợp lệ."),
+            statusCode:
+                StatusCodes.Status413PayloadTooLarge);
+    }
+    catch (ChatValidationException exception)
+    {
+        return Results.BadRequest(
+            new ApiError(exception.Message));
+    }
+    catch (KnowledgeDocumentValidationException exception)
+    {
+        return Results.BadRequest(
+            new ApiError(exception.Message));
+    }
+    catch (DuplicateKnowledgeDocumentException exception)
+    {
+        return Results.Json(
+            new ApiError(
+                $"Tệp này đã có trong Kho dữ liệu: {exception.Message}"),
+            statusCode:
+                StatusCodes.Status409Conflict);
+    }
+});
+
+app.MapGet("/api/chat/attachments/{attachmentId:guid}", (
+    Guid attachmentId,
+    IChatAttachmentStore attachmentStore) =>
+{
+    try
+    {
+        var attachment =
+            attachmentStore.GetRequired(
+                attachmentId);
+
+        return Results.File(
+            attachment.Path,
+            attachment.MimeType,
+            enableRangeProcessing: true);
+    }
+    catch (ChatValidationException exception)
+    {
+        return Results.NotFound(
+            new ApiError(exception.Message));
     }
 });
 

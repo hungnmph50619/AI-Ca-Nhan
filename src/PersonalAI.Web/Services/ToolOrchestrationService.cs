@@ -44,6 +44,8 @@ public sealed class ToolOrchestrationService : IToolOrchestrationService
     private readonly IToolRegistry _registry;
     private readonly IToolInputValidator _validator;
     private readonly IToolExecutionService _executor;
+    private readonly IToolExposurePolicy _exposurePolicy;
+    private readonly IPlanningAuthorityPolicy _planningAuthority;
     private readonly IAiProviderResolver _providerResolver;
     private readonly IToolResultSynthesisService _synthesizer;
     private readonly IToolActivityStore _activityStore;
@@ -59,6 +61,8 @@ public sealed class ToolOrchestrationService : IToolOrchestrationService
         IToolRegistry registry,
         IToolInputValidator validator,
         IToolExecutionService executor,
+        IToolExposurePolicy exposurePolicy,
+        IPlanningAuthorityPolicy planningAuthority,
         IAiProviderResolver providerResolver,
         IToolResultSynthesisService synthesizer,
         IToolActivityStore activityStore,
@@ -68,6 +72,8 @@ public sealed class ToolOrchestrationService : IToolOrchestrationService
         _registry = registry;
         _validator = validator;
         _executor = executor;
+        _exposurePolicy = exposurePolicy;
+        _planningAuthority = planningAuthority;
         _providerResolver = providerResolver;
         _synthesizer = synthesizer;
         _activityStore = activityStore;
@@ -86,7 +92,79 @@ public sealed class ToolOrchestrationService : IToolOrchestrationService
 
         CleanupExpired();
         var provider = _providerResolver.GetActive();
-        var definitions = _registry.GetAll();
+        var planningConversation =
+            BuildFunctionPlanningConversation(messages);
+        var currentIntent =
+            planningConversation.FirstOrDefault()?.Content
+            ?? string.Empty;
+
+        var authority =
+            _planningAuthority.Classify(
+                currentIntent);
+
+        var allDefinitions =
+            _registry.GetAll();
+
+        if (!authority.AllowToolOrchestration &&
+            !authority.PreferTaskEngine)
+        {
+            _logger.LogInformation(
+                "Tool orchestration skipped by planning authority. Authority={Authority}; Signals={Signals}; Reason={Reason}",
+                authority.Authority,
+                authority.SequentialSignalCount,
+                authority.Reason);
+
+            return null;
+        }
+
+        IReadOnlyList<ToolDefinition> definitions;
+        ToolExposureSelection? exposure =
+            null;
+
+        if (authority.PreferTaskEngine)
+        {
+            definitions =
+                allDefinitions
+                    .Where(definition =>
+                        (definition.Capabilities ?? Array.Empty<string>())
+                            .Contains(
+                                "multi-step",
+                                StringComparer.OrdinalIgnoreCase) &&
+                        (definition.Capabilities ?? Array.Empty<string>())
+                            .Contains(
+                                "orchestrator",
+                                StringComparer.OrdinalIgnoreCase))
+                    .OrderBy(
+                        definition => definition.Name,
+                        StringComparer.OrdinalIgnoreCase)
+                    .ToArray();
+
+            _logger.LogInformation(
+                "Planning authority selected bounded multi-step orchestrator exposure. Authority={Authority}; Signals={Signals}; Tools={Tools}; Reason={Reason}",
+                authority.Authority,
+                authority.SequentialSignalCount,
+                string.Join(",", definitions.Select(item => item.Name)),
+                authority.Reason);
+        }
+        else
+        {
+            exposure =
+                _exposurePolicy.Select(
+                    currentIntent,
+                    allDefinitions,
+                    maximumTools: 16);
+            definitions =
+                exposure.Tools;
+        }
+
+        if (exposure is not null)
+        {
+            _logger.LogInformation(
+                "Provider tool exposure: {Selected}/{Considered}; {Reason}",
+                exposure.SelectedTools,
+                exposure.ConsideredTools,
+                exposure.Reason);
+        }
 
         if (TryGetVisualLocateTarget(messages, out var visualTarget))
         {
@@ -100,22 +178,6 @@ public sealed class ToolOrchestrationService : IToolOrchestrationService
                     Reason: "Yêu cầu này cần quan sát màn hình thật. Ứng dụng sẽ chụp frame desktop ổn định và dùng Desktop Vision để tìm phần tử; chưa click.",
                     AssistantMessage: "Tôi cần dùng Desktop Vision để nhìn màn hình thật và xác định vị trí phần tử. Tool này chỉ quan sát, chưa di chuột hay click."),
                 planningMode: "server-visual-route",
-                planningProvider: null,
-                planningModel: null);
-        }
-
-        if (TryGetComputerOperatorGoal(messages, out var operatorGoal))
-        {
-            using var document = JsonDocument.Parse(
-                JsonSerializer.Serialize(new { goal = operatorGoal }));
-
-            return PrepareCore(
-                new ToolProposalDraft(
-                    "computer.operator.run-task",
-                    document.RootElement.Clone(),
-                    Reason: "Yêu cầu này là tác vụ desktop cần tự quan sát trạng thái, suy luận nhiều bước, thực hiện từng primitive và xác minh sau mỗi hành động.",
-                    AssistantMessage: "Tôi sẽ giao toàn bộ mục tiêu cho Computer Operator để tự quan sát màn hình, lập phương án, thực hiện từng bước và tự kiểm tra kết quả."),
-                planningMode: "server-computer-operator-route",
                 planningProvider: null,
                 planningModel: null);
         }
@@ -150,7 +212,7 @@ public sealed class ToolOrchestrationService : IToolOrchestrationService
             .ToArray();
 
         var decision = await provider.ProposeFunctionCallAsync(
-            LimitConversation(messages),
+            planningConversation,
             providerFunctions,
             cancellationToken);
 
@@ -774,89 +836,6 @@ public sealed class ToolOrchestrationService : IToolOrchestrationService
         return true;
     }
 
-    private static bool TryGetComputerOperatorGoal(
-        IReadOnlyList<ChatMessage> messages,
-        out string goal)
-    {
-        goal = string.Empty;
-
-        var latestUser = messages
-            .LastOrDefault(message =>
-                message.Role.Equals(
-                    "user",
-                    StringComparison.OrdinalIgnoreCase))
-            ?.Content
-            ?.Trim();
-
-        if (string.IsNullOrWhiteSpace(latestUser) ||
-            latestUser.Length > 1200)
-            return false;
-
-        var text = latestUser;
-
-        var actionTerms = new[]
-        {
-            "mở ", "đưa ", "chuyển ", "chuyển sang", "focus",
-            "foreground", "gõ", "nhập", "nhấn", "bấm", "click",
-            "cuộn", "scroll", "kéo", "drag", "thu nhỏ", "phóng to",
-            "khôi phục", "minimize", "maximize", "restore", "type",
-            "press", "double click", "right click", "left click"
-        };
-
-        var desktopContextTerms = new[]
-        {
-            "màn hình", "desktop", "screen", "cửa sổ", "window",
-            "taskbar", "thanh tác vụ", "foreground", "chuột", "mouse",
-            "bàn phím", "keyboard", "ứng dụng", "application", " app ",
-            "windows"
-        };
-
-        var observationTerms = new[]
-        {
-            "quan sát", "nhìn", "xem màn hình", "kiểm tra màn hình",
-            "tự tìm", "tự suy nghĩ", "tự suy luận"
-        };
-
-        var actionCount = actionTerms.Count(term =>
-            text.Contains(term, StringComparison.OrdinalIgnoreCase));
-
-        var hasDesktopContext = desktopContextTerms.Any(term =>
-            text.Contains(term, StringComparison.OrdinalIgnoreCase));
-
-        var hasObservationIntent = observationTerms.Any(term =>
-            text.Contains(term, StringComparison.OrdinalIgnoreCase));
-
-        var hasSequenceConnector =
-            text.Contains(" rồi ", StringComparison.OrdinalIgnoreCase)
-            || text.Contains(" sau đó ", StringComparison.OrdinalIgnoreCase)
-            || text.Contains(" then ", StringComparison.OrdinalIgnoreCase)
-            || text.Contains(" và ", StringComparison.OrdinalIgnoreCase)
-            || text.Contains(" nếu ", StringComparison.OrdinalIgnoreCase);
-
-        var looksLikeSingleAppLaunch =
-            text.StartsWith("mở ", StringComparison.OrdinalIgnoreCase)
-            && !text.Contains("http://", StringComparison.OrdinalIgnoreCase)
-            && !text.Contains("https://", StringComparison.OrdinalIgnoreCase)
-            && !text.Contains(" tệp", StringComparison.OrdinalIgnoreCase)
-            && !text.Contains(" file", StringComparison.OrdinalIgnoreCase)
-            && !text.Contains(" tài liệu", StringComparison.OrdinalIgnoreCase)
-            && !text.Contains(" đường dẫn", StringComparison.OrdinalIgnoreCase)
-            && !text.Contains(" link", StringComparison.OrdinalIgnoreCase)
-            && !text.Contains(" url", StringComparison.OrdinalIgnoreCase);
-
-        var shouldRoute =
-            (hasDesktopContext && actionCount >= 1)
-            || (hasObservationIntent && actionCount >= 1)
-            || (actionCount >= 2 && hasSequenceConnector)
-            || looksLikeSingleAppLaunch;
-
-        if (!shouldRoute)
-            return false;
-
-        goal = text;
-        return true;
-    }
-
     private static string BuildProviderFunctionDescription(ToolDefinition definition)
     {
         var permissions = string.Join(", ", definition.RequiredPermissions);
@@ -870,41 +849,41 @@ public sealed class ToolOrchestrationService : IToolOrchestrationService
                 : "Đây chỉ là đề xuất; ứng dụng sẽ chỉ thực thi sau thao tác riêng của người dùng.");
     }
 
-    private static IReadOnlyList<ChatMessage> LimitConversation(
+    private static IReadOnlyList<ChatMessage> BuildFunctionPlanningConversation(
         IReadOnlyList<ChatMessage> messages)
     {
-        var selected = new List<ChatMessage>();
-        var characters = 0;
+        // Function/tool selection is an execution boundary: tool name and arguments
+        // must be grounded only in the CURRENT user request. Older user commands are
+        // useful for conversational context, but including them here can leak stale
+        // action targets into a new proposal (for example Notepad -> League of Legends).
+        // Broader history is still available to the normal chat/context pipeline.
+        var latestUser =
+            messages
+                .LastOrDefault(message =>
+                    message.Role.Equals(
+                        "user",
+                        StringComparison.OrdinalIgnoreCase));
 
-        foreach (var message in messages.Reverse().Take(12))
+        if (latestUser is null)
         {
-            var content = message.Content ?? string.Empty;
-            if (content.Length > 8_000)
-            {
-                content = content[..8_000];
-            }
-
-            if (characters + content.Length > MaximumPlannerConversationCharacters)
-            {
-                var remaining = MaximumPlannerConversationCharacters - characters;
-                if (remaining <= 0)
-                {
-                    break;
-                }
-
-                content = content[..Math.Min(content.Length, remaining)];
-            }
-
-            selected.Add(new ChatMessage(message.Role, content));
-            characters += content.Length;
-            if (characters >= MaximumPlannerConversationCharacters)
-            {
-                break;
-            }
+            return Array.Empty<ChatMessage>();
         }
 
-        selected.Reverse();
-        return selected;
+        var content =
+            latestUser.Content ?? string.Empty;
+
+        if (content.Length > MaximumPlannerConversationCharacters)
+        {
+            content =
+                content[..MaximumPlannerConversationCharacters];
+        }
+
+        return
+        [
+            new ChatMessage(
+                "user",
+                content)
+        ];
     }
 
     private void CleanupExpired()

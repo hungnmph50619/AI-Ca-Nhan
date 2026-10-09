@@ -29,11 +29,36 @@ public sealed class DesktopLocalActionPlanner
         "open ",
         "launch ",
         "khởi động ",
-        "khoi dong "
+        "khoi dong ",
+        "thực hiện quy trình mở ",
+        "thuc hien quy trinh mo ",
+        "perform the workflow to open ",
+        "follow the process to open "
+    ];
+
+    private static readonly string[] OpenApplicationWrapperPrefixes =
+    [
+        "đưa ứng dụng ",
+        "dua ung dung ",
+        "ensure application ",
+        "bring application "
+    ];
+
+    private static readonly string[] OpenApplicationWrapperStateMarkers =
+    [
+        " vào trạng thái đang mở",
+        " vao trang thai dang mo",
+        " is open",
+        " into an open state"
     ];
 
     private static readonly string[] NextStepSeparators =
     [
+        ". ",
+        ".\r",
+        ".\n",
+        "\r\n",
+        "\n",
         ",",
         ";",
         " sau đó ",
@@ -77,6 +102,35 @@ public sealed class DesktopLocalActionPlanner
             return false;
         }
 
+        var shellSearchActive =
+            IsWindowsSearchSurface(
+                state.ForegroundWindow);
+
+        if (shellSearchActive &&
+            HasTypedTargetInCurrentSearchSession(
+                taskHistory,
+                target))
+        {
+            decision = Build(
+                action: "press-key",
+                key: "ENTER",
+                currentSubgoal: $"Mở {target} từ kết quả Windows Search.",
+                expectedEffect: $"Windows Search khởi chạy ứng dụng phù hợp với từ khóa {target}.",
+                reason: "Local planner có bằng chứng xác minh rằng query đã có trong Windows Search; bước generic tiếp theo là Enter deterministic trước recovery/yield của chiến lược mở ứng dụng.",
+                plan: "Nhấn Enter một lần rồi quan sát cửa sổ foreground mới.");
+
+            return true;
+        }
+
+        if (ShouldYieldOpenApplicationStrategy(
+                taskHistory))
+        {
+            // Yield chỉ áp dụng cho việc tái tạo chiến lược mở/focus ứng dụng.
+            // Nếu Search đã có query được xác minh thì nhánh deterministic Enter
+            // ở trên phải được phép tiến bước trước guard này.
+            return false;
+        }
+
         var matchingWindow =
             state.Windows
                 .Where(window =>
@@ -107,27 +161,46 @@ public sealed class DesktopLocalActionPlanner
             return true;
         }
 
-        var shellSearchActive =
-            IsWindowsSearchSurface(
-                state.ForegroundWindow);
+        var hasVerifiedSearchLaunch =
+            HasVerifiedSearchLaunchAttempt(
+                taskHistory);
 
-        var typedMarker =
-            $"LOCAL-SHELL-TYPED:{target}";
+        if (hasVerifiedSearchLaunch &&
+            state.ForegroundWindow is not null &&
+            !shellSearchActive)
+        {
+            // A verified Search -> Enter launch already happened and another
+            // foreground surface is now present. This is generic transition
+            // evidence (launcher/updater/app shell/etc.), even when the window
+            // title/process does not literally match the requested app name.
+            // Do not reopen Search; let higher-level planning interpret the
+            // newly observed application state.
+            return false;
+        }
 
-        if (shellSearchActive &&
-            taskHistory.Contains(
-                typedMarker,
-                StringComparison.OrdinalIgnoreCase))
+        if (state.ForegroundWindow is null &&
+            hasVerifiedSearchLaunch &&
+            CountLaunchGraceWaits(
+                taskHistory) < 3)
         {
             decision = Build(
-                action: "press-key",
-                key: "ENTER",
-                currentSubgoal: $"Mở {target} từ kết quả Windows Search.",
-                expectedEffect: $"Windows Search khởi chạy ứng dụng phù hợp với từ khóa {target}.",
-                reason: "Local planner đã có bằng chứng từ lịch sử rằng từ khóa tìm ứng dụng đã được nhập; bước generic tiếp theo là Enter.",
-                plan: "Nhấn Enter một lần rồi quan sát cửa sổ foreground mới.");
+                action: "wait",
+                currentSubgoal: $"Chờ {target} hoàn tất khởi chạy.",
+                expectedEffect: string.Empty,
+                reason: "LOCAL-LAUNCH-GRACE: Windows Search đã khởi chạy ứng dụng và transition đã được xác minh, nhưng foreground đang tạm thời chưa xác định. Chờ ngắn để tiến trình/cửa sổ mới xuất hiện thay vì mở lại Search ngay.",
+                plan: "Chờ trạng thái desktop ổn định rồi quan sát lại cửa sổ mới.");
 
             return true;
+        }
+
+        if (state.ForegroundWindow is null &&
+            hasVerifiedSearchLaunch &&
+            CountLaunchGraceWaits(
+                taskHistory) >= 3)
+        {
+            // Đã chờ launch có giới hạn nhưng vẫn chưa có foreground/cửa sổ đích.
+            // Nhường quyền cho OCR/Gemini/recovery thay vì quay lại Windows Search.
+            return false;
         }
 
         if (shellSearchActive)
@@ -202,16 +275,13 @@ public sealed class DesktopLocalActionPlanner
 
         var node = resolution.Node;
 
-        if (!CanSafelyApplyRequestedStructuredState(
-                node,
-                requestedCapability,
-                desiredState,
-                out var alreadySatisfied))
-        {
+        if (node.IsSensitive)
             return false;
-        }
 
-        if (alreadySatisfied)
+        if (node.Value is not null &&
+            node.Value.Equals(
+                text,
+                StringComparison.Ordinal))
         {
             if (HasAdditionalGoalSteps(goal))
                 return false;
@@ -219,12 +289,12 @@ public sealed class DesktopLocalActionPlanner
             decision = Build(
                 action: "complete",
                 currentSubgoal:
-                    $"Trạng thái của '{DisplayNode(node)}' đã đúng yêu cầu.",
+                    $"Giá trị của '{DisplayNode(node)}' đã đúng yêu cầu.",
                 expectedEffect: string.Empty,
                 reason:
-                    $"Structured state evidence xác nhận '{DisplayNode(node)}' đã ở trạng thái {desiredState}; không thực hiện action dư thừa.",
+                    $"Structured ValuePattern readback xác nhận '{DisplayNode(node)}' đã có đúng giá trị yêu cầu; không thực hiện write dư thừa.",
                 plan:
-                    "Không gửi input vì mục tiêu structured đã được thỏa mãn.",
+                    "Không gửi input vì structured ValuePattern đã ở trạng thái mong muốn.",
                 targetLabel: DisplayNode(node),
                 targetElementId: node.Id,
                 coordinateWindowId: graph.WindowId,
@@ -402,6 +472,39 @@ public sealed class DesktopLocalActionPlanner
 
         var actionCapability = requestedCapability;
         var structuredAction = requestedAction;
+
+        if (!CanSafelyApplyRequestedStructuredState(
+                node,
+                actionCapability,
+                desiredState,
+                out var alreadySatisfied))
+        {
+            // Structured state không đủ chắc chắn để đảo trạng thái.
+            // Nhường quyền cho tầng planner khác thay vì toggle mù.
+            return false;
+        }
+
+        if (alreadySatisfied)
+        {
+            if (HasAdditionalGoalSteps(goal))
+                return false;
+
+            decision = Build(
+                action: "complete",
+                currentSubgoal:
+                    $"Trạng thái của '{DisplayNode(node)}' đã đúng yêu cầu.",
+                expectedEffect: string.Empty,
+                reason:
+                    $"Structured state readback xác nhận '{DisplayNode(node)}' đã ở trạng thái {desiredState}; không thực hiện thao tác dư thừa có thể đảo ngược trạng thái.",
+                plan:
+                    "Không gửi action vì trạng thái structured hiện tại đã thỏa yêu cầu.",
+                targetLabel: DisplayNode(node),
+                targetElementId: node.Id,
+                coordinateWindowId: graph.WindowId,
+                confidence: 0.99);
+
+            return true;
+        }
 
         decision = Build(
             action: structuredAction,
@@ -597,14 +700,183 @@ public sealed class DesktopLocalActionPlanner
                 "Selected",
                 StringComparison.OrdinalIgnoreCase))
         {
-            if (!node.IsSelected.HasValue)
-                return false;
+            // SelectionItem.Select là thao tác đặt trạng thái chọn,
+            // không phải toggle. Nếu có readback thì dùng nó để tránh
+            // thao tác dư thừa; nếu UIA không công bố IsSelected thì
+            // vẫn có thể Select an toàn trên target/capability rõ ràng.
+            alreadySatisfied =
+                node.IsSelected == true;
 
-            alreadySatisfied = node.IsSelected.Value;
             return true;
         }
 
         return true;
+    }
+
+    private static bool ShouldYieldOpenApplicationStrategy(
+        string taskHistory)
+    {
+        if (string.IsNullOrWhiteSpace(
+                taskHistory))
+        {
+            return false;
+        }
+
+        return
+            taskHistory.Contains(
+                "CHỈ DẪN THOÁT VÒNG LẶP",
+                StringComparison.OrdinalIgnoreCase) ||
+            taskHistory.Contains(
+                "BẮT BUỘC đổi chiến lược",
+                StringComparison.OrdinalIgnoreCase) ||
+            HasFailedSearchLaunchAttempt(
+                taskHistory);
+    }
+
+    private static bool HasTypedTargetInCurrentSearchSession(
+        string taskHistory,
+        string target)
+    {
+        if (string.IsNullOrWhiteSpace(taskHistory) ||
+            string.IsNullOrWhiteSpace(target))
+        {
+            return false;
+        }
+
+        var normalized = taskHistory.ToLowerInvariant();
+        var searchSessionStart = normalized.LastIndexOf(
+            "verified press-hotkey|keys=win+s",
+            StringComparison.Ordinal);
+
+        // The task can begin with Windows Search already foreground, or Search
+        // can become foreground through a route whose open action is not
+        // represented by the exact WIN+S history marker. In that case, a
+        // verified LOCAL-SHELL-TYPED marker in the current task is still
+        // authoritative evidence that the query is already present.
+        var currentSearchHistory =
+            searchSessionStart >= 0
+                ? normalized[searchSessionStart..]
+                : normalized;
+
+        var typedMarker = $"local-shell-typed:{target}".ToLowerInvariant();
+        var typedMarkerIndex = currentSearchHistory.LastIndexOf(
+            typedMarker,
+            StringComparison.Ordinal);
+
+        if (typedMarkerIndex >= 0)
+        {
+            // Preserve the established contract when a concrete WIN+S search
+            // session boundary exists: the local typed marker belongs to that
+            // session and is sufficient evidence.
+            if (searchSessionStart >= 0)
+                return true;
+
+            // If Search was already foreground and no WIN+S boundary exists,
+            // require authoritative type-text verification from the current
+            // task before advancing to Enter.
+            var verifiedTypeTextBeforeMarker =
+                currentSearchHistory.LastIndexOf(
+                    "verified type-text|",
+                    typedMarkerIndex,
+                    StringComparison.Ordinal);
+
+            if (verifiedTypeTextBeforeMarker >= 0)
+                return true;
+        }
+
+        var verifiedTypeText = currentSearchHistory.LastIndexOf(
+            "verified type-text|",
+            StringComparison.Ordinal);
+
+        if (verifiedTypeText < 0)
+            return false;
+
+        return currentSearchHistory.IndexOf(
+            target.ToLowerInvariant(),
+            verifiedTypeText,
+            StringComparison.Ordinal) >= 0;
+    }
+
+    private static bool HasVerifiedSearchLaunchAttempt(
+        string taskHistory)
+    {
+        if (string.IsNullOrWhiteSpace(
+                taskHistory))
+        {
+            return false;
+        }
+
+        var normalized =
+            taskHistory.ToLowerInvariant();
+
+        return
+            normalized.Contains(
+                "verified press-key|key=enter",
+                StringComparison.Ordinal) &&
+            (normalized.Contains(
+                 "windows search khởi chạy ứng dụng",
+                 StringComparison.Ordinal) ||
+             normalized.Contains(
+                 "windows search khoi chay ung dung",
+                 StringComparison.Ordinal) ||
+             normalized.Contains(
+                 "search launch",
+                 StringComparison.Ordinal));
+    }
+
+    private static int CountLaunchGraceWaits(
+        string taskHistory)
+    {
+        if (string.IsNullOrWhiteSpace(
+                taskHistory))
+        {
+            return 0;
+        }
+
+        const string marker =
+            "LOCAL-LAUNCH-GRACE";
+
+        var count = 0;
+        var offset = 0;
+
+        while ((offset =
+                    taskHistory.IndexOf(
+                        marker,
+                        offset,
+                        StringComparison.OrdinalIgnoreCase)) >= 0)
+        {
+            count++;
+            offset += marker.Length;
+        }
+
+        return count;
+    }
+
+    private static bool HasFailedSearchLaunchAttempt(
+        string taskHistory)
+    {
+        if (string.IsNullOrWhiteSpace(
+                taskHistory))
+        {
+            return false;
+        }
+
+        var normalized =
+            taskHistory.ToLowerInvariant();
+
+        return
+            normalized.Contains(
+                "verify-failed press-key|key=enter",
+                StringComparison.Ordinal) &&
+            (normalized.Contains(
+                 "windows search khởi chạy ứng dụng",
+                 StringComparison.Ordinal) ||
+             normalized.Contains(
+                 "windows search khoi chay ung dung",
+                 StringComparison.Ordinal) ||
+             normalized.Contains(
+                 "search launch",
+                 StringComparison.Ordinal));
     }
 
     private static bool HasAdditionalGoalSteps(
@@ -698,7 +970,117 @@ public sealed class DesktopLocalActionPlanner
             break;
         }
 
+        if (TryExtractOpenApplicationWrapperTarget(
+                value,
+                out target))
+        {
+            return true;
+        }
+
         target = string.Empty;
+        return false;
+    }
+
+    private static bool TryExtractOpenApplicationWrapperTarget(
+        string value,
+        out string target)
+    {
+        foreach (var prefix in OpenApplicationWrapperPrefixes)
+        {
+            if (!value.StartsWith(
+                    prefix,
+                    StringComparison.OrdinalIgnoreCase))
+            {
+                continue;
+            }
+
+            var remainder =
+                value[prefix.Length..]
+                    .Trim();
+
+            if (remainder.Length == 0)
+                break;
+
+            var openingQuote =
+                remainder[0];
+
+            var closingQuote =
+                openingQuote switch
+                {
+                    '“' => '”',
+                    '"' => '"',
+                    '\'' => '\'',
+                    _ => '\0'
+                };
+
+            if (closingQuote != '\0')
+            {
+                var endQuote =
+                    remainder.IndexOf(
+                        closingQuote,
+                        1);
+
+                if (endQuote > 1)
+                {
+                    target =
+                        remainder[1..endQuote]
+                            .Trim();
+
+                    return target.Length is
+                        >= 2 and <= 96;
+                }
+            }
+
+            var cut =
+                remainder.Length;
+
+            foreach (var marker in OpenApplicationWrapperStateMarkers)
+            {
+                var markerIndex =
+                    remainder.IndexOf(
+                        marker,
+                        StringComparison.OrdinalIgnoreCase);
+
+                if (markerIndex >= 0 &&
+                    markerIndex < cut)
+                {
+                    cut =
+                        markerIndex;
+                }
+            }
+
+            foreach (var separator in NextStepSeparators)
+            {
+                var separatorIndex =
+                    remainder.IndexOf(
+                        separator,
+                        StringComparison.OrdinalIgnoreCase);
+
+                if (separatorIndex >= 0 &&
+                    separatorIndex < cut)
+                {
+                    cut =
+                        separatorIndex;
+                }
+            }
+
+            target =
+                remainder[..cut]
+                    .Trim()
+                    .Trim(
+                        '"',
+                        '\'',
+                        '“',
+                        '”',
+                        '.',
+                        ':');
+
+            return target.Length is
+                >= 2 and <= 96;
+        }
+
+        target =
+            string.Empty;
         return false;
     }
 

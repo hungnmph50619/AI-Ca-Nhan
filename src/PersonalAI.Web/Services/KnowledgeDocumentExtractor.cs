@@ -2,6 +2,8 @@ using System.IO.Compression;
 using System.Text;
 using DocumentFormat.OpenXml.Packaging;
 using DocumentFormat.OpenXml.Wordprocessing;
+using DocumentFormat.OpenXml.Spreadsheet;
+using DocumentFormat.OpenXml.Presentation;
 using UglyToad.PdfPig;
 using UglyToad.PdfPig.DocumentLayoutAnalysis.TextExtractor;
 
@@ -23,6 +25,7 @@ public sealed class KnowledgeDocumentExtractor
     private const int MaximumExtractedCharacters = 2_000_000;
     private const int MaximumPdfPages = 2_000;
     private const long MaximumDocxUncompressedBytes = 50L * 1024 * 1024;
+    private const long MaximumOfficeUncompressedBytes = 80L * 1024 * 1024;
 
     private static readonly IReadOnlyDictionary<string, HashSet<string>> AcceptedContentTypes =
         new Dictionary<string, HashSet<string>>(StringComparer.OrdinalIgnoreCase)
@@ -50,6 +53,34 @@ public sealed class KnowledgeDocumentExtractor
                 "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
                 "application/zip",
                 "application/x-zip-compressed",
+                "application/octet-stream"
+            },
+            [".xlsx"] = new(StringComparer.OrdinalIgnoreCase)
+            {
+                "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+                "application/zip",
+                "application/x-zip-compressed",
+                "application/octet-stream"
+            },
+            [".pptx"] = new(StringComparer.OrdinalIgnoreCase)
+            {
+                "application/vnd.openxmlformats-officedocument.presentationml.presentation",
+                "application/zip",
+                "application/x-zip-compressed",
+                "application/octet-stream"
+            },
+            [".csv"] = new(StringComparer.OrdinalIgnoreCase)
+            {
+                "text/csv",
+                "application/csv",
+                "text/plain",
+                "application/octet-stream"
+            },
+            [".json"] = new(StringComparer.OrdinalIgnoreCase)
+            {
+                "application/json",
+                "text/json",
+                "text/plain",
                 "application/octet-stream"
             }
         };
@@ -80,10 +111,16 @@ public sealed class KnowledgeDocumentExtractor
         {
             ".txt" => await ExtractUtf8TextAsync(memory, isMarkdown: false, cancellationToken),
             ".md" => await ExtractUtf8TextAsync(memory, isMarkdown: true, cancellationToken),
+            ".csv" or ".json" or ".xml" or ".yaml" or ".yml" or
+            ".sql" or ".cs" or ".js" or ".ts" or ".py" or
+            ".html" or ".css" =>
+                await ExtractUtf8TextAsync(memory, isMarkdown: false, cancellationToken),
             ".pdf" => ExtractPdf(memory, cancellationToken),
             ".docx" => ExtractDocx(memory, cancellationToken),
+            ".xlsx" => ExtractXlsx(memory, cancellationToken),
+            ".pptx" => ExtractPptx(memory, cancellationToken),
             _ => throw new KnowledgeDocumentValidationException(
-                "Định dạng tài liệu chưa được hỗ trợ. Hãy dùng PDF, DOCX, TXT hoặc Markdown (.md).")
+                "Định dạng tài liệu chưa được hỗ trợ.")
         };
     }
 
@@ -249,11 +286,11 @@ public sealed class KnowledgeDocumentExtractor
                         Heading: currentHeading,
                         Section: currentSection));
                 }
-                else if (element is Table table)
+                else if (element is DocumentFormat.OpenXml.Wordprocessing.Table table)
                 {
-                    foreach (var row in table.Elements<TableRow>())
+                    foreach (var row in table.Elements<DocumentFormat.OpenXml.Wordprocessing.TableRow>())
                     {
-                        var cells = row.Elements<TableCell>()
+                        var cells = row.Elements<DocumentFormat.OpenXml.Wordprocessing.TableCell>()
                             .Select(cell => string.Join(
                                 " ",
                                 cell.Descendants<Paragraph>()
@@ -288,6 +325,179 @@ public sealed class KnowledgeDocumentExtractor
         {
             throw new KnowledgeDocumentValidationException(
                 "Không đọc được DOCX. Tệp có thể bị hỏng hoặc không phải tài liệu Word hợp lệ.");
+        }
+    }
+
+    private static ExtractedKnowledgeDocument ExtractXlsx(
+        MemoryStream memory,
+        CancellationToken cancellationToken)
+    {
+        ValidateOpenXmlContainer(
+            memory,
+            "xl/workbook.xml",
+            "XLSX");
+
+        try
+        {
+            memory.Position = 0;
+            using var document = SpreadsheetDocument.Open(memory, false);
+            var workbookPart = document.WorkbookPart
+                ?? throw new KnowledgeDocumentValidationException(
+                    "XLSX không có workbook hợp lệ.");
+
+            var sharedStrings = workbookPart.SharedStringTablePart?
+                .SharedStringTable?
+                .Elements<SharedStringItem>()
+                .Select(item => item.InnerText)
+                .ToArray()
+                ?? Array.Empty<string>();
+
+            var blocks = new List<KnowledgeDocumentBlock>();
+            foreach (var sheet in workbookPart.Workbook.Sheets?.Elements<Sheet>()
+                         ?? Enumerable.Empty<Sheet>())
+            {
+                cancellationToken.ThrowIfCancellationRequested();
+
+                if (sheet.Id?.Value is not { Length: > 0 } relationshipId)
+                    continue;
+
+                if (workbookPart.GetPartById(relationshipId) is not WorksheetPart worksheetPart)
+                    continue;
+
+                var sheetName = sheet.Name?.Value ?? "Sheet";
+                foreach (var row in worksheetPart.Worksheet.Descendants<Row>())
+                {
+                    var values = row.Elements<Cell>()
+                        .Select(cell => ReadSpreadsheetCell(cell, sharedStrings))
+                        .Where(value => !string.IsNullOrWhiteSpace(value))
+                        .ToArray();
+
+                    if (values.Length == 0)
+                        continue;
+
+                    blocks.Add(new KnowledgeDocumentBlock(
+                        string.Join(" | ", values),
+                        Section: sheetName));
+                }
+            }
+
+            var text = string.Join(
+                "\n",
+                blocks.Select(block => $"[{block.Section}] {block.Text}"));
+
+            ValidateExtractedText(text);
+            return new ExtractedKnowledgeDocument(
+                NormalizeText(text),
+                null,
+                blocks);
+        }
+        catch (KnowledgeDocumentValidationException)
+        {
+            throw;
+        }
+        catch (Exception exception) when (exception is not OperationCanceledException)
+        {
+            throw new KnowledgeDocumentValidationException(
+                "Không đọc được XLSX. Tệp có thể bị hỏng hoặc không phải bảng tính Excel hợp lệ.");
+        }
+        finally
+        {
+            memory.Position = 0;
+        }
+    }
+
+    private static string ReadSpreadsheetCell(
+        Cell cell,
+        IReadOnlyList<string> sharedStrings)
+    {
+        if (cell.DataType?.Value == CellValues.SharedString &&
+            int.TryParse(cell.CellValue?.Text, out var sharedIndex) &&
+            sharedIndex >= 0 &&
+            sharedIndex < sharedStrings.Count)
+        {
+            return sharedStrings[sharedIndex].Trim();
+        }
+
+        if (cell.DataType?.Value == CellValues.InlineString)
+            return cell.InlineString?.InnerText?.Trim() ?? string.Empty;
+
+        return (cell.CellValue?.Text ?? cell.InnerText ?? string.Empty).Trim();
+    }
+
+    private static ExtractedKnowledgeDocument ExtractPptx(
+        MemoryStream memory,
+        CancellationToken cancellationToken)
+    {
+        ValidateOpenXmlContainer(
+            memory,
+            "ppt/presentation.xml",
+            "PPTX");
+
+        try
+        {
+            memory.Position = 0;
+            using var document = PresentationDocument.Open(memory, false);
+            var presentationPart = document.PresentationPart
+                ?? throw new KnowledgeDocumentValidationException(
+                    "PPTX không có presentation hợp lệ.");
+
+            var slideIds = presentationPart.Presentation.SlideIdList?
+                .Elements<SlideId>()
+                .ToArray()
+                ?? Array.Empty<SlideId>();
+
+            var blocks = new List<KnowledgeDocumentBlock>();
+
+            for (var index = 0; index < slideIds.Length; index++)
+            {
+                cancellationToken.ThrowIfCancellationRequested();
+
+                var relationshipId = slideIds[index].RelationshipId?.Value;
+                if (string.IsNullOrWhiteSpace(relationshipId))
+                    continue;
+
+                if (presentationPart.GetPartById(relationshipId) is not SlidePart slidePart)
+                    continue;
+
+                var lines = slidePart.Slide
+                    .Descendants<DocumentFormat.OpenXml.Drawing.Text>()
+                    .Select(text => text.Text?.Trim() ?? string.Empty)
+                    .Where(text => text.Length > 0)
+                    .ToArray();
+
+                if (lines.Length == 0)
+                    continue;
+
+                var slideNumber = index + 1;
+                blocks.Add(new KnowledgeDocumentBlock(
+                    string.Join("\n", lines),
+                    PageNumber: slideNumber,
+                    Section: $"Slide {slideNumber}"));
+            }
+
+            var text = string.Join(
+                "\n\n",
+                blocks.Select(block =>
+                    $"[{block.Section}]\n{block.Text}"));
+
+            ValidateExtractedText(text);
+            return new ExtractedKnowledgeDocument(
+                NormalizeText(text),
+                slideIds.Length,
+                blocks);
+        }
+        catch (KnowledgeDocumentValidationException)
+        {
+            throw;
+        }
+        catch (Exception exception) when (exception is not OperationCanceledException)
+        {
+            throw new KnowledgeDocumentValidationException(
+                "Không đọc được PPTX. Tệp có thể bị hỏng hoặc không phải bài trình chiếu PowerPoint hợp lệ.");
+        }
+        finally
+        {
+            memory.Position = 0;
         }
     }
 
@@ -405,7 +615,7 @@ public sealed class KnowledgeDocumentExtractor
     }
 
     private static string GetParagraphText(Paragraph paragraph) =>
-        string.Concat(paragraph.Descendants<Text>().Select(text => text.Text)).Trim();
+        string.Concat(paragraph.Descendants<DocumentFormat.OpenXml.Wordprocessing.Text>().Select(text => text.Text)).Trim();
 
     private static IEnumerable<string> SplitParagraphs(string text)
     {
@@ -470,6 +680,51 @@ public sealed class KnowledgeDocumentExtractor
         {
             throw new KnowledgeDocumentValidationException(
                 "Phần mở rộng là PDF nhưng nội dung tệp không có chữ ký PDF hợp lệ.");
+        }
+    }
+
+    private static void ValidateOpenXmlContainer(
+        MemoryStream stream,
+        string requiredEntry,
+        string label)
+    {
+        try
+        {
+            stream.Position = 0;
+            using var archive =
+                new ZipArchive(
+                    stream,
+                    ZipArchiveMode.Read,
+                    leaveOpen: true);
+
+            var totalUncompressedBytes =
+                archive.Entries.Sum(entry => entry.Length);
+
+            if (totalUncompressedBytes > MaximumOfficeUncompressedBytes)
+            {
+                throw new KnowledgeDocumentValidationException(
+                    $"{label} giải nén quá lớn. Hãy chia tệp thành các phần nhỏ hơn.");
+            }
+
+            if (archive.GetEntry("[Content_Types].xml") is null ||
+                archive.GetEntry(requiredEntry) is null)
+            {
+                throw new KnowledgeDocumentValidationException(
+                    $"Phần mở rộng là {label} nhưng cấu trúc tệp không hợp lệ.");
+            }
+        }
+        catch (KnowledgeDocumentValidationException)
+        {
+            throw;
+        }
+        catch (InvalidDataException)
+        {
+            throw new KnowledgeDocumentValidationException(
+                $"Phần mở rộng là {label} nhưng tệp không phải gói OpenXML hợp lệ.");
+        }
+        finally
+        {
+            stream.Position = 0;
         }
     }
 

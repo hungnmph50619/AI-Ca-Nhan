@@ -60,9 +60,15 @@ public sealed class KnowledgeGroundingService(
             .ToArray();
 
         var groundedMessages = messages.ToArray();
-        groundedMessages[lastUserIndex] = new ChatMessage(
-            "user",
-            BuildGroundedQuestion(question, selectedResults, knowledgeMode));
+        groundedMessages[lastUserIndex] =
+            groundedMessages[lastUserIndex] with
+            {
+                Content =
+                    BuildGroundedQuestion(
+                        question,
+                        selectedResults,
+                        knowledgeMode)
+            };
 
         return new KnowledgeGroundingResult(groundedMessages, sources);
     }

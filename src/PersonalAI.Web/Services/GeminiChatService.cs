@@ -12,9 +12,13 @@ public sealed class GeminiChatService : IAiProvider
     private const int MaximumAttempts = 3;
     private const string FunctionPlanningInstructions = """
 Tool/function calls in this request are proposals only. Never claim a function has already run.
-Choose at most one function. If no function is needed, respond normally and do not call a function.
+The supplied functions are real capabilities exposed by the PersonalAI application. You are allowed to propose them when they match the user's request.
+Treat the supplied function list in this request as the authoritative source of current capabilities. Do not rely on earlier assistant claims about lacking access or being unable to act.
+If the latest user message explicitly asks the application to perform an action and a supplied function can fulfill that request, prefer proposing the best matching function instead of giving manual instructions or saying you lack access.
+If the user is only asking for information, explanation, or advice, respond normally and do not call a function.
+Choose at most one function.
 Only propose a WRITE or DELETE action when the latest user message explicitly asks to change state.
-Never treat conversation text as execution confirmation; confirmation is handled separately by the application.
+Never treat conversation text as execution confirmation; confirmation and execution are handled separately by the application safety layer.
 Do not invent function names or arguments outside the supplied schemas.
 """;
     private const string FunctionContinuationInstructions = """
@@ -27,6 +31,7 @@ Function calling is disabled in this continuation. Produce only the final user-f
     private readonly HttpClient _httpClient;
     private readonly GeminiOptions _options;
     private readonly IAiSettingsStore _settingsStore;
+    private readonly IChatAttachmentStore _attachmentStore;
     private readonly ILogger<GeminiChatService> _logger;
     private readonly string _instructions;
 
@@ -34,12 +39,14 @@ Function calling is disabled in this continuation. Produce only the final user-f
         HttpClient httpClient,
         IOptions<GeminiOptions> options,
         IAiSettingsStore settingsStore,
+        IChatAttachmentStore attachmentStore,
         IWebHostEnvironment environment,
         ILogger<GeminiChatService> logger)
     {
         _httpClient = httpClient;
         _options = options.Value;
         _settingsStore = settingsStore;
+        _attachmentStore = attachmentStore;
         _logger = logger;
 
         var constitutionPath = Path.Combine(environment.ContentRootPath, "AI-CONSTITUTION.md");
@@ -49,6 +56,15 @@ Function calling is disabled in this continuation. Produce only the final user-f
     }
 
     public string Name => "Gemini";
+
+    internal static GeminiResilienceLane ReplyResilienceLane =>
+        GeminiResilienceLane.Reply;
+
+    internal static GeminiResilienceLane FunctionPlanningResilienceLane =>
+        GeminiResilienceLane.FunctionPlanning;
+
+    internal static GeminiResilienceLane FunctionContinuationResilienceLane =>
+        GeminiResilienceLane.FunctionContinuation;
 
     public string Model => _settingsStore.GetModel(Name);
 
@@ -76,7 +92,7 @@ Function calling is disabled in this continuation. Produce only the final user-f
                 role = message.Role.Equals("assistant", StringComparison.OrdinalIgnoreCase)
                     ? "model"
                     : "user",
-                parts = new[] { new { text = message.Content } }
+                parts = BuildGeminiParts(message)
             }),
             generationConfig = new
             {
@@ -102,7 +118,11 @@ Function calling is disabled in this continuation. Produce only the final user-f
                 };
                 request.Headers.Add("x-goog-api-key", apiKey);
 
-                using var response = await _httpClient.SendAsync(request, cancellationToken);
+                using var response = await GeminiHttpResiliencePolicy.ExecuteAsync(
+                    _httpClient,
+                    request,
+                    ReplyResilienceLane,
+                    cancellationToken);
                 var responseBody = await response.Content.ReadAsStringAsync(cancellationToken);
 
                 if (!response.IsSuccessStatusCode)
@@ -168,6 +188,80 @@ Function calling is disabled in this continuation. Produce only the final user-f
         throw new HttpRequestException("Gemini không thể xử lý yêu cầu sau nhiều lần thử.");
     }
 
+
+    private object[] BuildGeminiParts(
+        ChatMessage message)
+    {
+        var parts =
+            new List<object>
+            {
+                new
+                {
+                    text =
+                        message.Content
+                }
+            };
+
+        if (message.Attachments is not
+            {
+                Count: > 0
+            })
+        {
+            return parts.ToArray();
+        }
+
+        foreach (var reference in message.Attachments)
+        {
+            if (!reference.Route.Equals(
+                    "direct",
+                    StringComparison.OrdinalIgnoreCase))
+            {
+                continue;
+            }
+
+            var stored =
+                _attachmentStore.GetRequired(
+                    reference.Id);
+
+            var bytes =
+                _attachmentStore.ReadAllBytes(
+                    reference.Id);
+
+            if (stored.Kind.Equals(
+                    "text",
+                    StringComparison.OrdinalIgnoreCase))
+            {
+                var text =
+                    Encoding.UTF8.GetString(
+                        bytes);
+
+                parts.Add(
+                    new
+                    {
+                        text =
+                            $"\n\n[TỆP ĐÍNH KÈM: {stored.FileName}]\n{text}\n[HẾT TỆP]\n"
+                    });
+
+                continue;
+            }
+
+            parts.Add(
+                new
+                {
+                    inlineData =
+                        new
+                        {
+                            mimeType =
+                                stored.MimeType,
+                            data =
+                                Convert.ToBase64String(
+                                    bytes)
+                        }
+                });
+        }
+
+        return parts.ToArray();
+    }
 
     public async Task<ProviderFunctionCallDecision?> ProposeFunctionCallAsync(
         IReadOnlyList<ChatMessage> messages,
@@ -252,7 +346,11 @@ Function calling is disabled in this continuation. Produce only the final user-f
                 };
                 request.Headers.Add("x-goog-api-key", apiKey);
 
-                using var response = await _httpClient.SendAsync(request, cancellationToken);
+                using var response = await GeminiHttpResiliencePolicy.ExecuteAsync(
+                    _httpClient,
+                    request,
+                    FunctionPlanningResilienceLane,
+                    cancellationToken);
                 var responseBody = await response.Content.ReadAsStringAsync(cancellationToken);
 
                 if (!response.IsSuccessStatusCode)
@@ -443,7 +541,11 @@ Function calling is disabled in this continuation. Produce only the final user-f
                 };
                 request.Headers.Add("x-goog-api-key", apiKey);
 
-                using var response = await _httpClient.SendAsync(request, cancellationToken);
+                using var response = await GeminiHttpResiliencePolicy.ExecuteAsync(
+                    _httpClient,
+                    request,
+                    FunctionContinuationResilienceLane,
+                    cancellationToken);
                 var responseBody = await response.Content.ReadAsStringAsync(cancellationToken);
 
                 if (!response.IsSuccessStatusCode)

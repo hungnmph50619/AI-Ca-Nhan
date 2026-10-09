@@ -104,6 +104,24 @@ public sealed record DesktopOperatorDecision(
     string TargetElementId = "");
 
 
+public sealed record DesktopOperatorIntent(
+    string Intent,
+    string Target,
+    string Query,
+    string Text,
+    string Key,
+    IReadOnlyList<string> Keys,
+    int ImageX,
+    int ImageY,
+    int BoxLeft,
+    int BoxTop,
+    int BoxWidth,
+    int BoxHeight,
+    int ScrollDelta,
+    string ExpectedEffect,
+    double Confidence,
+    string Reason);
+
 public sealed record DesktopVisionVerification(
     bool Satisfied,
     double Confidence,

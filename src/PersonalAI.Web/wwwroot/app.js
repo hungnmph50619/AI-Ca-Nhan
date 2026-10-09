@@ -6,6 +6,8 @@ const MAX_STORED_MESSAGES = 40;
 const MAX_TITLE_LENGTH = 42;
 const CUSTOM_MODEL_VALUE = "__custom__";
 const USE_TOOLS_STORAGE_KEY = "personal-ai-v0.8.5-use-tools";
+const MAX_CHAT_ATTACHMENTS = 4;
+const MAX_CHAT_ATTACHMENT_BYTES = 10 * 1024 * 1024;
 const DEFAULT_MODELS = {
   Gemini: "gemini-3.1-flash-lite",
   OpenAI: "gpt-5.6-luna"
@@ -24,6 +26,7 @@ const state = {
   knowledgeBusy: false,
   knowledgeSearchBusy: false,
   knowledgeDocuments: [],
+  pendingAttachments: [],
   configured: false,
   provider: "",
   model: ""
@@ -33,6 +36,9 @@ const elements = {
   form: document.querySelector("#chatForm"),
   input: document.querySelector("#messageInput"),
   send: document.querySelector("#sendButton"),
+  attachmentButton: document.querySelector("#attachmentButton"),
+  attachmentInput: document.querySelector("#chatAttachmentInput"),
+  attachmentPreview: document.querySelector("#chatAttachmentPreview"),
   messages: document.querySelector("#messages"),
   welcome: document.querySelector("#welcome"),
   statusDot: document.querySelector("#statusDot"),
@@ -96,6 +102,39 @@ async function initialize() {
 
 function bindEvents() {
   elements.form.addEventListener("submit", sendCurrentMessage);
+  elements.attachmentButton?.addEventListener("click", () => {
+    if (!state.busy) elements.attachmentInput?.click();
+  });
+  elements.attachmentInput?.addEventListener("change", () => {
+    const files = Array.from(elements.attachmentInput.files || []);
+    if (files.length > 0) queueChatAttachments(files);
+    elements.attachmentInput.value = "";
+  });
+  ["dragenter", "dragover"].forEach(eventName => {
+    elements.form.addEventListener(eventName, event => {
+      if (!event.dataTransfer?.types?.includes("Files")) return;
+      event.preventDefault();
+      if (!state.busy) elements.form.classList.add("dragging");
+    });
+  });
+  ["dragleave", "drop"].forEach(eventName => {
+    elements.form.addEventListener(eventName, event => {
+      if (eventName === "drop") event.preventDefault();
+      elements.form.classList.remove("dragging");
+    });
+  });
+  elements.form.addEventListener("drop", event => {
+    const files = Array.from(event.dataTransfer?.files || []);
+    if (files.length > 0 && !state.busy) queueChatAttachments(files);
+  });
+  elements.input.addEventListener("paste", event => {
+    const files = Array.from(event.clipboardData?.files || [])
+      .filter(file => file.type.startsWith("image/"));
+    if (files.length > 0 && !state.busy) {
+      event.preventDefault();
+      queueChatAttachments(files);
+    }
+  });
   elements.input.addEventListener("input", resizeInput);
   elements.input.addEventListener("keydown", event => {
     if (event.key === "Enter" && !event.shiftKey) {
@@ -874,13 +913,211 @@ async function refreshStatus() {
   }
 }
 
+function normalizeChatAttachment(value) {
+  if (!value || typeof value !== "object") return null;
+  const id = typeof value.id === "string" ? value.id.trim() : "";
+  const fileName = typeof value.fileName === "string" ? value.fileName.trim() : "";
+  const mimeType = typeof value.mimeType === "string" ? value.mimeType.trim() : "";
+  const size = Math.max(0, Number(value.size) || 0);
+  const kind = typeof value.kind === "string" ? value.kind : "document";
+  const route = typeof value.route === "string" ? value.route : "direct";
+  const knowledgeDocumentId = typeof value.knowledgeDocumentId === "string"
+    ? value.knowledgeDocumentId
+    : null;
+  const knowledgeChunkCount = Math.max(0, Number(value.knowledgeChunkCount) || 0);
+  if (!id || !fileName || !mimeType || size <= 0) return null;
+  return {
+    id,
+    fileName,
+    mimeType,
+    size,
+    kind,
+    route,
+    knowledgeDocumentId,
+    knowledgeChunkCount
+  };
+}
+
+function normalizeChatAttachments(value) {
+  return Array.isArray(value)
+    ? value.map(normalizeChatAttachment).filter(Boolean).slice(0, MAX_CHAT_ATTACHMENTS)
+    : [];
+}
+
+async function queueChatAttachments(files) {
+  if (state.busy || !Array.isArray(files) || files.length === 0) return;
+
+  const available = MAX_CHAT_ATTACHMENTS - state.pendingAttachments.length;
+  if (available <= 0) {
+    await showVietnameseNotice(`Mỗi tin nhắn chỉ được đính kèm tối đa ${MAX_CHAT_ATTACHMENTS} tệp.`, {
+      title: "Đã đạt giới hạn tệp"
+    });
+    return;
+  }
+
+  const selected = files.slice(0, available);
+  for (const file of selected) {
+    if (file.size <= 0) continue;
+    if (file.size > MAX_CHAT_ATTACHMENT_BYTES) {
+      await showVietnameseNotice(`${file.name} lớn hơn 10 MB nên chưa thể đính kèm.`, {
+        title: "Tệp quá lớn"
+      });
+      continue;
+    }
+
+    const tempId = globalThis.crypto?.randomUUID
+      ? globalThis.crypto.randomUUID()
+      : `upload-${Date.now()}-${Math.random().toString(16).slice(2)}`;
+
+    const pending = {
+      tempId,
+      fileName: file.name,
+      mimeType: file.type || "application/octet-stream",
+      size: file.size,
+      kind: file.type.startsWith("image/") ? "image" : "document",
+      uploading: true,
+      error: "",
+      attachment: null,
+      previewUrl: file.type.startsWith("image/") ? URL.createObjectURL(file) : ""
+    };
+
+    state.pendingAttachments.push(pending);
+    renderChatAttachmentPreview();
+
+    try {
+      pending.attachment = await uploadChatAttachment(file);
+      pending.uploading = false;
+      pending.error = "";
+    } catch (error) {
+      pending.uploading = false;
+      pending.error = error.message || "Không tải được tệp.";
+    }
+
+    renderChatAttachmentPreview();
+  }
+
+  updateComposerAvailability();
+}
+
+async function uploadChatAttachment(file) {
+  const body = new FormData();
+  body.append("file", file);
+
+  const response = await fetch("/api/chat/attachments", {
+    method: "POST",
+    body
+  });
+  const payload = await response.json().catch(() => ({}));
+
+  if (!response.ok) {
+    throw new Error(payload.error || "Không thể tải tệp đính kèm.");
+  }
+
+  const attachment = normalizeChatAttachment(payload);
+  if (!attachment) throw new Error("Máy chủ trả metadata tệp đính kèm không hợp lệ.");
+  return attachment;
+}
+
+function removePendingAttachment(tempId) {
+  const target = state.pendingAttachments.find(item => item.tempId === tempId);
+  if (target?.previewUrl) URL.revokeObjectURL(target.previewUrl);
+  state.pendingAttachments = state.pendingAttachments.filter(item => item.tempId !== tempId);
+  renderChatAttachmentPreview();
+  updateComposerAvailability();
+}
+
+function clearPendingAttachments() {
+  state.pendingAttachments.forEach(item => {
+    if (item.previewUrl) URL.revokeObjectURL(item.previewUrl);
+  });
+  state.pendingAttachments = [];
+  renderChatAttachmentPreview();
+  updateComposerAvailability();
+}
+
+function renderChatAttachmentPreview() {
+  if (!elements.attachmentPreview) return;
+  elements.attachmentPreview.replaceChildren();
+
+  if (state.pendingAttachments.length === 0) {
+    elements.attachmentPreview.hidden = true;
+    return;
+  }
+
+  elements.attachmentPreview.hidden = false;
+
+  state.pendingAttachments.forEach(item => {
+    const card = documentElement(
+      "div",
+      `chat-attachment-card${item.uploading ? " uploading" : ""}`);
+
+    let icon;
+    if (item.kind === "image" && item.previewUrl) {
+      icon = document.createElement("img");
+      icon.className = "chat-attachment-thumb";
+      icon.src = item.previewUrl;
+      icon.alt = "";
+    } else {
+      icon = documentElement(
+        "div",
+        "chat-attachment-icon",
+        item.kind === "image" ? "▧" : "▤");
+    }
+
+    const meta = documentElement("div", "chat-attachment-meta");
+    const name = documentElement("span", "chat-attachment-name", item.fileName);
+    const status = item.error
+      ? `Lỗi · ${item.error}`
+      : item.uploading
+        ? "Đang tải lên…"
+        : `${formatAttachmentSize(item.size)} · ${item.attachment?.route === "knowledge" ? "Dùng RAG" : "Gửi trực tiếp"}`;
+    const size = documentElement("span", "chat-attachment-size", status);
+    meta.append(name, size);
+
+    const remove = documentElement("button", "chat-attachment-remove", "×");
+    remove.type = "button";
+    remove.title = "Bỏ tệp";
+    remove.setAttribute("aria-label", `Bỏ tệp ${item.fileName}`);
+    remove.addEventListener("click", () => removePendingAttachment(item.tempId));
+
+    card.append(icon, meta, remove);
+    elements.attachmentPreview.appendChild(card);
+  });
+}
+
+function updateComposerAvailability() {
+  const hasUploading = state.pendingAttachments.some(item => item.uploading);
+  const hasFailed = state.pendingAttachments.some(item => item.error);
+  if (elements.attachmentButton) elements.attachmentButton.disabled = state.busy;
+  if (elements.send) elements.send.disabled = state.busy || hasUploading || hasFailed;
+}
+
+function formatAttachmentSize(bytes) {
+  const value = Math.max(0, Number(bytes) || 0);
+  if (value < 1024) return `${value} B`;
+  if (value < 1024 * 1024) return `${(value / 1024).toFixed(1)} KB`;
+  return `${(value / (1024 * 1024)).toFixed(1)} MB`;
+}
+
 async function sendCurrentMessage(event) {
   event.preventDefault();
-  const content = elements.input.value.trim();
-  if (!content || state.busy) return;
+  const rawContent = elements.input.value.trim();
+  const readyAttachments = state.pendingAttachments
+    .filter(item => !item.uploading && !item.error && item.attachment)
+    .map(item => item.attachment);
+
+  if (state.busy) return;
+  if (state.pendingAttachments.some(item => item.uploading || item.error)) return;
+  if (!rawContent && readyAttachments.length === 0) return;
+
+  const content = rawContent || "Hãy xem và phân tích tệp đính kèm này.";
 
   const conversation = getActiveConversation();
-  conversation.messages.push({ role: "user", content });
+  conversation.messages.push({
+    role: "user",
+    content,
+    attachments: readyAttachments
+  });
   if (conversation.messages.filter(message => message.role === "user").length === 1) {
     conversation.title = createConversationTitle(content);
   }
@@ -888,6 +1125,7 @@ async function sendCurrentMessage(event) {
   trimMessages(conversation);
   persistWorkspace();
   elements.input.value = "";
+  clearPendingAttachments();
   resizeInput();
   renderConversationList();
   renderConversation();
@@ -902,7 +1140,10 @@ async function sendCurrentMessage(event) {
       body: JSON.stringify({
         messages: conversation.messages.map(message => ({
           role: message.role,
-          content: message.content
+          content: message.content,
+          attachments: message.role === "user"
+            ? normalizeChatAttachments(message.attachments)
+            : []
         })),
         useTools: elements.useTools?.checked === true,
         useTaskContext: true,
@@ -949,13 +1190,14 @@ function renderConversation() {
         message.sources,
         message.toolProposal,
         message.toolExecution,
-        message.context));
+        message.context,
+        message.attachments));
   });
 
   scrollToBottom();
 }
 
-function createMessageNode(role, content, sources = [], toolProposal = null, toolExecution = null, contextReport = null) {
+function createMessageNode(role, content, sources = [], toolProposal = null, toolExecution = null, contextReport = null, attachments = []) {
   const row = document.createElement("article");
   row.className = `message-row ${role}`;
 
@@ -966,6 +1208,11 @@ function createMessageNode(role, content, sources = [], toolProposal = null, too
   const bubble = document.createElement("div");
   bubble.className = "bubble";
   bubble.innerHTML = role === "assistant" ? renderMarkdown(content) : escapeHtml(content).replaceAll("\n", "<br>");
+
+  const normalizedAttachments = normalizeChatAttachments(attachments);
+  if (normalizedAttachments.length > 0) {
+    bubble.appendChild(createMessageAttachmentsNode(normalizedAttachments));
+  }
 
   const normalizedContext = normalizeContextReport(contextReport);
   if (role === "assistant" && normalizedContext) {
@@ -987,6 +1234,56 @@ function createMessageNode(role, content, sources = [], toolProposal = null, too
 
   row.append(avatar, bubble);
   return row;
+}
+
+function createMessageAttachmentsNode(attachments) {
+  const wrap = documentElement("div", "message-attachments");
+
+  attachments.forEach(attachment => {
+    const card = documentElement("div", "message-attachment-card");
+    let icon;
+    if (attachment.kind === "image") {
+      icon = document.createElement("img");
+      icon.className = "message-attachment-thumb";
+      icon.src = `/api/chat/attachments/${encodeURIComponent(attachment.id)}`;
+      icon.alt = "";
+      icon.loading = "lazy";
+    } else {
+      icon = documentElement(
+        "div",
+        "message-attachment-icon",
+        "▤");
+    }
+    const meta = documentElement("div", "message-attachment-meta");
+    const name = documentElement(
+      "span",
+      "message-attachment-name",
+      attachment.fileName);
+    const size = documentElement(
+      "span",
+      "message-attachment-size",
+      `${formatAttachmentSize(attachment.size)} · ${attachment.route === "knowledge" ? "RAG" : attachment.kind === "image" ? "Ảnh" : "Trực tiếp"}`);
+
+    meta.append(name, size);
+    card.append(icon, meta);
+    card.title = "Mở tệp đính kèm";
+    card.tabIndex = 0;
+    card.addEventListener("click", () => {
+      window.open(
+        `/api/chat/attachments/${encodeURIComponent(attachment.id)}`,
+        "_blank",
+        "noopener,noreferrer");
+    });
+    card.addEventListener("keydown", event => {
+      if (event.key === "Enter" || event.key === " ") {
+        event.preventDefault();
+        card.click();
+      }
+    });
+    wrap.appendChild(card);
+  });
+
+  return wrap;
 }
 
 function createContextReportNode(report) {
@@ -1730,6 +2027,7 @@ async function clearActiveConversation() {
     return;
   }
 
+  clearPendingAttachments();
   conversation.messages = [];
   conversation.title = "Cuộc trò chuyện mới";
   touchConversation(conversation);
@@ -1742,8 +2040,8 @@ async function clearActiveConversation() {
 
 function setBusy(value) {
   state.busy = value;
-  elements.send.disabled = value;
   elements.input.disabled = value;
+  updateComposerAvailability();
 }
 
 function resizeInput() {
@@ -1770,6 +2068,7 @@ function getActiveConversation() {
 function createNewConversation() {
   if (state.busy) return;
 
+  clearPendingAttachments();
   const activeConversation = getActiveConversation();
   if (activeConversation.messages.length === 0) {
     elements.sidebar.classList.remove("open");
@@ -1791,6 +2090,7 @@ function selectConversation(conversationId) {
   if (state.busy || conversationId === state.activeConversationId) return;
   if (!state.conversations.some(item => item.id === conversationId)) return;
 
+  clearPendingAttachments();
   state.activeConversationId = conversationId;
   persistWorkspace();
   elements.sidebar.classList.remove("open");
@@ -2009,6 +2309,7 @@ function normalizeMessages(value) {
       .map(item => ({
         role: item.role,
         content: item.content,
+        attachments: item.role === "user" ? normalizeChatAttachments(item.attachments) : [],
         sources: item.role === "assistant" ? normalizeSources(item.sources) : [],
         toolProposal: item.role === "assistant" ? normalizeToolProposal(item.toolProposal) : null,
         toolExecution: item.role === "assistant" ? normalizeToolExecution(item.toolExecution) : null,

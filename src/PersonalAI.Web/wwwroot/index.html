@@ -40,6 +40,8 @@
   <link rel="stylesheet" href="v088.css">
   <link rel="stylesheet" href="v226-dialog-layout.css">
   <link rel="stylesheet" href="v300.css?rev=league-progress-1">
+  <link rel="stylesheet" href="v440-attachments.css?rev=1">
+  <link rel="stylesheet" href="v480-simple-ux.css?rev=1">
 </head>
 <body>
   <div class="app-shell">
@@ -82,7 +84,13 @@
         </div>
       </section>
       <footer class="composer-wrap">
-        <form class="composer" id="chatForm"><textarea id="messageInput" rows="1" maxlength="12000" placeholder="Nhắn tin cho AI của bạn…" aria-label="Tin nhắn"></textarea><button class="send-button" id="sendButton" type="submit" aria-label="Gửi tin nhắn">↑</button></form>
+        <div class="chat-attachment-preview" id="chatAttachmentPreview" aria-live="polite" hidden></div>
+        <form class="composer attachment-composer" id="chatForm">
+          <button class="attachment-button" id="attachmentButton" type="button" aria-label="Đính kèm ảnh hoặc tệp" title="Đính kèm ảnh hoặc tệp">＋</button>
+          <input class="visually-hidden" id="chatAttachmentInput" type="file" multiple accept=".png,.jpg,.jpeg,.webp,.pdf,.txt,.md,.docx,.xlsx,.pptx,.csv,.json,.xml,.yaml,.yml,.sql,.cs,.js,.ts,.py,.html,.css,image/png,image/jpeg,image/webp,application/pdf,text/plain,text/markdown,text/csv,application/json,application/vnd.openxmlformats-officedocument.wordprocessingml.document,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet,application/vnd.openxmlformats-officedocument.presentationml.presentation">
+          <textarea id="messageInput" rows="1" maxlength="12000" placeholder="Nhắn tin cho AI của bạn…" aria-label="Tin nhắn"></textarea>
+          <button class="send-button" id="sendButton" type="submit" aria-label="Gửi tin nhắn">↑</button>
+        </form>
         <div class="tool-orchestration-toggle-row">
           <label class="tool-orchestration-toggle" title="Cho phép AI đề xuất một công cụ phù hợp; công cụ chưa chạy cho tới khi bạn bấm chạy">
             <input id="useToolsToggle" type="checkbox">
@@ -112,8 +120,8 @@
   <dialog class="settings-dialog knowledge-dialog" id="knowledgeDialog" aria-labelledby="knowledgeTitle">
     <div class="settings-card knowledge-card">
       <header class="settings-header"><div><p class="eyebrow">DỮ LIỆU NẰM TRÊN MÁY NÀY</p><h2 id="knowledgeTitle">Kho dữ liệu</h2></div><button class="dialog-close" id="knowledgeCloseButton" type="button" aria-label="Đóng">×</button></header>
-      <div class="knowledge-intro"><div class="knowledge-intro-icon" aria-hidden="true">▤</div><div><strong>Kho dữ liệu và tìm kiếm tăng cường v0.7.6</strong><p>PDF, DOCX, TXT và Markdown có thể được quản lý, kiểm tra tính toàn vẹn, đánh giá khả năng tìm kiếm và sửa an toàn các lỗi liên quan đến đoạn văn bản hoặc véc-tơ.</p></div></div>
-      <form id="knowledgeUploadForm"><label class="knowledge-dropzone" id="knowledgeDropzone" for="knowledgeFileInput"><span class="dropzone-icon" aria-hidden="true">↑</span><strong>Chọn hoặc thả tài liệu vào đây</strong><small>PDF, DOCX, TXT, Markdown · tối đa 10 MB mỗi tệp</small><span class="secondary-button upload-label">Chọn tệp</span></label><input class="visually-hidden" id="knowledgeFileInput" name="file" type="file" accept=".pdf,.docx,.txt,.md,application/pdf,application/vnd.openxmlformats-officedocument.wordprocessingml.document,text/plain,text/markdown"></form>
+      <div class="knowledge-intro"><div class="knowledge-intro-icon" aria-hidden="true">▤</div><div><strong>Kho dữ liệu và tìm kiếm tăng cường v0.7.6</strong><p>PDF, DOCX, XLSX, PPTX, TXT/Markdown, CSV/JSON và tệp mã nguồn có thể được quản lý, lập chỉ mục và tìm kiếm tăng cường.</p></div></div>
+      <form id="knowledgeUploadForm"><label class="knowledge-dropzone" id="knowledgeDropzone" for="knowledgeFileInput"><span class="dropzone-icon" aria-hidden="true">↑</span><strong>Chọn hoặc thả tài liệu vào đây</strong><small>PDF, DOCX, XLSX, PPTX, TXT/Markdown, CSV/JSON, mã nguồn · tối đa 10 MB mỗi tệp</small><span class="secondary-button upload-label">Chọn tệp</span></label><input class="visually-hidden" id="knowledgeFileInput" name="file" type="file" accept=".pdf,.docx,.xlsx,.pptx,.txt,.md,.csv,.json,.xml,.yaml,.yml,.sql,.cs,.js,.ts,.py,.html,.css,application/pdf,application/vnd.openxmlformats-officedocument.wordprocessingml.document,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet,application/vnd.openxmlformats-officedocument.presentationml.presentation,text/plain,text/markdown,text/csv,application/json"></form>
       <div class="settings-feedback knowledge-feedback" id="knowledgeFeedback" role="status" aria-live="polite"></div>
       <form class="knowledge-search" id="knowledgeSearchForm" role="search" novalidate><label class="field-label" for="knowledgeSearchInput">Tìm trong dữ liệu</label><div class="knowledge-search-row"><input id="knowledgeSearchInput" type="search" minlength="2" maxlength="200" autocomplete="off" placeholder="Ví dụ: kế hoạch học AI"><button class="primary-button" id="knowledgeSearchButton" type="submit">Từ khóa</button></div><p class="field-hint">Tìm từ khóa dùng chỉ mục toàn văn; tìm ngữ nghĩa dùng véc-tơ trên máy; tìm kết hợp hợp nhất hai cách rồi xếp hạng lại. Khi trò chuyện, hệ thống tự dùng tìm kiếm kết hợp và trả nguồn có thể mở lại.</p></form>
       <section class="knowledge-search-results" id="knowledgeSearchResults" aria-live="polite" hidden><div class="knowledge-search-heading"><strong>Kết quả tìm kiếm</strong><span id="knowledgeSearchSummary"></span></div><div class="knowledge-search-list" id="knowledgeSearchList"></div></section>
@@ -156,5 +164,6 @@
   <script src="v220.js?rev=vi-ux-3" defer></script>
   <script src="app.js?rev=v330-authoritative-version-2" defer></script>
   <script src="v330-shell-status.js?rev=1" defer></script>
+  <script src="v480-simple-ux.js?rev=1" defer></script>
 </body>
 </html>

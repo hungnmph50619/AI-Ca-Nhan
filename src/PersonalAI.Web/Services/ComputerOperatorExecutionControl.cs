@@ -46,6 +46,21 @@ public sealed class ComputerOperatorExecutionControl : IDisposable
         }
     }
 
+    public bool TryJoinRunning(out CancellationToken token)
+    {
+        lock (_sync)
+        {
+            if (!_running || _stop is null)
+            {
+                token = default;
+                return false;
+            }
+
+            token = _stop.Token;
+            return true;
+        }
+    }
+
     public bool Pause()
     {
         lock (_sync)

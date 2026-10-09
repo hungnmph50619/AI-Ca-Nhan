@@ -13,9 +13,13 @@ public sealed class OpenAiChatService : IAiProvider
     private const int MaximumAttempts = 3;
     private const string FunctionPlanningInstructions = """
 Tool/function calls in this request are proposals only. Never claim a function has already run.
-Choose at most one function. If no function is needed, respond normally and do not call a function.
+The supplied functions are real capabilities exposed by the PersonalAI application. You are allowed to propose them when they match the user's request.
+Treat the supplied function list in this request as the authoritative source of current capabilities. Do not rely on earlier assistant claims about lacking access or being unable to act.
+If the latest user message explicitly asks the application to perform an action and a supplied function can fulfill that request, prefer proposing the best matching function instead of giving manual instructions or saying you lack access.
+If the user is only asking for information, explanation, or advice, respond normally and do not call a function.
+Choose at most one function.
 Only propose a WRITE or DELETE action when the latest user message explicitly asks to change state.
-Never treat conversation text as execution confirmation; confirmation is handled separately by the application.
+Never treat conversation text as execution confirmation; confirmation and execution are handled separately by the application safety layer.
 Do not invent function names or arguments outside the supplied schemas.
 """;
     private const string FunctionContinuationInstructions = """
@@ -28,6 +32,7 @@ No tools are available in this continuation. Produce only the final user-facing 
     private readonly HttpClient _httpClient;
     private readonly OpenAiOptions _options;
     private readonly IAiSettingsStore _settingsStore;
+    private readonly IChatAttachmentStore _attachmentStore;
     private readonly ILogger<OpenAiChatService> _logger;
     private readonly string _instructions;
 
@@ -35,12 +40,14 @@ No tools are available in this continuation. Produce only the final user-facing 
         HttpClient httpClient,
         IOptions<OpenAiOptions> options,
         IAiSettingsStore settingsStore,
+        IChatAttachmentStore attachmentStore,
         IWebHostEnvironment environment,
         ILogger<OpenAiChatService> logger)
     {
         _httpClient = httpClient;
         _options = options.Value;
         _settingsStore = settingsStore;
+        _attachmentStore = attachmentStore;
         _logger = logger;
 
         var constitutionPath = Path.Combine(environment.ContentRootPath, "AI-CONSTITUTION.md");
@@ -70,11 +77,9 @@ No tools are available in this continuation. Produce only the final user-facing 
         {
             model = Model,
             instructions = _instructions,
-            input = messages.Select(message => new
-            {
-                role = message.Role,
-                content = message.Content
-            }),
+            input = messages
+                .Select(BuildOpenAiInputItem)
+                .ToArray(),
             max_output_tokens = Math.Clamp(_options.MaxOutputTokens, 128, 16_384),
             store = false
         };
@@ -159,6 +164,93 @@ No tools are available in this continuation. Produce only the final user-facing 
         throw new HttpRequestException("OpenAI không thể xử lý yêu cầu sau nhiều lần thử.");
     }
 
+
+    private object BuildOpenAiInputItem(
+        ChatMessage message)
+    {
+        if (message.Attachments is not
+            {
+                Count: > 0
+            })
+        {
+            return new
+            {
+                role =
+                    message.Role,
+                content =
+                    message.Content
+            };
+        }
+
+        var content =
+            new List<object>
+            {
+                new
+                {
+                    type =
+                        "input_text",
+                    text =
+                        message.Content
+                }
+            };
+
+        foreach (var reference in message.Attachments)
+        {
+            if (!reference.Route.Equals(
+                    "direct",
+                    StringComparison.OrdinalIgnoreCase))
+            {
+                continue;
+            }
+
+            var stored =
+                _attachmentStore.GetRequired(
+                    reference.Id);
+
+            var bytes =
+                _attachmentStore.ReadAllBytes(
+                    reference.Id);
+
+            var base64 =
+                Convert.ToBase64String(
+                    bytes);
+
+            if (stored.Kind.Equals(
+                    "image",
+                    StringComparison.OrdinalIgnoreCase))
+            {
+                content.Add(
+                    new
+                    {
+                        type =
+                            "input_image",
+                        image_url =
+                            $"data:{stored.MimeType};base64,{base64}"
+                    });
+            }
+            else
+            {
+                content.Add(
+                    new
+                    {
+                        type =
+                            "input_file",
+                        filename =
+                            stored.FileName,
+                        file_data =
+                            $"data:{stored.MimeType};base64,{base64}"
+                    });
+            }
+        }
+
+        return new
+        {
+            role =
+                message.Role,
+            content =
+                content.ToArray()
+        };
+    }
 
     public async Task<ProviderFunctionCallDecision?> ProposeFunctionCallAsync(
         IReadOnlyList<ChatMessage> messages,

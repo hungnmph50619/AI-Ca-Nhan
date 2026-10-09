@@ -23,7 +23,11 @@ public sealed record ComputerOperatorTaskResult(
     string Summary,
     IReadOnlyList<ComputerOperatorTaskStep> Steps,
     string Provider,
-    string Model);
+    string Model,
+    int VerifiedActionCount = 0,
+    int VerificationFailureCount = 0,
+    int VerificationInconclusiveCount = 0,
+    int RecoveryCount = 0);
 
 public sealed record VerificationCaptureContext(
     string CaptureScope,
@@ -122,6 +126,18 @@ public sealed record ComputerOperatorDesktopState(
         {
             lines.Add(
                 $"Structured UIA scene: source={StructuredScene.Source}; nodes={StructuredScene.NodeCount}; root={StructuredScene.RootToken}.");
+
+            foreach (var node in StructuredScene.Nodes
+                         .Where(node =>
+                             !node.IsOffscreen &&
+                             (node.IsFocused ||
+                              node.Patterns.Count > 0 ||
+                              !string.IsNullOrWhiteSpace(node.Name)))
+                         .Take(40))
+            {
+                lines.Add(
+                    $"- node={node.Token}; parent={node.ParentToken}; depth={node.Depth}; role={node.Role}; name={node.Name}; automationId={node.AutomationId}; enabled={node.IsEnabled}; focused={node.IsFocused}; rect={node.Left},{node.Top},{node.Width},{node.Height}; patterns={string.Join(",", node.Patterns)}; toggle={node.ToggleState}; expandCollapse={node.ExpandCollapseState}; selected={node.IsSelected?.ToString() ?? "?"}");
+            }
         }
 
         return string.Join("\n", lines);
@@ -132,23 +148,62 @@ public sealed class ComputerOperatorTaskService(
     IComputerUseService computer,
     ComputerControlGate control,
     IDesktopScreenshotService screenshots,
-    DesktopVisionService vision,
+    IComputerOperatorVisionRouter vision,
     ComputerOperatorProgressStore progress,
     ComputerOperatorExecutionControl execution,
     IComputerCoordinateTransformService coordinates,
     IComputerDisplayTopologyService displays,
     IComputerSafeTargetingService targeting,
     IDesktopFrameDifferenceService frameDifferences,
+    IDesktopRoiVisionService roiVision,
+    IDesktopLocalVisualSensor localVisualSensor,
+    ILocalVisualVerificationService localVisualVerification,
+    IDesktopVisualTargetPersistenceService visualTargetPersistence,
+    IComputerOperatorVisualTargetRecoveryService visualTargetRecovery,
+    IComputerOperatorOcrPlanningRouter ocrPlanningRouter,
+    IComputerOperatorLocalPlanningRouter localPlanningRouter,
+    IComputerOperatorClickGroundingCoordinator clickGroundingCoordinator,
+    IComputerOperatorActionSafetyPolicy actionSafetyPolicy,
     IDesktopLocalFastObserver fastObserver,
     IDesktopTemporalSceneService temporalScenes,
-    IComputerOperatorActionExecutor actionExecutor,
-    IGenericTextInteractionEngine textInteraction,
+    IComputerOperatorExecutionCoordinator executionCoordinator,
     IAdaptiveVerificationWaitEngine adaptiveWait,
+    IComputerOperatorProgressIntelligence progressIntelligence,
+    IComputerOperatorAdaptiveWaitPolicyResolver adaptiveWaitPolicyResolver,
     IStructuredDesktopSnapshotService structuredDesktop,
     IStructuredDesktopVerificationService structuredVerification,
+    IComputerOperatorStructuredPreExecutionRevalidator structuredPreExecutionRevalidator,
+    IComputerOperatorDesktopStateBuilder desktopStateBuilder,
+    IComputerOperatorObservationEvidenceAggregator observationEvidence,
+    IComputerOperatorCaptureService captureService,
+    IComputerOperatorVisualEvidenceRecorder visualEvidence,
     IComputerOperatorCheckpointStore checkpoints,
     IComputerOperatorTelemetry telemetry,
+    IComputerOperatorExperienceRepository experienceRepository,
+    IComputerOperatorExperienceValidator experienceValidator,
+    IComputerOperatorExperienceConsolidator experienceConsolidator,
+    IComputerOperatorExperienceLifecycleService experienceLifecycle,
+    IComputerOperatorVerifiedTransitionStore verifiedTransitions,
+    IComputerOperatorProcedureGraphStore procedureGraph,
+    IComputerOperatorPartialResumeResolver partialResumeResolver,
+    IComputerOperatorProcedureContextService procedureContextService,
+    IComputerOperatorProcedureContextStore procedureContextStore,
+    IComputerOperatorVersionedFragmentRetriever versionedFragmentRetriever,
+    IComputerOperatorProcedureEdgeLifecycleService procedureEdgeLifecycle,
+    IComputerOperatorRecoveryCoordinator recoveryCoordinator,
+    IComputerOperatorDecisionAuthority decisionAuthority,
+    IComputerOperatorMinimalIntentCoordinator minimalIntentCoordinator,
+    IComputerOperatorConfidenceEngine confidenceEngine,
+    IComputerOperatorFailureRecoveryEngine failureRecoveryEngine,
+    IComputerOperatorProviderResiliencePolicy providerResilience,
+    IComputerOperatorProviderPlanningRouter providerPlanningRouter,
+    IComputerOperatorFullPlanningCoordinator fullPlanningCoordinator,
+    IComputerOperatorPlanningContextBuilder planningContextBuilder,
+    IComputerOperatorStrategyRanker strategyRanker,
     IUniversalReliableOperatorCoordinator reliableOperator,
+    IDesktopVerificationRouter verificationRouter,
+    IComputerOperatorVerificationEngine verificationEngine,
+    IComputerOperatorRegressionCandidateStore regressionCandidates,
     ILogger<ComputerOperatorTaskService> logger)
     : IComputerOperatorTaskService
 {
@@ -157,23 +212,6 @@ public sealed class ComputerOperatorTaskService(
     private const int ScopedLeaseSeconds = 120;
     private const int ScopedLeaseRenewalThresholdSeconds = 25;
     private const double MinimumConfidence = 0.72;
-    private static readonly IDesktopVerificationRouter VerificationRouter =
-        new DesktopVerificationRouter();
-    private static readonly IDesktopRoiVisionService RoiVision =
-        new DesktopRoiVisionService();
-    private static readonly IAdaptiveGeminiCallPolicy GeminiCallPolicy =
-        new AdaptiveGeminiCallPolicy();
-    private static readonly IDesktopDynamicTargetTracker TargetTracker =
-        new DesktopDynamicTargetTracker();
-    private static readonly IComputerOperatorConfidenceEngine ConfidenceEngine =
-        new ComputerOperatorConfidenceEngine();
-    private static readonly IComputerOperatorFailureRecoveryEngine RecoveryEngine =
-        new ComputerOperatorFailureRecoveryEngine();
-    private static readonly IDesktopLocalActionPlanner LocalPlanner =
-        new DesktopLocalActionPlanner();
-    private static readonly StructuredTargetRevalidator StructuredTargetRevalidator =
-        new();
-
 
     private static readonly string[] SecretTerms =
     [
@@ -214,6 +252,14 @@ public sealed class ComputerOperatorTaskService(
         progress.Start(
             $"Bắt đầu tác vụ: {normalizedGoal}");
 
+        var evidenceRunId =
+            visualEvidence.BeginTask(
+                normalizedGoal);
+
+        progress.AddDiagnostic(
+            "visual-evidence",
+            $"run={evidenceRunId}; root=benchmark-results/operator-diagnostics; images=best-effort; rawGoalStored=false.");
+
         var reliableRuntime =
             reliableOperator.GetRuntimeSnapshot();
 
@@ -246,6 +292,12 @@ public sealed class ComputerOperatorTaskService(
         var steps = new List<ComputerOperatorTaskStep>();
         var taskHistory = new List<string>();
         var recovery = new ComputerOperatorRecoverySession();
+        var learning =
+            new ComputerOperatorLearningSession(
+                experienceRepository);
+        var procedureSession =
+            new ComputerOperatorProcedureGraphSession(
+                procedureGraph);
         var loopGuard = new ComputerOperatorLoopGuardSession();
         var actionState = new ComputerOperatorActionStateMachine();
         var verifiedMilestones = new HashSet<string>(
@@ -276,18 +328,53 @@ public sealed class ComputerOperatorTaskService(
         var lowConfidenceCount = 0;
         var blockedReplanCount = 0;
         var keyboardRepairFailures = 0;
+        var verifiedActionCount = 0;
+        var verificationFailureCount = 0;
+        var verificationInconclusiveCount = 0;
+        var recoveryCount = 0;
         var keyboardResetRequired = false;
         var keyboardSelectionReady = false;
-        string? plannerDegradedScene = null;
-        var plannerDegradedCount = 0;
-        var plannerBackoffUntil = DateTimeOffset.MinValue;
+        var plannerResilienceState =
+            ComputerOperatorPlannerResilienceState.Healthy;
         IReadOnlyList<DesktopSceneElement> previousScene = Array.Empty<DesktopSceneElement>();
         var temporalSceneContext = string.Empty;
+        ComputerOperatorCycleTrace? pendingCycleTrace =
+            null;
+        string? recentlyConsumedActionSignature =
+            null;
+        var recentlyConsumedUntilStep =
+            0;
+        var resumeAssessmentPending =
+            resumableCheckpoint is not null;
+        string? lastGroundingFailureKey = null;
+        var repeatedGroundingFailureCount = 0;
+        string? waitingSceneFingerprint = null;
+        DateTimeOffset? waitingSince = null;
+        string? authorityReplanScene = null;
+        var consecutiveAuthorityReplans = 0;
 
         try
         {
             for (var index = 1; index <= MaximumSteps; index++)
             {
+                if (pendingCycleTrace is
+                    {
+                        Emitted: false
+                    })
+                {
+                    if (pendingCycleTrace.Result == "-")
+                        pendingCycleTrace.Result =
+                            "cycle-ended-without-explicit-result";
+
+                    if (pendingCycleTrace.Next == "-")
+                        pendingCycleTrace.Next =
+                            "observe-next-cycle";
+
+                    EmitCycleForensicSummary(
+                        progress,
+                        pendingCycleTrace);
+                }
+
                 linked.Token.ThrowIfCancellationRequested();
 
                 var gateBeforeRenewal = control.GetStatus();
@@ -352,8 +439,7 @@ public sealed class ComputerOperatorTaskService(
 
                 try
                 {
-                    frame = await screenshots.CaptureStableVirtualScreenAsync(
-                        maximumWaitMs: 5000,
+                    frame = await captureService.CaptureObservationAsync(
                         linked.Token);
 
                     observeTelemetry.Complete(
@@ -364,6 +450,13 @@ public sealed class ComputerOperatorTaskService(
                         "observe",
                         $"Đã chụp frame ổn định {frame.Width}x{frame.Height} lúc {frame.CapturedAtUtc:O}.",
                         observation: true);
+
+                    visualEvidence.RecordFrame(
+                        evidenceRunId,
+                        index,
+                        "observe",
+                        frame,
+                        foreground: activeBeforeObservation);
                 }
                 catch (OperationCanceledException)
                 {
@@ -382,19 +475,190 @@ public sealed class ComputerOperatorTaskService(
                         $"Không chụp được desktop: {exception.Message}");
                 }
 
-                var desktopState = BuildDesktopState(frame);
+                var observation =
+                    observationEvidence.Build(
+                        frame);
+
+                var desktopState =
+                    observation.DesktopState;
                 var sceneFingerprint =
-                    BuildDesktopSceneFingerprint(desktopState);
-                var windowsContext = desktopState.ToPromptSummary();
-                var active = desktopState.ForegroundWindow;
+                    observation.SceneFingerprint;
+                var windowsContext =
+                    observation.PromptSummary;
+                var active =
+                    observation.ForegroundWindow;
+
+                if (!string.IsNullOrWhiteSpace(
+                        observation.VisualHashFallbackReason))
+                {
+                    progress.AddDiagnostic(
+                        "scene-identity",
+                        observation.VisualHashFallbackReason);
+                }
 
                 progress.Add(
                     "desktop-state",
-                    $"Unified Desktop State: foreground={active?.Title ?? "không xác định"}; windows={desktopState.Windows.Count}; structuredNodes={desktopState.StructuredScene?.NodeCount ?? 0}; graphNodes={desktopState.StructuredGraph?.NodeCount ?? 0}; interactive={desktopState.StructuredGraph?.InteractiveNodeCount ?? 0}; frame={desktopState.CaptureScope}/{desktopState.FrameWidth}x{desktopState.FrameHeight}.",
+                    observation.DesktopStateSummary,
                     observation: true);
 
                 var sceneDiagnosticId =
                     BuildDiagnosticId(sceneFingerprint);
+
+                var currentProcedureContext =
+                    procedureContextService.Describe(
+                        desktopState);
+
+                var currentContextObservation =
+                    procedureContextStore.Observe(
+                        sceneFingerprint,
+                        currentProcedureContext);
+
+                progress.AddDiagnostic(
+                    "procedure-context",
+                    $"cycle={index}; family={BuildDiagnosticId(currentProcedureContext.FamilyFingerprint)}; version={BuildDiagnosticId(currentProcedureContext.VersionFingerprint)}; observations={currentContextObservation.ObservationCount}; rawContextStored=false.");
+
+                var closedProcedureEdge =
+                    procedureSession.ObserveState(
+                        sceneFingerprint);
+
+                if (closedProcedureEdge is not null)
+                {
+                    progress.AddDiagnostic(
+                        "procedure-graph",
+                        $"cycle={index}; edgeClosed=true; from={BuildDiagnosticId(closedProcedureEdge.FromStateFingerprint)}; to={BuildDiagnosticId(closedProcedureEdge.ToStateFingerprint)}; strategy={closedProcedureEdge.StrategyKey}; successCount={closedProcedureEdge.SuccessCount}; confidence={closedProcedureEdge.AverageConfidence:0.000}; actualObservedTarget=true.");
+                }
+
+                if (closedProcedureEdge is not null)
+                {
+                    var supersession =
+                        procedureEdgeLifecycle.Reconcile(
+                            closedProcedureEdge.FromStateFingerprint);
+
+                    if (supersession.SupersededEdges > 0)
+                    {
+                        taskHistory.Add(
+                            $"PROCEDURE-SUPERSESSION: {supersession.Reason}");
+
+                        progress.AddDiagnostic(
+                            "procedure-supersession",
+                            $"cycle={index}; evaluated={supersession.EvaluatedEdges}; superseded={supersession.SupersededEdges}; winner={supersession.WinningStrategyKey ?? "-"}; rawEdgesDeleted=false.");
+                    }
+                }
+
+                var outgoingProcedureEdges =
+                    procedureGraph.GetOutgoing(
+                        sceneFingerprint,
+                        limit: 5);
+
+                if (outgoingProcedureEdges.Count > 0)
+                {
+                    progress.AddDiagnostic(
+                        "procedure-graph",
+                        $"cycle={index}; knownOutgoing={outgoingProcedureEdges.Count}; bestStrategy={outgoingProcedureEdges[0].StrategyKey}; bestSuccessCount={outgoingProcedureEdges[0].SuccessCount}; bestConfidence={outgoingProcedureEdges[0].AverageConfidence:0.000}; fastPathEnabled=false.");
+                }
+
+                var knownFragments =
+                    versionedFragmentRetriever.Retrieve(
+                        sceneFingerprint,
+                        currentProcedureContext,
+                        maximumDepth: 6,
+                        maximumCandidates: 5);
+
+                if (knownFragments.Count > 0)
+                {
+                    var bestCandidate =
+                        knownFragments[0];
+
+                    var bestFragment =
+                        bestCandidate.Fragment;
+
+                    var actionKinds =
+                        string.Join(
+                            " -> ",
+                            bestFragment.Edges.Select(edge =>
+                                edge.ActionKind));
+
+                    progress.AddDiagnostic(
+                        "procedure-fragment",
+                        $"cycle={index}; candidates={knownFragments.Count}; exactStart={bestCandidate.ExactStartState}; compatibility={bestCandidate.CompatibilityKind}; compatibilityMultiplier={bestCandidate.CompatibilityMultiplier:0.000}; effectiveConfidence={bestCandidate.EffectiveConfidence:0.000}; bestLength={bestFragment.Length}; minimumSuccess={bestFragment.MinimumSuccessCount}; actions={LimitDiagnostic(actionKinds, 220)}; source={BuildDiagnosticId(bestCandidate.SourceStateFingerprint)}; end={BuildDiagnosticId(bestFragment.EndStateFingerprint)}; recoveryOnly=true; plannerHint=false; autoExecute=false.");
+                }
+
+                if (resumeAssessmentPending)
+                {
+                    var resumeAssessment =
+                        partialResumeResolver.Assess(
+                            resumableCheckpoint,
+                            sceneFingerprint);
+
+                    resumeAssessmentPending = false;
+
+                    taskHistory.Add(
+                        $"PARTIAL-RESUME: {resumeAssessment.Kind} — {resumeAssessment.Reason}");
+
+                    progress.Add(
+                        "partial-resume",
+                        resumeAssessment.Reason,
+                        resumeAssessment.Kind,
+                        resumeAssessment.ExactCheckpointMatch
+                            ? 1.0
+                            : resumeAssessment.KnownProcedureNode
+                                ? 0.90
+                                : 0.70);
+
+                    progress.AddDiagnostic(
+                        "partial-resume",
+                        $"cycle={index}; kind={resumeAssessment.Kind}; exactCheckpoint={resumeAssessment.ExactCheckpointMatch}; knownGraphNode={resumeAssessment.KnownProcedureNode}; outgoing={resumeAssessment.OutgoingEdges}; incoming={resumeAssessment.IncomingEdges}; replayLastAction=false.");
+
+                    if (resumeAssessment.KnownProcedureNode)
+                    {
+                        taskHistory.Add(
+                            "CHỈ DẪN-RESUME-GRAPH: State hiện tại đã tồn tại trong Procedure Graph. Dùng state hiện tại làm điểm bắt đầu mới; không quay lại các bước trước và không replay action cuối checkpoint.");
+                    }
+                    else
+                    {
+                        taskHistory.Add(
+                            "CHỈ DẪN-RESUME-REASON: State hiện tại chưa map được vào Procedure Graph. Giữ các mốc đã xác minh làm lịch sử nhưng lập phương án mới từ desktop hiện tại.");
+                    }
+                }
+
+                checkpoint = SaveCheckpointSafely(
+                    checkpoint,
+                    verifiedMilestones,
+                    currentSubgoal,
+                    latestGoalProgress,
+                    lastObservedStateFingerprint:
+                        sceneFingerprint);
+
+                var knownTransitions =
+                    verifiedTransitions.FindExact(
+                        sceneFingerprint,
+                        limit: 5);
+
+                if (knownTransitions.Count > 0)
+                {
+                    progress.AddDiagnostic(
+                        "transition-memory",
+                        $"cycle={index}; exactState=true; knownTransitions={knownTransitions.Count}; bestSuccessCount={knownTransitions[0].SuccessCount}; bestConfidence={knownTransitions[0].AverageConfidence:0.000}; bestStrategy={knownTransitions[0].StrategyKey}; fastPathEnabled=false.");
+                }
+
+                var cycleTrace =
+                    new ComputerOperatorCycleTrace(
+                        index,
+                        normalizedGoal)
+                    {
+                        SceneId =
+                            sceneDiagnosticId,
+                        CurrentSubgoal =
+                            string.IsNullOrWhiteSpace(currentSubgoal)
+                                ? "-"
+                                : currentSubgoal,
+                        BeforeForeground =
+                            ComputerOperatorCycleTrace.DescribeWindow(
+                                active)
+                    };
+
+                pendingCycleTrace =
+                    cycleTrace;
 
                 progress.AddDiagnostic(
                     "cycle",
@@ -406,46 +670,73 @@ public sealed class ComputerOperatorTaskService(
                     telemetry.Begin(
                         ComputerOperatorTelemetryStages.GeminiPlan);
 
-                var sameDegradedScene =
-                    plannerDegradedScene is not null &&
-                    plannerDegradedScene.Equals(
+                plannerResilienceState =
+                    providerResilience.NormalizePlannerState(
                         sceneFingerprint,
-                        StringComparison.Ordinal);
+                        plannerResilienceState,
+                        DateTimeOffset.UtcNow);
 
-                if (!sameDegradedScene)
-                {
-                    plannerDegradedCount = 0;
-                    plannerBackoffUntil = DateTimeOffset.MinValue;
-                }
+                var providerPlanningRoute =
+                    providerPlanningRouter.Evaluate(
+                        vision.Ready,
+                        plannerResilienceState.BackoffActive,
+                        plannerResilienceState.BackoffUntil);
 
-                var providerBackoffActive =
-                    sameDegradedScene &&
-                    DateTimeOffset.UtcNow < plannerBackoffUntil;
+                DesktopVisualTargetTemplate? plannedVisualTemplate =
+                    null;
 
                 try
                 {
                     var localHistory =
-                        string.Join(
-                            "\n",
-                            taskHistory.TakeLast(40));
+                        planningContextBuilder.BuildLocalHistory(
+                            taskHistory);
 
-                    if (LocalPlanner.TryPlan(
+                    if (localPlanningRouter.TryPlan(
                             normalizedGoal,
                             desktopState,
                             localHistory,
-                            out decision))
+                            out var localPlan))
                     {
+                        decision =
+                            localPlan.Decision;
+                        var structuredRoute =
+                            localPlan.StructuredRoute;
+
+                        var localStrategyKey =
+                            BuildDiagnosticId(
+                                BuildSemanticActionSignature(
+                                    decision));
+
+                        var fastPath =
+                            strategyRanker.AssessFastPath(
+                                sceneFingerprint,
+                                localStrategyKey,
+                                decision.Action,
+                                currentProcedureContext);
+
+                        var localRoute =
+                            localPlan.Route;
+
                         plannerStopwatch.Stop();
                         planTelemetry.Complete(
                             success: true,
-                            route: desktopState.StructuredScene is not null &&
-                                   !string.IsNullOrWhiteSpace(decision.TargetElementId)
-                                ? "structured-first"
-                                : "local-planner");
+                            route: localRoute);
 
-                        var structuredRoute =
-                            desktopState.StructuredScene is not null &&
-                            !string.IsNullOrWhiteSpace(decision.TargetElementId);
+                        cycleTrace.ApplyPlannerTrace(
+                            new(
+                                localRoute,
+                                [
+                                    structuredRoute
+                                        ? "Structured=Resolved"
+                                        : "Structured/Local=Resolved",
+                                    fastPath.Eligible
+                                        ? "MemoryRecommendation=Available(RecoveryOnly)"
+                                        : "MemoryRecommendation=NotAvailable"
+                                ]));
+
+                        progress.AddDiagnostic(
+                            "fast-path",
+                            $"cycle={index}; eligible={fastPath.Eligible}; status={fastPath.Status}; strategy={localStrategyKey}; action={decision.Action}; successes={fastPath.SuccessCount}; confidence={fastPath.Confidence:0.000}; recoveryOnly=true; affectsPlanner=false; geminiCalled=false; directReplay=false; safetyAndVerifyRequired=true; reason={LimitDiagnostic(fastPath.Reason, 240)}.");
 
                         progress.Add(
                             structuredRoute
@@ -463,10 +754,72 @@ public sealed class ComputerOperatorTaskService(
                                 ? $"provider=local-structured; purpose=plan; cycle={index}; scene={sceneDiagnosticId}; structuredNodes={desktopState.StructuredScene?.NodeCount ?? 0}; action={decision.Action}; elementId={LimitDiagnostic(decision.TargetElementId, 80)}; geminiCalled=false."
                                 : $"provider=local; purpose=plan; cycle={index}; scene={sceneDiagnosticId}; action={decision.Action}; geminiCalled=false.");
                     }
-                    else if (!vision.Ready)
+                    else if (ocrPlanningRouter.TryPlan(
+                                 normalizedGoal,
+                                 desktopState,
+                                 out var ocrPlan))
                     {
                         decision =
-                            CreateProviderUnavailableBlockedDecision();
+                            ocrPlan.Decision;
+                        var ocrStrategyKey =
+                            BuildDiagnosticId(
+                                BuildSemanticActionSignature(
+                                    decision));
+
+                        var fastPath =
+                            strategyRanker.AssessFastPath(
+                                sceneFingerprint,
+                                ocrStrategyKey,
+                                decision.Action,
+                                currentProcedureContext);
+
+                        var ocrRoute =
+                            ocrPlan.Route;
+
+                        plannerStopwatch.Stop();
+                        planTelemetry.Complete(
+                            success: true,
+                            route: ocrRoute);
+
+                        cycleTrace.ApplyPlannerTrace(
+                            new(
+                                ocrRoute,
+                                [
+                                    "Structured/Local=NotResolved",
+                                    "OCR=Resolved",
+                                    fastPath.Eligible
+                                        ? "MemoryRecommendation=Available(RecoveryOnly)"
+                                        : "MemoryRecommendation=NotAvailable"
+                                ]));
+
+                        progress.AddDiagnostic(
+                            "fast-path",
+                            $"cycle={index}; eligible={fastPath.Eligible}; status={fastPath.Status}; strategy={ocrStrategyKey}; action={decision.Action}; successes={fastPath.SuccessCount}; confidence={fastPath.Confidence:0.000}; recoveryOnly=true; affectsPlanner=false; geminiCalled=false; directReplay=false; safetyAndVerifyRequired=true; reason={LimitDiagnostic(fastPath.Reason, 240)}.");
+
+                        progress.Add(
+                            "ocr-local",
+                            $"OCR-local fallback planner đã chọn action: {decision.Reason}",
+                            decision.Action,
+                            decision.Confidence);
+
+                        progress.AddDiagnostic(
+                            "provider",
+                            $"provider=ocr-local; purpose=plan; cycle={index}; scene={sceneDiagnosticId}; action={decision.Action}; confidence={decision.Confidence:0.000}; detail={LimitDiagnostic(decision.Reason, 180)}; geminiCalled=false.");
+                    }
+                    else if (providerPlanningRoute.Status ==
+                             ComputerOperatorProviderPlanningStatuses.Unavailable)
+                    {
+                        decision =
+                            providerPlanningRoute.Decision!;
+
+                        cycleTrace.ApplyPlannerTrace(
+                            new(
+                                "provider-unavailable",
+                                [
+                                    "Structured/Local=NotResolved",
+                                    "OCR=NotResolved",
+                                    "Gemini=Unavailable"
+                                ]));
 
                         plannerStopwatch.Stop();
                         planTelemetry.Complete(
@@ -482,10 +835,20 @@ public sealed class ComputerOperatorTaskService(
                             "provider",
                             $"provider=Gemini; purpose=plan; cycle={index}; ready=false; scene={sceneDiagnosticId}; fallback=local-structured-exhausted; taskCrash=false.");
                     }
-                    else if (providerBackoffActive)
+                    else if (providerPlanningRoute.Status ==
+                             ComputerOperatorProviderPlanningStatuses.Cooldown)
                     {
-                        decision = CreatePlannerCooldownWaitDecision(
-                            plannerBackoffUntil);
+                        decision =
+                            providerPlanningRoute.Decision!;
+
+                        cycleTrace.ApplyPlannerTrace(
+                            new(
+                                "provider-cooldown",
+                                [
+                                    "Structured/Local=NotResolved",
+                                    "OCR=NotResolved",
+                                    "Gemini=Skipped(cooldown)"
+                                ]));
 
                         plannerStopwatch.Stop();
                         planTelemetry.Complete(
@@ -494,67 +857,171 @@ public sealed class ComputerOperatorTaskService(
 
                         progress.Add(
                             "provider-cooldown",
-                            $"Scene chưa đổi và Gemini đang cooldown đến {plannerBackoffUntil:HH:mm:ss}; structured/local planner không có action đủ chắc chắn nên chờ an toàn.",
+                            $"Scene chưa đổi và Gemini đang cooldown đến {plannerResilienceState.BackoffUntil:HH:mm:ss}; structured/local planner không có action đủ chắc chắn nên chờ an toàn.",
                             "wait");
 
                         progress.AddDiagnostic(
                             "provider",
-                            $"provider=Gemini; purpose=plan; cycle={index}; circuit=open; scene={sceneDiagnosticId}; backoffUntil={plannerBackoffUntil:O}; fallback=safe-wait.");
+                            $"provider=Gemini; purpose=plan; cycle={index}; circuit=open; scene={sceneDiagnosticId}; backoffUntil={plannerResilienceState.BackoffUntil:O}; fallback=safe-wait.");
                     }
                     else
                     {
                         progress.Add(
                             "analyze",
-                            $"Structured/local planner chưa có action đủ chắc chắn; gửi ảnh desktop {frame.Width}x{frame.Height} cho Vision/Gemini fallback.");
+                            $"Structured/local/OCR chưa có action đủ chắc chắn; ưu tiên Gemini Minimal Intent cho frame {frame.Width}x{frame.Height} trước full planner.");
 
-                        decision = await vision.DecideComputerOperatorActionAsync(
-                            frame,
-                            normalizedGoal,
-                            windowsContext,
-                            BuildHistoryContext(
+                        cycleTrace.ApplyPlannerTrace(
+                            new(
+                                "gemini-minimal-intent",
+                                [
+                                    "Structured/Local=NotResolved",
+                                    "OCR=NotResolved",
+                                    "GeminiMinimalIntent=CalledFirst"
+                                ]));
+
+                        var historyContext =
+                            planningContextBuilder.BuildPlannerHistory(
                                 taskHistory,
                                 recovery,
                                 verifiedMilestones,
                                 currentSubgoal,
-                                latestGoalProgress),
-                            temporalSceneContext,
-                            linked.Token);
+                                latestGoalProgress);
 
-                        plannerStopwatch.Stop();
-                        planTelemetry.Complete(
-                            success: true,
-                            route: "gemini");
+                        var minimalResult =
+                            await minimalIntentCoordinator.TryPlanAsync(
+                                frame,
+                                normalizedGoal,
+                                windowsContext,
+                                historyContext,
+                                linked.Token);
 
-                        if (IsProviderDegradedPlannerDecision(
-                                decision))
+                        var minimalIntent =
+                            minimalResult.Intent;
+                        var kernelRejection =
+                            minimalResult.RejectionReason;
+                        var kernelDecision =
+                            minimalResult.Decision ??
+                            providerResilience.CreatePlannerCooldownWaitDecision(
+                                DateTimeOffset.UtcNow);
+                        var kernelCompiled =
+                            minimalResult.Compiled;
+
+                        if (kernelCompiled)
                         {
-                            plannerDegradedScene =
-                                sceneFingerprint;
-                            plannerDegradedCount++;
+                            decision =
+                                kernelDecision;
 
-                            var backoffSeconds =
-                                Math.Min(
-                                    20,
-                                    5 * plannerDegradedCount);
+                            plannerResilienceState =
+                                providerResilience.ResetPlannerState();
 
-                            plannerBackoffUntil =
-                                DateTimeOffset.UtcNow.AddSeconds(
-                                    backoffSeconds);
+                            plannerStopwatch.Stop();
+                            planTelemetry.Complete(
+                                success: true,
+                                route: "gemini-minimal-intent");
+
+                            cycleTrace.ApplyPlannerTrace(
+                                new(
+                                    null,
+                                    ["GeminiMinimalIntent=Compiled"]));
+
+                            progress.Add(
+                                "decision-kernel",
+                                $"Minimal Intent được Unified Decision Kernel biên dịch thành action {decision.Action}: {decision.Reason}",
+                                decision.Action,
+                                decision.Confidence);
 
                             progress.AddDiagnostic(
                                 "provider",
-                                $"provider=Gemini; purpose=plan; cycle={index}; latencyMs={plannerStopwatch.ElapsedMilliseconds}; result=degraded; scene={sceneDiagnosticId}; circuit=open; backoffSeconds={backoffSeconds}; action={decision.Action}; replaySideEffect=false.");
+                                $"provider=Gemini; purpose=minimal-intent-first; cycle={index}; latencyMs={minimalResult.LatencyMilliseconds}; intent={minimalIntent!.Intent}; kernel=compiled; action={decision.Action}; confidence={decision.Confidence:0.000}; fullPlannerCalled=false; circuit=open:false.");
                         }
                         else
                         {
-                            plannerDegradedScene = null;
-                            plannerDegradedCount = 0;
-                            plannerBackoffUntil = DateTimeOffset.MinValue;
+                            cycleTrace.ApplyPlannerTrace(
+                                new(
+                                    null,
+                                    [
+                                        minimalIntent is null
+                                            ? "GeminiMinimalIntent=Unavailable"
+                                            : "GeminiMinimalIntent=Rejected",
+                                        "GeminiFull=FallbackCalled"
+                                    ]));
 
                             progress.AddDiagnostic(
                                 "provider",
-                                $"provider=Gemini; purpose=plan; cycle={index}; latencyMs={plannerStopwatch.ElapsedMilliseconds}; action={decision.Action}; confidence={decision.Confidence:0.000}; payload=parsed.");
+                                $"provider=Gemini; purpose=minimal-intent-first; cycle={index}; latencyMs={minimalResult.LatencyMilliseconds}; result={(minimalIntent is null ? "invalid" : "rejected")}; kernelDetail={LimitDiagnostic(kernelRejection, 220)}; fallback=full-planner.");
+
+                            var fullPlan =
+                                await fullPlanningCoordinator.PlanAsync(
+                                    frame,
+                                    normalizedGoal,
+                                    windowsContext,
+                                    historyContext,
+                                    temporalSceneContext,
+                                    linked.Token);
+
+                            decision =
+                                fullPlan.Decision;
+
+                            plannerStopwatch.Stop();
+                            planTelemetry.Complete(
+                                success: true,
+                                route: "gemini-full-fallback");
+
+                            cycleTrace.ApplyPlannerTrace(
+                                new(
+                                    "gemini-full-fallback",
+                                    []));
+
+                            if (fullPlan.Degraded)
+                            {
+                                plannerResilienceState =
+                                    providerResilience.RecordPlannerDegraded(
+                                        sceneFingerprint,
+                                        plannerResilienceState,
+                                        DateTimeOffset.UtcNow);
+
+                                var backoffSeconds =
+                                    plannerResilienceState.BackoffSeconds;
+
+                                progress.AddDiagnostic(
+                                    "provider",
+                                    $"provider=Gemini; purpose=full-fallback; cycle={index}; latencyMs={fullPlan.LatencyMilliseconds}; result=degraded; scene={sceneDiagnosticId}; circuit=open; backoffSeconds={backoffSeconds}; action={decision.Action}; replaySideEffect=false.");
+                            }
+                            else
+                            {
+                                plannerResilienceState =
+                                    providerResilience.ResetPlannerState();
+
+                                progress.AddDiagnostic(
+                                    "provider",
+                                    $"provider=Gemini; purpose=full-fallback; cycle={index}; latencyMs={fullPlan.LatencyMilliseconds}; action={decision.Action}; confidence={decision.Confidence:0.000}; payload=parsed; minimalIntentRejected=true.");
+                            }
                         }
+                    }
+
+                    if (IsClickAction(
+                            decision.Action) &&
+                        decision.BoxWidth > 5 &&
+                        decision.BoxHeight > 5 &&
+                        frame.Jpeg is { Length: > 0 })
+                    {
+                        plannedVisualTemplate =
+                            visualTargetPersistence.CreateTemplate(
+                                frame,
+                                decision.BoxLeft,
+                                decision.BoxTop,
+                                decision.BoxWidth,
+                                decision.BoxHeight);
+
+                        progress.Add(
+                            "visual-target-template",
+                            plannedVisualTemplate.Available
+                                ? $"Đã lưu visual target template {plannedVisualTemplate.SourceWidth}x{plannedVisualTemplate.SourceHeight} để recovery nếu target dịch chuyển."
+                                : $"Không lưu visual target template: {plannedVisualTemplate.Reason}",
+                            plannedVisualTemplate.Available
+                                ? "ready"
+                                : "unavailable",
+                            observation: true);
                     }
                 }
                 catch
@@ -568,6 +1035,36 @@ public sealed class ComputerOperatorTaskService(
                 {
                     frame.Clear();
                 }
+
+                cycleTrace.Action =
+                    decision.Action;
+                cycleTrace.Target =
+                    string.IsNullOrWhiteSpace(decision.TargetLabel)
+                        ? "-"
+                        : decision.TargetLabel;
+                cycleTrace.TargetElementId =
+                    string.IsNullOrWhiteSpace(decision.TargetElementId)
+                        ? "-"
+                        : decision.TargetElementId;
+                cycleTrace.TargetBox =
+                    decision.BoxWidth > 0 &&
+                    decision.BoxHeight > 0
+                        ? $"{decision.BoxLeft},{decision.BoxTop},{decision.BoxWidth},{decision.BoxHeight}"
+                        : "-";
+                cycleTrace.DecisionConfidence =
+                    decision.Confidence;
+                cycleTrace.ExpectedEffect =
+                    decision.ExpectedEffect;
+                cycleTrace.DecisionReason =
+                    decision.Reason;
+                cycleTrace.CurrentSubgoal =
+                    string.IsNullOrWhiteSpace(decision.CurrentSubgoal)
+                        ? cycleTrace.CurrentSubgoal
+                        : decision.CurrentSubgoal;
+
+                progress.AddDiagnostic(
+                    "decision-snapshot",
+                    $"cycle={index}; route={cycleTrace.PlannerRoute}; action={decision.Action}; target={LimitDiagnostic(decision.TargetLabel, 100)}; elementId={LimitDiagnostic(decision.TargetElementId, 80)}; bbox={cycleTrace.TargetBox}; confidence={decision.Confidence:0.000}; expected={LimitDiagnostic(decision.ExpectedEffect, 240)}; reason={LimitDiagnostic(decision.Reason, 280)}.");
 
                 var planState = actionState.MoveTo(
                     ComputerOperatorActionState.Plan,
@@ -619,7 +1116,9 @@ public sealed class ComputerOperatorTaskService(
                         decision.Confidence);
                 }
 
-                latestGoalProgress = decision.GoalProgress;
+                latestGoalProgress = PreserveCheckpointGoalProgress(
+                    latestGoalProgress,
+                    decision.GoalProgress);
 
                 progress.Add(
                     "goal-progress",
@@ -654,15 +1153,28 @@ public sealed class ComputerOperatorTaskService(
                         ? string.Empty
                         : BuildSemanticActionSignature(decision);
 
-                var loopAssessment = loopGuard.Observe(
-                    sceneFingerprint,
-                    loopStrategy);
+                var consumedReplay =
+                    !string.IsNullOrWhiteSpace(loopStrategy) &&
+                    ShouldDeferLoopAssessmentForConsumedAction(
+                        loopStrategy,
+                        recentlyConsumedActionSignature,
+                        index,
+                        recentlyConsumedUntilStep);
 
-                progress.Add(
-                    "state",
-                    string.IsNullOrWhiteSpace(decision.State)
-                        ? "AI đã cập nhật trạng thái màn hình."
-                        : $"Trạng thái: {decision.State}");
+                var loopAssessment =
+                    consumedReplay
+                        ? new ComputerOperatorLoopAssessment(
+                            Detected: false,
+                            RequiresStrategyChange: false,
+                            Kind: string.Empty,
+                            Detail: string.Empty,
+                            Occurrences: 0)
+                        : loopGuard.Observe(
+                            sceneFingerprint,
+                            loopStrategy);
+
+                ComputerOperatorRecoveryCoordinatorDecision? recoveryRecommendation =
+                    null;
 
                 if (loopAssessment.Detected)
                 {
@@ -671,29 +1183,128 @@ public sealed class ComputerOperatorTaskService(
 
                     progress.Add(
                         "loop-detected",
-                        $"Phát hiện nguy cơ vòng lặp: {loopAssessment.Detail} Cảnh báo tích lũy: {loopAssessment.Occurrences}.",
-                        "replan",
+                        $"Loop Guard chỉ phát tín hiệu: {loopAssessment.Detail} Cảnh báo tích lũy: {loopAssessment.Occurrences}.",
+                        "signal",
                         decision.Confidence);
 
                     if (loopAssessment.RequiresStrategyChange)
                     {
+                        recoveryRecommendation =
+                            recoveryCoordinator.Decide(
+                                new ComputerOperatorRecoveryCoordinatorInput(
+                                    LoopAssessment: loopAssessment,
+                                    CompatibleFragmentAvailable:
+                                        knownFragments.Count > 0,
+                                    ExactFragmentAvailable:
+                                        knownFragments.Any(item =>
+                                            item.ExactStartState)));
+
                         taskHistory.Add(
-                            "CHỈ DẪN THOÁT VÒNG LẶP: BẮT BUỘC đổi chiến lược. Không lặp lại cùng action/target. Nếu không còn phương án an toàn hợp lý, trả blocked và giải thích.");
-
-                        progress.Add(
-                            "replan",
-                            "Chiến lược hiện tại đã nằm trong vòng lặp; không thực hiện lại. AI phải quan sát trạng thái hiện tại và chọn chiến lược khác.",
-                            "replan",
-                            decision.Confidence);
-
-                        _ = actionState.MoveTo(
-                            ComputerOperatorActionState.Replan,
-                            "Loop guard yêu cầu đổi chiến lược.");
-
-                        await Task.Delay(250, linked.Token);
-                        continue;
+                            $"RECOVERY-RECOMMENDATION: decision={recoveryRecommendation.Decision}; {recoveryRecommendation.Reason}");
                     }
                 }
+
+                var authorityDecision =
+                    decisionAuthority.Evaluate(
+                        new ComputerOperatorDecisionAuthorityInput(
+                            PlannerAction: decision.Action,
+                            StrategySignature: loopStrategy,
+                            RecentlyConsumedReplay: consumedReplay,
+                            LoopAssessment: loopAssessment,
+                            RecoveryRecommendation: recoveryRecommendation));
+
+                progress.AddDiagnostic(
+                    "decision-authority",
+                    $"cycle={index}; action={decision.Action}; directive={authorityDecision.Directive}; consumedReplay={consumedReplay}; loopDetected={loopAssessment.Detected}; loopRequiresChange={loopAssessment.RequiresStrategyChange}; preferFragment={authorityDecision.PreferKnownFragment}; reason={LimitDiagnostic(authorityDecision.Reason, 260)}.");
+
+                progress.Add(
+                    "state",
+                    string.IsNullOrWhiteSpace(decision.State)
+                        ? "AI đã cập nhật trạng thái màn hình."
+                        : $"Trạng thái: {decision.State}");
+
+                if (!authorityDecision.AllowExecution)
+                {
+                    consecutiveAuthorityReplans =
+                        string.Equals(authorityReplanScene, sceneFingerprint, StringComparison.Ordinal)
+                            ? consecutiveAuthorityReplans + 1
+                            : 1;
+                    authorityReplanScene = sceneFingerprint;
+                    if (ShouldStopRepeatedAuthorityReplan(consecutiveAuthorityReplans))
+                    {
+                        var detail = "Decision Authority yêu cầu lập kế hoạch lại 6 lần liên tiếp trên cùng scene mà không có hành động mới; dừng an toàn, giữ checkpoint.";
+                        checkpoint = SaveCheckpointSafely(
+                            checkpoint,
+                            verifiedMilestones,
+                            currentSubgoal,
+                            latestGoalProgress,
+                            lastObservedStateFingerprint: sceneFingerprint);
+                        MarkCheckpointStatusSafely(
+                            checkpoint,
+                            ComputerOperatorCheckpointStatuses.Interrupted);
+                        progress.Block(detail);
+                        return Finish(false, detail);
+                    }
+                    if (consumedReplay)
+                    {
+                        taskHistory.Add(
+                            $"STEP {index}: POST-TRANSITION-AUTHORITY-REPLAN {loopStrategy} — {authorityDecision.Reason}");
+
+                        taskHistory.Add(
+                            "CHỈ DẪN SAU TRANSITION: Action cũ đã consume. Planner phải đọc scene hiện tại như trạng thái mới và chọn bước kế tiếp khác.");
+                    }
+                    else
+                    {
+                        taskHistory.Add(
+                            $"DECISION-AUTHORITY-REPLAN: {authorityDecision.Reason}");
+
+                        if (authorityDecision.PreferKnownFragment &&
+                            knownFragments.Count > 0)
+                        {
+                            taskHistory.Add(
+                                "GỢI Ý RECOVERY: Có fragment đã VERIFY PASS tương thích. Đây chỉ là gợi ý cho planner; vẫn phải re-observe và chọn từng action.");
+                        }
+                        else
+                        {
+                            taskHistory.Add(
+                                "GỢI Ý RECOVERY: Đổi chiến lược từ scene mới. Loop Guard/Recovery không được tự execute action.");
+                        }
+                    }
+
+                    progress.Add(
+                        "decision-authority",
+                        $"Decision Authority yêu cầu REPLAN: {authorityDecision.Reason}",
+                        "replan",
+                        decision.Confidence);
+
+                    _ = actionState.MoveTo(
+                        ComputerOperatorActionState.Replan,
+                        authorityDecision.Reason);
+
+                    cycleTrace.RecoveryCode =
+                        consumedReplay
+                            ? "post-transition-consumed"
+                            : "decision-authority-replan";
+                    cycleTrace.RecoveryDetail =
+                        authorityDecision.Reason;
+                    cycleTrace.Result =
+                        "replan";
+                    cycleTrace.Next =
+                        authorityDecision.PreferKnownFragment
+                            ? "observe-with-fragment-hint"
+                            : "observe-alternate-strategy";
+                    EmitCycleForensicSummary(
+                        progress,
+                        cycleTrace);
+
+                    await Task.Delay(
+                        250,
+                        linked.Token);
+                    continue;
+                }
+
+                consecutiveAuthorityReplans = 0;
+                authorityReplanScene = null;
 
                 progress.Add(
                     "plan",
@@ -729,6 +1340,19 @@ public sealed class ComputerOperatorTaskService(
                     taskTelemetry.Complete(
                         success: true,
                         route: "verified");
+
+                    cycleTrace.Result =
+                        "complete";
+                    cycleTrace.Next =
+                        "stop-success";
+                    cycleTrace.Verification =
+                        "Planner xác nhận mục tiêu đã hoàn thành.";
+                    cycleTrace.VerificationConfidence =
+                        decision.Confidence;
+                    EmitCycleForensicSummary(
+                        progress,
+                        cycleTrace);
+
                     return Finish(
                         true,
                         steps.Count == 0
@@ -757,6 +1381,18 @@ public sealed class ComputerOperatorTaskService(
                             ComputerOperatorActionState.Replan,
                             "Blocked tạm thời; cần quan sát và thử chiến lược khác.");
 
+                        cycleTrace.RecoveryCode =
+                            "blocked-candidate";
+                        cycleTrace.RecoveryDetail =
+                            decision.Reason;
+                        cycleTrace.Result =
+                            "replan";
+                        cycleTrace.Next =
+                            "observe-alternate-strategy";
+                        EmitCycleForensicSummary(
+                            progress,
+                            cycleTrace);
+
                         await Task.Delay(350, linked.Token);
                         continue;
                     }
@@ -780,6 +1416,19 @@ public sealed class ComputerOperatorTaskService(
                     taskTelemetry.Complete(
                         success: false,
                         route: "blocked");
+
+                    cycleTrace.RecoveryCode =
+                        "blocked";
+                    cycleTrace.RecoveryDetail =
+                        decision.Reason;
+                    cycleTrace.Result =
+                        "blocked-final";
+                    cycleTrace.Next =
+                        "stop";
+                    EmitCycleForensicSummary(
+                        progress,
+                        cycleTrace);
+
                     return Finish(
                         false,
                         $"Vision dừng an toàn sau nhiều lần thử lại: {decision.Reason}");
@@ -789,6 +1438,36 @@ public sealed class ComputerOperatorTaskService(
 
                 if (decision.Action == "wait")
                 {
+                    // Provider backoff is a bounded resilience policy, not a
+                    // frozen UI. Only the ordinary UI waiting route uses the
+                    // unchanged-scene timeout.
+                    if (IsProviderCooldownWait(decision.Reason))
+                    {
+                        waitingSceneFingerprint = null;
+                        waitingSince = null;
+                    }
+                    else if (!string.Equals(waitingSceneFingerprint, sceneFingerprint, StringComparison.Ordinal))
+                    {
+                        waitingSceneFingerprint = sceneFingerprint;
+                        waitingSince = DateTimeOffset.UtcNow;
+                    }
+                    else if (waitingSince is not null &&
+                             ShouldStopUnchangedWaiting(waitingSince.Value, DateTimeOffset.UtcNow))
+                    {
+                        var detail = "Operator không tiến triển sau 60 giây chờ trên cùng trạng thái màn hình; dừng an toàn để điều tra thay vì tiếp tục tiêu hao step budget.";
+                        checkpoint = SaveCheckpointSafely(
+                            checkpoint,
+                            verifiedMilestones,
+                            currentSubgoal,
+                            latestGoalProgress,
+                            lastObservedStateFingerprint: sceneFingerprint);
+                        MarkCheckpointStatusSafely(
+                            checkpoint,
+                            ComputerOperatorCheckpointStatuses.Interrupted);
+                        progress.Block(detail);
+                        return Finish(false, detail);
+                    }
+
                     taskHistory.Add(
                         $"STEP {index}: WAIT — {decision.Reason}");
                     progress.Add(
@@ -801,7 +1480,50 @@ public sealed class ComputerOperatorTaskService(
                         ComputerOperatorActionState.Replan,
                         "Chờ UI ổn định rồi quan sát lại.");
 
-                    await Task.Delay(900, linked.Token);
+                    cycleTrace.RecoveryCode =
+                        IsProviderCooldownWait(decision.Reason)
+                            ? "provider-cooldown"
+                            : "waiting";
+                    cycleTrace.RecoveryDetail =
+                        decision.Reason;
+                    cycleTrace.Result =
+                        "wait";
+                    cycleTrace.Next =
+                        "observe";
+                    EmitCycleForensicSummary(
+                        progress,
+                        cycleTrace);
+
+                    var waitMilliseconds =
+                        cycleTrace.RecoveryCode ==
+                            "provider-cooldown"
+                            ? providerResilience.CalculateCooldownDelayMilliseconds(
+                                plannerResilienceState.BackoffUntil,
+                                DateTimeOffset.UtcNow)
+                            : 900;
+
+                    await Task.Delay(
+                        waitMilliseconds,
+                        linked.Token);
+                    continue;
+                }
+
+                waitingSceneFingerprint = null;
+                waitingSince = null;
+
+                if (string.Equals(decision.Action, "type-text", StringComparison.OrdinalIgnoreCase) &&
+                    HasUnrequestedSuffixOnQuotedGoalText(normalizedGoal, decision.Text))
+                {
+                    const string detail = "Nội dung type-text có ký tự bổ sung sau chuỗi được yêu cầu nhập nguyên văn. Không nhập sai; yêu cầu planner chọn lại nội dung chính xác.";
+                    taskHistory.Add($"STEP {index}: EXACT-TEXT-REPLAN — {detail}");
+                    progress.Add("replan", detail, "exact-text-guard");
+                    _ = actionState.MoveTo(ComputerOperatorActionState.Replan, detail);
+                    cycleTrace.RecoveryCode = "exact-text-mismatch";
+                    cycleTrace.RecoveryDetail = detail;
+                    cycleTrace.Result = "replan";
+                    cycleTrace.Next = "observe-exact-text";
+                    EmitCycleForensicSummary(progress, cycleTrace);
+                    await Task.Delay(250, linked.Token);
                     continue;
                 }
 
@@ -816,24 +1538,129 @@ public sealed class ComputerOperatorTaskService(
                     $"State machine: {targetState.State} — {targetState.Detail}",
                     "target");
 
+                // When a click candidate carries a live UIA token, prefer the
+                // structured InvokePattern instead of a stale pixel coordinate.
+                // A missing/non-invokable token still takes the fail-closed
+                // grounding route; never guess another element.
+                if (decision.Action == "click-left" &&
+                    !string.IsNullOrWhiteSpace(decision.TargetElementId) &&
+                    desktopState.StructuredScene is { } structuredScene &&
+                    !string.IsNullOrWhiteSpace(decision.CoordinateWindowId) &&
+                    string.Equals(
+                        decision.CoordinateWindowId,
+                        active?.WindowId,
+                        StringComparison.OrdinalIgnoreCase))
+                {
+                    var matchedNodes = structuredScene.Nodes
+                        .Where(node => ComputerOperatorGroundingService.IsEligibleUiaInvokeTarget(
+                            node.Token,
+                            node.IsOffscreen,
+                            node.IsEnabled,
+                            node.Patterns,
+                            decision.TargetElementId))
+                        .Take(2)
+                        .ToArray();
+
+                    if (matchedNodes.Length == 1)
+                    {
+                        decision = decision with
+                        {
+                            Action = "structured-invoke",
+                            Reason = $"{decision.Reason} UIA token được tìm thấy duy nhất với InvokePattern; chuyển click sang structured-invoke."
+                        };
+                        progress.Add(
+                            "target-grounding",
+                            "Đã chuyển click sang structured-invoke nhờ UIA token hợp lệ và InvokePattern.",
+                            "structured",
+                            observation: true);
+                    }
+                }
+
+                if (!IsClickAction(decision.Action))
+                {
+                    lastGroundingFailureKey = null;
+                    repeatedGroundingFailureCount = 0;
+                }
+
                 if (IsClickAction(decision.Action))
                 {
-                    var plannedWindow = ResolveTrackingWindow(
-                        decision,
-                        active,
-                        frame);
-                    var currentWindow = plannedWindow is null
-                        ? null
-                        : computer.GetWindows(50).Windows.FirstOrDefault(
-                            window => window.WindowId.Equals(
-                                plannedWindow.WindowId,
-                                StringComparison.OrdinalIgnoreCase));
+                    var clickGrounding =
+                        clickGroundingCoordinator.Ground(
+                            decision,
+                            desktopState,
+                            frame,
+                            active,
+                            IsDeterministicTextSurface(
+                                active));
 
-                    var tracking = TargetTracker.Track(
-                        decision,
-                        frame,
-                        plannedWindow,
-                        currentWindow);
+                    var grounding =
+                        clickGrounding.Grounding;
+
+                    progress.Add(
+                        "target-grounding",
+                        grounding.Reason,
+                        grounding.Status,
+                        grounding.Confidence,
+                        observation: true);
+
+                    progress.AddDiagnostic(
+                        "target-grounding",
+                        $"cycle={index}; status={grounding.Status}; semanticTarget={LimitDiagnostic(decision.TargetLabel, 120)}; confidence={grounding.Confidence:0.000}; evidence={LimitDiagnostic(string.Join(" | ", grounding.Evidence.Select(item => $"{item.Source}:{item.SupportsTarget}:{item.Confidence:0.00}")), 220)}; reason={LimitDiagnostic(grounding.Reason, 240)}.");
+
+                    if (!grounding.Resolved)
+                    {
+                        var failureKey = BuildGroundingFailureKey(
+                            sceneFingerprint, decision, grounding.Status);
+                        repeatedGroundingFailureCount =
+                            failureKey == lastGroundingFailureKey
+                                ? repeatedGroundingFailureCount + 1
+                                : 1;
+                        lastGroundingFailureKey = failureKey;
+
+                        if (repeatedGroundingFailureCount >= 3)
+                        {
+                            var detail = $"Grounding thất bại {repeatedGroundingFailureCount} lần trên cùng scene/target/status; dừng thử lại cho tới khi có bằng chứng mới. {grounding.Reason}";
+                            checkpoint = SaveCheckpointSafely(
+                                checkpoint,
+                                verifiedMilestones,
+                                currentSubgoal,
+                                latestGoalProgress,
+                                lastObservedStateFingerprint: sceneFingerprint);
+                            MarkCheckpointStatusSafely(
+                                checkpoint,
+                                ComputerOperatorCheckpointStatuses.Interrupted);
+                            progress.AddDiagnostic(
+                                "recovery-checkpoint",
+                                $"Grounding loop guard: giữ {verifiedMilestones.Count} verified milestones; scene={BuildDiagnosticId(sceneFingerprint)}; không replay action cũ.");
+                            progress.Block(detail);
+                            return Finish(false, detail);
+                        }
+
+                        taskHistory.Add(
+                            $"TARGET-GROUNDING-REPLAN: status={grounding.Status}; target='{decision.TargetLabel}'; {grounding.Reason}");
+
+                        _ = actionState.MoveTo(
+                            ComputerOperatorActionState.Replan,
+                            grounding.Reason);
+
+                        await Task.Delay(
+                            250,
+                            linked.Token);
+                        continue;
+                    }
+
+                    lastGroundingFailureKey = null;
+                    repeatedGroundingFailureCount = 0;
+
+                    decision =
+                        grounding.Decision;
+
+                    var plannedWindow =
+                        clickGrounding.PlannedWindow;
+                    var currentWindow =
+                        clickGrounding.CurrentWindow;
+                    var tracking =
+                        clickGrounding.Tracking!;
                     trackingResult = tracking;
 
                     progress.Add(
@@ -844,32 +1671,88 @@ public sealed class ComputerOperatorTaskService(
 
                     if (!tracking.SafeToExecute)
                     {
-                        taskHistory.Add(
-                            $"TARGET-TRACKING-REPLAN: {tracking.Reason}");
-                        progress.Add(
-                            "replan",
-                            $"Target không còn an toàn để click: {tracking.Reason} Sẽ quan sát lại thay vì dùng tọa độ cũ.",
-                            "replan",
-                            tracking.Confidence);
+                        ComputerOperatorVisualTargetRecoveryResult? visualRecovery =
+                            null;
 
-                        var replanState = actionState.MoveTo(
-                            ComputerOperatorActionState.Replan,
-                            tracking.Reason);
+                        try
+                        {
+                            visualRecovery =
+                                await visualTargetRecovery.TryRecoverAsync(
+                                    decision,
+                                    plannedWindow,
+                                    currentWindow,
+                                    plannedVisualTemplate,
+                                    linked.Token);
 
-                        progress.Add(
-                            "action-state",
-                            $"State machine: {replanState.State} — {replanState.Detail}",
-                            "replan");
+                            if (visualRecovery.Attempted)
+                            {
+                                progress.Add(
+                                    "visual-target-recovery",
+                                    visualRecovery.Reason,
+                                    visualRecovery.Status,
+                                    visualRecovery.Confidence,
+                                    observation: true);
+                            }
 
-                        await Task.Delay(200, linked.Token);
-                        continue;
+                            if (visualRecovery.Recovered &&
+                                visualRecovery.ReplacementFrame is not null)
+                            {
+                                // Executor cần geometry của capture mới,
+                                // nhưng không cần giữ JPEG sau khi reacquire.
+                                frame =
+                                    visualRecovery.ReplacementFrame;
+                            }
+                        }
+                        catch (Exception exception) when (
+                            exception is
+                                ToolExecutionInputException or
+                                InvalidOperationException)
+                        {
+                            logger.LogDebug(
+                                exception,
+                                "Visual target reacquire không khả dụng; giữ nguyên hành vi replan.");
+                        }
+
+                        if (visualRecovery?.Recovered != true ||
+                            visualRecovery.Tracking is null)
+                        {
+                            taskHistory.Add(
+                                $"TARGET-TRACKING-REPLAN: {tracking.Reason}");
+                            progress.Add(
+                                "replan",
+                                $"Target không còn an toàn để click: {tracking.Reason} Visual persistence cũng không xác minh lại được target duy nhất; sẽ quan sát lại.",
+                                "replan",
+                                tracking.Confidence);
+
+                            var replanState = actionState.MoveTo(
+                                ComputerOperatorActionState.Replan,
+                                tracking.Reason);
+
+                            progress.Add(
+                                "action-state",
+                                $"State machine: {replanState.State} — {replanState.Detail}",
+                                "replan");
+
+                            await Task.Delay(
+                                200,
+                                linked.Token);
+                            continue;
+                        }
+
+                        tracking =
+                            visualRecovery.Tracking;
+                        trackingResult =
+                            visualRecovery.Tracking;
                     }
 
                     decision = tracking.Decision;
                 }
 
-                if (RequiresExpectedEffect(decision.Action) &&
-                    string.IsNullOrWhiteSpace(decision.ExpectedEffect))
+                var expectedEffectSafety =
+                    actionSafetyPolicy.ValidateExpectedEffect(
+                        decision);
+
+                if (!expectedEffectSafety.Safe)
                 {
                     taskHistory.Add(
                         $"STEP {index}: REJECTED {decision.Action} — thiếu EXPECTED EFFECT để xác minh.");
@@ -898,7 +1781,7 @@ public sealed class ComputerOperatorTaskService(
                 }
 
                 var confidenceAssessment =
-                    ConfidenceEngine.AssessBeforeExecution(
+                    confidenceEngine.AssessBeforeExecution(
                         decision,
                         currentScene,
                         trackingResult);
@@ -909,42 +1792,57 @@ public sealed class ComputerOperatorTaskService(
                     confidenceAssessment.Decision.ToString().ToLowerInvariant(),
                     confidenceAssessment.OverallConfidence);
 
-                if (confidenceAssessment.Decision !=
-                    ComputerOperatorConfidenceDecision.Execute)
+                var nextLowConfidenceCount =
+                    confidenceAssessment.Decision ==
+                        ComputerOperatorConfidenceDecision.Execute
+                        ? 0
+                        : lowConfidenceCount + 1;
+
+                var readinessDecision =
+                    decisionAuthority.EvaluateExecutionReadiness(
+                        new ComputerOperatorExecutionReadinessInput(
+                            confidenceAssessment,
+                            nextLowConfidenceCount));
+
+                progress.AddDiagnostic(
+                    "decision-authority-readiness",
+                    $"cycle={index}; confidenceDecision={confidenceAssessment.Decision}; overall={confidenceAssessment.OverallConfidence:0.000}; directive={readinessDecision.Directive}; allowExecution={readinessDecision.AllowExecution}; lowConfidenceCount={nextLowConfidenceCount}; reason={LimitDiagnostic(readinessDecision.Reason, 260)}.");
+
+                if (!readinessDecision.AllowExecution)
                 {
-                    lowConfidenceCount++;
+                    lowConfidenceCount =
+                        nextLowConfidenceCount;
 
                     taskHistory.Add(
-                        $"CONFIDENCE-REPLAN: {confidenceAssessment.Reason}");
+                        $"CONFIDENCE-AUTHORITY-{readinessDecision.Directive.ToUpperInvariant()}: {readinessDecision.Reason}");
 
                     recovery.RecordFailure(
                         BuildSemanticActionSignature(decision),
                         decision.Action,
                         ComputerOperatorFailureKinds.LowConfidence,
                         sceneFingerprint,
-                        confidenceAssessment.Reason,
+                        readinessDecision.Reason,
                         decision.ExpectedEffect,
                         confidenceAssessment.OverallConfidence);
 
-                    if (lowConfidenceCount >= 3)
+                    if (readinessDecision.Directive ==
+                        ComputerOperatorDecisionAuthorityDirectives.Block)
                     {
                         _ = actionState.MoveTo(
                             ComputerOperatorActionState.Blocked,
-                            "Confidence Engine không đủ chắc chắn sau 3 lần quan sát.");
+                            readinessDecision.Reason);
 
                         progress.Block(
-                            "Confidence Engine không đủ chắc chắn để thực thi sau 3 lần quan sát.");
+                            readinessDecision.Reason);
+
                         return Finish(
                             false,
-                            "Đã dừng an toàn vì scene/target/action vẫn không đủ chắc chắn.");
+                            "Decision Authority đã dừng an toàn vì scene/target/action vẫn không đủ chắc chắn.");
                     }
 
                     _ = actionState.MoveTo(
                         ComputerOperatorActionState.Replan,
-                        confidenceAssessment.Decision ==
-                            ComputerOperatorConfidenceDecision.GeminiFallback
-                            ? "Confidence trung gian; yêu cầu Gemini quan sát lại với ngữ cảnh mới."
-                            : "Confidence thấp; cần re-observe trước khi execute.");
+                        readinessDecision.Reason);
 
                     await Task.Delay(
                         confidenceAssessment.Decision ==
@@ -1014,6 +1912,38 @@ public sealed class ComputerOperatorTaskService(
                     }
                 }
 
+                if (ShouldSuppressRecentlyConsumedAction(
+                        actionSignature,
+                        recentlyConsumedActionSignature,
+                        index,
+                        recentlyConsumedUntilStep))
+                {
+                    taskHistory.Add(
+                        $"STEP {index}: POST-TRANSITION-SUPPRESS {actionSignature} — Side-effect tương đương vừa tạo transition/đã được xác minh; không replay ngay.");
+
+                    taskHistory.Add(
+                        "CHỈ DẪN: Bước vừa rồi đã làm giao diện chuyển trạng thái. Không được chọn lại cùng action + target + expectedEffect ngay; phải quan sát scene hiện tại và chọn bước kế tiếp khác.");
+
+                    progress.Add(
+                        "post-transition-suppression",
+                        "Không replay side-effect vừa tạo transition. Planner phải chọn bước kế tiếp từ trạng thái hiện tại.",
+                        "replan",
+                        decision.Confidence);
+
+                    progress.AddDiagnostic(
+                        "recovery",
+                        $"cycle={index}; scene={sceneDiagnosticId}; strategy={strategyDiagnosticId}; decision=POST-TRANSITION-SUPPRESS; consumedUntilStep={recentlyConsumedUntilStep}; replaySideEffect=false.");
+
+                    _ = actionState.MoveTo(
+                        ComputerOperatorActionState.Replan,
+                        "Side-effect vừa tạo transition; yêu cầu bước kế tiếp khác.");
+
+                    await Task.Delay(
+                        250,
+                        linked.Token);
+                    continue;
+                }
+
                 if (recovery.ShouldAvoidRepeatedStrategy(
                         actionSignature,
                         sceneFingerprint,
@@ -1059,11 +1989,22 @@ public sealed class ComputerOperatorTaskService(
                 {
                     try
                     {
-                        verificationBaseline = await CapturePostActionFrameAsync(linked.Token);
+                        verificationBaseline = await captureService.CaptureDynamicAsync(linked.Token);
                         verificationCaptureContext =
                             VerificationCaptureContext.From(
                                 verificationBaseline);
                         fastObserverBaseline = fastObserver.CaptureSample(verificationBaseline);
+
+                        visualEvidence.RecordFrame(
+                            evidenceRunId,
+                            index,
+                            "before-action",
+                            verificationBaseline,
+                            decision.Action,
+                            decision.TargetLabel,
+                            decision.ExpectedEffect,
+                            computer.GetActiveWindow());
+
                         progress.Add(
                             "frame-baseline",
                             $"Đã khóa Verification Capture Context: scope={verificationCaptureContext.CaptureScope}; window={verificationCaptureContext.WindowId ?? "-"}; monitor={verificationCaptureContext.MonitorDevice ?? "-"}; origin=({verificationCaptureContext.Left},{verificationCaptureContext.Top}); size={verificationCaptureContext.Width}x{verificationCaptureContext.Height}; dpi={verificationCaptureContext.DpiX}x{verificationCaptureContext.DpiY}.",
@@ -1104,6 +2045,9 @@ public sealed class ComputerOperatorTaskService(
                 }
 
                 ComputerActionResponse action;
+                var executionStopwatch =
+                    Stopwatch.StartNew();
+
                 using var executionTelemetry =
                     telemetry.Begin(
                         decision.Action.Equals(
@@ -1131,36 +2075,18 @@ public sealed class ComputerOperatorTaskService(
                                 "structured-",
                                 StringComparison.OrdinalIgnoreCase))
                     {
-                        var activeForStructured =
-                            computer.GetActiveWindow()
-                            ?? throw new ToolExecutionInputException(
-                                "Không xác định được foreground trước structured target revalidation.");
-
-                        var freshSnapshot =
-                            structuredDesktop.CaptureWindow(
-                                activeForStructured.WindowId,
-                                maximumNodes: 240,
-                                maximumDepth: 7);
-
-                        var freshGraph =
-                            UnifiedStructuredSceneGraphBuilder.Build(
-                                freshSnapshot,
-                                activeForStructured,
-                                desktopState.FrameLeft,
-                                desktopState.FrameTop,
-                                desktopState.FrameWidth,
-                                desktopState.FrameHeight);
-
                         using var structuredRevalidateTelemetry =
                             telemetry.Begin(
                                 ComputerOperatorTelemetryStages.StructuredRevalidate,
                                 decision.Action);
 
-                        var revalidated =
-                            StructuredTargetRevalidator.Revalidate(
+                        var structuredRevalidation =
+                            structuredPreExecutionRevalidator.Revalidate(
                                 decision,
-                                freshGraph,
-                                DateTimeOffset.UtcNow);
+                                desktopState);
+
+                        var revalidated =
+                            structuredRevalidation.Result;
 
                         structuredRevalidateTelemetry.Complete(
                             revalidated.SafeToExecute,
@@ -1180,7 +2106,7 @@ public sealed class ComputerOperatorTaskService(
 
                         progress.AddDiagnostic(
                             "structured-target",
-                            $"cycle={index}; status={revalidated.Status}; action={decision.Action}; oldTarget={LimitDiagnostic(decision.TargetElementId, 80)}; newTarget={LimitDiagnostic(revalidated.Decision.TargetElementId, 80)}; confidence={revalidated.Confidence:0.000}; sceneAgeMs={(freshGraph is null ? -1 : Math.Max(0, (DateTimeOffset.UtcNow - freshGraph.CapturedAtUtc).TotalMilliseconds)):0}.");
+                            $"cycle={index}; status={revalidated.Status}; action={decision.Action}; oldTarget={LimitDiagnostic(decision.TargetElementId, 80)}; newTarget={LimitDiagnostic(revalidated.Decision.TargetElementId, 80)}; confidence={revalidated.Confidence:0.000}; sceneAgeMs={structuredRevalidation.SceneAgeMilliseconds:0}; window={LimitDiagnostic(structuredRevalidation.WindowId, 80)}.");
 
                         if (!revalidated.SafeToExecute)
                         {
@@ -1192,49 +2118,60 @@ public sealed class ComputerOperatorTaskService(
                             revalidated.Decision;
                     }
 
-                    if (decision.Action.Equals(
-                            "type-text",
-                            StringComparison.OrdinalIgnoreCase))
+                    var executionResult =
+                        executionCoordinator.Execute(
+                            decision,
+                            frame);
+
+                    action =
+                        executionResult.Action;
+                    textInteractionResult =
+                        executionResult.TextInteraction;
+
+                    if (textInteractionResult is not null)
                     {
-                        var activeForText = computer.GetActiveWindow()
-                            ?? throw new ToolExecutionInputException(
-                                "Không xác định được foreground window cho Text Engine.");
-
-                        textInteractionResult = textInteraction.Execute(
-                            new TextInteractionRequest(
-                                activeForText.WindowId,
-                                RequireValue(decision.Text, "text"),
-                                TextInteractionWriteModes.ReplaceAll));
-
-                        action = new ComputerActionResponse(
-                            ComputerUseCapabilities.TypeText,
-                            textInteractionResult.Applied || textInteractionResult.Verified,
-                            textInteractionResult.Detail);
-
                         progress.Add(
                             "text-engine",
                             $"Text Engine: strategy={textInteractionResult.Strategy}; verified={textInteractionResult.Verified}; repair={textInteractionResult.RepairAttempted}; rollback={textInteractionResult.RolledBack}.",
                             textInteractionResult.Verified ? "verified" : "fallback",
                             textInteractionResult.Verified ? 1.0 : null);
                     }
-                    else
-                    {
-                        action = actionExecutor.Execute(
-                            decision,
-                            frame);
-                    }
 
                     executionTelemetry.Complete(
                         success: action.Applied,
                         route:
-                            decision.Action.Equals(
-                                "type-text",
-                                StringComparison.OrdinalIgnoreCase)
-                                ? "text-engine"
-                                : "computer");
+                            executionResult.Route);
+
+                    executionStopwatch.Stop();
+                    cycleTrace.Executed =
+                        action.Applied;
+                    cycleTrace.ExecutionMilliseconds =
+                        executionStopwatch.ElapsedMilliseconds;
+                    cycleTrace.Executor =
+                        executionResult.Executor;
                 }
                 catch (ToolExecutionInputException exception)
                 {
+                    executionStopwatch.Stop();
+                    cycleTrace.Executed =
+                        false;
+                    cycleTrace.ExecutionMilliseconds =
+                        executionStopwatch.ElapsedMilliseconds;
+                    cycleTrace.Executor =
+                        decision.Action.StartsWith(
+                            "structured-",
+                            StringComparison.OrdinalIgnoreCase)
+                            ? "uia-structured"
+                            : "computer-input";
+                    cycleTrace.RecoveryCode =
+                        "action-rejected";
+                    cycleTrace.RecoveryDetail =
+                        exception.Message;
+                    cycleTrace.Result =
+                        "replan";
+                    cycleTrace.Next =
+                        "observe";
+
                     executionTelemetry.Complete(
                         success: false,
                         route: "rejected");
@@ -1269,6 +2206,14 @@ public sealed class ComputerOperatorTaskService(
                         progress.Block(
                             $"Dừng theo failure policy: {failurePolicy.Reason}");
 
+                        cycleTrace.Result =
+                            "blocked";
+                        cycleTrace.Next =
+                            "stop";
+                        EmitCycleForensicSummary(
+                            progress,
+                            cycleTrace);
+
                         return Finish(
                             false,
                             $"Computer Operator dừng an toàn: {failurePolicy.Reason}");
@@ -1280,6 +2225,18 @@ public sealed class ComputerOperatorTaskService(
                         _ = actionState.MoveTo(
                             ComputerOperatorActionState.Replan,
                             "Failure policy yêu cầu chờ và quan sát lại.");
+
+                        cycleTrace.RecoveryCode =
+                            failurePolicy.Category.ToString();
+                        cycleTrace.RecoveryDetail =
+                            failurePolicy.Reason;
+                        cycleTrace.Result =
+                            "waiting";
+                        cycleTrace.Next =
+                            "observe";
+                        EmitCycleForensicSummary(
+                            progress,
+                            cycleTrace);
 
                         await Task.Delay(
                             750,
@@ -1294,6 +2251,17 @@ public sealed class ComputerOperatorTaskService(
                         sceneFingerprint,
                         exception.Message,
                         decision.ExpectedEffect,
+                        decision.Confidence);
+
+                    learning.RecordFailure(
+                        sceneFingerprint,
+                        ClassifyFailureKind(
+                            decision.Action,
+                            exception.Message,
+                            actionApplied: false,
+                            verificationFailed: false)
+                            .ToString(),
+                        strategyDiagnosticId,
                         decision.Confidence);
 
                     taskHistory.Add(
@@ -1319,7 +2287,7 @@ public sealed class ComputerOperatorTaskService(
                         $"State machine: {diagnoseState.State} -> {replanState.State}",
                         "replan");
 
-                    var recoveryPlan = RecoveryEngine.Plan(
+                    var recoveryPlan = failureRecoveryEngine.Plan(
                         new ComputerOperatorFailureContext(
                             ClassifyFailureKind(
                                 decision.Action,
@@ -1329,6 +2297,39 @@ public sealed class ComputerOperatorTaskService(
                             decision.Action,
                             exception.Message,
                             RepeatedFailures: failures));
+
+                    var currentKnownEdge =
+                        outgoingProcedureEdges.FirstOrDefault(edge =>
+                            edge.StrategyKey.Equals(
+                                strategyDiagnosticId,
+                                StringComparison.OrdinalIgnoreCase) &&
+                            edge.ActionKind.Equals(
+                                decision.Action,
+                                StringComparison.OrdinalIgnoreCase));
+
+                    var coordinatedRecovery =
+                        recoveryCoordinator.Decide(
+                            new ComputerOperatorRecoveryCoordinatorInput(
+                                RecoveryPlan: recoveryPlan,
+                                RepeatedFailures: failures,
+                                CurrentStrategySuperseded:
+                                    currentKnownEdge is not null &&
+                                    procedureEdgeLifecycle.IsSuperseded(
+                                        currentKnownEdge),
+                                CompatibleFragmentAvailable:
+                                    knownFragments.Count > 0,
+                                ExactFragmentAvailable:
+                                    knownFragments.Any(item =>
+                                        item.ExactStartState)));
+
+                    taskHistory.Add(
+                        $"RECOVERY-COORDINATOR: decision={coordinatedRecovery.Decision}; retrySame={coordinatedRecovery.AllowSameStrategyRetry}; preferFragment={coordinatedRecovery.PreferKnownFragment}; {coordinatedRecovery.Reason}");
+
+                    progress.Add(
+                        "recovery-coordinator",
+                        $"Coordinator chọn {coordinatedRecovery.Decision}: {coordinatedRecovery.Reason}",
+                        coordinatedRecovery.Decision,
+                        decision.Confidence);
 
                     progress.Add(
                         "recovery-plan",
@@ -1356,6 +2357,23 @@ public sealed class ComputerOperatorTaskService(
                             decision.Confidence);
                     }
 
+                    cycleTrace.RecoveryCode =
+                        ClassifyFailureKind(
+                            decision.Action,
+                            exception.Message,
+                            actionApplied: false,
+                            verificationFailed: false)
+                            .ToString();
+                    cycleTrace.RecoveryDetail =
+                        coordinatedRecovery.Reason;
+                    cycleTrace.Result =
+                        "replan";
+                    cycleTrace.Next =
+                        coordinatedRecovery.Decision;
+                    EmitCycleForensicSummary(
+                        progress,
+                        cycleTrace);
+
                     await Task.Delay(500, linked.Token);
                     continue;
                 }
@@ -1375,6 +2393,17 @@ public sealed class ComputerOperatorTaskService(
                         sceneFingerprint,
                         action.Detail,
                         decision.ExpectedEffect,
+                        decision.Confidence);
+
+                    learning.RecordFailure(
+                        sceneFingerprint,
+                        ClassifyFailureKind(
+                            decision.Action,
+                            action.Detail,
+                            actionApplied: false,
+                            verificationFailed: false)
+                            .ToString(),
+                        strategyDiagnosticId,
                         decision.Confidence);
 
                     taskHistory.Add(
@@ -1400,7 +2429,7 @@ public sealed class ComputerOperatorTaskService(
                         $"State machine: {diagnoseState.State} -> {replanState.State}",
                         "replan");
 
-                    var recoveryPlan = RecoveryEngine.Plan(
+                    var recoveryPlan = failureRecoveryEngine.Plan(
                         new ComputerOperatorFailureContext(
                             ClassifyFailureKind(
                                 decision.Action,
@@ -1410,6 +2439,39 @@ public sealed class ComputerOperatorTaskService(
                             decision.Action,
                             action.Detail,
                             RepeatedFailures: failures));
+
+                    var currentKnownEdge =
+                        outgoingProcedureEdges.FirstOrDefault(edge =>
+                            edge.StrategyKey.Equals(
+                                strategyDiagnosticId,
+                                StringComparison.OrdinalIgnoreCase) &&
+                            edge.ActionKind.Equals(
+                                decision.Action,
+                                StringComparison.OrdinalIgnoreCase));
+
+                    var coordinatedRecovery =
+                        recoveryCoordinator.Decide(
+                            new ComputerOperatorRecoveryCoordinatorInput(
+                                RecoveryPlan: recoveryPlan,
+                                RepeatedFailures: failures,
+                                CurrentStrategySuperseded:
+                                    currentKnownEdge is not null &&
+                                    procedureEdgeLifecycle.IsSuperseded(
+                                        currentKnownEdge),
+                                CompatibleFragmentAvailable:
+                                    knownFragments.Count > 0,
+                                ExactFragmentAvailable:
+                                    knownFragments.Any(item =>
+                                        item.ExactStartState)));
+
+                    taskHistory.Add(
+                        $"RECOVERY-COORDINATOR: decision={coordinatedRecovery.Decision}; retrySame={coordinatedRecovery.AllowSameStrategyRetry}; preferFragment={coordinatedRecovery.PreferKnownFragment}; {coordinatedRecovery.Reason}");
+
+                    progress.Add(
+                        "recovery-coordinator",
+                        $"Coordinator chọn {coordinatedRecovery.Decision}: {coordinatedRecovery.Reason}",
+                        coordinatedRecovery.Decision,
+                        decision.Confidence);
 
                     progress.Add(
                         "recovery-plan",
@@ -1437,6 +2499,25 @@ public sealed class ComputerOperatorTaskService(
                             decision.Confidence);
                     }
 
+                    cycleTrace.Executed =
+                        false;
+                    cycleTrace.RecoveryCode =
+                        ClassifyFailureKind(
+                            decision.Action,
+                            action.Detail,
+                            actionApplied: false,
+                            verificationFailed: false)
+                            .ToString();
+                    cycleTrace.RecoveryDetail =
+                        coordinatedRecovery.Reason;
+                    cycleTrace.Result =
+                        "not-applied";
+                    cycleTrace.Next =
+                        coordinatedRecovery.Decision;
+                    EmitCycleForensicSummary(
+                        progress,
+                        cycleTrace);
+
                     await Task.Delay(500, linked.Token);
                     continue;
                 }
@@ -1448,6 +2529,9 @@ public sealed class ComputerOperatorTaskService(
                     decision.Confidence,
                     actionTaken: true);
 
+                cycleTrace.Evidence.Add(
+                    $"execute=applied; detail={LimitDiagnostic(action.Detail, 160)}");
+
                 var verifyState = actionState.MoveTo(
                     ComputerOperatorActionState.Verify,
                     $"Xác minh kết quả của action {decision.Action}.");
@@ -1458,32 +2542,29 @@ public sealed class ComputerOperatorTaskService(
                     "verify");
 
                 ActionVerificationResult verification;
-                var authoritativeLocalText =
-                    textInteractionResult is
-                    {
-                        Verified: true,
-                        ActualText: not null
-                    };
+                var authoritativeVerification =
+                    verificationEngine.EvaluateAuthoritativeText(
+                        textInteractionResult);
 
-                if (authoritativeLocalText)
+                if (authoritativeVerification.Handled)
                 {
                     verificationBaseline?.Clear();
                     verification = new(
-                        true,
-                        1.0,
-                        $"Local Text Verifier: {textInteractionResult!.Detail}");
+                        authoritativeVerification.Verified,
+                        authoritativeVerification.Confidence,
+                        authoritativeVerification.Detail);
 
                     progress.Add(
                         "verification-route",
                         "Text verification hoàn tất cục bộ; không gọi screenshot/Gemini.",
-                        "local",
-                        1.0);
+                        authoritativeVerification.Route,
+                        authoritativeVerification.Confidence);
 
                     progress.Add(
                         "confidence-verify",
                         "Local exact text readback là bằng chứng xác định; bỏ composite Vision confidence.",
                         "verified",
-                        1.0);
+                        authoritativeVerification.Confidence);
                 }
                 else
                 {
@@ -1500,6 +2581,8 @@ public sealed class ComputerOperatorTaskService(
                             verificationBaseline,
                             verificationCaptureContext,
                             fastObserverBaseline,
+                            evidenceRunId,
+                            index,
                             linked.Token);
 
                         verificationTelemetry.Complete(
@@ -1523,7 +2606,7 @@ public sealed class ComputerOperatorTaskService(
                     }
 
                     var verificationAssessment =
-                        ConfidenceEngine.AssessVerification(
+                        confidenceEngine.AssessVerification(
                             decision,
                             observation: null,
                             verification.Confidence,
@@ -1537,18 +2620,53 @@ public sealed class ComputerOperatorTaskService(
                         verificationAssessment.Decision.ToString().ToLowerInvariant(),
                         verificationAssessment.OverallConfidence);
 
-                    if (verification.Verified &&
-                        verificationAssessment.OverallConfidence < MinimumConfidence)
-                    {
-                        verification = verification with
-                        {
-                            Verified = false,
-                            Confidence = verificationAssessment.OverallConfidence,
-                            Detail =
-                                $"Composite confidence chưa đủ để chấp nhận verification. {verificationAssessment.Reason}"
-                        };
-                    }
+                    progress.AddDiagnostic(
+                        "verification-confidence-evidence",
+                        $"overall={verificationAssessment.OverallConfidence:0.000}; confidenceRoute={verificationAssessment.Decision}; advisoryOnly=true; verificationAuthority=ComputerOperatorVerificationEngine; reason={LimitDiagnostic(verificationAssessment.Reason, 240)}.");
                 }
+
+                var afterForeground =
+                    computer.GetActiveWindow();
+                var afterWindows =
+                    computer.GetWindows(50).Windows;
+
+                cycleTrace.AfterForeground =
+                    ComputerOperatorCycleTrace.DescribeWindow(
+                        afterForeground);
+                cycleTrace.WindowDelta =
+                    ComputerOperatorCycleTrace.DescribeWindowDelta(
+                        desktopState.Windows,
+                        afterWindows);
+                cycleTrace.Verification =
+                    verification.Inconclusive
+                        ? $"Inconclusive: {verification.Detail}"
+                        : verification.Verified
+                            ? $"Verified: {verification.Detail}"
+                            : $"Failed: {verification.Detail}";
+                cycleTrace.VerificationConfidence =
+                    verification.Confidence;
+
+                visualEvidence.RecordOutcome(
+                    evidenceRunId,
+                    index,
+                    decision.Action,
+                    decision.TargetLabel,
+                    decision.ExpectedEffect,
+                    verification.Verified
+                        ? "verified"
+                        : verification.Inconclusive
+                            ? "inconclusive"
+                            : "failed",
+                    verification.Confidence,
+                    verification.Detail,
+                    afterForeground);
+
+                cycleTrace.Evidence.Add(
+                    $"verification={(verification.Verified ? "support" : verification.Inconclusive ? "inconclusive" : "contradict")}; confidence={verification.Confidence:0.000}; detail={LimitDiagnostic(verification.Detail, 180)}");
+
+                progress.AddDiagnostic(
+                    "window-delta",
+                    $"cycle={index}; before={LimitDiagnostic(cycleTrace.BeforeForeground, 180)}; after={LimitDiagnostic(cycleTrace.AfterForeground, 180)}; delta={LimitDiagnostic(cycleTrace.WindowDelta, 260)}.");
 
                 progress.AddDiagnostic(
                     "evidence",
@@ -1559,6 +2677,18 @@ public sealed class ComputerOperatorTaskService(
                 if (!verification.Verified &&
                     verification.Inconclusive)
                 {
+                    verificationInconclusiveCount++;
+                    if (verification.VisualTransitionObserved)
+                    {
+                        recentlyConsumedActionSignature =
+                            actionSignature;
+                        recentlyConsumedUntilStep =
+                            index + 6;
+
+                        taskHistory.Add(
+                            $"POST-TRANSITION-CONSUMED: {actionSignature} — UI đã chuyển trạng thái rõ; target/action cũ được coi là đã consume. Không replay side-effect này cho tới khi planner chọn được bước khác từ scene mới.");
+                    }
+
                     taskHistory.Add(
                         $"STEP {index}: VERIFY-INCONCLUSIVE {actionSignature} — {verification.Detail}");
 
@@ -1584,6 +2714,18 @@ public sealed class ComputerOperatorTaskService(
                         $"State machine: {diagnoseState.State} -> {replanState.State} — không replay action đã thực hiện.",
                         "replan");
 
+                    cycleTrace.RecoveryCode =
+                        "verification-inconclusive";
+                    cycleTrace.RecoveryDetail =
+                        verification.Detail;
+                    cycleTrace.Result =
+                        "waiting";
+                    cycleTrace.Next =
+                        "observe-no-replay";
+                    EmitCycleForensicSummary(
+                        progress,
+                        cycleTrace);
+
                     await Task.Delay(
                         350,
                         linked.Token);
@@ -1592,6 +2734,9 @@ public sealed class ComputerOperatorTaskService(
 
                 if (!verification.Verified)
                 {
+                    verificationFailureCount++;
+                    recoveryCount++;
+
                     if (IsKeyboardAction(decision.Action))
                     {
                         keyboardRepairFailures++;
@@ -1621,6 +2766,17 @@ public sealed class ComputerOperatorTaskService(
                         decision.ExpectedEffect,
                         verification.Confidence);
 
+                    learning.RecordFailure(
+                        sceneFingerprint,
+                        ClassifyFailureKind(
+                            decision.Action,
+                            verification.Detail,
+                            actionApplied: true,
+                            verificationFailed: true)
+                            .ToString(),
+                        strategyDiagnosticId,
+                        verification.Confidence);
+
                     taskHistory.Add(
                         $"STEP {index}: VERIFY-FAILED {actionSignature} — {verification.Detail}; EXPECTED: {decision.ExpectedEffect}");
 
@@ -1644,7 +2800,7 @@ public sealed class ComputerOperatorTaskService(
                         $"State machine: {diagnoseState.State} -> {replanState.State}",
                         "replan");
 
-                    var recoveryPlan = RecoveryEngine.Plan(
+                    var recoveryPlan = failureRecoveryEngine.Plan(
                         new ComputerOperatorFailureContext(
                             ClassifyFailureKind(
                                 decision.Action,
@@ -1654,6 +2810,39 @@ public sealed class ComputerOperatorTaskService(
                             decision.Action,
                             verification.Detail,
                             RepeatedFailures: failures));
+
+                    var currentKnownEdge =
+                        outgoingProcedureEdges.FirstOrDefault(edge =>
+                            edge.StrategyKey.Equals(
+                                strategyDiagnosticId,
+                                StringComparison.OrdinalIgnoreCase) &&
+                            edge.ActionKind.Equals(
+                                decision.Action,
+                                StringComparison.OrdinalIgnoreCase));
+
+                    var coordinatedRecovery =
+                        recoveryCoordinator.Decide(
+                            new ComputerOperatorRecoveryCoordinatorInput(
+                                RecoveryPlan: recoveryPlan,
+                                RepeatedFailures: failures,
+                                CurrentStrategySuperseded:
+                                    currentKnownEdge is not null &&
+                                    procedureEdgeLifecycle.IsSuperseded(
+                                        currentKnownEdge),
+                                CompatibleFragmentAvailable:
+                                    knownFragments.Count > 0,
+                                ExactFragmentAvailable:
+                                    knownFragments.Any(item =>
+                                        item.ExactStartState)));
+
+                    taskHistory.Add(
+                        $"RECOVERY-COORDINATOR: decision={coordinatedRecovery.Decision}; retrySame={coordinatedRecovery.AllowSameStrategyRetry}; preferFragment={coordinatedRecovery.PreferKnownFragment}; {coordinatedRecovery.Reason}");
+
+                    progress.Add(
+                        "recovery-coordinator",
+                        $"Coordinator chọn {coordinatedRecovery.Decision}: {coordinatedRecovery.Reason}",
+                        coordinatedRecovery.Decision,
+                        verification.Confidence);
 
                     progress.Add(
                         "recovery-plan",
@@ -1686,6 +2875,23 @@ public sealed class ComputerOperatorTaskService(
                             "replan",
                             verification.Confidence);
                     }
+
+                    cycleTrace.RecoveryCode =
+                        ClassifyFailureKind(
+                            decision.Action,
+                            verification.Detail,
+                            actionApplied: true,
+                            verificationFailed: true)
+                            .ToString();
+                    cycleTrace.RecoveryDetail =
+                        coordinatedRecovery.Reason;
+                    cycleTrace.Result =
+                        "verification-failed";
+                    cycleTrace.Next =
+                        coordinatedRecovery.Decision;
+                    EmitCycleForensicSummary(
+                        progress,
+                        cycleTrace);
 
                     await Task.Delay(350, linked.Token);
                     continue;
@@ -1724,8 +2930,94 @@ public sealed class ComputerOperatorTaskService(
                     keyboardRepairFailures = 0;
                 }
 
+                verifiedActionCount++;
+
+                recentlyConsumedActionSignature =
+                    actionSignature;
+                recentlyConsumedUntilStep =
+                    index + 2;
+
                 taskHistory.Add(
                     $"STEP {index}: VERIFIED {actionSignature} — {verification.Detail}; EXPECTED: {decision.ExpectedEffect}");
+
+                if (!string.IsNullOrWhiteSpace(
+                        decision.ExpectedEffect))
+                {
+                    var transition =
+                        verifiedTransitions.RecordVerified(
+                            sceneFingerprint,
+                            strategyDiagnosticId,
+                            decision.ExpectedEffect,
+                            verification.Confidence);
+
+                    progress.AddDiagnostic(
+                        "transition-memory",
+                        $"cycle={index}; recorded=true; fromState={sceneDiagnosticId}; strategy={transition.StrategyKey}; successCount={transition.SuccessCount}; confidence={transition.AverageConfidence:0.000}; expectedEffectStoredAsHash=true.");
+
+                    procedureSession.RecordVerifiedAction(
+                        sceneFingerprint,
+                        transition.StrategyKey,
+                        transition.ExpectedEffectFingerprint,
+                        verification.Confidence,
+                        decision.Action);
+                }
+
+                var learningCandidate =
+                    learning.TryRecordVerifiedRecovery(
+                        strategyDiagnosticId,
+                        verification.Confidence);
+
+                if (learningCandidate.Created)
+                {
+                    taskHistory.Add(
+                        $"LEARNING-CANDIDATE: {learningCandidate.Reason}");
+
+                    progress.Add(
+                        "learning-candidate",
+                        learningCandidate.Reason,
+                        "candidate",
+                        verification.Confidence);
+
+                    if (learningCandidate.CandidateId is Guid candidateId)
+                    {
+                        var validation =
+                            experienceValidator.Validate(
+                                candidateId);
+
+                        taskHistory.Add(
+                            $"EXPERIENCE-VALIDATION: status={validation.Status}; recoveries={validation.VerifiedRecoveryCount}; conflicts={validation.ConflictingFailureCount}; confidence={validation.Confidence:0.00}; {validation.Reason}");
+
+                        progress.Add(
+                            "experience-validation",
+                            validation.Reason,
+                            validation.Status,
+                            validation.Confidence);
+
+                        if (validation.Promoted)
+                        {
+                            var consolidation =
+                                experienceConsolidator.Consolidate();
+
+                            taskHistory.Add(
+                                $"EXPERIENCE-CONSOLIDATION: patterns={consolidation.PatternsWritten}; scanned={consolidation.TrustedExperiencesScanned}; {consolidation.Reason}");
+
+                            progress.Add(
+                                "experience-consolidation",
+                                consolidation.Reason,
+                                "consolidated",
+                                validation.Confidence);
+
+                            var maintenance =
+                                experienceLifecycle.RunMaintenanceIfDue();
+
+                            progress.AddDiagnostic(
+                                "experience-maintenance",
+                                $"deletedCandidates={maintenance.DeletedCandidates}; archivedFailures={maintenance.ArchivedFailures}; archivedRecoveries={maintenance.ArchivedRecoveries}; archivedExperiences={maintenance.ArchivedExperiences}; archivedStrategies={maintenance.ArchivedStrategies}; remainingHot={maintenance.RemainingHotEvents}.",
+                                "lifecycle",
+                                validation.Confidence);
+                        }
+                    }
+                }
 
                 checkpoint = SaveCheckpointSafely(
                     checkpoint,
@@ -1763,6 +3055,18 @@ public sealed class ComputerOperatorTaskService(
                     verification.Detail,
                     "verified",
                     verification.Confidence);
+
+                cycleTrace.RecoveryCode =
+                    "none";
+                cycleTrace.RecoveryDetail =
+                    "-";
+                cycleTrace.Result =
+                    "verified";
+                cycleTrace.Next =
+                    "observe-next-cycle";
+                EmitCycleForensicSummary(
+                    progress,
+                    cycleTrace);
             }
 
             progress.Block(
@@ -1814,26 +3118,75 @@ public sealed class ComputerOperatorTaskService(
         }
         finally
         {
+            if (pendingCycleTrace is
+                {
+                    Emitted: false
+                })
+            {
+                if (pendingCycleTrace.Result == "-")
+                    pendingCycleTrace.Result =
+                        "task-ended";
+
+                if (pendingCycleTrace.Next == "-")
+                    pendingCycleTrace.Next =
+                        "stop";
+
+                EmitCycleForensicSummary(
+                    progress,
+                    pendingCycleTrace);
+            }
+
             execution.Complete();
         }
 
         ComputerOperatorTaskResult Finish(
             bool completed,
-            string summary) =>
-            new(
+            string summary)
+        {
+            visualEvidence.CompleteTask(
+                evidenceRunId,
+                completed ? "completed" : "failed",
+                summary);
+
+            if (!completed)
+            {
+                var snapshot = progress.Get();
+                var outcome =
+                    snapshot.Status.Equals(
+                        "blocked",
+                        StringComparison.OrdinalIgnoreCase)
+                        ? "blocked"
+                        : "failed";
+
+                regressionCandidates.Capture(
+                    normalizedGoal,
+                    outcome,
+                    summary,
+                    snapshot,
+                    vision.Name,
+                    vision.Model);
+            }
+
+            return new(
                 normalizedGoal,
                 completed,
                 summary,
                 steps.ToArray(),
-                "Gemini",
-                vision.Model);
+                vision.Name,
+                vision.Model,
+                verifiedActionCount,
+                verificationFailureCount,
+                verificationInconclusiveCount,
+                recoveryCount);
+        }
     }
 
     private sealed record ActionVerificationResult(
         bool Verified,
         double Confidence,
         string Detail,
-        bool Inconclusive = false);
+        bool Inconclusive = false,
+        bool VisualTransitionObserved = false);
 
     private async Task<ActionVerificationResult> VerifyAppliedActionAsync(
         DesktopOperatorDecision decision,
@@ -1841,6 +3194,8 @@ public sealed class ComputerOperatorTaskService(
         DesktopScreenshotFrame? verificationBaseline,
         VerificationCaptureContext? verificationCaptureContext,
         DesktopFastObserverSample? fastObserverBaseline,
+        string evidenceRunId,
+        int cycleIndex,
         CancellationToken cancellationToken)
     {
         progress.Add(
@@ -1857,9 +3212,19 @@ public sealed class ComputerOperatorTaskService(
         await execution.WaitIfPausedAsync(cancellationToken);
 
         DesktopScreenshotFrame after =
-            await CapturePostActionFrameAsync(
+            await captureService.CaptureAsync(
                 verificationCaptureContext,
                 cancellationToken);
+
+        visualEvidence.RecordFrame(
+            evidenceRunId,
+            cycleIndex,
+            "after-action",
+            after,
+            decision.Action,
+            decision.TargetLabel,
+            decision.ExpectedEffect,
+            computer.GetActiveWindow());
 
         try
         {
@@ -1892,7 +3257,7 @@ public sealed class ComputerOperatorTaskService(
                         StringComparison.OrdinalIgnoreCase))
             {
                 var structuredAfter =
-                    BuildDesktopState(after);
+                    desktopStateBuilder.Build(after);
 
                 using var structuredVerifyTelemetry =
                     telemetry.Begin(
@@ -1921,17 +3286,21 @@ public sealed class ComputerOperatorTaskService(
                                 : "inconclusive",
                     structuredResult.Confidence);
 
-                if (structuredResult.Status ==
-                    StructuredVerificationStatus.Verified)
+                var structuredAssessment =
+                    verificationEngine.EvaluateAuthoritativeStructured(
+                        structuredResult);
+
+                if (structuredAssessment.Handled &&
+                    structuredAssessment.Verified)
                 {
                     return new(
                         true,
-                        structuredResult.Confidence,
-                        $"Structured verifier xác minh thành công: {structuredResult.Reason}");
+                        structuredAssessment.Confidence,
+                        structuredAssessment.Detail);
                 }
 
-                if (structuredResult.Status ==
-                    StructuredVerificationStatus.Failed)
+                if (structuredAssessment.Handled &&
+                    !structuredAssessment.Verified)
                 {
                     await Task.Delay(
                         320,
@@ -1940,8 +3309,28 @@ public sealed class ComputerOperatorTaskService(
                     await execution.WaitIfPausedAsync(
                         cancellationToken);
 
+                    after.Clear();
+                    after = await captureService.CaptureAsync(
+                        verificationCaptureContext,
+                        cancellationToken);
+
+                    visualEvidence.RecordFrame(
+                        evidenceRunId,
+                        cycleIndex,
+                        "after-reobserve",
+                        after,
+                        decision.Action,
+                        decision.TargetLabel,
+                        decision.ExpectedEffect,
+                        computer.GetActiveWindow());
+
+                    progress.Add(
+                        "structured-verification-reobserve",
+                        $"Đã re-observe frame mới trước structured verification retry: {after.Width}x{after.Height}; scope={after.CaptureScope}; window={after.WindowId ?? "-"}; foreground={after.WindowWasForeground}.",
+                        observation: true);
+
                     var structuredRetryState =
-                        BuildDesktopState(after);
+                        desktopStateBuilder.Build(after);
 
                     using var structuredVerifyRetryTelemetry =
                         telemetry.Begin(
@@ -1970,22 +3359,17 @@ public sealed class ComputerOperatorTaskService(
                                     : "inconclusive",
                         structuredRetry.Confidence);
 
-                    if (structuredRetry.Status ==
-                        StructuredVerificationStatus.Verified)
-                    {
-                        return new(
-                            true,
-                            structuredRetry.Confidence,
-                            $"Structured verifier xác minh sau lần đọc lại: {structuredRetry.Reason}");
-                    }
+                    var structuredRetryAssessment =
+                        verificationEngine.EvaluateAuthoritativeStructured(
+                            structuredRetry,
+                            retry: true);
 
-                    if (structuredRetry.Status ==
-                        StructuredVerificationStatus.Failed)
+                    if (structuredRetryAssessment.Handled)
                     {
                         return new(
-                            false,
-                            structuredRetry.Confidence,
-                            $"Structured verifier xác minh thất bại sau hai lần đọc state: {structuredRetry.Reason}");
+                            structuredRetryAssessment.Verified,
+                            structuredRetryAssessment.Confidence,
+                            structuredRetryAssessment.Detail);
                     }
 
                     // Retry trở thành inconclusive: tiếp tục event/frame/Gemini.
@@ -2025,7 +3409,50 @@ public sealed class ComputerOperatorTaskService(
                     observation: true);
             }
 
+            DesktopLocalVisualObservation? localVisual = null;
+
+            if (verificationBaseline is not null &&
+                !verificationContextChanged)
+            {
+                localVisual =
+                    localVisualSensor.Analyze(
+                        verificationBaseline,
+                        after);
+
+                progress.Add(
+                    "local-visual-sensor",
+                    localVisual.Comparable
+                        ? $"Local Visual Sensor: dHash distance={localVisual.HashDistance}/64; similarity={localVisual.HashSimilarity:0.000}; meaningful={localVisual.MeaningfulVisualChange}; {localVisual.Reason}"
+                        : $"Local Visual Sensor fallback: {localVisual.Reason}",
+                    observation: true);
+
+                progress.AddDiagnostic(
+                    "local-visual",
+                    $"action={decision.Action}; comparable={localVisual.Comparable}; hashDistance={localVisual.HashDistance}; similarity={localVisual.HashSimilarity:0.000}; meaningful={localVisual.MeaningfulVisualChange}; regionRatio={localVisual.RegionDelta?.ChangedRatio ?? -1:0.000000}.");
+            }
+
+            var visualVerdict =
+                localVisualVerification.Evaluate(
+                    localVisual);
+
+            var strongLocalVisualTransition =
+                visualVerdict.Status ==
+                    LocalVisualVerificationStatus.Changed &&
+                visualVerdict.Confidence >=
+                    0.85 &&
+                (frameDifference?.Comparable == true &&
+                 frameDifference.ChangedRatio >=
+                    0.015);
+
+            progress.Add(
+                "local-visual-verification",
+                $"Local Visual Verification: {visualVerdict.Status} — {visualVerdict.Reason}",
+                visualVerdict.Status.ToString().ToLowerInvariant(),
+                visualVerdict.Confidence,
+                observation: true);
+
             DesktopVerificationRoutingResult? localRouteForFusion = null;
+            var foregroundChangedObserved = false;
 
             if (fastObserverBaseline is not null)
             {
@@ -2034,34 +3461,42 @@ public sealed class ComputerOperatorTaskService(
                     fastObserverBaseline,
                     fastAfter,
                     frameDifference);
+                foregroundChangedObserved |= fastObservation.ForegroundWindowChanged;
 
                 progress.Add(
                     "fast-observer",
                     $"Quan sát cục bộ nhanh: {fastObservation.Summary}",
                     observation: true);
 
-                var route = VerificationRouter.Route(
-                    decision,
-                    fastObservation,
-                    frameDifference);
+                var verificationAssessment =
+                    verificationEngine.EvaluateLocal(
+                        decision,
+                        fastObservation,
+                        frameDifference,
+                        visualVerdict);
+
+                var route =
+                    verificationAssessment.Route;
+
+                if (route.Route ==
+                    DesktopVerificationRoute.LocalVerified)
+                {
+                    localRouteForFusion =
+                        route;
+                }
+
+                progress.AddDiagnostic(
+                    "trace-verification",
+                    $"action={decision.Action}; expected={LimitDiagnostic(decision.ExpectedEffect, 180)}; foregroundChanged={fastObservation.ForegroundWindowChanged}; windowBoundsChanged={fastObservation.WindowBoundsChanged}; screenChanged={fastObservation.ScreenChanged}; fastChangeRatio={fastObservation.ChangeRatio:0.000000}; frameComparable={frameDifference?.Comparable}; frameChangedRatio={frameDifference?.ChangedRatio ?? -1:0.000000}; dHash={localVisual?.HashDistance ?? -1}; visualVerdict={visualVerdict.Status}; visualConfidence={visualVerdict.Confidence:0.000}; route={route.Route}; verificationStatus={verificationAssessment.Status}; routeConfidence={route.Confidence:0.000}; reason={LimitDiagnostic(verificationAssessment.Reason, 240)}.");
 
                 progress.Add(
                     "verification-route",
-                    $"Verification Router: {route.Route} — {route.Reason}",
-                    route.Route == DesktopVerificationRoute.GeminiRequired
-                        ? "gemini"
-                        : "local",
-                    route.Confidence);
+                    $"Unified Verification Engine: {verificationAssessment.Status} — {verificationAssessment.Reason}",
+                    verificationAssessment.Status,
+                    verificationAssessment.Confidence);
 
-                if (route.Route == DesktopVerificationRoute.LocalVerified)
+                if (verificationAssessment.LocalFusion is { } localDecision)
                 {
-                    localRouteForFusion = route;
-
-                    var localDecision =
-                        reliableOperator.EvaluateLocalVerification(
-                            decision,
-                            route);
-
                     progress.Add(
                         "evidence-fusion",
                         $"Evidence Fusion local: {localDecision.Source} — {localDecision.Reason}",
@@ -2069,30 +3504,18 @@ public sealed class ComputerOperatorTaskService(
                             ? "verified"
                             : "semantic-required",
                         localDecision.Confidence);
-
-                    if (localDecision.Verified)
-                    {
-                        return new(
-                            true,
-                            localDecision.Confidence,
-                            $"Universal Reliable Operator xác minh local: {localDecision.Reason}");
-                    }
-
-                    // Một strong-local source đơn lẻ (ví dụ scroll/frame)
-                    // không được tự complete. Tiếp tục semantic verification.
                 }
 
-                var shouldAdaptiveWait =
-                    ComputerOperatorAdaptiveWaitPolicy.SupportsAdaptiveWaiting(
-                        decision.Action) &&
-                    (route.Route == DesktopVerificationRoute.LocalFailed ||
-                     (route.Route == DesktopVerificationRoute.GeminiRequired &&
-                      !fastObservation.ForegroundWindowChanged &&
-                      !fastObservation.WindowBoundsChanged &&
-                      (frameDifference?.Comparable != true ||
-                       frameDifference.ChangedRatio < 0.01)));
+                if (verificationAssessment.Status ==
+                    ComputerOperatorVerificationStatuses.Verified)
+                {
+                    return new(
+                        true,
+                        verificationAssessment.Confidence,
+                        $"Unified Verification Engine xác minh local: {verificationAssessment.Reason}");
+                }
 
-                if (shouldAdaptiveWait)
+                if (verificationAssessment.ShouldAdaptiveWait)
                 {
                     var adaptiveResult =
                         await WaitForAdaptiveTransitionAsync(
@@ -2112,9 +3535,19 @@ public sealed class ComputerOperatorTaskService(
                     // Sau thời gian chờ phải dùng observation mới nhất cho
                     // semantic verification, tuyệt đối không dùng frame cũ.
                     after.Clear();
-                    after = await CapturePostActionFrameAsync(
+                    after = await captureService.CaptureAsync(
                         verificationCaptureContext,
                         cancellationToken);
+
+                    visualEvidence.RecordFrame(
+                        evidenceRunId,
+                        cycleIndex,
+                        "after-wait",
+                        after,
+                        decision.Action,
+                        decision.TargetLabel,
+                        decision.ExpectedEffect,
+                        computer.GetActiveWindow());
 
                     verificationContextChanged =
                         verificationCaptureContext is not null &&
@@ -2142,46 +3575,90 @@ public sealed class ComputerOperatorTaskService(
                         "adaptive-wait",
                         "Bộ chờ thích ứng chưa có bằng chứng cuối cùng; đã chụp trạng thái mới nhất để chuyển sang xác minh ngữ nghĩa.",
                         "semantic");
-                }
-                else if (route.Route == DesktopVerificationRoute.LocalFailed)
-                {
-                    return new(
-                        false,
-                        route.Confidence,
-                        $"Xác minh cục bộ thất bại: {route.Reason}");
-                }
 
-                var adaptive = GeminiCallPolicy.EvaluateVerification(
-                    decision,
-                    fastObservation,
-                    frameDifference);
+                    localVisual =
+                        verificationBaseline is not null &&
+                        !verificationContextChanged
+                            ? localVisualSensor.Analyze(
+                                verificationBaseline,
+                                after)
+                            : null;
+
+                    visualVerdict =
+                        localVisualVerification.Evaluate(
+                            localVisual);
+
+                    strongLocalVisualTransition =
+                        visualVerdict.Status ==
+                            LocalVisualVerificationStatus.Changed &&
+                        visualVerdict.Confidence >=
+                            0.85 &&
+                        (frameDifference?.Comparable == true &&
+                         frameDifference.ChangedRatio >=
+                            0.015);
+
+                    var refreshedFastAfter =
+                        fastObserver.CaptureSample(after);
+
+                    fastObservation =
+                        fastObserver.Analyze(
+                            fastObserverBaseline,
+                            refreshedFastAfter,
+                            frameDifference);
+                    foregroundChangedObserved |= fastObservation.ForegroundWindowChanged;
+
+                    progress.AddDiagnostic(
+                        "verification-reobserve",
+                        $"action={decision.Action}; refreshed=true; foregroundChanged={fastObservation.ForegroundWindowChanged}; windowBoundsChanged={fastObservation.WindowBoundsChanged}; screenChanged={fastObservation.ScreenChanged}; fastChangeRatio={fastObservation.ChangeRatio:0.000000}; frameComparable={frameDifference?.Comparable}; frameChangedRatio={frameDifference?.ChangedRatio ?? -1:0.000000}; dHash={localVisual?.HashDistance ?? -1}; visualVerdict={visualVerdict.Status}; visualConfidence={visualVerdict.Confidence:0.000}.");
+                }
+                if (verificationAssessment.ShouldAdaptiveWait)
+                {
+                    verificationAssessment =
+                        verificationEngine.EvaluateLocal(
+                            decision,
+                            fastObservation,
+                            frameDifference,
+                            visualVerdict);
+
+                    route =
+                        verificationAssessment.Route;
+
+                    localRouteForFusion =
+                        route.Route ==
+                            DesktopVerificationRoute.LocalVerified
+                            ? route
+                            : null;
+                }
 
                 progress.Add(
                     "gemini-call-policy",
-                    $"Adaptive Gemini: {adaptive.Decision} — {adaptive.Reason}",
-                    adaptive.Decision == AdaptiveGeminiDecision.CallGemini
+                    $"Unified Verification Engine: {verificationAssessment.Status} — {verificationAssessment.AdaptiveDecision.Reason}",
+                    verificationAssessment.Status ==
+                            ComputerOperatorVerificationStatuses.SemanticRequired
                         ? "gemini"
                         : "local",
-                    adaptive.Confidence);
+                    verificationAssessment.Confidence);
 
-                if (adaptive.Decision == AdaptiveGeminiDecision.SkipAndPass)
+                if (verificationAssessment.Status ==
+                    ComputerOperatorVerificationStatuses.Verified)
                 {
                     return new(
                         true,
-                        adaptive.Confidence,
-                        $"Không gọi Gemini: {adaptive.Reason}");
+                        verificationAssessment.Confidence,
+                        $"Không cần semantic verifier: {verificationAssessment.Reason}");
                 }
 
-                if (adaptive.Decision == AdaptiveGeminiDecision.SkipAndFail)
+                if (verificationAssessment.Status ==
+                    ComputerOperatorVerificationStatuses.Failed)
                 {
                     return new(
                         false,
-                        adaptive.Confidence,
-                        $"Không gọi Gemini: {adaptive.Reason}");
+                        verificationAssessment.Confidence,
+                        $"Unified Verification Engine xác minh thất bại: {verificationAssessment.Reason}");
                 }
             }
 
-            var visionFrame = RoiVision.SelectVerificationFrame(
+            var visionFrame = roiVision.SelectVerificationFrame(
                 decision,
                 previousFrame,
                 after,
@@ -2212,55 +3689,46 @@ public sealed class ComputerOperatorTaskService(
                     verifierStopwatch.Stop();
                     geminiVerifyTelemetry.Complete(
                         result.Satisfied,
-                        "gemini");
+                        "provider-router");
 
                     progress.AddDiagnostic(
                         "provider",
-                        $"provider=Gemini; purpose=verify; latencyMs={verifierStopwatch.ElapsedMilliseconds}; satisfied={result.Satisfied}; confidence={result.Confidence:0.000}; route={visionFrame.Source}.");
+                        $"provider={vision.Name}; purpose=verify; latencyMs={verifierStopwatch.ElapsedMilliseconds}; satisfied={result.Satisfied}; confidence={result.Confidence:0.000}; route={visionFrame.Source}; fallbackOwnedBy=ComputerOperatorVisionRouter.");
                 }
-                catch (HttpRequestException exception)
-                    when (IsTransientVisionFailure(exception))
+                catch (InvalidOperationException exception)
+                    when (providerResilience.IsVisionProviderExhausted(exception))
                 {
                     verifierStopwatch.Stop();
+                    geminiVerifyTelemetry.Complete(
+                        success: false,
+                        route: "vision-provider-exhausted");
+
                     progress.AddDiagnostic(
                         "provider",
-                        $"provider=Gemini; purpose=verify; latencyMs={verifierStopwatch.ElapsedMilliseconds}; result=transient-error; http={(int?)exception.StatusCode ?? 0}; replaySideEffect=false.");
+                        $"provider=router; purpose=verify; latencyMs={verifierStopwatch.ElapsedMilliseconds}; result=all-providers-failed; localTransition={strongLocalVisualTransition}; replaySideEffect=false; error={LimitDiagnostic(exception.Message, 220)}.");
 
                     progress.Add(
-                        "vision-transient",
-                        $"Gemini Vision tạm thời không khả dụng ({(int?)exception.StatusCode ?? 0}). Chờ ngắn rồi thử xác minh lại một lần; không replay action.",
-                        "wait");
+                        "vision-unavailable",
+                        strongLocalVisualTransition
+                            ? "Các vision provider đều không khả dụng, nhưng local visual đã xác nhận UI chuyển trạng thái mạnh. Không chặn task; chuyển sang quan sát scene mới và không replay action."
+                            : "Các vision provider đều không khả dụng. Không chặn task ngay; coi verification là chưa thể kết luận và quan sát lại trạng thái hiện tại.",
+                        "inconclusive",
+                        strongLocalVisualTransition
+                            ? visualVerdict.Confidence
+                            : 0.25);
 
-                    await Task.Delay(
-                        900,
-                        cancellationToken);
-
-                    try
-                    {
-                        result = await vision.VerifyAsync(
-                            visionFrame.Frame,
-                            decision.ExpectedEffect,
-                            frameDifference,
-                            cancellationToken);
-
-                        geminiVerifyTelemetry.Complete(
-                            result.Satisfied,
-                            "gemini-retry");
-                    }
-                    catch (HttpRequestException retryException)
-                        when (IsTransientVisionFailure(retryException))
-                    {
-                        geminiVerifyTelemetry.Complete(
-                            success: false,
-                            route: "gemini-transient");
-
-                        return new(
-                            Verified: false,
-                            Confidence: 0,
-                            Detail:
-                                $"Gemini Vision tạm thời không khả dụng sau lần thử lại (HTTP {(int?)retryException.StatusCode ?? 0}). Kết quả hành động chưa thể kết luận; phải quan sát lại trạng thái hiện tại và tuyệt đối không replay side effect.",
-                            Inconclusive: true);
-                    }
+                    return new(
+                        Verified: false,
+                        Confidence: strongLocalVisualTransition
+                            ? visualVerdict.Confidence
+                            : 0.25,
+                        Detail:
+                            strongLocalVisualTransition
+                                ? "Vision provider đều thất bại nhưng local visual xác nhận giao diện đã chuyển trạng thái rõ. Kết quả semantic chưa thể kết luận; phải quan sát scene mới và không replay side effect."
+                                : "Vision provider đều thất bại nên chưa thể kết luận kết quả semantic. Phải quan sát lại trạng thái hiện tại và không replay side effect.",
+                        Inconclusive: true,
+                        VisualTransitionObserved:
+                            strongLocalVisualTransition);
                 }
                 catch
                 {
@@ -2270,8 +3738,39 @@ public sealed class ComputerOperatorTaskService(
                     throw;
                 }
 
+                if (ShouldReobserveOnForegroundConflict(
+                        result.Satisfied,
+                        foregroundChangedObserved) ||
+                    verificationEngine.ShouldReobserveOnSemanticConflict(
+                        result.Satisfied,
+                        strongLocalVisualTransition))
+                {
+                    progress.Add(
+                        "verification-conflict",
+                        $"Local visual hoặc foreground evidence cho thấy UI đã chuyển trạng thái ({frameDifference?.ChangedRatio * 100:0.00}%), nhưng Gemini semantic chưa xác nhận expected effect. Không được kết luận action-no-effect; chuyển sang Inconclusive và quan sát lại scene mới.",
+                        "inconclusive",
+                        Math.Max(
+                            visualVerdict.Confidence,
+                            result.Confidence));
+
+                    progress.AddDiagnostic(
+                        "verification-conflict",
+                        $"localChanged=true; localConfidence={visualVerdict.Confidence:0.000}; frameChangedRatio={frameDifference?.ChangedRatio ?? -1:0.000000}; semanticSatisfied=false; semanticConfidence={result.Confidence:0.000}; resolution=inconclusive-reobserve; replaySideEffect=false.");
+
+                    return new(
+                        Verified: false,
+                        Confidence:
+                            Math.Max(
+                                visualVerdict.Confidence,
+                                result.Confidence),
+                        Detail:
+                            $"Local visual evidence xác nhận giao diện đã chuyển trạng thái nhưng semantic verifier chưa xác nhận đúng expected effect. Kết quả chưa thể kết luận; phải quan sát lại scene hiện tại và không replay action vừa thực hiện.",
+                        Inconclusive: true,
+                        VisualTransitionObserved: true);
+                }
+
                 var reliableVerification =
-                    reliableOperator.EvaluateSemanticVerification(
+                    verificationEngine.EvaluateSemantic(
                         decision,
                         localRouteForFusion,
                         result.Satisfied,
@@ -2302,124 +3801,63 @@ public sealed class ComputerOperatorTaskService(
         }
     }
 
-    private static bool IsProviderDegradedPlannerDecision(
-        DesktopOperatorDecision decision)
-    {
-        if (!decision.Action.Equals(
-                "wait",
-                StringComparison.OrdinalIgnoreCase))
-        {
-            return false;
-        }
+    internal static bool IsVisionProviderExhaustedForAcceptance(
+        Exception exception) =>
+        new ComputerOperatorProviderResiliencePolicy()
+            .IsVisionProviderExhausted(
+                exception);
 
-        var reason =
-            decision.Reason ?? string.Empty;
+    internal static bool ShouldSuppressRecentlyConsumedActionForAcceptance(
+        string actionSignature,
+        string? consumedSignature,
+        int currentStep,
+        int consumedUntilStep) =>
+        ShouldSuppressRecentlyConsumedAction(
+            actionSignature,
+            consumedSignature,
+            currentStep,
+            consumedUntilStep);
 
-        return reason.Contains(
-                   "Gemini planning tạm thời không khả dụng",
-                   StringComparison.OrdinalIgnoreCase) ||
-               reason.Contains(
-                   "Gemini trả JSON chưa hoàn chỉnh",
-                   StringComparison.OrdinalIgnoreCase) ||
-               reason.Contains(
-                   "Gemini chưa trả được JSON",
-                   StringComparison.OrdinalIgnoreCase) ||
-               reason.Contains(
-                   "Gemini planning chưa trả",
-                   StringComparison.OrdinalIgnoreCase) ||
-               reason.Contains(
-                   "Gemini planning không trả",
-                   StringComparison.OrdinalIgnoreCase);
-    }
+    internal static bool ShouldDeferLoopAssessmentForConsumedActionForAcceptance(
+        string actionSignature,
+        string? consumedSignature,
+        int currentStep,
+        int consumedUntilStep) =>
+        ShouldDeferLoopAssessmentForConsumedAction(
+            actionSignature,
+            consumedSignature,
+            currentStep,
+            consumedUntilStep);
 
-    private static DesktopOperatorDecision CreateProviderUnavailableBlockedDecision() =>
-        new(
-            State: "Structured/local capability không đủ cho bước hiện tại và semantic provider không khả dụng.",
-            Plan: "Không thực hiện hành động không chắc chắn. Giữ nguyên desktop và báo provider unavailable để có thể tiếp tục khi provider phục hồi.",
-            CurrentSubgoal: string.Empty,
-            GoalProgress: 0,
-            VerifiedMilestones: Array.Empty<string>(),
-            Action: "blocked",
-            Query: string.Empty,
-            Text: string.Empty,
-            Key: string.Empty,
-            Keys: Array.Empty<string>(),
-            Url: string.Empty,
-            TargetLabel: string.Empty,
-            CoordinateSpace: ComputerCoordinateSpaces.ImagePixel,
-            CoordinateWindowId: string.Empty,
-            ImageX: 0,
-            ImageY: 0,
-            EndImageX: 0,
-            EndImageY: 0,
-            NormalizedX: 0,
-            NormalizedY: 0,
-            EndNormalizedX: 0,
-            EndNormalizedY: 0,
-            BoxLeft: 0,
-            BoxTop: 0,
-            BoxWidth: 0,
-            BoxHeight: 0,
-            BoxNormalizedLeft: 0,
-            BoxNormalizedTop: 0,
-            BoxNormalizedWidth: 0,
-            BoxNormalizedHeight: 0,
-            ScrollDelta: 0,
-            ExpectedEffect: string.Empty,
-            Confidence: 1.0,
-            Reason: "Gemini/Vision hiện không khả dụng và structured/local planner không có action đủ chắc chắn. Đây là provider unavailable, không phải lỗi của local Computer Operator.",
-            SceneElements: Array.Empty<DesktopSceneElement>(),
-            TargetElementId: string.Empty);
+    private static bool ShouldDeferLoopAssessmentForConsumedAction(
+        string actionSignature,
+        string? consumedSignature,
+        int currentStep,
+        int consumedUntilStep) =>
+        ShouldSuppressRecentlyConsumedAction(
+            actionSignature,
+            consumedSignature,
+            currentStep,
+            consumedUntilStep);
 
-    private static DesktopOperatorDecision CreatePlannerCooldownWaitDecision(
-        DateTimeOffset backoffUntil) =>
-        new(
-            State: "Provider semantic đang cooldown; scene hiện tại chưa đổi.",
-            Plan: "Không gọi lại provider trên cùng scene. Chờ ngắn hoặc dùng local capability nếu có.",
-            CurrentSubgoal: string.Empty,
-            GoalProgress: 0,
-            VerifiedMilestones: Array.Empty<string>(),
-            Action: "wait",
-            Query: string.Empty,
-            Text: string.Empty,
-            Key: string.Empty,
-            Keys: Array.Empty<string>(),
-            Url: string.Empty,
-            TargetLabel: string.Empty,
-            CoordinateSpace: ComputerCoordinateSpaces.ImagePixel,
-            CoordinateWindowId: string.Empty,
-            ImageX: 0,
-            ImageY: 0,
-            EndImageX: 0,
-            EndImageY: 0,
-            NormalizedX: 0,
-            NormalizedY: 0,
-            EndNormalizedX: 0,
-            EndNormalizedY: 0,
-            BoxLeft: 0,
-            BoxTop: 0,
-            BoxWidth: 0,
-            BoxHeight: 0,
-            BoxNormalizedLeft: 0,
-            BoxNormalizedTop: 0,
-            BoxNormalizedWidth: 0,
-            BoxNormalizedHeight: 0,
-            ScrollDelta: 0,
-            ExpectedEffect: string.Empty,
-            Confidence: 1.0,
-            Reason: $"Gemini đang cooldown đến {backoffUntil:HH:mm:ss}; không gọi lặp khi scene chưa thay đổi.",
-            SceneElements: Array.Empty<DesktopSceneElement>(),
-            TargetElementId: string.Empty);
+    private static bool ShouldSuppressRecentlyConsumedAction(
+        string actionSignature,
+        string? consumedSignature,
+        int currentStep,
+        int consumedUntilStep) =>
+        currentStep <= consumedUntilStep &&
+        !string.IsNullOrWhiteSpace(consumedSignature) &&
+        actionSignature.Equals(
+            consumedSignature,
+            StringComparison.OrdinalIgnoreCase);
 
-    private static bool IsTransientVisionFailure(
-        HttpRequestException exception)
-    {
-        if (exception.StatusCode is null)
-            return true;
-
-        var code = (int)exception.StatusCode.Value;
-        return code is 408 or 429 or 500 or 502 or 503 or 504;
-    }
+    internal static int CalculateProviderCooldownDelayMillisecondsForAcceptance(
+        DateTimeOffset backoffUntil,
+        DateTimeOffset now) =>
+        new ComputerOperatorProviderResiliencePolicy()
+            .CalculateCooldownDelayMilliseconds(
+                backoffUntil,
+                now);
 
     private async Task<ActionVerificationResult?> WaitForAdaptiveTransitionAsync(
         DesktopOperatorDecision decision,
@@ -2429,8 +3867,11 @@ public sealed class ComputerOperatorTaskService(
         CancellationToken cancellationToken)
     {
         var policy =
-            ComputerOperatorAdaptiveWaitPolicy.ForAction(
-                decision.Action);
+            ComputerOperatorAdaptiveWaitPolicy.RefineForExpectedEffect(
+                decision.Action,
+                decision.ExpectedEffect,
+                adaptiveWaitPolicyResolver.Resolve(
+                    decision.Action));
 
         progress.Add(
             "adaptive-wait",
@@ -2449,7 +3890,7 @@ public sealed class ComputerOperatorTaskService(
                 await execution.WaitIfPausedAsync(token);
 
                 var frame =
-                    await CapturePostActionFrameAsync(
+                    await captureService.CaptureAsync(
                         verificationCaptureContext,
                         token);
 
@@ -2461,7 +3902,7 @@ public sealed class ComputerOperatorTaskService(
                                 StringComparison.OrdinalIgnoreCase))
                     {
                         var structuredState =
-                            BuildDesktopState(frame);
+                            desktopStateBuilder.Build(frame);
 
                         var structuredSample =
                             structuredVerification.Verify(
@@ -2521,17 +3962,69 @@ public sealed class ComputerOperatorTaskService(
                             difference);
 
                     var route =
-                        VerificationRouter.Route(
+                        verificationRouter.Route(
                             decision,
                             observation,
                             difference);
 
+                    var visualProgress =
+                        difference?.Comparable == true
+                            ? difference.ChangedRatio >= 0.03
+                                ? 0.60
+                                : difference.ChangedRatio >= 0.01
+                                    ? 0.55
+                                    : Math.Clamp(
+                                        difference.ChangedRatio * 10,
+                                        0,
+                                        0.40)
+                            : 0;
+
+                    var windowProgress =
+                        observation.ForegroundWindowChanged
+                            ? 0.95
+                            : observation.WindowBoundsChanged
+                                ? 0.88
+                                : contextChanged
+                                    ? 0.80
+                                    : 0;
+
+                    var progressAssessment =
+                        progressIntelligence.Assess(
+                            new(
+                                ExpectedEffectObserved:
+                                    route.Route ==
+                                    DesktopVerificationRoute.LocalVerified,
+                                ExpectedEffectConfidence:
+                                    route.Confidence,
+                                ExplicitFailureObserved: false,
+                                FailureConfidence: 0,
+                                BlockingConditionObserved:
+                                    observation.TargetLikelyOccluded,
+                                BlockingConfidence:
+                                    observation.TargetLikelyOccluded
+                                        ? 0.72
+                                        : 0,
+                                ExternalWaitObserved: false,
+                                ExternalWaitConfidence: 0,
+                                ProcessAlive:
+                                    !string.IsNullOrWhiteSpace(
+                                        observation.ActiveProcessName),
+                                ProcessResponding: null,
+                                CpuActivityScore: 0,
+                                DiskActivityScore: 0,
+                                NetworkActivityScore: 0,
+                                WindowTransitionScore:
+                                    windowProgress,
+                                StructuredUiChangeScore: 0,
+                                VisualChangeScore:
+                                    visualProgress,
+                                RelevantSystemEventScore: 0,
+                                Elapsed: TimeSpan.Zero,
+                                TimeSinceMeaningfulProgress:
+                                    TimeSpan.Zero));
+
                     var sample =
-                        ComputerOperatorAdaptiveWaitPolicy
-                            .FromDesktopObservation(
-                                observation,
-                                difference,
-                                route);
+                        progressAssessment.AdaptiveSample;
 
                     var trangThai = sample.Status switch
                     {
@@ -2586,174 +4079,20 @@ public sealed class ComputerOperatorTaskService(
             },
             result.Status);
 
-        if (result.Verified)
+        if (result.Verified || result.Failed)
         {
-            return new(
-                true,
-                0.97,
-                $"Adaptive Wait xác minh kết quả mà không replay action: {result.Reason}");
+            progress.Add(
+                "adaptive-wait-handoff",
+                result.Verified
+                    ? "Adaptive Wait phát hiện evidence mạnh nhưng không tự kết luận VERIFIED. Chuyển evidence sang vòng reobserve + Unified Verification Engine."
+                    : "Adaptive Wait phát hiện evidence thất bại mạnh nhưng không tự kết luận FAILED. Chuyển sang vòng reobserve + Unified Verification Engine.",
+                "handoff");
         }
 
-        if (result.Failed)
-        {
-            return new(
-                false,
-                0.97,
-                $"Adaptive Wait có bằng chứng thất bại rõ ràng: {result.Reason}");
-        }
-
-        // Stalled/Pending không đồng nghĩa Failed. Caller sẽ dùng frame mới
-        // nhất và semantic verifier trước khi được phép replan.
+        // Adaptive Wait chỉ là progress/wakeup mechanism, không phải verification
+        // authority. Mọi trạng thái Verified/Failed/Stalled/Pending đều phải quay
+        // về caller để chụp frame mới nhất và đi qua Unified Verification Engine.
         return null;
-    }
-
-    private async Task<DesktopScreenshotFrame> CapturePostActionFrameAsync(
-        VerificationCaptureContext? context,
-        CancellationToken cancellationToken)
-    {
-        if (context is null)
-            return await CapturePostActionFrameAsync(cancellationToken);
-
-        try
-        {
-            if (context.CaptureScope.Equals(
-                    "window",
-                    StringComparison.OrdinalIgnoreCase) &&
-                !string.IsNullOrWhiteSpace(context.WindowId))
-            {
-                return await screenshots.CaptureStableWindowAsync(
-                    context.WindowId,
-                    maximumWaitMs: 5000,
-                    cancellationToken);
-            }
-
-            if (context.CaptureScope.Equals(
-                    "monitor",
-                    StringComparison.OrdinalIgnoreCase) &&
-                !string.IsNullOrWhiteSpace(context.MonitorDevice))
-            {
-                return await screenshots.CaptureStableMonitorAsync(
-                    context.MonitorDevice,
-                    maximumWaitMs: 5000,
-                    cancellationToken);
-            }
-
-            if (context.CaptureScope.Equals(
-                    "virtual-desktop",
-                    StringComparison.OrdinalIgnoreCase))
-            {
-                return await screenshots.CaptureStableVirtualScreenAsync(
-                    maximumWaitMs: 5000,
-                    cancellationToken);
-            }
-        }
-        catch (Exception exception) when (
-            exception is ToolExecutionInputException or
-            InvalidOperationException)
-        {
-            logger.LogDebug(
-                exception,
-                "Không giữ được Verification Capture Context; fallback về capture động rồi đánh dấu context changed.");
-        }
-
-        return await CapturePostActionFrameAsync(
-            cancellationToken);
-    }
-
-    private async Task<DesktopScreenshotFrame> CapturePostActionFrameAsync(
-        CancellationToken cancellationToken)
-    {
-        var active = computer.GetActiveWindow();
-
-        if (active is not null &&
-            active.Width >= 64 &&
-            active.Height >= 64)
-        {
-            try
-            {
-                return await screenshots.CaptureStableWindowAsync(
-                    active.WindowId,
-                    maximumWaitMs: 5000,
-                    cancellationToken);
-            }
-            catch (Exception exception) when (
-                exception is ToolExecutionInputException or
-                InvalidOperationException)
-            {
-                logger.LogDebug(
-                    exception,
-                    "Không chụp ổn định được foreground window {WindowId}; thử monitor theo con trỏ.",
-                    active.WindowId);
-            }
-        }
-
-        try
-        {
-            var cursor = computer.GetCursorPosition();
-            var monitor = displays.GetMonitorAtPoint(
-                cursor.X,
-                cursor.Y);
-
-            if (monitor is not null)
-            {
-                return await screenshots.CaptureStableMonitorAsync(
-                    monitor.DeviceName,
-                    maximumWaitMs: 5000,
-                    cancellationToken);
-            }
-        }
-        catch (Exception exception) when (
-            exception is ToolExecutionInputException or
-            InvalidOperationException)
-        {
-            logger.LogDebug(
-                exception,
-                "Không chụp ổn định được monitor theo con trỏ; fallback về virtual desktop.");
-        }
-
-        return await screenshots.CaptureStableVirtualScreenAsync(
-            maximumWaitMs: 5000,
-            cancellationToken);
-    }
-
-    private ComputerWindowInfo? ResolveTrackingWindow(
-        DesktopOperatorDecision decision,
-        ComputerWindowInfo? activeAtPlanning,
-        DesktopScreenshotFrame planningFrame)
-    {
-        if (!string.IsNullOrWhiteSpace(decision.CoordinateWindowId))
-        {
-            return computer.GetWindows(50).Windows.FirstOrDefault(
-                window => window.WindowId.Equals(
-                    decision.CoordinateWindowId.Trim(),
-                    StringComparison.OrdinalIgnoreCase));
-        }
-
-        if (activeAtPlanning is null)
-            return null;
-
-        if (decision.BoxWidth <= 1 ||
-            decision.BoxHeight <= 1)
-            return activeAtPlanning;
-
-        var centerX =
-            planningFrame.Left +
-            decision.BoxLeft +
-            decision.BoxWidth / 2;
-        var centerY =
-            planningFrame.Top +
-            decision.BoxTop +
-            decision.BoxHeight / 2;
-
-        var insideActive =
-            centerX >= activeAtPlanning.Left &&
-            centerX < activeAtPlanning.Left + activeAtPlanning.Width &&
-            centerY >= activeAtPlanning.Top &&
-            centerY < activeAtPlanning.Top + activeAtPlanning.Height;
-
-        return insideActive
-            ? activeAtPlanning
-            : null;
     }
 
     private ComputerOperatorCheckpoint SaveCheckpointSafely(
@@ -2762,7 +4101,8 @@ public sealed class ComputerOperatorTaskService(
         string currentSubgoal,
         double goalProgress,
         string? lastVerifiedAction = null,
-        string? lastVerifiedExpectedEffect = null)
+        string? lastVerifiedExpectedEffect = null,
+        string? lastObservedStateFingerprint = null)
     {
         try
         {
@@ -2772,7 +4112,8 @@ public sealed class ComputerOperatorTaskService(
                 currentSubgoal,
                 goalProgress,
                 lastVerifiedAction,
-                lastVerifiedExpectedEffect);
+                lastVerifiedExpectedEffect,
+                lastObservedStateFingerprint);
         }
         catch (Exception exception)
         {
@@ -2928,184 +4269,64 @@ public sealed class ComputerOperatorTaskService(
                keys.Contains("A");
     }
 
-    private static bool RequiresExpectedEffect(
-        string action) =>
-        action is not
-            "wait" and not
-            "complete" and not
-            "blocked" and not
-            "move-pointer";
-
-    private ComputerActionResponse ExecuteDecision(
-        DesktopOperatorDecision decision,
-        DesktopScreenshotFrame frame)
+    internal static double PreserveCheckpointGoalProgress(
+        double previousProgress,
+        double proposedProgress)
     {
-        var active = computer.GetActiveWindow();
+        var previous = double.IsFinite(previousProgress)
+            ? Math.Clamp(previousProgress, 0d, 1d)
+            : 0d;
+        return double.IsFinite(proposedProgress)
+            ? Math.Max(previous, Math.Clamp(proposedProgress, 0d, 1d))
+            : previous;
+    }
 
-        ComputerCoordinatePoint? point = null;
-        ComputerCoordinatePoint? endPoint = null;
-        ComputerSafeTargetPoint? safeTarget = null;
+    internal static bool ShouldReobserveOnForegroundConflict(
+        bool semanticSatisfied,
+        bool foregroundWindowChanged) =>
+        !semanticSatisfied && foregroundWindowChanged;
 
-        if (IsClickAction(decision.Action))
-        {
-            safeTarget = targeting.Resolve(
-                decision,
-                frame);
-            point = safeTarget.Point;
-        }
-        else if (IsPointerAction(decision.Action))
-        {
-            point = coordinates.ToDesktopPoint(
-                BuildCoordinateRequest(decision, useEnd: false),
-                frame);
-        }
+    internal static bool HasUnrequestedSuffixOnQuotedGoalText(string goal, string? plannedText)
+    {
+        if (string.IsNullOrEmpty(goal) || string.IsNullOrEmpty(plannedText))
+            return false;
 
-        if (decision.Action.Equals(
-                "drag-left",
-                StringComparison.OrdinalIgnoreCase))
+        foreach (System.Text.RegularExpressions.Match match in
+                 System.Text.RegularExpressions.Regex.Matches(
+                     goal, "['\\\"]([^'\\\"]{3,})['\\\"]"))
         {
-            endPoint = coordinates.ToDesktopPoint(
-                BuildCoordinateRequest(decision, useEnd: true),
-                frame);
+            var literal = match.Groups[1].Value;
+            if (plannedText.Length > literal.Length &&
+                plannedText.StartsWith(literal, StringComparison.Ordinal))
+                return true;
         }
 
-        return decision.Action switch
-        {
-            "move-pointer" => computer.SmoothMoveCursor(
-                RequirePoint(point).DesktopX,
-                RequirePoint(point).DesktopY,
-                420),
-            "click-left" => ExecutePointerClick(
-                decision,
-                RequirePoint(point),
-                RequireSafeTarget(safeTarget),
-                static (computerUse, windowId, x, y) =>
-                    computerUse.ClickLeft(windowId, x, y)),
-            "double-click-left" => ExecutePointerClick(
-                decision,
-                RequirePoint(point),
-                RequireSafeTarget(safeTarget),
-                static (computerUse, windowId, x, y) =>
-                    computerUse.DoubleClickLeft(windowId, x, y)),
-            "click-right" => ExecutePointerClick(
-                decision,
-                RequirePoint(point),
-                RequireSafeTarget(safeTarget),
-                static (computerUse, windowId, x, y) =>
-                    computerUse.ClickRight(windowId, x, y)),
-            "scroll" => ExecutePointerScroll(
-                decision,
-                RequirePoint(point)),
-            "drag-left" => ExecutePointerDrag(
-                decision,
-                RequirePoint(point),
-                RequirePoint(endPoint)),
-            "focus-window" => computer.FocusWindowByQuery(
-                RequireValue(decision.Query, "query")),
-            "minimize" => computer.MinimizeWindow(
-                RequireActive(active)),
-            "maximize" => computer.MaximizeWindow(
-                RequireActive(active)),
-            "restore" => computer.RestoreWindow(
-                RequireActive(active)),
-            "type-text" => computer.TypeText(
-                RequireActive(active),
-                RequireValue(decision.Text, "text")),
-            "press-key" => computer.PressKey(
-                RequireActive(active),
-                RequireValue(decision.Key, "key")),
-            "press-hotkey" => computer.PressHotkey(
-                RequireActive(active),
-                decision.Keys.Count > 0
-                    ? decision.Keys
-                    : throw new ToolExecutionInputException(
-                        "Vision không trả danh sách hotkey.")),
-            "open-browser" => computer.OpenDefaultBrowser(
-                string.IsNullOrWhiteSpace(decision.Url)
-                    ? null
-                    : decision.Url),
-            _ => throw new ToolExecutionInputException(
-                $"Computer Operator trả hành động không được hỗ trợ: {decision.Action}.")
-        };
+        return false;
     }
 
-    private ComputerActionResponse ExecutePointerClick(
+    internal static bool ShouldStopRepeatedAuthorityReplan(int consecutiveReplans) =>
+        consecutiveReplans >= 6;
+
+    internal static bool IsProviderCooldownWait(string? reason) =>
+        reason?.Contains("cooldown", StringComparison.OrdinalIgnoreCase) == true;
+
+    internal static bool ShouldStopUnchangedWaiting(
+        DateTimeOffset waitingSince,
+        DateTimeOffset now) =>
+        now - waitingSince >= TimeSpan.FromSeconds(60);
+
+    internal static string BuildGroundingFailureKey(
+        string sceneFingerprint,
         DesktopOperatorDecision decision,
-        ComputerCoordinatePoint point,
-        ComputerSafeTargetPoint safeTarget,
-        Func<IComputerUseService, string, int, int, ComputerActionResponse> click)
-    {
-        var desktopX = point.DesktopX;
-        var desktopY = point.DesktopY;
-
-        var targetWindow = computer.GetWindowAtPoint(
-            desktopX,
-            desktopY)
-            ?? throw new ToolExecutionInputException(
-                $"Không xác định được cửa sổ tại tọa độ ({desktopX}, {desktopY}).");
-
-        _ = computer.SmoothMoveCursor(
-            desktopX,
-            desktopY,
-            420);
-
-        var result = click(
-            computer,
-            targetWindow.WindowId,
-            desktopX,
-            desktopY);
-
-        return result with
-        {
-            Detail =
-                $"{result.Detail} Target={DescribeTarget(decision)} tại ({desktopX}, {desktopY}); hệ={point.Space}; nguồn={point.SourceDescription}; {safeTarget.Detail}"
-        };
-    }
-
-    private ComputerActionResponse ExecutePointerScroll(
-        DesktopOperatorDecision decision,
-        ComputerCoordinatePoint point)
-    {
-        var desktopX = point.DesktopX;
-        var desktopY = point.DesktopY;
-
-        var targetWindow = computer.GetWindowAtPoint(
-            desktopX,
-            desktopY)
-            ?? throw new ToolExecutionInputException(
-                $"Không xác định được cửa sổ tại tọa độ cuộn ({desktopX}, {desktopY}).");
-
-        return computer.Scroll(
-            targetWindow.WindowId,
-            desktopX,
-            desktopY,
-            decision.ScrollDelta);
-    }
-
-    private ComputerActionResponse ExecutePointerDrag(
-        DesktopOperatorDecision decision,
-        ComputerCoordinatePoint start,
-        ComputerCoordinatePoint end)
-    {
-        var startX = start.DesktopX;
-        var startY = start.DesktopY;
-        var endX = end.DesktopX;
-        var endY = end.DesktopY;
-
-        var targetWindow = computer.GetWindowAtPoint(
-            startX,
-            startY)
-            ?? throw new ToolExecutionInputException(
-                $"Không xác định được cửa sổ tại điểm bắt đầu kéo ({startX}, {startY}).");
-
-        return computer.DragLeft(
-            targetWindow.WindowId,
-            startX,
-            startY,
-            endX,
-            endY,
-            650);
-    }
+        string status) =>
+        string.Join("|",
+            sceneFingerprint,
+            decision.Action,
+            decision.CoordinateWindowId,
+            decision.TargetElementId,
+            decision.TargetLabel,
+            decision.ExpectedEffect,
+            status);
 
     private static bool IsClickAction(
         string action) =>
@@ -3113,16 +4334,6 @@ public sealed class ComputerOperatorTaskService(
             "click-left" or
             "double-click-left" or
             "click-right";
-
-    private static bool IsPointerAction(
-        string action) =>
-        action is
-            "move-pointer" or
-            "click-left" or
-            "double-click-left" or
-            "click-right" or
-            "scroll" or
-            "drag-left";
 
     private static ComputerCoordinateRequest BuildCoordinateRequest(
         DesktopOperatorDecision decision,
@@ -3139,56 +4350,6 @@ public sealed class ComputerOperatorTaskService(
             useEnd ? decision.EndNormalizedX : decision.NormalizedX,
             useEnd ? decision.EndNormalizedY : decision.NormalizedY,
             decision.CoordinateWindowId);
-    }
-
-    private static ComputerCoordinatePoint RequirePoint(
-        ComputerCoordinatePoint? point) =>
-        point ?? throw new ToolExecutionInputException(
-            "Không có tọa độ đã chuyển đổi cho hành động chuột.");
-
-    private static ComputerSafeTargetPoint RequireSafeTarget(
-        ComputerSafeTargetPoint? target) =>
-        target ?? throw new ToolExecutionInputException(
-            "Không có vùng mục tiêu an toàn cho hành động click.");
-
-    private static string DescribeTarget(
-        DesktopOperatorDecision decision) =>
-        string.IsNullOrWhiteSpace(decision.TargetLabel)
-            ? "phần tử nhìn thấy"
-            : decision.TargetLabel.Trim();
-
-    private static string BuildHistoryContext(
-        IReadOnlyList<string> history,
-        ComputerOperatorRecoverySession recovery,
-        IReadOnlyCollection<string> verifiedMilestones,
-        string currentSubgoal,
-        double goalProgress)
-    {
-        var historyText = history.Count == 0
-            ? "(chưa có hành động trước đó)"
-            : string.Join(
-                "\n",
-                history.TakeLast(14));
-
-        var milestonesText = verifiedMilestones.Count == 0
-            ? "(chưa có mốc đã xác minh)"
-            : string.Join(
-                "\n",
-                verifiedMilestones
-                    .TakeLast(10)
-                    .Select(item => $"- {item}"));
-
-        return
-            historyText +
-            "\n\nMỤC TIÊU CON TRƯỚC ĐÓ: " +
-            (string.IsNullOrWhiteSpace(currentSubgoal)
-                ? "(chưa xác định)"
-                : currentSubgoal) +
-            $"\nTIẾN ĐỘ BÁO CÁO TRƯỚC ĐÓ: {goalProgress * 100:0}%\n" +
-            "CÁC MỐC ĐÃ XÁC MINH:\n" +
-            milestonesText +
-            "\n\n" +
-            recovery.BuildContext();
     }
 
     private static string BuildSemanticActionSignature(
@@ -3319,6 +4480,20 @@ public sealed class ComputerOperatorTaskService(
         return Convert.ToHexString(bytes)[..12];
     }
 
+    private static void EmitCycleForensicSummary(
+        ComputerOperatorProgressStore progress,
+        ComputerOperatorCycleTrace trace)
+    {
+        if (trace.Emitted)
+            return;
+
+        progress.AddDiagnostic(
+            "cycle-summary",
+            trace.RenderSummary());
+
+        trace.MarkEmitted();
+    }
+
     private static string LimitDiagnostic(
         string? value,
         int maximum)
@@ -3335,118 +4510,45 @@ public sealed class ComputerOperatorTaskService(
             : normalized[..Math.Max(1, maximum - 1)] + "…";
     }
 
-    private static string BuildDesktopSceneFingerprint(
-        ComputerOperatorDesktopState state)
+    internal static bool IsDeterministicTextSurfaceForAcceptance(
+        ComputerWindowInfo? window) =>
+        IsDeterministicTextSurface(
+            window);
+
+    private static bool IsDeterministicTextSurface(
+        ComputerWindowInfo? window)
     {
-        var foreground = state.ForegroundWindow is null
-            ? "foreground:none"
-            : $"foreground:{NormalizeSceneToken(state.ForegroundWindow.ProcessName)}|{NormalizeSceneToken(state.ForegroundWindow.Title)}|{Quantize(state.ForegroundWindow.Left, 32)},{Quantize(state.ForegroundWindow.Top, 32)},{Quantize(state.ForegroundWindow.Width, 32)},{Quantize(state.ForegroundWindow.Height, 32)}";
+        if (window is null)
+            return false;
 
-        var visible = state.Windows
-            .Where(window => window.Width > 0 && window.Height > 0)
-            .OrderBy(window => window.ProcessName ?? string.Empty, StringComparer.OrdinalIgnoreCase)
-            .ThenBy(window => window.Title, StringComparer.OrdinalIgnoreCase)
-            .Take(16)
-            .Select(window =>
-                $"{NormalizeSceneToken(window.ProcessName)}:{NormalizeSceneToken(window.Title)}:{Quantize(window.Left, 64)},{Quantize(window.Top, 64)},{Quantize(window.Width, 64)},{Quantize(window.Height, 64)}");
+        var process =
+            (window.ProcessName ?? string.Empty)
+                .Trim();
+        var title =
+            (window.Title ?? string.Empty)
+                .Trim();
 
-        var structured = state.StructuredScene is null
-            ? "structured:none"
-            : $"structured:{string.Join(";", state.StructuredScene.Nodes
-                .Where(node => !node.IsOffscreen)
-                .Take(24)
-                .Select(node =>
-                {
-                    var valueFingerprint =
-                        node.IsSensitive
-                            ? "sensitive"
-                            : node.Value is null
-                                ? "-"
-                                : BuildDiagnosticId(
-                                    node.Value);
-
-                    return
-                        $"{NormalizeSceneToken(node.Role)}:{NormalizeSceneToken(node.Name)}:{NormalizeSceneToken(node.AutomationId)}:{Quantize(node.Left, 32)},{Quantize(node.Top, 32)},{Quantize(node.Width, 32)},{Quantize(node.Height, 32)}:toggle={NormalizeSceneToken(node.ToggleState)}:expand={NormalizeSceneToken(node.ExpandCollapseState)}:selected={node.IsSelected?.ToString() ?? "?"}:value={valueFingerprint}:patterns={string.Join(",", node.Patterns.OrderBy(pattern => pattern, StringComparer.OrdinalIgnoreCase))}";
-                }))}";
-
-        return string.Join(
-            "|",
-            new[]
-            {
-                foreground,
-                $"frame:{state.CaptureScope}:{Quantize(state.FrameLeft, 32)},{Quantize(state.FrameTop, 32)},{Quantize(state.FrameWidth, 32)},{Quantize(state.FrameHeight, 32)}",
-                $"windows:{string.Join(";", visible)}",
-                structured
-            });
-    }
-
-    private static string NormalizeSceneToken(
-        string? value)
-    {
-        var normalized = string.Join(
-            " ",
-            (value ?? string.Empty)
-                .Trim()
-                .ToLowerInvariant()
-                .Split(
-                    [' ', '\t', '\r', '\n'],
-                    StringSplitOptions.RemoveEmptyEntries));
-
-        return normalized.Length <= 80
-            ? normalized
-            : normalized[..80];
-    }
-
-    private static int Quantize(
-        int value,
-        int quantum) =>
-        quantum <= 1
-            ? value
-            : (int)Math.Round(
-                value / (double)quantum,
-                MidpointRounding.AwayFromZero) * quantum;
-
-    private ComputerOperatorDesktopState BuildDesktopState(
-        DesktopScreenshotFrame frame)
-    {
-        var windows = computer.GetWindows(50).Windows;
-        var active = windows.FirstOrDefault(window => window.IsForeground)
-            ?? computer.GetActiveWindow();
-
-        StructuredDesktopSnapshot? structuredScene = null;
-
-        if (active is not null &&
-            !string.IsNullOrWhiteSpace(active.WindowId))
+        if (process.Equals(
+                "SearchHost",
+                StringComparison.OrdinalIgnoreCase) ||
+            process.Equals(
+                "SearchApp",
+                StringComparison.OrdinalIgnoreCase))
         {
-            structuredScene =
-                structuredDesktop.CaptureWindow(
-                    active.WindowId,
-                    maximumNodes: 240,
-                    maximumDepth: 7);
+            return true;
         }
 
-        var structuredGraph =
-            UnifiedStructuredSceneGraphBuilder.Build(
-                structuredScene,
-                active,
-                frame.Left,
-                frame.Top,
-                frame.Width,
-                frame.Height);
+        // Chỉ dùng title làm fallback khi process metadata thật sự thiếu.
+        // Browser/tab có title "Search" không được coi là Windows Search.
+        if (process.Length > 0)
+            return false;
 
-        return new ComputerOperatorDesktopState(
-            frame.CapturedAtUtc,
-            active,
-            windows,
-            frame.Left,
-            frame.Top,
-            frame.Width,
-            frame.Height,
-            frame.CaptureScope,
-            frame.WindowId,
-            frame.WindowWasForeground,
-            structuredScene,
-            structuredGraph);
+        return title.Equals(
+                   "Search",
+                   StringComparison.OrdinalIgnoreCase) ||
+               title.Equals(
+                   "Windows Search",
+                   StringComparison.OrdinalIgnoreCase);
     }
 
     private static string RequireActive(

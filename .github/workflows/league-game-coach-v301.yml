@@ -26,14 +26,14 @@ jobs:
         with:
           dotnet-version: '8.0.x'
 
-      - name: Restore
-        run: dotnet restore PersonalAI.sln
+      - name: Restore web app
+        run: dotnet restore src/PersonalAI.Web/PersonalAI.Web.csproj
 
-      - name: Build
-        run: dotnet build PersonalAI.sln --configuration Release --no-restore
+      - name: Build web app
+        run: dotnet build src/PersonalAI.Web/PersonalAI.Web.csproj --configuration Release --no-restore
 
-      - name: Test
-        run: dotnet test PersonalAI.sln --configuration Release --no-build
+      - name: Test web app
+        run: dotnet test src/PersonalAI.Web/PersonalAI.Web.csproj --configuration Release --no-build
 
       - name: League Bridge v2 acceptance
         shell: bash

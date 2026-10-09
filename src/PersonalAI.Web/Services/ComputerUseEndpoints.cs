@@ -21,12 +21,48 @@ public static class ComputerUseEndpoints
         services.AddSingleton<IFlaUiAutomationClient, FlaUiAutomationClient>();
         services.AddSingleton<IStructuredDesktopSnapshotService, StructuredDesktopSnapshotService>();
         services.AddSingleton<IStructuredDesktopVerificationService, StructuredDesktopVerificationService>();
+        services.AddSingleton<IStructuredTargetRevalidator, StructuredTargetRevalidator>();
+        services.AddSingleton<IComputerOperatorStructuredPreExecutionRevalidator, ComputerOperatorStructuredPreExecutionRevalidator>();
+        services.AddSingleton<IComputerOperatorDesktopStateBuilder, ComputerOperatorDesktopStateBuilder>();
+        services.AddSingleton<IComputerOperatorSceneIdentityService, ComputerOperatorSceneIdentityService>();
+        services.AddSingleton<IComputerOperatorObservationEvidenceAggregator, ComputerOperatorObservationEvidenceAggregator>();
+        services.AddSingleton<IComputerOperatorCaptureService, ComputerOperatorCaptureService>();
+        services.AddSingleton<IComputerOperatorVisualEvidenceRecorder, ComputerOperatorVisualEvidenceRecorder>();
+        services.AddSingleton<IComputerOperatorBenchmarkIsolationService, ComputerOperatorBenchmarkIsolationService>();
         services.AddSingleton<IFlaUiTextAccessibilityBackend, FlaUiTextAccessibilityBackend>();
         services.AddSingleton<ITextAccessibilityBackend, CompositeTextAccessibilityBackend>();
         services.AddSingleton<ITextClipboardWriter, WindowsTextClipboardWriter>();
         services.AddSingleton<IGenericTextInteractionEngine, GenericTextInteractionEngine>();
         services.AddSingleton<IAdaptiveObservationWakeSource, WindowsDesktopEventWakeSource>();
         services.AddSingleton<IAdaptiveVerificationWaitEngine, AdaptiveVerificationWaitEngine>();
+        services.AddSingleton<IComputerOperatorRuntimeStateIntelligence, ComputerOperatorRuntimeStateIntelligence>();
+        services.AddSingleton<IComputerOperatorProgressIntelligence, ComputerOperatorProgressIntelligence>();
+        services.AddSingleton<IComputerOperatorLearnedTimingService, ComputerOperatorLearnedTimingService>();
+        services.AddSingleton<IComputerOperatorAdaptiveWaitPolicyResolver, ComputerOperatorAdaptiveWaitPolicyResolver>();
+        services.AddSingleton<IComputerOperatorExperienceRepository, SqliteComputerOperatorExperienceRepository>();
+        services.AddSingleton<IComputerOperatorExperienceAggregateStore, SqliteComputerOperatorExperienceAggregateStore>();
+        services.AddSingleton<IComputerOperatorExperienceValidator, ComputerOperatorExperienceValidator>();
+        services.AddSingleton<IComputerOperatorExperienceConsolidator, ComputerOperatorExperienceConsolidator>();
+        services.AddSingleton<IComputerOperatorExperienceLifecycleService, ComputerOperatorExperienceLifecycleService>();
+        services.AddSingleton<IComputerOperatorVerifiedTransitionStore, SqliteComputerOperatorVerifiedTransitionStore>();
+        services.AddSingleton<IComputerOperatorProcedureGraphStore, SqliteComputerOperatorProcedureGraphStore>();
+        services.AddSingleton<IComputerOperatorPartialResumeResolver, ComputerOperatorPartialResumeResolver>();
+        services.AddSingleton<IComputerOperatorProcedureFragmentRetriever, ComputerOperatorProcedureFragmentRetriever>();
+        services.AddSingleton<IComputerOperatorProcedureContextService, ComputerOperatorProcedureContextService>();
+        services.AddSingleton<IComputerOperatorProcedureContextStore, SqliteComputerOperatorProcedureContextStore>();
+        services.AddSingleton<IComputerOperatorVersionedFragmentRetriever, ComputerOperatorVersionedFragmentRetriever>();
+        services.AddSingleton<IComputerOperatorProcedureEdgeLifecycleService, ComputerOperatorProcedureEdgeLifecycleService>();
+        services.AddSingleton<IComputerOperatorRecoveryCoordinator, ComputerOperatorRecoveryCoordinator>();
+        services.AddSingleton<IComputerOperatorDecisionAuthority, ComputerOperatorDecisionAuthority>();
+        services.AddSingleton<IComputerOperatorIntentCompiler, UnifiedDecisionKernel>();
+        services.AddSingleton<IComputerOperatorMinimalIntentCoordinator, ComputerOperatorMinimalIntentCoordinator>();
+        services.AddSingleton<IComputerOperatorConfidenceEngine, ComputerOperatorConfidenceEngine>();
+        services.AddSingleton<IComputerOperatorFailureRecoveryEngine, ComputerOperatorFailureRecoveryEngine>();
+        services.AddSingleton<IComputerOperatorProviderResiliencePolicy, ComputerOperatorProviderResiliencePolicy>();
+        services.AddSingleton<IComputerOperatorProviderPlanningRouter, ComputerOperatorProviderPlanningRouter>();
+        services.AddSingleton<IComputerOperatorFullPlanningCoordinator, ComputerOperatorFullPlanningCoordinator>();
+        services.AddSingleton<IComputerOperatorPlanningContextBuilder, ComputerOperatorPlanningContextBuilder>();
+        services.AddSingleton<IComputerOperatorStrategyRanker, ComputerOperatorStrategyRanker>();
         services.AddSingleton<IComputerDisplayTopologyService, WindowsComputerDisplayTopologyService>();
         services.AddSingleton<IComputerDpiCalibrationService, ComputerDpiCalibrationService>();
         services.AddSingleton<IComputerCoordinateTransformService, ComputerCoordinateTransformService>();
@@ -34,7 +70,10 @@ public static class ComputerUseEndpoints
         services.AddSingleton<IComputerOperatorAcceptanceService, ComputerOperatorAcceptanceService>();
         services.AddSingleton<IComputerOperatorCheckpointStore, SqliteComputerOperatorCheckpointStore>();
         services.AddSingleton<IComputerOperatorTelemetry, ComputerOperatorTelemetry>();
+        services.AddSingleton<IDesktopVerificationRouter, DesktopVerificationRouter>();
+        services.AddSingleton<IAdaptiveGeminiCallPolicy, AdaptiveGeminiCallPolicy>();
         services.AddSingleton<IUniversalReliableOperatorCoordinator, UniversalReliableOperatorCoordinator>();
+        services.AddSingleton<IComputerOperatorVerificationEngine, ComputerOperatorVerificationEngine>();
         services.AddSingleton<IComputerOperatorTaskService, ComputerOperatorTaskService>();
         services.AddSingleton<IExecutionAgent, ComputerOperatorExecutionAgent>();
         services.AddSingleton<IExecutionAgentRegistry, ExecutionAgentRegistry>();
@@ -45,10 +84,33 @@ public static class ComputerUseEndpoints
         services.AddSingleton<IDesktopCaptureBackendRouter, DesktopCaptureBackendRouter>();
         services.AddSingleton<IDesktopScreenshotService, WindowsDesktopScreenshotService>();
         services.AddSingleton<IDesktopFrameDifferenceService, DesktopFrameDifferenceService>();
+        services.AddSingleton<IDesktopRoiVisionService, DesktopRoiVisionService>();
+        services.AddSingleton<IDesktopLocalVisualSensor, DesktopLocalVisualSensor>();
+        services.AddSingleton<IDesktopDynamicTargetTracker, DesktopDynamicTargetTracker>();
+        services.AddSingleton<IDesktopTemplateMatchingSensor, OpenCvTemplateMatchingSensor>();
+        services.AddSingleton<IDesktopVisualTargetPersistenceService, DesktopVisualTargetPersistenceService>();
+        services.AddSingleton<IComputerOperatorVisualTargetRecoveryService, ComputerOperatorVisualTargetRecoveryService>();
+        services.AddSingleton<IComputerOperatorVisualTargetRecoveryService, ComputerOperatorVisualTargetRecoveryService>();
+        services.AddSingleton<ILocalVisualTargetResolver, LocalVisualTargetResolver>();
+        services.AddSingleton<ILocalVisualVerificationService, LocalVisualVerificationService>();
+        services.AddSingleton<ILocalVisualProviderHealthRegistry, LocalVisualProviderHealthRegistry>();
+        services.AddSingleton<ILocalVisualSensorBudgetPolicy, LocalVisualSensorBudgetPolicy>();
+        services.AddSingleton<ILocalVisionWorkerClient, LocalVisionWorkerClient>();
+        services.AddSingleton<IDesktopOcrProvider, WindowsDesktopOcrSensor>();
+        services.AddSingleton<IDesktopOcrProvider, PaddleOnnxDesktopOcrProvider>();
+        services.AddSingleton<IDesktopOcrSensor, DesktopOcrSensorRouter>();
+        services.AddSingleton<IDesktopOcrActionPlanner, DesktopOcrActionPlanner>();
+        services.AddSingleton<IComputerOperatorOcrPlanningRouter, ComputerOperatorOcrPlanningRouter>();
+        services.AddSingleton<IDesktopLocalActionPlanner, DesktopLocalActionPlanner>();
+        services.AddSingleton<IComputerOperatorLocalPlanningRouter, ComputerOperatorLocalPlanningRouter>();
+        services.AddSingleton<IComputerOperatorGroundingService, ComputerOperatorGroundingService>();
+        services.AddSingleton<IComputerOperatorClickGroundingCoordinator, ComputerOperatorClickGroundingCoordinator>();
+        services.AddSingleton<IComputerOperatorActionSafetyPolicy, ComputerOperatorActionSafetyPolicy>();
         services.AddSingleton<IDesktopLocalFastObserver, DesktopLocalFastObserver>();
         services.AddSingleton<IComputerWindowVisibilityService, ComputerWindowVisibilityService>();
         services.AddSingleton<IDesktopTemporalSceneService, DesktopTemporalSceneService>();
         services.AddSingleton<IComputerOperatorActionExecutor, ComputerOperatorActionExecutor>();
+        services.AddSingleton<IComputerOperatorExecutionCoordinator, ComputerOperatorExecutionCoordinator>();
         services.AddSingleton<ILeaguePracticeAutomationService, LeaguePracticeAutomationService>();
         services.AddSingleton<IPersonalAiTool, ComputerScreenInfoTool>();
         services.AddSingleton<IPersonalAiTool, ComputerCursorPositionTool>();
@@ -73,7 +135,6 @@ public static class ComputerUseEndpoints
         services.AddSingleton<IPersonalAiTool, ComputerGenericAppLaunchTool>();
         services.AddSingleton<IPersonalAiTool, ComputerVisionLocateTool>();
         services.AddSingleton<IPersonalAiTool, ComputerVisionClickTargetTool>();
-        services.AddSingleton<IPersonalAiTool, LeaguePracticeOpenTool>();
         return services;
     }
 
@@ -91,6 +152,67 @@ public static class ComputerUseEndpoints
         app.MapGet("/api/computer/operator-progress", (
             ComputerOperatorProgressStore progress) =>
             Results.Ok(progress.Get()));
+
+        app.MapPost("/api/computer/operator-runtime-state/classify", (
+            HttpContext context,
+            ComputerOperatorRuntimeEvidence evidence,
+            IComputerOperatorRuntimeStateIntelligence runtimeState) =>
+        {
+            if (!IsLocalRequest(context))
+                return Results.StatusCode(StatusCodes.Status403Forbidden);
+
+            try
+            {
+                var assessment =
+                    runtimeState.Classify(evidence);
+
+                return Results.Ok(new
+                {
+                    trangThai = assessment.State,
+                    quyetDinh = assessment.RecommendedDecision,
+                    doTinCay = Math.Round(assessment.Confidence, 2),
+                    ketThuc = assessment.Terminal,
+                    lyDo = assessment.Reason
+                });
+            }
+            catch (ArgumentOutOfRangeException exception)
+            {
+                return Results.BadRequest(
+                    new ApiError(exception.Message));
+            }
+        });
+
+        app.MapPost("/api/computer/operator-progress-intelligence/assess", (
+            HttpContext context,
+            ComputerOperatorProgressObservation observation,
+            IComputerOperatorProgressIntelligence progressIntelligence) =>
+        {
+            if (!IsLocalRequest(context))
+                return Results.StatusCode(StatusCodes.Status403Forbidden);
+
+            try
+            {
+                var assessment =
+                    progressIntelligence.Assess(observation);
+
+                return Results.Ok(new
+                {
+                    diemTienTrien = Math.Round(assessment.ProgressScore, 2),
+                    diemHoatDongTaiNguyen = Math.Round(assessment.ResourceActivityScore, 2),
+                    soTinHieuTienTrienManh = assessment.CorroboratingProgressSignals,
+                    coTienTrienYNgia = assessment.MeaningfulProgress,
+                    trangThai = assessment.RuntimeState.State,
+                    quyetDinh = assessment.RuntimeState.RecommendedDecision,
+                    adaptiveWait = assessment.AdaptiveSample.Status,
+                    lyDo = assessment.Reason
+                });
+            }
+            catch (ArgumentOutOfRangeException exception)
+            {
+                return Results.BadRequest(
+                    new ApiError(exception.Message));
+            }
+        });
 
         app.MapGet("/api/computer/capture-backends", (
             HttpContext context,
@@ -161,6 +283,89 @@ public static class ComputerUseEndpoints
                 daXoa = true,
                 message =
                     "Đã xóa capture health telemetry trong bộ nhớ."
+            });
+        });
+
+        app.MapGet("/api/computer/operator-experience-store", (
+            HttpContext context,
+            IComputerOperatorExperienceRepository experiences) =>
+        {
+            if (!IsLocalRequest(context))
+                return Results.StatusCode(StatusCodes.Status403Forbidden);
+
+            var diagnostics =
+                experiences.GetDiagnostics();
+
+            return Results.Ok(new
+            {
+                phienBan = PersonalAiRelease.Version,
+                provider = diagnostics.Provider,
+                schema = diagnostics.SchemaVersion,
+                wal = diagnostics.UsesWal,
+                tongSuKien = diagnostics.EventCount,
+                daXacMinh = diagnostics.VerifiedEventCount,
+                loi = diagnostics.FailureCount,
+                phucHoi = diagnostics.RecoveryCount,
+                candidate = diagnostics.CandidateCount,
+                trustedExperience = diagnostics.ExperienceCount,
+                chienLuoc = diagnostics.StrategyCount,
+                nguyenTac = new[]
+                {
+                    "Không lưu raw goal/text/screenshot trong Experience DB.",
+                    "Core chỉ phụ thuộc IComputerOperatorExperienceRepository.",
+                    "SQLite hiện tại có thể thay bằng SQL Server/PostgreSQL sau này mà không đổi core."
+                }
+            });
+        });
+
+        app.MapPost("/api/computer/operator-experience-maintenance", (
+            HttpContext context,
+            IComputerOperatorExperienceLifecycleService lifecycle) =>
+        {
+            if (!IsLocalRequest(context))
+                return Results.StatusCode(StatusCodes.Status403Forbidden);
+
+            var result =
+                lifecycle.RunMaintenance();
+
+            return Results.Ok(new
+            {
+                phienBan = PersonalAiRelease.Version,
+                daXoaCandidate = result.DeletedCandidates,
+                daLuuTruFailure = result.ArchivedFailures,
+                daLuuTruRecovery = result.ArchivedRecoveries,
+                daLuuTruExperience = result.ArchivedExperiences,
+                daLuuTruStrategy = result.ArchivedStrategies,
+                suKienHotConLai = result.RemainingHotEvents,
+                khoLuuTru = result.ArchiveProvider,
+                lyDo = result.Reason
+            });
+        });
+
+        app.MapGet("/api/computer/operator-learned-timing", (
+            HttpContext context,
+            IComputerOperatorLearnedTimingService timing) =>
+        {
+            if (!IsLocalRequest(context))
+                return Results.StatusCode(StatusCodes.Status403Forbidden);
+
+            return Results.Ok(new
+            {
+                phienBan = PersonalAiRelease.Version,
+                toiThieuMauSanSang =
+                    ComputerOperatorLearnedTimingService.MinimumReadySamples,
+                hoSo = timing.GetProfiles().Select(item => new
+                {
+                    giaiDoan = item.Stage,
+                    hanhDong = item.Action,
+                    soMau = item.SampleCount,
+                    trungViMs = Math.Round(item.MedianMilliseconds, 1),
+                    p90Ms = Math.Round(item.P90Milliseconds, 1),
+                    p95Ms = Math.Round(item.P95Milliseconds, 1),
+                    toiDaMs = Math.Round(item.MaximumMilliseconds, 1),
+                    doTinCay = Math.Round(item.Confidence, 2),
+                    sanSang = item.Ready
+                })
             });
         });
 

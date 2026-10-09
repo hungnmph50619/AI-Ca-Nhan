@@ -16,6 +16,17 @@ public static class EvaluationEndpoints
         services.AddSingleton<IEvaluator, MinimapBoxEvaluator>();
         services.AddSingleton<IEvaluationEngine, EvaluationEngine>();
         services.AddSingleton<IRegressionDatasetStore, SqliteRegressionDatasetStore>();
+        services.AddSingleton<IComputerOperatorRegressionCandidateStore, ComputerOperatorRegressionCandidateStore>();
+        services.AddSingleton<IComputerOperatorRegressionPromotionService, ComputerOperatorRegressionPromotionService>();
+        services.AddSingleton<IComputerOperatorRegressionMetricsService, ComputerOperatorRegressionMetricsService>();
+        services.AddSingleton<IComputerOperatorRegressionReadinessGate, ComputerOperatorRegressionReadinessGate>();
+        services.AddSingleton<IComputerOperatorExternalBenchmarkService, ComputerOperatorExternalBenchmarkService>();
+        services.AddSingleton<IComputerOperatorExternalBenchmarkExecutionStore, ComputerOperatorExternalBenchmarkExecutionStore>();
+        services.AddScoped<IComputerOperatorExternalBenchmarkRunner, ComputerOperatorExternalBenchmarkRunner>();
+        services.AddScoped<IComputerOperatorExternalBenchmarkSuiteRunner, ComputerOperatorExternalBenchmarkSuiteRunner>();
+        services.AddScoped<IComputerOperatorExternalBenchmarkEvaluationService, ComputerOperatorExternalBenchmarkEvaluationService>();
+        services.AddSingleton<IComputerOperatorBenchmarkScenarioPackService, ComputerOperatorBenchmarkScenarioPackService>();
+        services.AddSingleton<IComputerOperatorRegressionLabService, ComputerOperatorRegressionLabService>();
         services.AddScoped<IAgentBenchmarkService, AgentBenchmarkService>();
         services.AddScoped<IModelComparisonService, ModelComparisonService>();
         services.AddScoped<ISelfEvaluationAgent, SelfEvaluationAgent>();
@@ -70,6 +81,251 @@ public static class EvaluationEndpoints
 
         endpoints.MapGet("/api/evaluation/regression/status", (IRegressionDatasetStore store) =>
             Results.Ok(store.GetStatus()));
+
+        endpoints.MapGet("/api/evaluation/computer-operator-regression/status", (
+            IComputerOperatorRegressionLabService lab) =>
+        {
+            var report = lab.Run();
+            return Results.Ok(new
+            {
+                version = report.Version,
+                totalCases = report.TotalCases,
+                passedCases = report.PassedCases,
+                failedCases = report.FailedCases,
+                passRate = report.PassRate
+            });
+        });
+
+        endpoints.MapPost("/api/evaluation/computer-operator-regression/run", (
+            IComputerOperatorRegressionLabService lab) =>
+            Results.Ok(lab.Run()));
+
+        endpoints.MapGet("/api/evaluation/computer-operator-regression/candidates", (
+            IComputerOperatorRegressionCandidateStore candidates) =>
+            Results.Ok(candidates.Get()));
+
+        endpoints.MapGet("/api/evaluation/computer-operator-regression/metrics", (
+            IComputerOperatorRegressionMetricsService metrics) =>
+            Results.Ok(metrics.Get()));
+
+        endpoints.MapGet("/api/evaluation/computer-operator-regression/readiness", (
+            IComputerOperatorRegressionReadinessGate readiness) =>
+            Results.Ok(readiness.Evaluate()));
+
+        endpoints.MapPost("/api/evaluation/computer-operator-benchmark/prepare", (
+            PrepareComputerOperatorExternalBenchmarkRequest request,
+            IComputerOperatorExternalBenchmarkService benchmark) =>
+        {
+            try
+            {
+                return Results.Ok(
+                    benchmark.Prepare(request));
+            }
+            catch (ComputerOperatorExternalBenchmarkValidationException exception)
+            {
+                return Results.BadRequest(
+                    new ApiError(exception.Message));
+            }
+        });
+
+        endpoints.MapPost("/api/evaluation/computer-operator-benchmark/run-case", async (
+            RunComputerOperatorExternalBenchmarkCaseRequest request,
+            IComputerOperatorExternalBenchmarkRunner runner,
+            IAuditRecorder audit,
+            CancellationToken cancellationToken) =>
+        {
+            try
+            {
+                var result =
+                    await runner.RunCaseAsync(
+                        request,
+                        cancellationToken);
+
+                audit.Record(
+                    AuditAgents.User,
+                    "evaluation.computer-operator-benchmark.run-case",
+                    $"benchmark-case:{result.CaseId}",
+                    result.ReadyForIndependentEvaluation
+                        ? "execution-completed-awaiting-independent-evaluation"
+                        : "execution-incomplete",
+                    result.TaskCompleted
+                        ? AuditResults.Succeeded
+                        : AuditResults.Failed);
+
+                return Results.Ok(
+                    result);
+            }
+            catch (ComputerOperatorExternalBenchmarkValidationException exception)
+            {
+                return Results.BadRequest(
+                    new ApiError(exception.Message));
+            }
+        });
+
+        endpoints.MapPost("/api/evaluation/computer-operator-benchmark/run-suite", async (
+            RunComputerOperatorExternalBenchmarkSuiteRequest request,
+            IComputerOperatorExternalBenchmarkSuiteRunner runner,
+            IAuditRecorder audit,
+            CancellationToken cancellationToken) =>
+        {
+            try
+            {
+                var result =
+                    await runner.RunAsync(
+                        request,
+                        cancellationToken);
+
+                audit.Record(
+                    AuditAgents.User,
+                    "evaluation.computer-operator-benchmark.run-suite",
+                    $"benchmark-pack:{result.Version}",
+                    $"completed:{result.CompletedCases}/{result.PlannedCases};ready:{result.ReadyForIndependentEvaluationCases}",
+                    result.Completed
+                        ? AuditResults.Succeeded
+                        : AuditResults.Failed);
+
+                return Results.Ok(
+                    result);
+            }
+            catch (ComputerOperatorExternalBenchmarkValidationException exception)
+            {
+                return Results.BadRequest(
+                    new ApiError(exception.Message));
+            }
+        });
+
+        endpoints.MapGet("/api/evaluation/computer-operator-benchmark/latest/{caseId}", (
+            string caseId,
+            IComputerOperatorExternalBenchmarkExecutionStore executions) =>
+        {
+            var result =
+                executions.GetLatest(
+                    caseId);
+
+            return result is null
+                ? Results.NotFound()
+                : Results.Ok(
+                    result);
+        });
+
+        endpoints.MapPost("/api/evaluation/computer-operator-benchmark/evaluate-case", (
+            EvaluateComputerOperatorExternalBenchmarkCaseRequest request,
+            IComputerOperatorExternalBenchmarkEvaluationService evaluator,
+            IAuditRecorder audit) =>
+        {
+            try
+            {
+                var result =
+                    evaluator.Evaluate(
+                        request);
+
+                audit.Record(
+                    AuditAgents.User,
+                    "evaluation.computer-operator-benchmark.evaluate-case",
+                    $"benchmark-case:{result.CaseId}",
+                    result.EvaluationMode,
+                    result.Passed
+                        ? AuditResults.Succeeded
+                        : AuditResults.Failed);
+
+                return Results.Ok(
+                    result);
+            }
+            catch (ComputerOperatorExternalBenchmarkValidationException exception)
+            {
+                return Results.BadRequest(
+                    new ApiError(exception.Message));
+            }
+        });
+
+        endpoints.MapGet("/api/evaluation/computer-operator-benchmark/scenarios", (
+            IComputerOperatorBenchmarkScenarioPackService scenarios) =>
+            Results.Ok(
+                scenarios.GetPack()));
+
+        endpoints.MapPost("/api/evaluation/computer-operator-benchmark/scenarios/install", (
+            InstallComputerOperatorBenchmarkScenarioPackRequest request,
+            IComputerOperatorBenchmarkScenarioPackService scenarios,
+            IAuditRecorder audit) =>
+        {
+            try
+            {
+                var result =
+                    scenarios.Install(
+                        request.Confirmed);
+
+                audit.Record(
+                    AuditAgents.User,
+                    "evaluation.computer-operator-benchmark.scenarios.install",
+                    $"benchmark-pack:{result.Version}",
+                    result.CreatedCases > 0
+                        ? "explicit-install"
+                        : "idempotent-install",
+                    AuditResults.Succeeded);
+
+                return Results.Ok(
+                    result);
+            }
+            catch (ComputerOperatorBenchmarkScenarioPackException exception)
+            {
+                return Results.BadRequest(
+                    new ApiError(exception.Message));
+            }
+            catch (RegressionDatasetValidationException exception)
+            {
+                return Results.BadRequest(
+                    new ApiError(exception.Message));
+            }
+        });
+
+        endpoints.MapPost("/api/evaluation/computer-operator-regression/candidates/{candidateId}/draft", (
+            string candidateId,
+            IComputerOperatorRegressionCandidateStore candidates) =>
+        {
+            var draft = candidates.CreateDraft(candidateId);
+            return draft is null
+                ? Results.NotFound()
+                : Results.Ok(draft);
+        });
+
+        endpoints.MapPost("/api/evaluation/computer-operator-regression/candidates/{candidateId}/promote", (
+            string candidateId,
+            PromoteComputerOperatorRegressionRequest request,
+            IComputerOperatorRegressionPromotionService promotion,
+            IAuditRecorder audit) =>
+        {
+            try
+            {
+                var result = promotion.Promote(
+                    candidateId,
+                    request.ConfirmedReview);
+
+                audit.Record(
+                    AuditAgents.User,
+                    "evaluation.computer-operator-regression.promote",
+                    $"regression:{result.RegressionCase.Id}",
+                    result.Created
+                        ? "explicit-reviewed-promotion"
+                        : "idempotent-reviewed-promotion",
+                    AuditResults.Succeeded);
+
+                return result.Created
+                    ? Results.Created(
+                        $"/api/evaluation/regression/{Uri.EscapeDataString(result.RegressionCase.Id)}",
+                        result)
+                    : Results.Ok(result);
+            }
+            catch (ComputerOperatorRegressionPromotionException exception)
+            {
+                return Results.BadRequest(
+                    new ApiError(exception.Message));
+            }
+            catch (RegressionDatasetValidationException exception)
+            {
+                return Results.BadRequest(
+                    new ApiError(exception.Message));
+            }
+        });
 
         endpoints.MapGet("/api/evaluation/regression", (IRegressionDatasetStore store) =>
             Results.Ok(store.GetAll()));

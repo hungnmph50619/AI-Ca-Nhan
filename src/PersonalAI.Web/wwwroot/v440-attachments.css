@@ -1,0 +1,147 @@
+.attachment-composer {
+  position: relative;
+  gap: 8px;
+  transition: border-color .18s ease, box-shadow .18s ease, background .18s ease;
+}
+
+.attachment-composer.dragging {
+  border-color: rgba(87, 120, 255, .75);
+  box-shadow: 0 0 0 3px rgba(87, 120, 255, .12);
+  background: rgba(87, 120, 255, .035);
+}
+
+.attachment-button {
+  width: 38px;
+  height: 38px;
+  flex: 0 0 38px;
+  border: 1px solid var(--border, #d8d8dc);
+  border-radius: 999px;
+  background: var(--surface, #fff);
+  color: inherit;
+  font-size: 24px;
+  line-height: 1;
+  cursor: pointer;
+  align-self: flex-end;
+}
+
+.attachment-button:hover {
+  background: rgba(127, 127, 127, .08);
+}
+
+.attachment-button:disabled {
+  opacity: .45;
+  cursor: not-allowed;
+}
+
+.chat-attachment-preview {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  max-width: 900px;
+  margin: 0 auto 8px;
+}
+
+.chat-attachment-card,
+.message-attachment-card {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  min-width: 180px;
+  max-width: 300px;
+  padding: 8px 10px;
+  border: 1px solid var(--border, #d8d8dc);
+  border-radius: 12px;
+  background: var(--surface, #fff);
+}
+
+.chat-attachment-card.uploading {
+  opacity: .7;
+}
+
+.chat-attachment-icon,
+.message-attachment-icon {
+  display: grid;
+  place-items: center;
+  width: 34px;
+  height: 34px;
+  flex: 0 0 34px;
+  border-radius: 9px;
+  background: rgba(87, 120, 255, .10);
+  font-size: 16px;
+}
+
+.chat-attachment-meta,
+.message-attachment-meta {
+  min-width: 0;
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.chat-attachment-name,
+.message-attachment-name {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-weight: 650;
+  font-size: 13px;
+}
+
+.chat-attachment-size,
+.message-attachment-size {
+  font-size: 11px;
+  opacity: .7;
+}
+
+.chat-attachment-remove {
+  border: 0;
+  background: transparent;
+  color: inherit;
+  cursor: pointer;
+  font-size: 18px;
+  opacity: .65;
+}
+
+.chat-attachment-remove:hover {
+  opacity: 1;
+}
+
+.message-attachments {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 7px;
+  margin-top: 10px;
+}
+
+.message-row.user .message-attachment-card {
+  background: rgba(255,255,255,.08);
+  border-color: rgba(255,255,255,.18);
+}
+
+@media (max-width: 640px) {
+  .chat-attachment-card,
+  .message-attachment-card {
+    max-width: 100%;
+    min-width: 150px;
+  }
+}
+
+.chat-attachment-thumb,
+.message-attachment-thumb {
+  width: 42px;
+  height: 42px;
+  flex: 0 0 42px;
+  object-fit: cover;
+  border-radius: 9px;
+  background: rgba(127,127,127,.08);
+}
+
+.message-attachment-card {
+  cursor: pointer;
+}
+
+.message-attachment-card:focus-visible {
+  outline: 2px solid rgba(87, 120, 255, .65);
+  outline-offset: 2px;
+}

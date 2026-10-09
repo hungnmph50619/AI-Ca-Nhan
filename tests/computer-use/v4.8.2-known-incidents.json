@@ -1,0 +1,55 @@
+{
+  "schemaVersion": 1,
+  "version": "v4.8.2",
+  "category": "computer-operator-regression-incidents",
+  "incidents": [
+    {
+      "id": "incident-windows-search-title-browser",
+      "title": "Browser có title Search bị nhận nhầm là Windows Search",
+      "severity": "high",
+      "origin": "v4.6 real-world League launch test",
+      "regressionCaseId": "windows-search-process-identity",
+      "expectedInvariant": "Windows Search phải được xác định bằng process identity; browser chỉ có title Search không được coi là Windows Search."
+    },
+    {
+      "id": "incident-native-launch-browser-false-positive",
+      "title": "Mở ứng dụng native nhưng browser foreground bị verify thành công",
+      "severity": "critical",
+      "origin": "v4.6 real-world League launch test",
+      "regressionCaseId": "native-launch-browser-mismatch",
+      "expectedInvariant": "Launch native app phải reject browser foreground khi target không phải browser."
+    },
+    {
+      "id": "incident-browser-target-false-reject",
+      "title": "Browser target thật bị rule native-launch reject nhầm",
+      "severity": "high",
+      "origin": "v4.6 launch identity hardening",
+      "regressionCaseId": "browser-launch-not-false-positive",
+      "expectedInvariant": "Khi mục tiêu thật sự là browser, browser foreground phải được chấp nhận."
+    },
+    {
+      "id": "incident-provider-repeated-failure-hammering",
+      "title": "Provider lỗi liên tiếp nhưng vẫn bị gọi lặp mỗi chu kỳ",
+      "severity": "high",
+      "origin": "v4.7 provider independence hardening",
+      "regressionCaseId": "provider-cooldown-after-failures",
+      "expectedInvariant": "Sau chuỗi failure đạt ngưỡng, provider phải vào cooldown và router phải bỏ qua tạm thời."
+    },
+    {
+      "id": "incident-provider-health-never-recovers",
+      "title": "Provider đã thành công nhưng failure streak không reset",
+      "severity": "medium",
+      "origin": "v4.7 provider health hardening",
+      "regressionCaseId": "provider-health-reset-after-success",
+      "expectedInvariant": "Một success hợp lệ phải reset consecutive failures và trả provider về Healthy."
+    },
+    {
+      "id": "incident-legacy-regression",
+      "title": "Sửa tính năng mới làm hỏng acceptance behavior đã ổn định",
+      "severity": "critical",
+      "origin": "cross-version regression protection",
+      "regressionCaseId": "legacy-acceptance-suite",
+      "expectedInvariant": "Toàn bộ Computer Operator acceptance suite hiện hành phải tiếp tục pass."
+    }
+  ]
+}

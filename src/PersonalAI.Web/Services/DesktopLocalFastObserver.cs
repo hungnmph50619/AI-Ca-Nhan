@@ -16,7 +16,9 @@ public sealed record DesktopFastObserverSample(
     string? MonitorDevice,
     uint DpiX,
     uint DpiY,
-    bool WindowLikelyOccluded);
+    bool WindowLikelyOccluded,
+    string? ActiveProcessName = null,
+    string? ActiveWindowTitle = null);
 
 public sealed record DesktopFastObservation(
     bool ScreenChanged,
@@ -29,7 +31,9 @@ public sealed record DesktopFastObservation(
     bool TargetMoved,
     bool TargetMissing,
     bool TargetLikelyOccluded,
-    string Summary);
+    string Summary,
+    string? ActiveProcessName = null,
+    string? ActiveWindowTitle = null);
 
 public interface IDesktopLocalFastObserver
 {
@@ -102,7 +106,9 @@ public sealed class DesktopLocalFastObserver(
             monitorDevice,
             dpiX,
             dpiY,
-            frame.WindowLikelyOccluded);
+            frame.WindowLikelyOccluded,
+            active?.ProcessName,
+            active?.Title);
     }
 
     public DesktopFastObservation Analyze(
@@ -199,6 +205,8 @@ public sealed class DesktopLocalFastObserver(
             targetMoved,
             targetMissing,
             targetLikelyOccluded,
-            summary);
+            summary,
+            after.ActiveProcessName,
+            after.ActiveWindowTitle);
     }
 }

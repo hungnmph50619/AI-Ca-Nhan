@@ -1,6 +1,19 @@
 namespace PersonalAI.Web.Models;
 
-public sealed record ChatMessage(string Role, string Content);
+public sealed record ChatAttachmentReference(
+    Guid Id,
+    string FileName,
+    string MimeType,
+    long Size,
+    string Kind,
+    string Route = "direct",
+    Guid? KnowledgeDocumentId = null,
+    int KnowledgeChunkCount = 0);
+
+public sealed record ChatMessage(
+    string Role,
+    string Content,
+    IReadOnlyList<ChatAttachmentReference>? Attachments = null);
 
 public sealed record ChatRequest(
     IReadOnlyList<ChatMessage> Messages,

@@ -1,0 +1,659 @@
+using PersonalAI.Web.Models;
+
+namespace PersonalAI.Web.Services;
+
+public interface IDesktopOcrActionPlanner
+{
+    bool TryPlan(
+        string goal,
+        ComputerOperatorDesktopState state,
+        out DesktopOperatorDecision decision);
+
+    bool TryGroundTarget(
+        DesktopOperatorDecision proposed,
+        ComputerOperatorDesktopState state,
+        out DesktopOperatorDecision grounded,
+        out string reason);
+}
+
+public sealed class DesktopOcrActionPlanner(
+    IDesktopOcrSensor ocrSensor,
+    ILocalVisualTargetResolver visualResolver,
+    ILocalVisualSensorBudgetPolicy budgetPolicy)
+    : IDesktopOcrActionPlanner
+{
+    private static readonly DesktopOcrTargetResolver Resolver =
+        new();
+
+    private static readonly string[] Prefixes =
+    [
+        "bấm ",
+        "bam ",
+        "nhấn ",
+        "nhan ",
+        "click ",
+        "press "
+    ];
+
+    private static readonly string[] NextStepSeparators =
+    [
+        ",",
+        ";",
+        " sau đó ",
+        " sau do ",
+        " rồi ",
+        " roi ",
+        " then ",
+        " and then "
+    ];
+
+    public bool TryPlan(
+        string goal,
+        ComputerOperatorDesktopState state,
+        out DesktopOperatorDecision decision)
+    {
+        ArgumentNullException.ThrowIfNull(state);
+
+        decision = Empty();
+
+        if (state.ForegroundWindow is null ||
+            !TryExtractTarget(
+                goal,
+                out var requestedText))
+        {
+            return false;
+        }
+
+        var window =
+            state.ForegroundWindow;
+
+        var budget =
+            budgetPolicy.ForPlanning(
+                state,
+                structuredTargetResolved: false,
+                explicitTextIntent: true);
+
+        var observation =
+            ocrSensor.ReadWindow(
+                window.WindowId,
+                budget);
+
+        if (!observation.Available ||
+            observation.CaptureWidth <= 0 ||
+            observation.CaptureHeight <= 0)
+        {
+            return false;
+        }
+
+        var resolution =
+            Resolver.Resolve(
+                observation,
+                requestedText);
+
+        var fused =
+            visualResolver.Resolve(
+                resolution,
+                template: null,
+                visualObservation: null);
+
+        if (!fused.Resolved)
+        {
+            return false;
+        }
+
+        var scaleX =
+            window.Width /
+            (double)observation.CaptureWidth;
+        var scaleY =
+            window.Height /
+            (double)observation.CaptureHeight;
+
+        var desktopLeft =
+            window.Left +
+            (int)Math.Round(
+                fused.Left * scaleX);
+        var desktopTop =
+            window.Top +
+            (int)Math.Round(
+                fused.Top * scaleY);
+        var width =
+            Math.Max(
+                4,
+                (int)Math.Round(
+                    fused.Width * scaleX));
+        var height =
+            Math.Max(
+                4,
+                (int)Math.Round(
+                    fused.Height * scaleY));
+
+        var frameLeft =
+            desktopLeft -
+            state.FrameLeft;
+        var frameTop =
+            desktopTop -
+            state.FrameTop;
+
+        if (frameLeft < 0 ||
+            frameTop < 0 ||
+            frameLeft + width >
+                state.FrameWidth ||
+            frameTop + height >
+                state.FrameHeight)
+        {
+            return false;
+        }
+
+        var confidence =
+            Math.Clamp(
+                fused.Confidence,
+                0.0,
+                0.95);
+
+        decision =
+            new DesktopOperatorDecision(
+                State:
+                    $"{observation.Provider} thấy duy nhất text '{requestedText}' trong foreground window.",
+                Plan:
+                    $"Click một lần vào bounding box OCR của '{requestedText}', sau đó quan sát lại trước hành động tiếp theo.",
+                CurrentSubgoal:
+                    $"Tương tác với text '{requestedText}' bằng OCR-local ({observation.Provider}).",
+                GoalProgress: 0,
+                VerifiedMilestones:
+                    Array.Empty<string>(),
+                Action: "click-left",
+                Query: string.Empty,
+                Text: string.Empty,
+                Key: string.Empty,
+                Keys:
+                    Array.Empty<string>(),
+                Url: string.Empty,
+                TargetLabel:
+                    requestedText,
+                CoordinateSpace:
+                    ComputerCoordinateSpaces.ImagePixel,
+                CoordinateWindowId:
+                    window.WindowId,
+                ImageX:
+                    frameLeft +
+                    width / 2,
+                ImageY:
+                    frameTop +
+                    height / 2,
+                EndImageX: 0,
+                EndImageY: 0,
+                NormalizedX: 0,
+                NormalizedY: 0,
+                EndNormalizedX: 0,
+                EndNormalizedY: 0,
+                BoxLeft:
+                    frameLeft,
+                BoxTop:
+                    frameTop,
+                BoxWidth:
+                    width,
+                BoxHeight:
+                    height,
+                BoxNormalizedLeft: 0,
+                BoxNormalizedTop: 0,
+                BoxNormalizedWidth: 0,
+                BoxNormalizedHeight: 0,
+                ScrollDelta: 0,
+                ExpectedEffect:
+                    $"Phần tử văn bản '{requestedText}' phản hồi sau click OCR-local.",
+                Confidence:
+                    confidence,
+                Reason:
+                    $"Structured/local planner không tìm được target; Local Visual Evidence Fusion xác định '{requestedText}' bằng OCR-local provider={observation.Provider}. {fused.Reason}",
+                SceneElements:
+                    Array.Empty<DesktopSceneElement>(),
+                TargetElementId:
+                    string.Empty);
+
+        return true;
+    }
+
+    public bool TryGroundTarget(
+        DesktopOperatorDecision proposed,
+        ComputerOperatorDesktopState state,
+        out DesktopOperatorDecision grounded,
+        out string reason)
+    {
+        ArgumentNullException.ThrowIfNull(proposed);
+        ArgumentNullException.ThrowIfNull(state);
+
+        grounded = proposed;
+        reason = string.Empty;
+
+        if (state.ForegroundWindow is null ||
+            string.IsNullOrWhiteSpace(proposed.TargetLabel) ||
+            proposed.TargetLabel.Length > 160 ||
+            proposed.Action is not
+                ("click-left" or
+                 "double-click-left" or
+                 "click-right"))
+        {
+            reason =
+                "OCR grounding không áp dụng cho decision hiện tại.";
+            return false;
+        }
+
+        var window =
+            state.ForegroundWindow;
+
+        if (!string.IsNullOrWhiteSpace(proposed.CoordinateWindowId) &&
+            !proposed.CoordinateWindowId.Equals(
+                window.WindowId,
+                StringComparison.OrdinalIgnoreCase))
+        {
+            reason = "OCR_WINDOW_CONFLICT: cửa sổ OCR foreground khác cửa sổ grounded target; cần quan sát lại.";
+            return false;
+        }
+
+        var budget =
+            budgetPolicy.ForPlanning(
+                state,
+                structuredTargetResolved: false,
+                explicitTextIntent: true);
+
+        var observation =
+            ocrSensor.ReadWindow(
+                window.WindowId,
+                budget);
+
+        if (!observation.Available ||
+            observation.CaptureWidth <= 0 ||
+            observation.CaptureHeight <= 0)
+        {
+            reason =
+                $"OCR grounding không khả dụng: {observation.Reason}";
+            return false;
+        }
+
+        var candidateLabels =
+            BuildGroundingLabels(
+                proposed.TargetLabel);
+
+        DesktopOcrResolution? resolution =
+            null;
+        LocalVisualTargetResolution? fused =
+            null;
+        string? resolvedLabel =
+            null;
+
+        foreach (var candidateLabel in candidateLabels)
+        {
+            resolution =
+                Resolver.Resolve(
+                    observation,
+                    candidateLabel);
+
+            // Ambiguous local text is conflicting evidence, not an OCR outage.
+            // Do not try shorter synonyms or fall through to visual guessing.
+            if (resolution.Status == DesktopOcrResolutionStatus.Ambiguous)
+            {
+                reason =
+                    $"OCR_AMBIGUOUS: có nhiều phần tử khớp nhãn '{candidateLabel}'; cần quan sát hoặc làm rõ mục tiêu.";
+                return false;
+            }
+
+            fused =
+                visualResolver.Resolve(
+                    resolution,
+                    template: null,
+                    visualObservation: null);
+
+            if (!fused.Resolved)
+                continue;
+
+            resolvedLabel =
+                candidateLabel;
+            break;
+        }
+
+        if (fused?.Resolved != true ||
+            string.IsNullOrWhiteSpace(resolvedLabel))
+        {
+            reason =
+                $"OCR grounding không xác định được target local duy nhất từ label '{proposed.TargetLabel}'.";
+            return false;
+        }
+
+        var scaleX =
+            window.Width /
+            (double)observation.CaptureWidth;
+        var scaleY =
+            window.Height /
+            (double)observation.CaptureHeight;
+
+        var desktopLeft =
+            window.Left +
+            (int)Math.Round(
+                fused.Left * scaleX);
+        var desktopTop =
+            window.Top +
+            (int)Math.Round(
+                fused.Top * scaleY);
+        var width =
+            Math.Max(
+                4,
+                (int)Math.Round(
+                    fused.Width * scaleX));
+        var height =
+            Math.Max(
+                4,
+                (int)Math.Round(
+                    fused.Height * scaleY));
+
+        var frameLeft =
+            desktopLeft -
+            state.FrameLeft;
+        var frameTop =
+            desktopTop -
+            state.FrameTop;
+
+        if (frameLeft < 0 ||
+            frameTop < 0 ||
+            frameLeft + width >
+                state.FrameWidth ||
+            frameTop + height >
+                state.FrameHeight)
+        {
+            reason =
+                "OCR grounding tìm thấy target nhưng bbox nằm ngoài planning frame.";
+            return false;
+        }
+
+        var confidence =
+            Math.Clamp(
+                fused.Confidence,
+                0,
+                0.99);
+
+        grounded =
+            proposed with
+            {
+                CoordinateSpace =
+                    ComputerCoordinateSpaces.ImagePixel,
+                CoordinateWindowId =
+                    window.WindowId,
+                ImageX =
+                    frameLeft +
+                    width / 2,
+                ImageY =
+                    frameTop +
+                    height / 2,
+                BoxLeft =
+                    frameLeft,
+                BoxTop =
+                    frameTop,
+                BoxWidth =
+                    width,
+                BoxHeight =
+                    height,
+                Confidence =
+                    Math.Min(
+                        proposed.Confidence,
+                        confidence),
+                Reason =
+                    $"Deterministic OCR Target Grounding xác nhận local target '{resolvedLabel}' cho semantic target '{proposed.TargetLabel}'. {fused.Reason}"
+            };
+
+        reason =
+            $"OCR grounding đã ghi đè bbox/toạ độ Gemini bằng target local duy nhất '{resolvedLabel}' (semantic='{proposed.TargetLabel}'), confidence={confidence:0.000}.";
+        return true;
+    }
+
+    internal static IReadOnlyList<string> BuildGroundingLabels(
+        string? targetLabel)
+    {
+        var original =
+            (targetLabel ?? string.Empty)
+                .Trim();
+
+        if (original.Length == 0)
+            return Array.Empty<string>();
+
+        var candidates =
+            new List<string>
+            {
+                original
+            };
+
+        var simplified =
+            original;
+
+        foreach (var phrase in new[]
+        {
+            " application icon in search results",
+            " app icon in search results",
+            " application in search results",
+            " app in search results",
+            " search result",
+            " search results",
+            " application icon",
+            " app icon",
+            " button",
+            " icon",
+            " ứng dụng trong kết quả tìm kiếm",
+            " kết quả tìm kiếm",
+            " biểu tượng ứng dụng",
+            " biểu tượng",
+            " nút"
+        })
+        {
+            simplified =
+                simplified.Replace(
+                    phrase,
+                    string.Empty,
+                    StringComparison.OrdinalIgnoreCase)
+                .Trim();
+        }
+
+        simplified =
+            simplified.Trim(
+                ' ',
+                '-',
+                ':',
+                '.',
+                ',',
+                '"',
+                '\'',
+                '“',
+                '”');
+
+        if (simplified.Length > 0 &&
+            !simplified.Equals(
+                original,
+                StringComparison.OrdinalIgnoreCase))
+        {
+            candidates.Add(
+                simplified);
+        }
+
+        foreach (var seed in candidates.ToArray())
+        {
+            var withoutGenericAppSuffix =
+                RemoveGenericAppSuffix(
+                    seed);
+
+            if (withoutGenericAppSuffix.Length > 0 &&
+                !withoutGenericAppSuffix.Equals(
+                    seed,
+                    StringComparison.OrdinalIgnoreCase))
+            {
+                candidates.Add(
+                    withoutGenericAppSuffix);
+            }
+        }
+
+        return candidates
+            .Where(value =>
+                value.Length is >= 1 and <= 160)
+            .Distinct(
+                StringComparer.OrdinalIgnoreCase)
+            .ToArray();
+    }
+
+    private static string RemoveGenericAppSuffix(
+        string value)
+    {
+        var normalized =
+            (value ?? string.Empty)
+                .Trim();
+
+        foreach (var suffix in new[]
+        {
+            " application",
+            " app",
+            " ứng dụng",
+            " ung dung"
+        })
+        {
+            if (!normalized.EndsWith(
+                    suffix,
+                    StringComparison.OrdinalIgnoreCase))
+            {
+                continue;
+            }
+
+            return normalized[..^suffix.Length]
+                .Trim(
+                    ' ',
+                    '-',
+                    ':',
+                    '.',
+                    ',',
+                    '"',
+                    '\'',
+                    '“',
+                    '”');
+        }
+
+        return normalized;
+    }
+
+    private static bool TryExtractTarget(
+        string goal,
+        out string target)
+    {
+        var value =
+            (goal ?? string.Empty)
+                .Trim();
+
+        foreach (var prefix in Prefixes)
+        {
+            if (!value.StartsWith(
+                    prefix,
+                    StringComparison.OrdinalIgnoreCase))
+            {
+                continue;
+            }
+
+            var remainder =
+                value[prefix.Length..]
+                    .Trim();
+
+            foreach (var qualifier in new[]
+            {
+                "chữ ",
+                "chu ",
+                "text ",
+                "nút ",
+                "nut ",
+                "button "
+            })
+            {
+                if (remainder.StartsWith(
+                        qualifier,
+                        StringComparison.OrdinalIgnoreCase))
+                {
+                    remainder =
+                        remainder[qualifier.Length..]
+                            .Trim();
+                    break;
+                }
+            }
+
+            var cut =
+                remainder.Length;
+
+            foreach (var separator in NextStepSeparators)
+            {
+                var index =
+                    remainder.IndexOf(
+                        separator,
+                        StringComparison.OrdinalIgnoreCase);
+
+                if (index >= 0 &&
+                    index < cut)
+                {
+                    cut = index;
+                }
+            }
+
+            target =
+                remainder[..cut]
+                    .Trim()
+                    .Trim(
+                        '"',
+                        '\'',
+                        '“',
+                        '”',
+                        '.',
+                        ':');
+
+            return target.Length is
+                >= 1 and <= 120;
+        }
+
+        target =
+            string.Empty;
+        return false;
+    }
+
+    private static DesktopOperatorDecision Empty() =>
+        new(
+            State: string.Empty,
+            Plan: string.Empty,
+            CurrentSubgoal: string.Empty,
+            GoalProgress: 0,
+            VerifiedMilestones:
+                Array.Empty<string>(),
+            Action: "wait",
+            Query: string.Empty,
+            Text: string.Empty,
+            Key: string.Empty,
+            Keys:
+                Array.Empty<string>(),
+            Url: string.Empty,
+            TargetLabel: string.Empty,
+            CoordinateSpace:
+                ComputerCoordinateSpaces.ImagePixel,
+            CoordinateWindowId:
+                string.Empty,
+            ImageX: 0,
+            ImageY: 0,
+            EndImageX: 0,
+            EndImageY: 0,
+            NormalizedX: 0,
+            NormalizedY: 0,
+            EndNormalizedX: 0,
+            EndNormalizedY: 0,
+            BoxLeft: 0,
+            BoxTop: 0,
+            BoxWidth: 0,
+            BoxHeight: 0,
+            BoxNormalizedLeft: 0,
+            BoxNormalizedTop: 0,
+            BoxNormalizedWidth: 0,
+            BoxNormalizedHeight: 0,
+            ScrollDelta: 0,
+            ExpectedEffect: string.Empty,
+            Confidence: 0,
+            Reason: string.Empty,
+            SceneElements:
+                Array.Empty<DesktopSceneElement>(),
+            TargetElementId:
+                string.Empty);
+}

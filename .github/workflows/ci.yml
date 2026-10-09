@@ -1586,7 +1586,7 @@ jobs:
 
           tools=$(curl -fsS http://127.0.0.1:5077/api/tools)
           echo "$tools" | jq -e '(.frameworkVersion | test("^[0-9]+\\.[0-9]+\\.[0-9]+$")) and (.permissionTypes | sort) == (["BROWSER","COMPUTER","CONNECTOR","DELETE","DEVELOPMENT","EXTERNAL","READ","SENSITIVE","WRITE"] | sort)' >/dev/null
-          echo "$tools" | jq -e '(.tools | length) == 50
+          echo "$tools" | jq -e '(.tools | length) == 49
             and any(.tools[]; .name == "local.clock" and .localOnly == true and .requiredPermissions == ["READ"])
             and any(.tools[]; .name == "local.text_stats" and .timeoutMs == 2000)
             and any(.tools[]; .name == "memory.search")
@@ -1608,7 +1608,7 @@ jobs:
             and any(.tools[]; .name == "computer.cursor.move" and .requiredPermissions == ["WRITE","COMPUTER"] and .requiresConfirmation == true)
             and any(.tools[]; .name == "computer.mouse.click-left" and .requiredPermissions == ["WRITE","COMPUTER","SENSITIVE"] and .requiresConfirmation == true)
           and any(.tools[]; .name == "computer.browser.open-default" and .requiredPermissions == ["WRITE","EXTERNAL","COMPUTER"] and .requiresConfirmation == true)
-          and any(.tools[]; .name == "league.practice.open" and .requiredPermissions == ["WRITE","EXTERNAL","COMPUTER"] and .requiresConfirmation == true and .timeoutMs == 180000)
+          and (all(.tools[]; .name != "league.practice.open"))
           and any(.tools[]; .name == "computer.mouse.click-right" and .requiresConfirmation == true)
           and any(.tools[]; .name == "computer.mouse.double-click-left" and .requiresConfirmation == true)
           and any(.tools[]; .name == "computer.mouse.scroll" and .requiresConfirmation == true)
@@ -3047,16 +3047,22 @@ jobs:
           grep -Fq 'CaptureStableWindowAsync(' src/PersonalAI.Web/Services/DesktopScreenshotService.cs
           grep -Fq 'CaptureScope = "window"' src/PersonalAI.Web/Services/DesktopScreenshotService.cs
           grep -Fq 'WindowWasForeground = window.IsForeground' src/PersonalAI.Web/Services/DesktopScreenshotService.cs
-          grep -Fq 'CapturePostActionFrameAsync' src/PersonalAI.Web/Services/ComputerOperatorTaskService.cs
+          grep -Fq 'IComputerOperatorCaptureService captureService' src/PersonalAI.Web/Services/ComputerOperatorTaskService.cs
+          grep -Fq 'captureService.CaptureDynamicAsync' src/PersonalAI.Web/Services/ComputerOperatorTaskService.cs
+          grep -Fq 'captureService.CaptureAsync' src/PersonalAI.Web/Services/ComputerOperatorTaskService.cs
           grep -Fq 'CaptureStableMonitorAsync(' src/PersonalAI.Web/Services/DesktopScreenshotService.cs
-          grep -Fq 'displays.GetMonitorAtPoint' src/PersonalAI.Web/Services/ComputerOperatorTaskService.cs
-          grep -Fq 'screenshots.CaptureStableMonitorAsync' src/PersonalAI.Web/Services/ComputerOperatorTaskService.cs
+          grep -Fq 'IComputerOperatorCaptureService' src/PersonalAI.Web/Services/ComputerOperatorCaptureService.cs
+          grep -Fq 'displays.GetMonitorAtPoint' src/PersonalAI.Web/Services/ComputerOperatorCaptureService.cs
+          grep -Fq 'screenshots.CaptureStableMonitorAsync' src/PersonalAI.Web/Services/ComputerOperatorCaptureService.cs
+          grep -Fq 'screenshots.CaptureStableVirtualScreenAsync' src/PersonalAI.Web/Services/ComputerOperatorCaptureService.cs
           grep -Fq 'frame.CaptureScope == "window"' src/PersonalAI.Web/Services/DesktopVisionService.cs
           grep -Fq 'ComputerOperatorAcceptanceService' src/PersonalAI.Web/Services/ComputerOperatorAcceptanceService.cs
           grep -Fq 'CheckImagePixelWithNegativeVirtualOrigin' src/PersonalAI.Web/Services/ComputerOperatorAcceptanceService.cs
           ! grep -Eiq 'notepad\.exe|calc\.exe|mspaint|explorer\.exe' src/PersonalAI.Web/Services/ComputerOperatorAcceptanceService.cs src/PersonalAI.Web/Services/ComputerGenericAppLaunchTool.cs src/PersonalAI.Web/Services/ComputerOperatorTaskService.cs
           grep -Fq 'VerifyAppliedActionAsync' src/PersonalAI.Web/Services/ComputerOperatorTaskService.cs
-          grep -Fq 'CaptureStableVirtualScreenAsync' src/PersonalAI.Web/Services/ComputerOperatorTaskService.cs
+          grep -Fq 'IComputerOperatorVisualTargetRecoveryService' src/PersonalAI.Web/Services/ComputerOperatorVisualTargetRecoveryService.cs
+          grep -Fq 'screenshots.CaptureStableVirtualScreenAsync' src/PersonalAI.Web/Services/ComputerOperatorVisualTargetRecoveryService.cs
+          grep -Fq 'visualTargetRecovery.TryRecoverAsync' src/PersonalAI.Web/Services/ComputerOperatorTaskService.cs
           grep -Fq 'vision.VerifyAsync' src/PersonalAI.Web/Services/ComputerOperatorTaskService.cs
           grep -Fq 'IDesktopFrameDifferenceService' src/PersonalAI.Web/Services/DesktopFrameDifferenceService.cs
           grep -Fq 'ChannelDeltaThreshold = 24' src/PersonalAI.Web/Services/DesktopFrameDifferenceService.cs
@@ -3075,14 +3081,19 @@ jobs:
           grep -Fq 'IComputerOperatorActionExecutor' src/PersonalAI.Web/Services/ComputerOperatorActionExecutor.cs
           grep -Fq 'targeting.Resolve(decision, frame)' src/PersonalAI.Web/Services/ComputerOperatorActionExecutor.cs
           grep -Fq 'Foreground đã thay đổi trước thao tác bàn phím' src/PersonalAI.Web/Services/ComputerOperatorActionExecutor.cs
-          grep -Fq 'actionExecutor.Execute(' src/PersonalAI.Web/Services/ComputerOperatorTaskService.cs
+          grep -Fq 'IComputerOperatorExecutionCoordinator' src/PersonalAI.Web/Services/ComputerOperatorExecutionCoordinator.cs
+          grep -Fq 'actionExecutor.Execute(' src/PersonalAI.Web/Services/ComputerOperatorExecutionCoordinator.cs
+          grep -Fq 'executionCoordinator.Execute(' src/PersonalAI.Web/Services/ComputerOperatorTaskService.cs
           grep -Fq 'RevalidateWindowAtPoint' src/PersonalAI.Web/Services/ComputerOperatorActionExecutor.cs
           grep -Fq 'Cửa sổ topmost đã thay đổi ngay trước primitive' src/PersonalAI.Web/Services/ComputerOperatorActionExecutor.cs
-          grep -Fq 'TryGetComputerOperatorGoal' src/PersonalAI.Web/Services/ToolOrchestrationService.cs
-          grep -Fq 'server-computer-operator-route' src/PersonalAI.Web/Services/ToolOrchestrationService.cs
-          grep -Fq 'computer.operator.run-task' src/PersonalAI.Web/Services/ToolOrchestrationService.cs
-          grep -Fq 'foreground' src/PersonalAI.Web/Services/ToolOrchestrationService.cs
-          grep -Fq 'looksLikeSingleAppLaunch' src/PersonalAI.Web/Services/ToolOrchestrationService.cs
+          grep -Fq 'provider.ProposeFunctionCallAsync' src/PersonalAI.Web/Services/ToolOrchestrationService.cs
+          grep -Fq 'planningMode: "provider-native"' src/PersonalAI.Web/Services/ToolOrchestrationService.cs
+          grep -Fq '"computer.operator.run-task"' src/PersonalAI.Web/Services/ComputerOperatorTaskTool.cs
+          ! grep -Fq 'TryGetComputerOperatorGoal' src/PersonalAI.Web/Services/ToolOrchestrationService.cs
+          ! grep -Fq 'server-computer-operator-route' src/PersonalAI.Web/Services/ToolOrchestrationService.cs
+          ! grep -Fq 'looksLikeSingleAppLaunch' src/PersonalAI.Web/Services/ToolOrchestrationService.cs
+          ! grep -Fq 'IsDirectLeaguePracticeCommand' src/PersonalAI.Web/Services/ChatTurnService.cs
+          ! grep -Fq '"league.practice.open"' src/PersonalAI.Web/Services/ChatTurnService.cs
           grep -Fq 'ComputerCanonicalInteractionPoint' src/PersonalAI.Web/Models/ComputerCoordinateModels.cs
           grep -Fq 'ToCanonicalPoint' src/PersonalAI.Web/Services/ComputerCoordinateTransformService.cs
           grep -Fq 'NormalizeDesktopCoordinate' src/PersonalAI.Web/Services/ComputerCoordinateTransformService.cs
@@ -3114,7 +3125,9 @@ jobs:
           ! grep -Fq 'action = ExecuteDecision(decision, frame);' src/PersonalAI.Web/Services/ComputerOperatorTaskService.cs
           grep -Fq '"frame-difference"' src/PersonalAI.Web/Services/ComputerOperatorTaskService.cs
           grep -Fq 'changedRatio=' src/PersonalAI.Web/Services/DesktopVisionService.cs
-          grep -Fq 'RequiresExpectedEffect' src/PersonalAI.Web/Services/ComputerOperatorTaskService.cs
+          grep -Fq 'IComputerOperatorActionSafetyPolicy' src/PersonalAI.Web/Services/ComputerOperatorActionSafetyPolicy.cs
+          grep -Fq 'missing-expected-effect' src/PersonalAI.Web/Services/ComputerOperatorActionSafetyPolicy.cs
+          grep -Fq 'actionSafetyPolicy.ValidateExpectedEffect' src/PersonalAI.Web/Services/ComputerOperatorTaskService.cs
           grep -Fq 'VERIFY-FAILED' src/PersonalAI.Web/Services/ComputerOperatorTaskService.cs
           grep -Fq 'STEP {index}: VERIFIED' src/PersonalAI.Web/Services/ComputerOperatorTaskService.cs
           grep -Fq 'ComputerOperatorRecoverySession' src/PersonalAI.Web/Services/ComputerOperatorRecoverySession.cs
@@ -3130,7 +3143,11 @@ jobs:
           grep -Fq 'stagnation' src/PersonalAI.Web/Services/ComputerOperatorLoopGuardSession.cs
           grep -Fq 'oscillation' src/PersonalAI.Web/Services/ComputerOperatorLoopGuardSession.cs
           grep -Fq 'RequiresStrategyChange' src/PersonalAI.Web/Services/ComputerOperatorLoopGuardSession.cs
-          grep -Fq 'CHỈ DẪN THOÁT VÒNG LẶP: BẮT BUỘC đổi chiến lược' src/PersonalAI.Web/Services/ComputerOperatorTaskService.cs
+          grep -Fq 'IComputerOperatorDecisionAuthority' src/PersonalAI.Web/Services/ComputerOperatorDecisionAuthority.cs
+          grep -Fq 'Decision Authority yêu cầu REPLAN' src/PersonalAI.Web/Services/ComputerOperatorTaskService.cs
+          grep -Fq 'Loop Guard chỉ phát tín hiệu' src/PersonalAI.Web/Services/ComputerOperatorTaskService.cs
+          grep -Fq 'RECOVERY-RECOMMENDATION:' src/PersonalAI.Web/Services/ComputerOperatorTaskService.cs
+          ! grep -Fq 'CHỈ DẪN THOÁT VÒNG LẶP: BẮT BUỘC đổi chiến lược' src/PersonalAI.Web/Services/ComputerOperatorTaskService.cs
           ! grep -Fq 'loopAssessment.Occurrences >= 3' src/PersonalAI.Web/Services/ComputerOperatorTaskService.cs
           ! grep -Eiq 'notepad|calculator|mspaint|paint|explorer\.exe|notepad\.exe|calc\.exe' src/PersonalAI.Web/Services/ComputerOperatorLoopGuardSession.cs
           grep -Fq 'ComputerGenericAppLaunchTool' src/PersonalAI.Web/Services/ComputerGenericAppLaunchTool.cs
@@ -3294,7 +3311,8 @@ jobs:
           grep -Fq 'ITextAccessibilityBackend' src/PersonalAI.Web/Services/GenericTextInteractionEngine.cs
           grep -Fq 'ITextClipboardWriter' src/PersonalAI.Web/Services/GenericTextInteractionEngine.cs
           grep -Fq 'TextInteractionStrategies.AccessibilityDirect' src/PersonalAI.Web/Services/GenericTextInteractionEngine.cs
-          grep -Fq 'textInteraction.Execute' src/PersonalAI.Web/Services/ComputerOperatorTaskService.cs
+          grep -Fq 'textInteraction.Execute' src/PersonalAI.Web/Services/ComputerOperatorExecutionCoordinator.cs
+          grep -Fq 'executionResult.TextInteraction' src/PersonalAI.Web/Services/ComputerOperatorTaskService.cs
           grep -Fq 'không gọi screenshot/Gemini' src/PersonalAI.Web/Services/ComputerOperatorTaskService.cs
           grep -Fq 'type-text là thao tác ATOMIC' src/PersonalAI.Web/Services/DesktopVisionService.cs
           grep -Fq 'CheckGenericTextEngineDirectSetAndVerify' src/PersonalAI.Web/Services/ComputerOperatorAcceptanceService.cs

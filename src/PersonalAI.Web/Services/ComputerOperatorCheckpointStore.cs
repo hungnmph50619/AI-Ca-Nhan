@@ -25,7 +25,8 @@ public sealed record ComputerOperatorCheckpoint(
     string? LastVerifiedAction,
     string? LastVerifiedExpectedEffect,
     DateTimeOffset CreatedAt,
-    DateTimeOffset UpdatedAt);
+    DateTimeOffset UpdatedAt,
+    string? LastObservedStateFingerprint = null);
 
 public interface IComputerOperatorCheckpointStore
 {
@@ -37,7 +38,8 @@ public interface IComputerOperatorCheckpointStore
         string currentSubgoal,
         double goalProgress,
         string? lastVerifiedAction = null,
-        string? lastVerifiedExpectedEffect = null);
+        string? lastVerifiedExpectedEffect = null,
+        string? lastObservedStateFingerprint = null);
 
     ComputerOperatorCheckpoint MarkStatus(
         ComputerOperatorCheckpoint checkpoint,
@@ -97,7 +99,8 @@ public sealed class SqliteComputerOperatorCheckpointStore(
             LastVerifiedAction: null,
             LastVerifiedExpectedEffect: null,
             now,
-            now);
+            now,
+            LastObservedStateFingerprint: null);
 
         Save(created);
         return created;
@@ -109,7 +112,8 @@ public sealed class SqliteComputerOperatorCheckpointStore(
         string currentSubgoal,
         double goalProgress,
         string? lastVerifiedAction = null,
-        string? lastVerifiedExpectedEffect = null)
+        string? lastVerifiedExpectedEffect = null,
+        string? lastObservedStateFingerprint = null)
     {
         ArgumentNullException.ThrowIfNull(checkpoint);
         ArgumentNullException.ThrowIfNull(verifiedMilestones);
@@ -141,6 +145,9 @@ public sealed class SqliteComputerOperatorCheckpointStore(
                 lastVerifiedExpectedEffect,
                 500,
                 "[Kết quả nhạy cảm đã được xác minh; nội dung không lưu]"),
+            LastObservedStateFingerprint =
+                NormalizeStateFingerprint(
+                    lastObservedStateFingerprint),
             UpdatedAt = DateTimeOffset.UtcNow
         };
 
@@ -588,6 +595,29 @@ public sealed class SqliteComputerOperatorCheckpointStore(
                 Encoding.UTF8.GetBytes(normalized));
 
         return Convert.ToHexString(bytes);
+    }
+
+    private static string? NormalizeStateFingerprint(
+        string? value)
+    {
+        var normalized =
+            (value ?? string.Empty)
+                .Trim()
+                .ToUpperInvariant();
+
+        if (normalized.Length == 0)
+            return null;
+
+        if (normalized.Length != 64 ||
+            normalized.Any(character =>
+                !Uri.IsHexDigit(character)))
+        {
+            throw new ArgumentException(
+                "State fingerprint checkpoint phải là SHA-256 hex 64 ký tự.",
+                nameof(value));
+        }
+
+        return normalized;
     }
 
     private static readonly string[] SensitiveTerms =

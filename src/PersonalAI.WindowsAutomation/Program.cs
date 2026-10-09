@@ -9,6 +9,8 @@ using FlaUI.UIA3;
 using Microsoft.Graphics.Canvas;
 using Windows.Graphics.Capture;
 using Windows.Graphics.DirectX;
+using Windows.Graphics.Imaging;
+using Windows.Media.Ocr;
 using Windows.Storage.Streams;
 using WinRT;
 using SharpGen.Runtime;
@@ -50,7 +52,8 @@ internal sealed record AutomationResponse(
     string CaptureBackend = "",
     string EventKind = "",
     string EventWindowId = "",
-    string StructuredJson = "");
+    string StructuredJson = "",
+    string OcrJson = "");
 
 internal static class Program
 {
@@ -87,6 +90,14 @@ internal static class Program
             {
                 response = CaptureMonitorDxgi(
                     request);
+            }
+            else if (request.Operation.Trim().Equals(
+                         "ocr-window",
+                         StringComparison.OrdinalIgnoreCase))
+            {
+                response =
+                    await OcrWindowAsync(
+                        request);
             }
             else if (request.Operation.Trim().Equals(
                          "wait-uia-event",
@@ -142,6 +153,174 @@ internal static class Program
         {
             return WriteError(
                 $"Windows Automation gặp lỗi: {exception.GetType().Name}: {exception.Message}");
+        }
+    }
+
+    private static async Task<AutomationResponse> OcrWindowAsync(
+        AutomationRequest request)
+    {
+        var captured =
+            await CaptureWindowAsync(
+                request);
+
+        if (!captured.Success ||
+            string.IsNullOrWhiteSpace(
+                captured.JpegBase64))
+        {
+            return captured with
+            {
+                Detail =
+                    $"Windows OCR không capture được cửa sổ: {captured.Detail}"
+            };
+        }
+
+        OcrEngine? engine;
+        try
+        {
+            engine =
+                OcrEngine.TryCreateFromUserProfileLanguages();
+        }
+        catch (Exception exception)
+        {
+            return captured with
+            {
+                Success = false,
+                Detail =
+                    $"Windows OCR engine không khả dụng: {exception.GetType().Name}: {exception.Message}",
+                JpegBase64 = null
+            };
+        }
+
+        if (engine is null)
+        {
+            return captured with
+            {
+                Success = false,
+                Detail =
+                    "Windows OCR engine không có ngôn ngữ người dùng phù hợp.",
+                JpegBase64 = null
+            };
+        }
+
+        if (captured.CaptureWidth >
+                OcrEngine.MaxImageDimension ||
+            captured.CaptureHeight >
+                OcrEngine.MaxImageDimension)
+        {
+            return captured with
+            {
+                Success = false,
+                Detail =
+                    $"Ảnh {captured.CaptureWidth}x{captured.CaptureHeight} vượt giới hạn Windows OCR {OcrEngine.MaxImageDimension}px.",
+                JpegBase64 = null
+            };
+        }
+
+        try
+        {
+            var bytes =
+                Convert.FromBase64String(
+                    captured.JpegBase64);
+
+            using var stream =
+                new InMemoryRandomAccessStream();
+
+            using (var writer =
+                   new DataWriter(
+                       stream.GetOutputStreamAt(0)))
+            {
+                writer.WriteBytes(
+                    bytes);
+
+                await writer.StoreAsync();
+                await writer.FlushAsync();
+                writer.DetachStream();
+            }
+
+            stream.Seek(0);
+
+            var decoder =
+                await BitmapDecoder.CreateAsync(
+                    stream);
+
+            using var bitmap =
+                await decoder.GetSoftwareBitmapAsync(
+                    BitmapPixelFormat.Bgra8,
+                    BitmapAlphaMode.Premultiplied);
+
+            var result =
+                await engine.RecognizeAsync(
+                    bitmap);
+
+            var payload =
+                new
+                {
+                    text =
+                        result.Text ?? string.Empty,
+                    language =
+                        engine.RecognizerLanguage?.LanguageTag
+                        ?? string.Empty,
+                    lines =
+                        result.Lines
+                            .Select(line =>
+                                new
+                                {
+                                    text =
+                                        line.Text
+                                        ?? string.Empty,
+                                    words =
+                                        line.Words
+                                            .Select(word =>
+                                            {
+                                                var rect =
+                                                    word.BoundingRect;
+
+                                                return new
+                                                {
+                                                    text =
+                                                        word.Text
+                                                        ?? string.Empty,
+                                                    left =
+                                                        rect.X,
+                                                    top =
+                                                        rect.Y,
+                                                    width =
+                                                        rect.Width,
+                                                    height =
+                                                        rect.Height
+                                                };
+                                            })
+                                            .ToArray()
+                                })
+                            .ToArray()
+                };
+
+            return captured with
+            {
+                Success = true,
+                CanRead = true,
+                Detail =
+                    $"Windows OCR đọc được {result.Lines.Count} dòng bằng {engine.RecognizerLanguage?.LanguageTag ?? "ngôn ngữ mặc định"}.",
+                JpegBase64 = null,
+                OcrJson =
+                    JsonSerializer.Serialize(
+                        payload,
+                        JsonOptions())
+            };
+        }
+        catch (Exception exception) when (
+            exception is
+                ArgumentException or
+                InvalidOperationException or
+                COMException)
+        {
+            return captured with
+            {
+                Success = false,
+                Detail =
+                    $"Windows OCR thất bại: {exception.GetType().Name}: {exception.Message}",
+                JpegBase64 = null
+            };
         }
     }
 

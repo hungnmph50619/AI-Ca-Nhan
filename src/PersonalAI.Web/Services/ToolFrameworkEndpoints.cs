@@ -38,6 +38,8 @@ public static class ToolFrameworkEndpoints
         services.AddSingleton<IToolRegistry, ToolRegistry>();
         services.AddSingleton<IToolCapabilityRegistry, ToolCapabilityRegistry>();
         services.AddSingleton<ICapabilityToolRouter, CapabilityToolRouter>();
+        services.AddSingleton<IToolExposurePolicy, ToolExposurePolicy>();
+        services.AddSingleton<IPlanningAuthorityPolicy, PlanningAuthorityPolicy>();
         services.AddSingleton<IToolInputValidator, ToolInputValidator>();
         services.AddSingleton<IToolPolicy, ToolPolicy>();
         services.AddSingleton<IToolExecutionService, ToolExecutionService>();

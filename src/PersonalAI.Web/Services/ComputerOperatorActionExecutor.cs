@@ -35,6 +35,18 @@ public sealed class ComputerOperatorActionExecutor(
 
         if (IsClickAction(action))
         {
+            // A window-scoped screenshot must belong to the grounded window.
+            // Otherwise valid-looking image coordinates may hit a different control.
+            if (!string.IsNullOrWhiteSpace(frame.WindowId) &&
+                !string.IsNullOrWhiteSpace(decision.CoordinateWindowId) &&
+                !frame.WindowId.Equals(
+                    decision.CoordinateWindowId,
+                    StringComparison.OrdinalIgnoreCase))
+            {
+                throw new ToolExecutionInputException(
+                    "Screenshot window và grounded target không khớp; cần chụp lại trước khi click.");
+            }
+
             safeTarget = targeting.Resolve(decision, frame);
             point = safeTarget.Point;
         }
@@ -227,6 +239,17 @@ public sealed class ComputerOperatorActionExecutor(
             point.DesktopX,
             point.DesktopY,
             "click");
+
+        // Do not execute an image-grounded click against a different window.
+        // The topmost window may have changed since the frame was captured.
+        if (!string.IsNullOrWhiteSpace(decision.CoordinateWindowId) &&
+            !targetWindow.WindowId.Equals(
+                decision.CoordinateWindowId,
+                StringComparison.OrdinalIgnoreCase))
+        {
+            throw new ToolExecutionInputException(
+                "Cửa sổ tại điểm click không khớp cửa sổ đã grounding; cần quan sát lại trước khi click.");
+        }
 
         _ = computer.SmoothMoveCursor(
             point.DesktopX,

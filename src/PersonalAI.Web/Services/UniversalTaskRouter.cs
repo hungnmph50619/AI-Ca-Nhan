@@ -50,10 +50,25 @@ public interface IUniversalTaskRouter
 public sealed class UniversalTaskRouter(
     IExecutionAgentRegistry executionAgents,
     IExecutionGateway gateway,
+    IPlanningAuthorityPolicy planningAuthority,
     IToolCapabilityRegistry? toolCapabilities = null,
     IUniversalCapabilityDiscoveryService? capabilityDiscovery = null)
     : IUniversalTaskRouter
 {
+    public UniversalTaskRouter(
+        IExecutionAgentRegistry executionAgents,
+        IExecutionGateway gateway,
+        IToolCapabilityRegistry? toolCapabilities = null,
+        IUniversalCapabilityDiscoveryService? capabilityDiscovery = null)
+        : this(
+            executionAgents,
+            gateway,
+            new PlanningAuthorityPolicy(),
+            toolCapabilities,
+            capabilityDiscovery)
+    {
+    }
+
     private const double MinimumSelectionConfidence = 0.66;
     private const double MinimumWinningMargin = 0.06;
     private const double CostPenaltyWeight = 0.025;
@@ -116,8 +131,10 @@ public sealed class UniversalTaskRouter(
         "phần mềm",
         "cửa sổ",
         "windows",
-        "notepad",
-        "calculator"
+        "chương trình",
+        "giao diện",
+        "foreground",
+        "window"
     ];
 
     private static readonly string[] ConnectorTerms =
@@ -146,6 +163,20 @@ public sealed class UniversalTaskRouter(
 
         var preferred = Normalize(
             request.PreferredChannel);
+
+        var authority =
+            planningAuthority.Classify(
+                goal);
+
+        if (authority.PreferTaskEngine)
+        {
+            return new(
+                goal,
+                Array.Empty<UniversalTaskRouteCandidate>(),
+                SelectedChannel: null,
+                NeedsFurtherRouting: true,
+                $"Yêu cầu được phân loại {authority.Authority}; Universal Router chỉ route channel và không được thay TaskEngine lập kế hoạch nhiều bước. {authority.Reason}");
+        }
 
         var runtimeCapabilities =
             capabilityDiscovery?.Discover();

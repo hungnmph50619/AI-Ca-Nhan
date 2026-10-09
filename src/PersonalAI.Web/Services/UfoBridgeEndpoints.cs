@@ -36,6 +36,7 @@ public static class UfoBridgeEndpoints
                 configured,
                 filesPresent = ready,
                 legacyOperatorRunning = legacy.Running,
+                ufoOwnsDesktop = legacy.UfoRunning,
                 executionAvailable = false,
                 reason = "Desktop ownership interlock and independent verification are not connected yet."
             });

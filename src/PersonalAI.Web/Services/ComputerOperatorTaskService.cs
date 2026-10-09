@@ -350,6 +350,8 @@ public sealed class ComputerOperatorTaskService(
         var repeatedGroundingFailureCount = 0;
         string? waitingSceneFingerprint = null;
         DateTimeOffset? waitingSince = null;
+        string? authorityReplanScene = null;
+        var consecutiveAuthorityReplans = 0;
 
         try
         {
@@ -1223,6 +1225,26 @@ public sealed class ComputerOperatorTaskService(
 
                 if (!authorityDecision.AllowExecution)
                 {
+                    consecutiveAuthorityReplans =
+                        string.Equals(authorityReplanScene, sceneFingerprint, StringComparison.Ordinal)
+                            ? consecutiveAuthorityReplans + 1
+                            : 1;
+                    authorityReplanScene = sceneFingerprint;
+                    if (consecutiveAuthorityReplans >= 6)
+                    {
+                        var detail = "Decision Authority yêu cầu lập kế hoạch lại 6 lần liên tiếp trên cùng scene mà không có hành động mới; dừng an toàn, giữ checkpoint.";
+                        checkpoint = SaveCheckpointSafely(
+                            checkpoint,
+                            verifiedMilestones,
+                            currentSubgoal,
+                            latestGoalProgress,
+                            lastObservedStateFingerprint: sceneFingerprint);
+                        MarkCheckpointStatusSafely(
+                            checkpoint,
+                            ComputerOperatorCheckpointStatuses.Interrupted);
+                        progress.Block(detail);
+                        return Finish(false, detail);
+                    }
                     if (consumedReplay)
                     {
                         taskHistory.Add(
@@ -1280,6 +1302,9 @@ public sealed class ComputerOperatorTaskService(
                         linked.Token);
                     continue;
                 }
+
+                consecutiveAuthorityReplans = 0;
+                authorityReplanScene = null;
 
                 progress.Add(
                     "plan",

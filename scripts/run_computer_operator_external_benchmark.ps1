@@ -171,6 +171,16 @@ $benchmarkOutcome = "SUCCEEDED"
             }
         } catch { $responseBody = "Could not extract HTTP response body: $($_.Exception.Message)" }
     }
+    # Preserve the planned suite when run-suite aborts before returning its
+    # results. This is diagnostic-only; do not classify any case as PASS.
+    if ($null -ne $prepare) {
+        try {
+            Save-Json -Name "08-partial-suite-plan.json" -Value $prepare | Out-Null
+            Write-Host "Saved prepared suite for independent failure investigation." -ForegroundColor Yellow
+        } catch {
+            [string]$_.Exception.Message | Set-Content -Path (Join-Path $runFolder "suite-plan-capture-warning.txt") -Encoding UTF8
+        }
+    }
     # Preserve the changed readiness state when a failed case creates a
     # pending runtime regression candidate during run-suite. Never auto-promote.
     try {
